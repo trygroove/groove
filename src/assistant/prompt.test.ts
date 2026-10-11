@@ -17,6 +17,16 @@ describe("the assistant's system prompt", () => {
     expect(ASSISTANT_PROMPT_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
   });
 
+  // GRV-91: a loop sketch must fit the output limit, so each part is one looped bar.
+  it("tells a loop sketch to use one-bar clips looped to the loop's length", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("one clip of one bar");
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "looped: true and durationTicks the loop's full length",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("never place a part once per bar");
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("four at most");
+  });
+
   it("lists every device type and every one of its parameters by key", () => {
     for (const device of deviceTypes()) {
       const line = ASSISTANT_SYSTEM_PROMPT.split("\n").find((candidate) =>

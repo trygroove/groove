@@ -21,6 +21,14 @@ function cell(text: string): string {
   return text.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
 }
 
+/** Where a run's output tokens went, in characters of each kind of block. */
+function tokensLine(record: EvalRecord): string | null {
+  const tokens = record.tokens;
+  if (!tokens) return null;
+  const count = tokens.outputTokens === null ? "?" : String(tokens.outputTokens);
+  return `Output tokens ${count}; streamed characters: thinking ${tokens.thinkingChars}, tool input ${tokens.toolInputChars}, text ${tokens.textChars}`;
+}
+
 function statsLine(record: EvalRecord): string {
   const stats = record.stats;
   if (!stats) return "did not apply";
@@ -165,6 +173,7 @@ export function renderMarkdown(report: EvalReport): string {
       if (record.error) {
         lines.push(
           `**Run ${record.run}** (${Math.round(record.durationMs / 1000)} s): errored, not judged: ${cell(record.error)}`,
+          ...(tokensLine(record) ? ["", `- ${tokensLine(record)}`] : []),
           "",
         );
         continue;
@@ -173,6 +182,8 @@ export function renderMarkdown(report: EvalReport): string {
         `**Run ${record.run}** (${Math.round(record.durationMs / 1000)} s, stop: ${record.stopReason ?? "none"}): ${statsLine(record)}`,
       );
       lines.push("");
+      const tokensText = tokensLine(record);
+      if (tokensText) lines.push(`- ${tokensText}`);
       for (const id of CHECK_IDS) {
         const result = record.checks[id];
         if (result && result.status === "fail") {

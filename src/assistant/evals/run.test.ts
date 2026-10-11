@@ -298,6 +298,27 @@ describe("check 1 and new IDs", () => {
     expect(record.checks.valid?.kind).toBe("schema");
   });
 
+  it("records where a turn's output tokens went and prints them", async () => {
+    const provider = createScriptedAssistantProvider([
+      replyEvents(["Nothing to do."], {
+        stopReason: "max_tokens",
+        outputTokens: 16_000,
+        withThinking: true,
+      }),
+    ]);
+    const report = await runEvals({ provider, cases: [glue], runs: 1, now: fixedNow });
+    const [record] = report.records;
+    expect(record.tokens).toEqual({
+      outputTokens: 16_000,
+      thinkingChars: "private reasoning".length,
+      toolInputChars: 0,
+      textChars: "Nothing to do.".length,
+    });
+    expect(renderMarkdown(report)).toContain(
+      `Output tokens 16000; streamed characters: thinking ${"private reasoning".length}, tool input 0, text ${"Nothing to do.".length}`,
+    );
+  });
+
   it.each([
     [{ stopReason: "max_tokens" }, "cut off at max_tokens"],
     [{ stopReason: "refusal" }, "The model refused"],

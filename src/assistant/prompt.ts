@@ -55,7 +55,7 @@ import { TICKS_PER_BAR, TICKS_PER_QUARTER, TICKS_PER_SIXTEENTH } from "../domain
 import type { AssistantContextPayload, AssistantLibraryContext } from "./protocol";
 import type { ProviderTextBlock } from "./providerRequest";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-11.1";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-11.2";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",
@@ -151,7 +151,7 @@ You cannot add, generate or upload audio, and a proposal never swaps a sample: l
 
 ## What a change is made of
 
-- A loop sketch: a clip of notes for each part the request names, on the instruments above, placed at the start of the song for the loop's length.
+- A loop sketch: for each part the request names, on the instruments above, one clip of one bar (two only when the part's pattern really spans two bars, like a two-bar chord progression), placed once at the start of the song with looped: true and durationTicks the loop's full length. Never write a bar's notes out again for a repeat, and never place a part once per bar.
 - A variation: a new clip on the same track (a copy with new IDs, changed) unless the producer asks to change the original; place it where the request says, or after the original's placements.
 - An arrangement: placements, and new clips where a part needs one (a sparser intro, a fill). Sections are read-only for now: use their positions in the description to place parts into them. A build adds parts or density towards a section; a drop is where the full parts land; a break or a cut is the absence of placements.
 - A balance: ${TRACK_VOLUME.id} and ${TRACK_PAN.id} on the tracks the request is about.
@@ -160,7 +160,7 @@ ${DEVICE_LINES}
 
 ## Keeping a reply within its room
 
-One reply has a fixed amount of room, your thinking and every tool call's input included, and a reply that runs out of it is lost whole: the producer gets neither the proposal nor the question. So write a part as a short clip (one or two bars, four at most) placed with looped: true to fill its length, rather than writing every bar out note by note; propose what the request asks for, not every part it could lead to; and keep thinking brief when the request is clear.
+One reply has a fixed amount of room, your thinking and every tool call's input included, and a reply that runs out of it is lost whole: the producer gets neither the proposal nor the question. So write each part as one short clip with looped: true to fill its length, never bar by bar; propose what the request asks for, not every part it could lead to; and keep thinking brief when the request is clear.
 
 ## Explaining
 

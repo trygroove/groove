@@ -72,6 +72,20 @@ export interface EvalTurnError {
   readonly providerFailures: readonly string[];
 }
 
+/**
+ * Where a turn's output tokens went (GRV-91). The provider reports one output
+ * count, thinking included; the split is the characters of each kind of block
+ * streamed, which is how a cut-off turn (no usable tool calls kept) is still
+ * accounted for. Summed over the turn's provider calls.
+ */
+export interface EvalTokens {
+  /** The provider's own output count, the last call's. */
+  readonly outputTokens: number | null;
+  readonly thinkingChars: number;
+  readonly toolInputChars: number;
+  readonly textChars: number;
+}
+
 /** What one turn came back with, or how it failed. */
 export interface EvalTurn {
   readonly durationMs: number;
@@ -87,6 +101,8 @@ export interface EvalTurn {
   readonly proposal: AssistantProposal | null;
   /** The question the turn asked instead, if it asked one. Absent from older reports. */
   readonly ask?: AssistantAsk | null;
+  /** Where the output tokens went. Absent from reports saved before it existed. */
+  readonly tokens?: EvalTokens;
 }
 
 /** One run of one case: the request, everything the model returned, every check. */
@@ -175,6 +191,42 @@ export interface RunTurnOptions {
 
 class EvalTimeout extends Error {}
 
+/** Wraps `provider` so the characters and tokens of each streamed block are counted. */
+function measureProvider(provider: AssistantProvider): {
+  provider: AssistantProvider;
+  tokens: () => EvalTokens;
+} {
+  let outputTokens: number | null = null;
+  let thinkingChars = 0;
+  let toolInputChars = 0;
+  let textChars = 0;
+  return {
+    provider: {
+      async *stream(request, signal) {
+        for await (const raw of provider.stream(request, signal)) {
+          const event = raw as {
+            type?: string;
+            delta?: { text?: string; thinking?: string; partial_json?: string };
+            usage?: { output_tokens?: number };
+          } | null;
+          if (event?.type === "content_block_delta") {
+            thinkingChars += event.delta?.thinking?.length ?? 0;
+            toolInputChars += event.delta?.partial_json?.length ?? 0;
+            textChars += event.delta?.text?.length ?? 0;
+          } else if (
+            event?.type === "message_delta" &&
+            typeof event.usage?.output_tokens === "number"
+          ) {
+            outputTokens = event.usage.output_tokens;
+          }
+          yield raw;
+        }
+      },
+    },
+    tokens: () => ({ outputTokens, thinkingChars, toolInputChars, textChars }),
+  };
+}
+
 /** Runs one case once through the gateway's own turn. Never throws for a failed turn. */
 export async function runCaseTurn(
   evalCase: EvalCase,
@@ -197,11 +249,12 @@ export async function runCaseTurn(
     }, timeoutMs);
   });
   const startedAt = now();
+  const measured = measureProvider(options.provider);
   try {
     const result = await Promise.race([
       runAssistantTurn(
         {
-          provider: options.provider,
+          provider: measured.provider,
           guards: createInMemoryGuardStores(),
           log: (record) => {
             turnLog = record;
@@ -228,6 +281,7 @@ export async function runCaseTurn(
       text: result.text,
       proposal: result.proposal,
       ask: result.ask,
+      tokens: measured.tokens(),
     };
   } catch (error) {
     const log = turnLog as AssistantTurnLog | null;
@@ -249,7 +303,7 @@ export async function runCaseTurn(
               message: error instanceof Error ? error.message : String(error),
               ...provider,
             };
-    return erroredTurn(now() - startedAt, turnError);
+    return { ...erroredTurn(now() - startedAt, turnError), tokens: measured.tokens() };
   } finally {
     clearTimeout(timer);
   }
