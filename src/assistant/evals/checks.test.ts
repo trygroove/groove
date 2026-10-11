@@ -31,10 +31,11 @@ import { TICKS_PER_BAR, TICKS_PER_SIXTEENTH } from "../../domain/time";
 import { factoryLibraryEntry, factoryPack } from "../../library/factoryLibrary";
 import { historyProposalTarget } from "../historyProposalTarget";
 import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
-import { type EvalScope, resolveScope } from "./cases";
+import { EVAL_PARTS, type EvalScope, resolveScope } from "./cases";
 import {
   checkAtomicUndo,
   checkBundled,
+  checkCoverage,
   checkGrounded,
   checkInScope,
   checkNotFlattened,
@@ -469,5 +470,101 @@ describe("check 6: extreme is not flattened", () => {
   it("skips when either side has nothing that applied", () => {
     expect(checkNotFlattened(null, ["x"]).status).toBe("skip");
     expect(checkNotFlattened("x", [null, null]).status).toBe("skip");
+  });
+});
+
+describe("check 7: covers the requested parts", () => {
+  const drums = track("Drums");
+  const beat = project.clips.find((clip) => clip.trackId === drums.id);
+  if (!beat || beat.content.kind !== "notes") throw new Error("no drum clip");
+  const withClips = (clips: Project["clips"], tracks: Track[] = []): Project => ({
+    ...project,
+    clips,
+    song: { ...project.song, tracks: [...project.song.tracks, ...tracks] },
+  });
+  const beatEvents = beat.content.events;
+  const clearedBeat = { ...beat, content: { ...beat.content, events: [] } };
+  const others = project.clips.filter((clip) => clip.id !== beat.id);
+
+  function pitchedPart(seed: string) {
+    const ctx = context(seed);
+    const added = createTrack(ctx, {
+      name: "Pad",
+      order: project.song.tracks.length,
+      instrument: createSynthInstrument(),
+    });
+    const clip = createNoteClip(ctx, {
+      trackId: added.id,
+      name: "Pad",
+      lengthTicks: TICKS_PER_BAR,
+      events: [createNoteEvent(ctx, { pitch: 60, startTicks: 0, durationTicks: 48 })],
+    });
+    return { track: added, clip };
+  }
+  const fiveParts = (): Project => {
+    const parts = ["a", "b", "c", "d"].map(pitchedPart);
+    const edited = {
+      ...beat,
+      content: { ...beat.content, events: beatEvents.slice(1) },
+    };
+    return withClips(
+      [...others, edited, ...parts.map((part) => part.clip)],
+      parts.map((part) => part.track),
+    );
+  };
+
+  it("fails a sketch whose only change is clearing the drum clip", () => {
+    const result = checkCoverage(
+      project,
+      withClips([...others, clearedBeat]),
+      EVAL_PARTS,
+    );
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("bass, chords, melody, texture");
+    expect(result.detail).toContain("drums");
+  });
+
+  it("passes a sketch with notes for drums and four pitched parts", () => {
+    expect(checkCoverage(project, fiveParts(), EVAL_PARTS).status).toBe("pass");
+  });
+
+  it("fails when two pitched parts share one clip", () => {
+    const after = fiveParts();
+    const result = checkCoverage(
+      project,
+      withClips(after.clips.slice(0, -1), after.song.tracks.slice(0, -1)),
+      EVAL_PARTS,
+    );
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("texture");
+  });
+
+  it("counts two clips on one synth track as two parts", () => {
+    const first = pitchedPart("x");
+    const second = pitchedPart("y");
+    const after = withClips(
+      [...project.clips, first.clip, { ...second.clip, trackId: first.track.id }],
+      [first.track],
+    );
+    expect(checkCoverage(project, after, ["bass", "chords"]).status).toBe("pass");
+  });
+
+  it("does not count a pitched clip as the drum part, or the reverse", () => {
+    const pitched = pitchedPart("p");
+    const after = withClips([...project.clips, pitched.clip], [pitched.track]);
+    expect(checkCoverage(project, after, ["drums"]).status).toBe("fail");
+    expect(checkCoverage(project, after, ["bass"]).status).toBe("pass");
+    expect(checkCoverage(project, fiveParts(), ["bass"]).status).toBe("pass");
+    expect(checkCoverage(project, withClips([...others, beat]), ["bass"]).status).toBe(
+      "fail",
+    );
+  });
+
+  it("does not count a clip the proposal left unchanged", () => {
+    expect(checkCoverage(project, project, ["drums"]).status).toBe("fail");
+  });
+
+  it("skips a case that names no parts", () => {
+    expect(checkCoverage(project, project, []).status).toBe("skip");
   });
 });
