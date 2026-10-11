@@ -1481,3 +1481,37 @@ library, a pack the project does not use yet, a recommendation naming a pack or
 sound the library does not hold, and a card that goes out of date under an
 edit, which are tested at the component and unit layers, as are the outlines on
 the slot. Proposals of changes, which are CF-027's.
+
+### CF-035 — A new producer meets Cue and opens the studio
+
+**Issue:** GRV-25 · **Suite:** `tests/e2e/emulator/flows/CF-035.spec.ts` · **Entrypoint:**
+the project dashboard
+
+**Preconditions:** signed in as an invited producer who has never been through
+onboarding, with no projects.
+
+1. Open the dashboard. You are taken to the welcome instead: Cue introduces
+   itself under its name, and asks what music you love, with genres to pick
+   and a box for the artists you love. "Skip to the studio" is on screen.
+2. Pick House and Techno, type "Four Tet" in the box, and send. Your answer
+   appears in the conversation, and Cue asks how much music you have made.
+3. Pick "Played around". Cue asks whether you have a goal.
+4. Skip that question. Cue asks what you would like to learn.
+5. Pick "Drums and beats" and send. Cue asks about gear.
+6. Pick "Ableton Move" and send. A "Saved to memory" card lists what you
+   said: House, Techno, Four Tet, Played around, Drums and beats and Ableton
+   Move. Its box to share your answers is unticked. Cue offers a first lesson.
+7. Choose Open the studio. A new project opens on the arrangement, with Cue's
+   panel open and the same conversation in it: your answers, and Cue's offer
+   of a first lesson.
+8. Reload the page. The conversation is still in Cue's panel.
+9. Open the dashboard. It stays on the dashboard, and lists the project.
+
+**Outcome:** a new producer told Cue about themselves once, in a conversation
+that carried on into their first project, and is not asked again.
+
+**Out of scope:** what Cue says after onboarding, and whether a real model uses
+the memory well, which `AI-005` evaluates. Skipping the whole welcome, the
+Memory page, proposing and undoing a memory note, the daily nudge, and the
+consented validation event, which are tested at the component and unit layers.
+Starting the lesson itself (GRV-43).

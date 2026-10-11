@@ -9,6 +9,7 @@ import {
 } from "firebase/auth";
 import { installFirebaseUser } from "../../support/firebaseSession";
 import { allowlist, uniqueEmail } from "./access";
+import { seedSkippedOnboarding } from "./onboarding";
 
 /**
  * Puts a signed-in, **invited** (allowlisted) Google session into a page,
@@ -69,6 +70,12 @@ export interface SeedRegisteredSessionOptions {
    */
   label: string;
   displayName?: string;
+  /**
+   * Whether the account has been through onboarding (GRV-25). By default it
+   * has skipped it, so the dashboard opens as it always has; CF-035, the flow
+   * about onboarding, passes `false` for an account with no profile at all.
+   */
+  onboarded?: boolean;
 }
 
 /**
@@ -87,6 +94,7 @@ export async function seedRegisteredSession(
 
   await allowlist(email);
   const record = await signInInThisProcess(email, displayName);
+  if (options.onboarded !== false) await seedSkippedOnboarding(String(record.uid));
 
   await installFirebaseUser(page, API_KEY, record);
 
