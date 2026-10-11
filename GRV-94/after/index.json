@@ -1,0 +1,22 @@
+{
+  "id": "after",
+  "title": "After: no frame",
+  "steps": [
+    {
+      "file": "01-instrument-view.png",
+      "caption": "Instrument view"
+    },
+    {
+      "file": "02-mixer-view.png",
+      "caption": "Mixer view"
+    },
+    {
+      "file": "03-library-view.png",
+      "caption": "Library view"
+    },
+    {
+      "file": "04-arrangement-view.png",
+      "caption": "Arrangement view"
+    }
+  ]
+}
