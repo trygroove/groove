@@ -16,12 +16,12 @@ import {
 import { pageTitle } from "../../site.config.mjs";
 import { type Analytics, analytics as defaultAnalytics } from "../analytics/analytics";
 import type { AssistantClient } from "../assistant/assistantClient";
-import { getAudioRuntime } from "../audio/AudioRuntime";
 import type { AssistantRetentionClient } from "../assistant/retentionClient";
 import {
   getAssistantClient,
   getAssistantRetentionClient,
 } from "../assistantClientProvider";
+import { getAudioRuntime } from "../audio/AudioRuntime";
 import { provideStoredAudio } from "../audio/storedAudio";
 import { type CapabilityReport, FULLY_CAPABLE } from "../browser/capabilities";
 import { reportMissingCapabilities } from "../browser/reportCapabilities";

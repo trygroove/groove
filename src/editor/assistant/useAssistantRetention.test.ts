@@ -22,13 +22,19 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function chatWith(
   retentionClient: FakeRetentionClient,
-  options: { analytics?: Analytics; registered?: boolean; internal?: boolean } = {},
+  options: {
+    analytics?: Analytics;
+    registered?: boolean;
+    internal?: boolean;
+    expanded?: boolean;
+  } = {},
 ) {
   const client = createFakeAssistantClient();
   const transport = createRecordingTransport();
   const analytics =
     options.analytics ?? new Analytics({ transport, storage: memoryStorage() });
   const [registered, setRegistered] = createSignal(options.registered ?? true);
+  const [expanded, setExpanded] = createSignal(options.expanded ?? true);
   let chat: AssistantChat | undefined;
   const dispose = createRoot((dispose) => {
     chat = useAssistantChat({
@@ -36,7 +42,7 @@ function chatWith(
       view: () => "arrangement",
       sources: () => ({ selection: null, track }),
       account: () => ({ registered: registered() }),
-      expanded: () => true,
+      expanded,
       client: async () => client,
       analytics: () => analytics,
       retention: {
@@ -48,7 +54,7 @@ function chatWith(
   });
   flush();
   if (!chat) throw new Error("the chat did not start");
-  return { chat, client, transport, setRegistered, dispose };
+  return { chat, client, transport, setRegistered, setExpanded, dispose };
 }
 
 describe("the assistant's disclosure gate (GRV-8)", () => {
@@ -159,6 +165,29 @@ describe("answering (GRV-8)", () => {
     await settle();
     expect(await chat.retention?.answer(true)).toBe(true);
     expect(await retention.get()).toMatchObject({ preference: { retain: true } });
+  });
+
+  it("asks nothing until the assistant is first opened, and once only", async () => {
+    const retention = createFakeRetentionClient({ answered: true });
+    const { chat, setExpanded } = chatWith(retention, { expanded: false });
+    await settle();
+    expect(retention.requests).toEqual([]);
+    expect(chat.retention?.known()).toBe(false);
+    expect(chat.retention?.answered()).toBe(false);
+
+    setExpanded(true);
+    flush();
+    expect(chat.retention?.known()).toBe(false);
+    await settle();
+    expect(chat.retention?.known()).toBe(true);
+    expect(chat.retention?.answered()).toBe(true);
+
+    setExpanded(false);
+    flush();
+    setExpanded(true);
+    flush();
+    await settle();
+    expect(retention.requests).toEqual([{ op: "get" }]);
   });
 
   it("asks nothing of a guest or someone signed out", async () => {

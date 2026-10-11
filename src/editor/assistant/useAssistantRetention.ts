@@ -6,7 +6,14 @@
  * assistant cannot be messaged: `useAssistantChat` gates sending on
  * {@link AssistantRetention.answered}, and the panel shows the disclosure in
  * place of the composer. An answer the browser could not load counts as no
- * answer, so the disclosure is shown again rather than skipped.
+ * answer, so the disclosure is shown again rather than skipped. Until the
+ * answer is known ({@link AssistantRetention.known}), the panel shows neither
+ * the disclosure nor the conversation, so an account that has answered never
+ * sees the disclosure flash past.
+ *
+ * Nothing loads until the assistant is first opened
+ * ({@link UseAssistantRetentionOptions.wanted}): an editor whose assistant
+ * stays shut never calls the callable.
  *
  * Giving an answer logs `assistant_retention_changed` with the answer only,
  * once it is stored. Analytics failing changes nothing here: the answer is
@@ -26,6 +33,11 @@ export type RetentionStatus = "idle" | "loading" | "ready" | "failed";
 export interface AssistantRetention {
   /** Where loading the account's answer is. */
   readonly status: Accessor<RetentionStatus>;
+  /**
+   * Whether loading the answer has finished, either way: false before the
+   * first load and while one is in flight.
+   */
+  readonly known: Accessor<boolean>;
   /** Whether the account has answered the disclosure on screen. */
   readonly answered: Accessor<boolean>;
   /** The answer: keep, don't, or `null` before one is known. */
@@ -47,6 +59,12 @@ export interface UseAssistantRetentionOptions {
   /** Whether a signed-in account is here; nothing loads for anyone else. */
   readonly registered: Accessor<boolean>;
   readonly analytics: () => Analytics;
+  /**
+   * Whether the answer is needed yet: the editor passes "the assistant is
+   * open", and the first time it is true for a signed-in account the answer
+   * loads. Later closes do not unload it. Always needed when left out.
+   */
+  readonly wanted?: Accessor<boolean>;
 }
 
 export function useAssistantRetention(
@@ -79,16 +97,21 @@ export function useAssistantRetention(
       );
   }
 
-  // The account is the one reactive read; loading writes, so it is the apply half's.
+  // Whether this account's answer has been asked for; a sign-out resets it.
+  let requested = false;
+  // The account and whether the answer is wanted are the two reactive reads;
+  // loading writes, so it is the apply half's.
   createEffect(
-    () => options.registered(),
-    (registered) => {
-      if (registered) {
-        load();
-      } else {
+    () => ({ registered: options.registered(), wanted: options.wanted?.() ?? true }),
+    ({ registered, wanted }) => {
+      if (!registered) {
+        requested = false;
         generation += 1;
         setState(null);
         setStatus("idle");
+      } else if (wanted && !requested) {
+        requested = true;
+        load();
       }
     },
   );
@@ -97,6 +120,7 @@ export function useAssistantRetention(
 
   return {
     status,
+    known: () => status() === "ready" || status() === "failed",
     answered,
     retain: () => (isAnswered(state()) ? (state()?.preference?.retain ?? null) : null),
     saving,

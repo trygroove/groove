@@ -162,6 +162,9 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         client: retentionOptions.client,
         registered: () => options.account().registered,
         analytics: options.analytics,
+        // Only once the assistant is first opened: an editor whose assistant
+        // stays shut never asks.
+        wanted: options.expanded,
       })
     : null;
   /** The turn each proposal card came from, so its outcome reaches the right record. */

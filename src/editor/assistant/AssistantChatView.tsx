@@ -61,7 +61,8 @@ export default function AssistantChatView(props: AssistantChatViewProps): JSX.El
           </div>
         )}
       </Match>
-      <Match when={registered() && retention()?.status() === "loading" && retention()}>
+      {/* Neither the disclosure nor the conversation until the answer is known. */}
+      <Match when={registered() && retention() && !retention()?.known() && retention()}>
         <div class="assistant-panel-log" aria-busy="true">
           <p class="assistant-panel-note">{RETENTION_LOADING}</p>
         </div>

@@ -10,20 +10,20 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Analytics } from "../../analytics/analytics";
 import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
+import type { AssistantRetentionClient } from "../../assistant/retentionClient";
 import { TRANSCRIPT_RETENTION_DAYS } from "../../assistant/transcripts";
 import { createSliceFixtureProject } from "../../domain/fixtures";
 import { clickAndFlush } from "../../testing/events";
 import { createFakeAssistantClient } from "../../testing/fakeAssistantClient";
-import {
-  createFakeRetentionClient,
-  type FakeRetentionClient,
-} from "../../testing/fakeRetentionClient";
+import { createFakeRetentionClient } from "../../testing/fakeRetentionClient";
 import { memoryStorage } from "../../testing/storage";
 import AssistantPanel from "./AssistantPanel";
+import { RETENTION_LOADING } from "./AssistantRetention";
 import {
   DECLINE_ANSWER,
   DISCLOSURE_PARAGRAPHS,
   KEEP_ANSWER,
+  OPTED_IN_CONFIRMATION,
   OPTED_OUT_CONFIRMATION,
   RETENTION_LABEL,
   RETENTION_SCOPE,
@@ -34,7 +34,7 @@ import { useAssistantPanel } from "./useAssistantPanel";
 afterEach(cleanup);
 
 /** The panel, open, with a conversation and the given retention client. */
-async function renderPanel(retention: FakeRetentionClient) {
+async function renderPanel(retention: AssistantRetentionClient) {
   const client = createFakeAssistantClient();
   const transport = createRecordingTransport();
   const analytics = new Analytics({
@@ -120,6 +120,33 @@ describe("the assistant's disclosure (GRV-8)", () => {
       within(panel).queryByRole("region", { name: "About the assistant" }),
     ).toBeNull();
   });
+
+  it("shows neither the disclosure nor the composer until the answer is known", async () => {
+    const stored = createFakeRetentionClient({ answered: true });
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const retention: AssistantRetentionClient = {
+      ...stored,
+      get: async () => {
+        await held;
+        return stored.get();
+      },
+    };
+    const { panel } = await renderPanel(retention);
+    await within(panel).findByText(RETENTION_LOADING);
+    expect(
+      within(panel).queryByRole("region", { name: "About the assistant" }),
+    ).toBeNull();
+    expect(composer(panel)).toBeNull();
+
+    release();
+    await waitFor(() => expect(composer(panel)).not.toBeNull());
+    expect(
+      within(panel).queryByRole("region", { name: "About the assistant" }),
+    ).toBeNull();
+  });
 });
 
 describe("the assistant's settings (GRV-8)", () => {
@@ -145,6 +172,17 @@ describe("the assistant's settings (GRV-8)", () => {
       within(panel).getByRole("button", { name: "Back to the conversation" }),
     );
     await waitFor(() => expect(composer(panel)).toHaveFocus());
+  });
+
+  it("says what turning it on does, with the same scope as the control", async () => {
+    const retention = createFakeRetentionClient({ answered: false });
+    const { panel } = await renderPanel(retention);
+    await waitFor(() => expect(composer(panel)).not.toBeNull());
+    clickAndFlush(within(panel).getByRole("button", { name: "Assistant settings" }));
+    fireEvent.click(within(panel).getByRole("checkbox", { name: RETENTION_LABEL }));
+    const confirmation = await within(panel).findByText(OPTED_IN_CONFIRMATION);
+    expect(confirmation).toHaveTextContent(RETENTION_SCOPE);
+    expect(await retention.get()).toMatchObject({ preference: { retain: true } });
   });
 
   it("keeps showing what is stored when a change cannot be saved", async () => {

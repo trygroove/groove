@@ -103,7 +103,7 @@ export function RetentionSettings(props: {
         {SETTINGS_TITLE}
       </h2>
       <Show
-        when={props.retention.status() !== "loading"}
+        when={props.retention.known()}
         fallback={<p class="assistant-panel-note">{RETENTION_LOADING}</p>}
       >
         <Show

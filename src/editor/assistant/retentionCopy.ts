@@ -52,7 +52,11 @@ export const DECLINE_ANSWER = "Don't keep them";
 export const OPTED_OUT_CONFIRMATION =
   "Groove has stopped keeping your conversations and deleted the ones it kept. This does not take back anything already sent to Anthropic.";
 
-export const OPTED_IN_CONFIRMATION = `Groove will keep your conversations from now on, for ${DAYS} each.`;
+/**
+ * What turning the setting on does, with the control's scope, so a producer
+ * who reads only the confirmation reads it too (the issue's fourth criterion).
+ */
+export const OPTED_IN_CONFIRMATION = `Groove will keep your conversations from now on, for ${DAYS} each. ${RETENTION_SCOPE}`;
 
 export const RETENTION_SAVE_FAILED = "Couldn't save your answer. Try again.";
 
