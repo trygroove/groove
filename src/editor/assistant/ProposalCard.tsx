@@ -1,6 +1,6 @@
 import type { JSX } from "@solidjs/web";
 import { createMemo, For, Match, Show, Switch } from "solid-js";
-import type { ControlAddress } from "../../commands/controlAddress";
+import { type ControlAddress, controlKey } from "../../commands/controlAddress";
 import { editorViewSpec } from "../editorViews";
 import type { ProposalRow } from "./proposalCardModel";
 import type { AssistantProposals, ProposalCard as Card } from "./useAssistantProposals";
@@ -27,7 +27,9 @@ export function proposalStatusText(card: Card): string {
         return `Previewing${shown ? ` in ${shown}` : ""}. Nothing is saved until you apply.${back ? ` Cancel takes you back to ${back}.` : ""}`;
       }
       case "applied":
-        return "Applied as one undo step. Changed controls are outlined.";
+        return card.outlined
+          ? "Applied as one undo step. Changed controls are outlined."
+          : "Applied as one undo step.";
       case "undone":
         return "Undone. Your song is back as it was.";
       case "cancelled":
@@ -213,25 +215,7 @@ export default function ProposalCard(props: ProposalCardProps): JSX.Element {
                   <dt class="assistant-entry-label">Goal</dt>
                   <dd>{why().goal}</dd>
                   <dt class="assistant-entry-label">Technique</dt>
-                  <dd>
-                    <ul class="assistant-why-steps">
-                      <For each={why().technique}>
-                        {(step) => (
-                          <li>
-                            <Show when={step.address} fallback={step.text}>
-                              {(address) => (
-                                <ControlLink
-                                  address={address()}
-                                  label={step.text}
-                                  proposals={props.proposals}
-                                />
-                              )}
-                            </Show>
-                          </li>
-                        )}
-                      </For>
-                    </ul>
-                  </dd>
+                  <dd>{why().technique}</dd>
                   <dt class="assistant-entry-label">Changed</dt>
                   <dd>
                     <For each={why().changed}>
@@ -257,25 +241,40 @@ export default function ProposalCard(props: ProposalCardProps): JSX.Element {
   );
 }
 
-/** A control's name as a link: shows the control in the editor and focuses it. */
+/**
+ * A control's name as a link: shows the control in the editor and focuses it.
+ * It goes somewhere rather than doing something, so it is a link; the click
+ * does the going, and its address is the control's own fragment.
+ */
 function ControlLink(props: {
   readonly address: ControlAddress;
   readonly label: string;
   readonly proposals: AssistantProposals;
 }): JSX.Element {
   return (
-    <button
-      type="button"
+    <a
+      href={controlHref(props.address)}
       class="assistant-control-link"
       // Named for what it does, around the words it shows, so it is never
       // mistaken for the control itself (the header's own "Swing" button).
       aria-label={`Show ${props.label}`}
       title="Show it in the editor"
-      onClick={() => props.proposals.reveal(props.address)}
+      onClick={(event) => {
+        event.preventDefault();
+        props.proposals.reveal(props.address);
+      }}
     >
       {props.label}
-    </button>
+    </a>
   );
+}
+
+/**
+ * A control's in-page address: its entity's prefixed ID and its parameter
+ * key, never a name, so a replay recording it carries no content.
+ */
+function controlHref(address: ControlAddress): string {
+  return `#control:${encodeURIComponent(controlKey(address))}`;
 }
 
 /** "was → now", read the same way aloud: "was to now". */

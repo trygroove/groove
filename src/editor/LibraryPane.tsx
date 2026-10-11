@@ -112,6 +112,8 @@ export default function LibraryPane(props: LibraryPaneProps): JSX.Element {
           currentRef={targetSound(props.project, target())?.storageRef ?? null}
           onActions={(actions) => library.registerActions(actions)}
           onInsertAndReturn={() => library.returnFromInsert("library_insert")}
+          openPack={library.requestedPack()}
+          onPackOpened={() => library.packOpened()}
           userLibrary={props.userLibrary}
           isInUse={projectUses}
           favourites={props.favourites}

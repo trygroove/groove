@@ -37,6 +37,10 @@
  * own, so until they land those families are absent and their lanes cannot be
  * slipped in through a create's restore fields either (see `refuse` below).
  *
+ * The one tool that is not a command, `ask_producer` (GRV-42), lives in
+ * `ask.ts`: it asks the producer a question and changes nothing, so it is
+ * offered beside these but never reaches a proposal.
+ *
  * Commands the assistant may not call at all are pinned in
  * {@link NON_ASSISTANT_COMMANDS}, so a newly registered command needs a
  * decision here before the tests pass.
@@ -50,18 +54,34 @@ import {
 import { findCommand } from "../commands/registry";
 import type { Project } from "../domain/entities";
 import {
+  bareParameterId,
   getParameterDefinition,
   isParameterValueInRange,
+  MASTER_VOLUME,
   type ParameterDefinition,
+  RETURN_PAN,
+  RETURN_VOLUME,
+  SAMPLER_PARAMETERS,
   SONG_SWING,
   SONG_TEMPO,
+  SYNTH_PARAMETERS,
+  TRACK_PAN,
+  TRACK_SEND_LEVEL,
+  TRACK_VOLUME,
 } from "../domain/parameters";
 
 /**
- * Bumped whenever a tool is added, removed, renamed or changes its rules.
+ * Bumped whenever a tool is added, removed, renamed or changes its rules,
+ * `ask_producer` (`ask.ts`) included.
  * 2: `parameter_set` may set the song's swing as well as its tempo (GRV-5).
+ * 3: `ask_producer` lets the assistant ask the producer a question (GRV-42).
+ * 4: its options may carry references, sounds and predicates (GRV-42).
+ * 5: `parameter_set` names its parameter IDs, and `explain_change` carries a
+ *    proposal's goal and technique (GRV-5).
+ * 6: a turn that carries the library is offered `recommend_sounds`
+ *    (`recommendation.ts`, GRV-23).
  */
-export const ASSISTANT_TOOLSET_VERSION = 2;
+export const ASSISTANT_TOOLSET_VERSION = 6;
 
 /** The song's own parameters the assistant may set: its tempo and its swing. */
 const SONG_PARAMETER_IDS: readonly string[] = [SONG_TEMPO.id, SONG_SWING.id];
@@ -224,10 +244,55 @@ function outOfRange(
   return `${definition.label} must be between ${definition.min} and ${definition.max}; ${value} is out of range`;
 }
 
+const UNIT_WORDS: Readonly<Record<ParameterDefinition["unit"], string>> = {
+  bars: " bars",
+  bpm: " BPM",
+  decibels: " dB",
+  normalized: "",
+  bipolar: ", -1 left to 1 right",
+  hertz: " Hz",
+  percent: "%",
+  seconds: " s",
+  semitones: " semitones",
+};
+
+/** `track.volume (-60 to 6 dB)`: an ID as the target takes it, and its range. */
+function describeParameter(definition: ParameterDefinition, id = definition.id): string {
+  return `${id} (${definition.min} to ${definition.max}${UNIT_WORDS[definition.unit]})`;
+}
+
+function describeParameters(definitions: readonly ParameterDefinition[], bare = false) {
+  return definitions
+    .map((definition) =>
+      describeParameter(
+        definition,
+        bare ? bareParameterId(definition.id) : definition.id,
+      ),
+    )
+    .join(", ");
+}
+
+/**
+ * Which `parameterId` each target scope takes, generated from the parameter
+ * definitions. Without it a model guesses (`volume` for `track.volume`), and
+ * every such proposal is refused.
+ */
+export const PARAMETER_SET_DESCRIPTION = [
+  "Set one numeric parameter. A value outside the parameter's range is refused, never clamped. The parameterId must be exactly one of these, by the target's scope:",
+  `song: ${describeParameters([SONG_TEMPO, SONG_SWING])}, where swing 50 is straight;`,
+  `track (a track's mixer strip): ${describeParameters([TRACK_VOLUME, TRACK_PAN])};`,
+  `send: ${describeParameters([TRACK_SEND_LEVEL])};`,
+  `return: ${describeParameters([RETURN_VOLUME, RETURN_PAN])};`,
+  `master: ${describeParameters([MASTER_VOLUME])};`,
+  `instrument, on a synth track: ${describeParameters(SYNTH_PARAMETERS, true)};`,
+  `instrument, on a sampler track: ${describeParameters(SAMPLER_PARAMETERS, true)};`,
+  "trackDevice, returnDevice, masterDevice: the device's parameter name, without the device type.",
+  "A track's volume and pan are its mixer fader and pan, in the project description as each track's volume and pan.",
+].join(" ");
+
 const PARAMETER_SET_RULE: ToolRule = {
   commandType: "parameter.set",
-  description:
-    "Set one numeric parameter: the song's tempo (song.tempo) or swing (song.swing, 50 straight to 75), a track's or the master's volume or pan, a send level, a return's volume, an instrument parameter, or a device parameter. A value outside the parameter's range is refused, never clamped.",
+  description: PARAMETER_SET_DESCRIPTION,
   capability: (payload) =>
     PARAMETER_SCOPE_CAPABILITY[(payload as ParameterSetPayload).target.scope],
   capabilities: [...new Set(Object.values(PARAMETER_SCOPE_CAPABILITY))],
@@ -374,6 +439,56 @@ export function assistantTools(): readonly AssistantToolDefinition[] {
   toolCache ??= TOOL_RULES.map(toolDefinition);
   return toolCache;
 }
+
+/** The longest goal or technique an explanation may carry. */
+export const MAX_EXPLANATION_LENGTH = 600;
+
+/**
+ * What `explain_change` takes: the proposal's audible goal and the technique
+ * that gets there, in the assistant's words, for the card's "Why this works".
+ */
+export const proposalExplanationSchema = z.strictObject({
+  goal: z
+    .string()
+    .trim()
+    .min(1)
+    .max(MAX_EXPLANATION_LENGTH)
+    .describe(
+      "What the producer will hear once it is applied, in one sentence, e.g. 'The beat feels played rather than programmed.' Not the request repeated.",
+    ),
+  technique: z
+    .string()
+    .trim()
+    .min(1)
+    .max(MAX_EXPLANATION_LENGTH)
+    .describe(
+      "The production technique behind the change and why it gets to the goal, in one or two sentences a producer could reuse, e.g. 'Swing delays every second 16th note, so the hits lean back like a drummer's.' Not the values restated.",
+    ),
+});
+export type ProposalExplanationInput = z.infer<typeof proposalExplanationSchema>;
+
+/**
+ * The one tool that is not a command (GRV-5): it changes nothing, and says
+ * what a proposal is for and how it gets there. `proposal.ts` takes it out of
+ * the calls before they are resolved against the allowlist.
+ */
+export const EXPLAIN_TOOL_NAME = "explain_change";
+
+const { $schema: _explainDialect, ...explainInputSchema } = z.toJSONSchema(
+  proposalExplanationSchema,
+  { io: "input" },
+) as JsonSchema;
+
+/** `explain_change` as it is offered to the model, beside the command tools. */
+export const EXPLAIN_TOOL: Pick<
+  AssistantToolDefinition,
+  "name" | "description" | "inputSchema"
+> = {
+  name: EXPLAIN_TOOL_NAME,
+  description:
+    "Explain the change you are proposing: call it exactly once with every proposal, alongside the calls that make the change. It changes nothing itself.",
+  inputSchema: explainInputSchema,
+};
 
 /** How one tool call resolves against the allowlist. */
 export type ToolCallResolution =

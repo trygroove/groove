@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createReferenceProject, createSliceFixtureProject } from "../domain/fixtures";
+import {
+  createDenseStepFixtureProject,
+  createReferenceProject,
+  createSliceFixtureProject,
+} from "../domain/fixtures";
 import { addToSelection, emptySelection, selectOnly } from "../selection/selection";
 import { buildAssistantContext, summarizeSelection } from "./assistantContextProjection";
 
@@ -156,5 +160,47 @@ describe("buildAssistantContext: selected notes (ADR 0007)", () => {
     const [track] = buildAssistantContext(project).tracks;
     expect(track.volume).toBe(project.song.tracks[0].mixer.volume);
     expect(track.pan).toBe(project.song.tracks[0].mixer.pan);
+  });
+
+  it("lists a drum machine's pads by ID and name, and no pads for a sampler", () => {
+    const kit = createDenseStepFixtureProject();
+    const drums = kit.song.tracks[0];
+    const pads = drums.instrument?.kind === "drumMachine" ? drums.instrument.pads : [];
+    expect(buildAssistantContext(kit).tracks[0].pads).toEqual(
+      pads.map((pad) => ({ id: pad.id, name: pad.name })),
+    );
+    expect(buildAssistantContext(kit).tracks[0].pads.map((pad) => pad.name)).toEqual([
+      "BD",
+      "SD",
+      "HH",
+    ]);
+    expect(buildAssistantContext(createSliceFixtureProject()).tracks[0].pads).toEqual([]);
+  });
+
+  it("lists each track's placements by start, with no other track's", () => {
+    const project = createReferenceProject();
+    const context = buildAssistantContext(project);
+    for (const track of context.tracks) {
+      const own = project.song.placements.filter(
+        (placement) => placement.trackId === track.id,
+      );
+      expect(track.placements).toHaveLength(own.length);
+      expect(track.placements.map((placement) => placement.id).sort()).toEqual(
+        own.map((placement) => placement.id).sort(),
+      );
+      const starts = track.placements.map((placement) => placement.startTicks);
+      expect(starts).toEqual([...starts].sort((a, b) => a - b));
+      for (const summary of track.placements) {
+        const placement = own.find((candidate) => candidate.id === summary.id);
+        expect(summary).toEqual({
+          id: placement?.id,
+          clipId: placement?.clipId,
+          startTicks: placement?.startTicks,
+          durationTicks: placement?.durationTicks,
+          looped: placement?.looped,
+        });
+      }
+    }
+    expect(context.tracks.some((track) => track.placements.length > 0)).toBe(true);
   });
 });

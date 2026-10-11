@@ -23,7 +23,11 @@ import {
  *    "Scope: <what>" that says what the assistant reads and may change;
  *  - the conversation: a log named "Conversation";
  *  - a proposal: a region named "Proposal" with "Preview", "Apply" and "Cancel"
- *    buttons, which says "Applied" once it has been.
+ *    buttons, which says "Applied" once it has been;
+ *  - a recommended pack (GRV-23, CF-034): a region named "Recommended pack:
+ *    <pack>", with a list named "Sounds" whose items each hold a "Hear <sound>"
+ *    button, and "Try on <slot>", "Keep", "Put back", "Pack demo" and "Open in
+ *    library" buttons. Its status line is an `output`.
  *
  * Existing editor names it reads: the header's "Swing" button, whose title is
  * "Swing <n>%" (#447), the mixer's "Volume for <track>" slider (CF-008), and
@@ -163,6 +167,30 @@ export const proposalButton = (
   page: Page,
   name: "Preview" | "Apply" | "Cancel",
 ): Locator => proposal(page).getByRole("button", { name: new RegExp(`^${name}\\b`) });
+
+/** The newest recommended pack in the conversation (GRV-23). */
+export const recommendation = (page: Page): Locator =>
+  panel(page)
+    .getByRole("region", { name: /^Recommended pack\b/ })
+    .last();
+
+export const recommendationButton = (page: Page, name: string): Locator =>
+  recommendation(page).getByRole("button", { name: new RegExp(`^${name}\\b`) });
+
+/** The sounds a recommended pack lists, in its order. */
+export const recommendedSounds = (page: Page): Locator =>
+  recommendation(page).getByRole("list", { name: "Sounds" }).getByRole("listitem");
+
+/** The name of the sound a recommendation lists at `index`, read off its Hear button. */
+export async function recommendedSound(page: Page, index: number): Promise<string> {
+  const hear = recommendedSounds(page)
+    .nth(index)
+    .getByRole("button", { name: /^Hear\b/ });
+  const label = (await hear.getAttribute("aria-label")) ?? "";
+  const name = label.replace(/^Hear\s+/, "").trim();
+  if (!name) throw new Error(`the recommendation's sound ${index + 1} has no name`);
+  return name;
+}
 
 /** The Ctrl+K / ⌘K chord, as Playwright spells it for either platform. */
 export const ASSISTANT_CHORD = "ControlOrMeta+k";

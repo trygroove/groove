@@ -110,20 +110,38 @@ export const ASSISTANT_CALLABLE_NAME = "assistantTurn";
  * - `functionTimeoutSeconds`: the Cloud Function's own ceiling, and so the
  *   hard cap on a whole turn. Sized for the longest reply: 16,000 output
  *   tokens streams in a few minutes, well inside it.
+ * - `heartbeatIntervalMs`: how often the gateway sends the browser an empty
+ *   text chunk while the turn runs (GRV-42). A reply that thinks or writes a
+ *   large proposal streams no text for minutes; the heartbeat is how the
+ *   browser tells that turn from a connection that died without closing,
+ *   which it gives up on after {@link ASSISTANT_CLIENT_SILENCE_MS}.
  */
 export interface AssistantCallLimits {
   readonly inactivityTimeoutMs: number;
   readonly maxAttempts: number;
   readonly retryBackoffMs: number;
   readonly functionTimeoutSeconds: number;
+  /** Defaults to {@link ASSISTANT_HEARTBEAT_INTERVAL_MS}. */
+  readonly heartbeatIntervalMs?: number;
 }
+
+export const ASSISTANT_HEARTBEAT_INTERVAL_MS = 15_000;
 
 export const ASSISTANT_CALL_LIMITS: AssistantCallLimits = {
   inactivityTimeoutMs: 60_000,
   maxAttempts: 3,
   retryBackoffMs: 1_000,
   functionTimeoutSeconds: 540,
+  heartbeatIntervalMs: ASSISTANT_HEARTBEAT_INTERVAL_MS,
 };
+
+/**
+ * How long the browser waits on a turn that has sent nothing at all, not even
+ * a heartbeat, before it reports a `timeout` (GRV-42). Several heartbeats'
+ * worth, and past the time a cold start takes to answer, so only a turn whose
+ * connection or function has died without closing reaches it.
+ */
+export const ASSISTANT_CLIENT_SILENCE_MS = 90_000;
 
 /**
  * Limits on what a browser may send in one turn, checked before anything
@@ -135,6 +153,29 @@ export const ASSISTANT_REQUEST_LIMITS = {
   maxMessages: 200,
   /** Characters in any one message. */
   maxMessageChars: 8_000,
+} as const;
+
+/**
+ * Limits on the library a turn may describe and on what a recommendation may
+ * name (GRV-23). The library is the published one the app serves: a few
+ * hundred sounds today, so the caps refuse a request no client of ours would
+ * build rather than trimming a real one.
+ *
+ * - `maxPacks`, `maxSounds`: packs, and sounds across every pack, in one
+ *   request's library.
+ * - `maxTags`: tags (genres and characters) on one sound.
+ * - `maxDescriptionChars`: a pack's description, which the browser shortens
+ *   to this before it sends it.
+ * - `maxRecommendedSounds`: sounds one recommendation may suggest.
+ * - `maxReasonChars`: the one line on why a recommendation fits.
+ */
+export const ASSISTANT_LIBRARY_LIMITS = {
+  maxPacks: 64,
+  maxSounds: 1_000,
+  maxTags: 16,
+  maxDescriptionChars: 240,
+  maxRecommendedSounds: 3,
+  maxReasonChars: 200,
 } as const;
 
 /**

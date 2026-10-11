@@ -104,6 +104,41 @@ describe("useEditorSession navigation flush", () => {
     vi.restoreAllMocks();
   });
 
+  it("asks before unloading while an edit is unsaved, and starts writing it (GRV-60)", async () => {
+    const repository = createInMemoryProjectRepository();
+    const project = createSliceFixtureProject();
+    const created = await repository.createProject(project);
+    if (!created.ok) throw new Error("fixture project failed to create");
+    repository.clearWrites();
+
+    const clip = project.clips[0];
+    if (clip.content.kind !== "notes") throw new Error("expected a note clip");
+    const clipId = clip.id as ClipId;
+    const eventId = clip.content.events[0].id;
+
+    const { result } = renderHook(
+      () =>
+        useEditorSession(
+          () => project.metadata.id,
+          () => repository,
+        ),
+      {},
+    );
+
+    await vi.waitFor(() => expect(result.state.loading).toBe(false));
+
+    const idle = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(idle);
+    expect(idle.defaultPrevented).toBe(false);
+
+    result.dispatch(removeNotes(clipId, [eventId]));
+    const unsaved = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unsaved);
+    expect(unsaved.defaultPrevented).toBe(true);
+
+    await vi.waitFor(() => expect(repository.writes.length).toBeGreaterThan(0));
+  });
+
   it("still flushes on unmount (in-app navigation away from the project)", async () => {
     const repository = createInMemoryProjectRepository();
     const project = createSliceFixtureProject();

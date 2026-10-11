@@ -1,5 +1,7 @@
 import type { JSX } from "@solidjs/web";
 import { Show } from "solid-js";
+import type { ControlAddress } from "../commands/controlAddress";
+import { control as controlRef } from "../controls/control";
 import { ViewIcon } from "../editor/viewIcons";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 import { type SampleSlotId, useSampleSlotTargeting } from "./sampleSlotTargeting";
@@ -14,6 +16,12 @@ export interface SampleSlotProps {
   readonly placeholder?: string;
   /** Which slot this is, so it can show when the Library is aimed at it. */
   readonly slot?: SampleSlotId;
+  /**
+   * The slot as a control (`UI-004`): the sound a pad or a sampler plays, so
+   * it can be shown and outlined, as a sound tried from the assistant is
+   * (GRV-23).
+   */
+  readonly control?: ControlAddress;
   /** Opens the library on this slot: the library is where sounds come from. */
   onBrowse(): void;
 }
@@ -31,6 +39,7 @@ export default function SampleSlot(props: SampleSlotProps): JSX.Element {
   const isTarget = () => (props.slot ? targeting.isTarget(props.slot) : false);
   return (
     <button
+      ref={controlRef(() => props.control)}
       type="button"
       class="sample-slot"
       aria-label={props.label}

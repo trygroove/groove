@@ -7,7 +7,11 @@ import type {
   TransactionResult,
 } from "../commands";
 import { createControlGesture, setParameter } from "../commands";
-import { parameterControl } from "../commands/controlAddress";
+import {
+  CONTROL_PARTS,
+  controlAddress,
+  parameterControl,
+} from "../commands/controlAddress";
 import type { Instrument } from "../domain/entities";
 import type { TrackId } from "../domain/ids";
 import {
@@ -130,6 +134,7 @@ export default function SamplerPanel(props: SamplerPanelProps): JSX.Element {
                   <SampleSlot
                     label="Sample"
                     slot={{ kind: "sampler" }}
+                    control={controlAddress(props.trackId, CONTROL_PARTS.sample)}
                     name={props.sampleName}
                     onBrowse={browse()}
                   />

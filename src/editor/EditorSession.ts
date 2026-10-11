@@ -410,6 +410,23 @@ export class EditorSession {
     return result;
   }
 
+  /**
+   * Called when the page is about to unload (GRV-60). Reports whether an edit
+   * would be lost, logging `unsaved_exit_warned` when one would, and starts
+   * writing it so it can land while the browser's "leave site?" prompt shows.
+   * An edit stays counted in `pending` until a write carrying it succeeds, so
+   * this covers a queued, an in-flight and a failed save alike.
+   */
+  warnBeforeExit(): boolean {
+    const { pending, state } = this.autosave.status;
+    if (this.disposed || pending === 0) return false;
+    this.analytics.log("unsaved_exit_warned", {
+      save_state: state === "saving" || state === "failed" ? state : "pending",
+    });
+    void this.autosave.flush();
+    return true;
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;

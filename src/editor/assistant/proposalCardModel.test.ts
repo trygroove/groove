@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { validateProposal } from "../../assistant/proposal";
-import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../../assistant/tools";
+import {
+  ASSISTANT_TOOLSET_VERSION,
+  EXPLAIN_TOOL_NAME,
+  toolNameFor,
+} from "../../assistant/tools";
 import { controlAddress, SONG_ENTITY } from "../../commands/controlAddress";
 import { createSliceFixtureProject } from "../../domain/fixtures";
 import { SONG_SWING, SONG_TEMPO, TRACK_VOLUME } from "../../domain/parameters";
@@ -89,28 +93,26 @@ describe("the proposal card's model (GRV-5)", () => {
     });
   });
 
-  it("explains with the producer's goal, each command's own summary, and the controls", () => {
-    const proposal = valid([swing, volume]);
+  it("explains with the assistant's goal and technique, and the controls it changes", () => {
+    const explanation = {
+      goal: "The beat feels played rather than programmed.",
+      technique: "Swing delays every second 16th note, the way a drummer's hand lags.",
+    };
+    const proposal = valid([
+      swing,
+      volume,
+      { name: EXPLAIN_TOOL_NAME, input: explanation },
+    ]);
     const rows = proposalRows(
       project,
       projectAfter(project, proposal),
       proposal.impact.controls,
     );
-    const why = explainProposal(proposal, "Loosen the beat", rows);
-    expect(why.goal).toBe("Loosen the beat");
-    expect(why.technique.map((step) => step.text)).toEqual(
-      proposal.impact.lines.map((line) => line.summary),
-    );
-    expect(why.technique.map((step) => step.address)).toEqual(
-      rows.map((row) => row.address),
-    );
-    expect(why.changed).toBe(rows);
+    expect(explainProposal(proposal, rows)).toEqual({ ...explanation, changed: rows });
   });
 
-  it("names the proposal's own intent as the goal when it states one", () => {
-    const proposal = valid([swing], "A beat that sounds played");
-    expect(explainProposal(proposal, "Loosen the beat", []).goal).toBe(
-      "A beat that sounds played",
-    );
+  it("has nothing to fold out when the assistant gave no explanation", () => {
+    // Repeating the request and the rows above it would teach nothing (GRV-5 QA).
+    expect(explainProposal(valid([swing], "A beat that sounds played"), [])).toBeNull();
   });
 });

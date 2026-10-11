@@ -570,6 +570,25 @@ describe("LibraryModal packs", () => {
     expect(document.querySelectorAll(".shelf-chip")).toHaveLength(categories + 1);
   });
 
+  it("opens on the pack it is asked for, as the assistant's Open in library does (GRV-23)", async () => {
+    const [drums] = FIXTURE_PACK_INDEX_DOC.packs;
+    const opened = vi.fn();
+    render(() => (
+      <LibraryModal
+        client={new LibraryClient(fixtureFetcher())}
+        previewEngine={fakePreviewEngine()}
+        onInsert={() => undefined}
+        addedPackIds={[]}
+        openPack={drums.slug}
+        onPackOpened={opened}
+      />
+    ));
+    expect(
+      await screen.findByRole("region", { name: `About ${drums.name}` }),
+    ).toBeVisible();
+    expect(opened).toHaveBeenCalledTimes(1);
+  });
+
   it("swaps the list for the cover grid under Browse packs", async () => {
     const { browsePacks } = renderPacks();
     browsePacks();

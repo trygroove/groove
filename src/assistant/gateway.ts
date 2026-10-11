@@ -19,19 +19,31 @@
  * 6. calls the provider, streaming the reply's text as it arrives, under a
  *    per-attempt inactivity timeout, retrying a transient failure that has
  *    not streamed anything yet, and abandoning the call if the browser goes away;
- * 7. validates the reply and logs one redacted record of how it went.
- *
- * 8. keeps the completed turn in the transcript store if, and only if, the
+ * 7. validates the reply and logs one redacted record of how it went: a
+ *    reply cut off at `max_tokens` is a `reply_too_long` failure, never a
+ *    reply with its proposal or question silently dropped (GRV-42);
+ * 8. sends an empty text chunk every few seconds while it runs, so the
+ *    browser can tell a long silent turn (thinking, a large proposal) from a
+ *    connection that died (GRV-42);
+ * 9. keeps the completed turn in the transcript store if, and only if, the
  *    account has said yes (GRV-8, `retention.ts`). Keeping it never fails or
  *    changes the turn: the reply is the same either way.
  *
- * Every turn offers the model the assistant's tool set (GRV-4). A turn that
- * stops for `tool_use` returns its calls as a proposal stamped with the
- * request's project revision and the tool set's version; the browser
- * validates it against the open project before anything can apply.
+ * Every turn offers the model the assistant's tool set (GRV-4) and
+ * `ask_producer` (GRV-42). A turn that stops for `tool_use` returns its
+ * change calls as a proposal stamped with the request's project revision and
+ * the tool set's version; the browser validates it against the open project
+ * before anything can apply. An `ask_producer` call is not a change: it is
+ * validated here and returned as the turn's question, and a malformed one is
+ * a malformed reply. A turn that carries the published library is offered
+ * `recommend_sounds` as well (GRV-23); its calls come back among the
+ * proposal's, and the browser takes them out and checks their IDs against the
+ * library it sent.
  */
+import { type AssistantAsk, askProducerTool, isAskCall, parseAskCall } from "./ask";
 import {
   ASSISTANT_CALL_LIMITS,
+  ASSISTANT_HEARTBEAT_INTERVAL_MS,
   ASSISTANT_HISTORY_TOKEN_BUDGET,
   ASSISTANT_LIMITS,
   ASSISTANT_MODEL_ID,
@@ -43,7 +55,7 @@ import {
 } from "./config";
 import type { AssistantGuardStores } from "./guards";
 import { type BoundedHistory, boundHistory, estimateTokens } from "./history";
-import { ASSISTANT_PROMPT_VERSION, buildSystemBlocks } from "./prompt";
+import { ASSISTANT_PROMPT_VERSION, buildSystemBlocks, createIdStem } from "./prompt";
 import {
   AssistantGatewayError,
   type AssistantProposal,
@@ -61,11 +73,17 @@ import {
   providerTools,
 } from "./providerRequest";
 import { admitCall, type QuotaLimits, quotaExceededMessage } from "./quota";
+import { recommendationTool } from "./recommendation";
 import { recordTurn, type TranscriptWrite } from "./retention";
 import { costMicroUsd, spendDay, usdToMicro } from "./spend";
 import { NO_USAGE, type ProviderUsage, StreamReader } from "./streamEvents";
 import { type AssistantTurnLog, toTurnLog } from "./telemetry";
-import { ASSISTANT_TOOLSET_VERSION, assistantTools } from "./tools";
+import {
+  ASSISTANT_TOOLSET_VERSION,
+  assistantTools,
+  EXPLAIN_TOOL,
+  EXPLAIN_TOOL_NAME,
+} from "./tools";
 import type { TranscriptStore } from "./transcripts";
 
 /** Who is calling, as the function's auth context reports it. */
@@ -95,6 +113,8 @@ export interface AssistantGatewayDeps {
   /** Waits `ms`, or rejects once `signal` aborts. */
   readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   readonly model?: AssistantModelProfile;
+  /** The stem the turn's new IDs are made from (`prompt.ts`); random by default. */
+  readonly idStem?: () => string;
   readonly limits?: AssistantCallLimits;
   readonly guardLimits?: AssistantGuardLimits;
   /**
@@ -190,9 +210,14 @@ async function prepare(
   model: AssistantModelProfile,
   uid: string,
   turn: AssistantTurnRequest,
+  idStem: string,
 ): Promise<PreparedTurn> {
-  const system = buildSystemBlocks(turn.context);
-  const tools = providerTools(assistantTools());
+  const system = buildSystemBlocks(turn.context, turn.library, idStem);
+  // A turn that carries the library may also recommend from it (GRV-23).
+  const tools = [
+    ...providerTools([...assistantTools(), EXPLAIN_TOOL, askProducerTool()]),
+    ...(turn.library ? [recommendationTool()] : []),
+  ];
   // The tool definitions take room in the window just as the prompt does.
   const systemTokens =
     system.reduce((sum, block) => sum + estimateTokens(block.text), 0) +
@@ -382,12 +407,16 @@ async function reserveCall(
   return decision.remaining;
 }
 
-/** The turn's tool calls as a proposal, or null when it made none. */
+/**
+ * The turn's change calls as a proposal, or null when it made none. An
+ * explanation on its own changes nothing, so it is not a proposal either.
+ */
 function proposalOf(
   turn: AssistantTurnRequest,
-  calls: readonly AssistantToolCall[],
+  allCalls: readonly AssistantToolCall[],
 ): AssistantProposal | null {
-  if (calls.length === 0) return null;
+  const calls = allCalls.filter((call) => !isAskCall(call));
+  if (calls.every((call) => call.name === EXPLAIN_TOOL_NAME)) return null;
   return {
     baseRevision: turn.projectRevision,
     toolsetVersion: ASSISTANT_TOOLSET_VERSION,
@@ -431,6 +460,47 @@ async function keepTranscript(
   deps.onTranscript?.(write);
 }
 
+const TOO_LONG_MESSAGE =
+  "The assistant's reply ran out of room before it finished. Try asking for a smaller change.";
+
+/**
+ * Sends `onChunk` an empty text chunk every `intervalMs` until the returned
+ * stop is called. A heartbeat that cannot be sent is ignored: the turn's own
+ * chunks report a dead connection.
+ */
+function startHeartbeat(
+  onChunk: AssistantTurnOptions["onChunk"],
+  intervalMs: number,
+): () => void {
+  const beat = () => {
+    try {
+      void Promise.resolve(onChunk({ type: "text", text: "" })).catch(() => {});
+    } catch {
+      // As above: a heartbeat never fails the turn.
+    }
+  };
+  const timer = setInterval(beat, intervalMs);
+  return () => clearInterval(timer);
+}
+
+/**
+ * The turn's question, or null when it asks none. The first `ask_producer`
+ * call is the question; the tool asks one at a time, so any later one is
+ * dropped. One that does not parse makes the reply malformed.
+ */
+function askOf(calls: readonly AssistantToolCall[]): AssistantAsk | null {
+  const call = calls.find(isAskCall);
+  if (!call) return null;
+  const ask = parseAskCall(call);
+  if (!ask) {
+    throw new AssistantGatewayError(
+      "malformed_response",
+      "The assistant's question came back garbled. Try again.",
+    );
+  }
+  return ask;
+}
+
 /**
  * Runs one assistant turn. Resolves with the validated reply, or rejects with
  * an {@link AssistantGatewayError}; either way it logs exactly one
@@ -471,13 +541,17 @@ export async function runAssistantTurn(
       }),
     );
 
+  const stopHeartbeat = startHeartbeat(
+    options.onChunk,
+    limits.heartbeatIntervalMs ?? ASSISTANT_HEARTBEAT_INTERVAL_MS,
+  );
   try {
     const uid = authenticate(caller);
     const turn = parseRequest(rawRequest);
     if (!(await deps.guards.isEnabled())) {
       throw new AssistantGatewayError("assistant_disabled", DISABLED_MESSAGE);
     }
-    const prepared = await prepare(model, uid, turn);
+    const prepared = await prepare(model, uid, turn, (deps.idStem ?? createIdStem)());
     history = prepared.history;
 
     while (true) {
@@ -507,6 +581,13 @@ export async function runAssistantTurn(
       if (cost > 0) await deps.guards.addSpend(spendDay(deps.now()), cost);
       const { outcome } = attempt;
       if (outcome.kind === "completed") {
+        // Cut off before it finished: whatever it was proposing or asking is
+        // gone (`StreamReader.result`), and its text may stop mid-sentence.
+        // Said as a failure, not passed off as a reply that did nothing.
+        if (outcome.stopReason === "max_tokens") {
+          throw new AssistantGatewayError("reply_too_long", TOO_LONG_MESSAGE);
+        }
+        const ask = askOf(outcome.toolCalls);
         finish("completed", outcome.stopReason);
         const proposal = proposalOf(turn, outcome.toolCalls);
         await keepTranscript(deps, uid, caller, turn, startedAt, {
@@ -519,6 +600,7 @@ export async function runAssistantTurn(
           text: outcome.text,
           stopReason: outcome.stopReason,
           proposal,
+          ask,
           model: model.id,
           promptVersion: ASSISTANT_PROMPT_VERSION,
           requestsRemaining,
@@ -560,5 +642,7 @@ export async function runAssistantTurn(
     // as such, and left for the function to report as an internal error.
     finish("internal_error", null);
     throw error;
+  } finally {
+    stopHeartbeat();
   }
 }

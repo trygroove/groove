@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 // The delivered factory pack set, the source of truth `pack_id` is pinned
 // against — see the cross-reference test below.
 import { PACKS } from "../../scripts/starter-library/packs.mjs";
+import { RECOMMENDATION_ISSUE_CODES } from "../assistant/recommendation";
 import { PROPOSAL_CAPABILITIES } from "../assistant/tools";
 import { CAPABILITY_IDS } from "../browser/capabilities";
 import { COMMAND_TYPES } from "../commands/registry";
@@ -16,6 +17,7 @@ import {
   type AnalyticsEventDefinition,
   type AnalyticsParam,
   ASSISTANT_PROPOSAL_CAPABILITIES,
+  ASSISTANT_RECOMMENDATION_REFUSALS,
   ASSISTANT_SUGGESTION_IDS,
   BROWSER_CAPABILITY_IDS,
   COMMAND_IDS,
@@ -81,11 +83,18 @@ describe("event names", () => {
         "arrangement_milestone",
         "arrangement_outline_created",
         "asset_load_failed",
+        "assistant_ask_answered",
+        "assistant_ask_shown",
         "assistant_message_sent",
         "assistant_proposal_applied",
         "assistant_proposal_cancelled",
         "assistant_proposal_shown",
         "assistant_proposal_undone",
+        "assistant_recommendation_kept",
+        "assistant_recommendation_put_back",
+        "assistant_recommendation_refused",
+        "assistant_recommendation_shown",
+        "assistant_recommendation_tried",
         "assistant_result_edited",
         "assistant_retention_changed",
         "assistant_suggestion_clicked",
@@ -128,6 +137,7 @@ describe("event names", () => {
         "track_reordered",
         "transport_play",
         "undo_used",
+        "unsaved_exit_warned",
         "user_pack_created",
         "view_changed",
       ].sort(),
@@ -295,6 +305,21 @@ describe("catalog cross-references", () => {
     expect([...BROWSER_CAPABILITY_IDS]).toEqual([...CAPABILITY_IDS]);
   });
 
+  it("pins exactly the recommendation's refusal codes as its refused event's reason", () => {
+    // A way to refuse a recommendation added without an analytics decision
+    // fails here (GRV-23).
+    expect([...ASSISTANT_RECOMMENDATION_REFUSALS].sort()).toEqual(
+      [...RECOMMENDATION_ISSUE_CODES].sort(),
+    );
+    expect(
+      [
+        ...declaredValues(
+          ANALYTICS_EVENTS.assistant_recommendation_refused.params.reason,
+        ),
+      ].sort(),
+    ).toEqual([...RECOMMENDATION_ISSUE_CODES].sort());
+  });
+
   it("pins exactly the assistant's capability keys as the proposal events' capability", () => {
     // A tool family added to the assistant's tool set without an analytics
     // decision fails here (GRV-4).
@@ -393,8 +418,10 @@ describe("catalog cross-references", () => {
         "arrangement_clip_list",
         "arrangement_clip_resize",
         "assistant",
+        "assistant_ask",
         "assistant_message",
         "assistant_proposal",
+        "assistant_recommendation",
         "assistant_retention",
         "audio_loop",
         "automation",
@@ -482,6 +509,7 @@ describe("section 11 measure coverage", () => {
     reliability: [
       "save_failed",
       "save_recovered",
+      "unsaved_exit_warned",
       "asset_load_failed",
       "audio_start_failed",
       "audio_underrun",

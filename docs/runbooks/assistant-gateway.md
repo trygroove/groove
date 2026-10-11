@@ -92,7 +92,13 @@ The emulator loads `assistantTurn` without a key, and with no key it answers
 from a scripted provider (`src/assistant/emulatorProvider.ts`): a short reply
 streamed in pieces, or, by a marker in your message, a reply that hangs until
 you press Stop (`[hang]`), one that fails once and then works (`[flaky]`), or
-one that ends in a proposal (`[propose]`). The browser suite drives the real
+one that ends in a proposal (`[propose]`), or one that ends in a question for
+you with options (`[ask]`, `[ask-multi]` for several picks, or `[ask-rich]`
+for options that point at the first track and bars 1-2, can be heard, and
+answer themselves when you set the tempo to 100 BPM or below; GRV-42). Two
+scripts serve the core flows: "Loosen the beat" proposes swing and a quieter
+track (CF-027), and asking for something dusty or dustier recommends kicks from
+the library the turn carries (CF-034). The browser suite drives the real
 gateway that way. To try it against the real provider, put
 `ANTHROPIC_API_KEY=<key>` in `functions/.secret.local` (gitignored by
 `*.local`) and restart the emulators. The automated suites never use a key:

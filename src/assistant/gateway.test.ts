@@ -7,13 +7,14 @@ import {
 } from "../commands";
 import { createReferenceProject } from "../domain/fixtures";
 import { TRACK_VOLUME } from "../domain/parameters";
-import { historyProposalTarget } from "../testing/historyProposalTarget";
+import { buildAssistantLibrary } from "../testing/assistantLibrary";
 import {
   type CallScript,
   createScriptedAssistantProvider,
   replyEvents,
   toolUseEvents,
 } from "../testing/scriptedAssistantProvider";
+import { ASK_PRODUCER_TOOL_NAME } from "./ask";
 import {
   ASSISTANT_CALL_LIMITS,
   ASSISTANT_MODELS,
@@ -25,12 +26,13 @@ import {
   pseudonymousUserId,
   runAssistantTurn,
 } from "./gateway";
+import { historyProposalTarget } from "./historyProposalTarget";
 import {
   createInMemoryGuardStores,
   type InMemoryGuardStores,
 } from "./inMemoryGuardStores";
 import { buildAssistantPayload } from "./payload";
-import { ASSISTANT_PROMPT_VERSION } from "./prompt";
+import { ASSISTANT_PROMPT_VERSION, LIBRARY_BLOCK_HEADING } from "./prompt";
 import { validateProposal } from "./proposal";
 import { createProposalExecutor } from "./proposalExecutor";
 import {
@@ -39,8 +41,14 @@ import {
   type AssistantStreamChunk,
   type AssistantTurnRequest,
 } from "./protocol";
+import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
 import { type AssistantTurnLog, TURN_LOG_KEYS } from "./telemetry";
-import { ASSISTANT_TOOLSET_VERSION, assistantTools, toolNameFor } from "./tools";
+import {
+  ASSISTANT_TOOLSET_VERSION,
+  assistantTools,
+  EXPLAIN_TOOL_NAME,
+  toolNameFor,
+} from "./tools";
 
 function call(command: RawCommandInput) {
   return { name: toolNameFor(command.type), input: command.payload };
@@ -141,6 +149,7 @@ describe("runAssistantTurn: a completed turn", () => {
       text: "Push the kick up 2 dB.",
       stopReason: "end_turn",
       proposal: null,
+      ask: null,
       model: ASSISTANT_MODELS["claude-sonnet-5"].id,
       promptVersion: ASSISTANT_PROMPT_VERSION,
       requestsRemaining: 99,
@@ -154,9 +163,22 @@ describe("runAssistantTurn: a completed turn", () => {
     expect(JSON.stringify(h.chunks)).not.toContain("private reasoning");
   });
 
-  it("returns a refusal or a cut-off reply with its stop reason", async () => {
-    const h = harness([replyEvents(["I can't help"], { stopReason: "max_tokens" })]);
-    expect((await run(h)).stopReason).toBe("max_tokens");
+  it("returns a refusal with its stop reason", async () => {
+    const h = harness([replyEvents(["I can't help"], { stopReason: "refusal" })]);
+    expect((await run(h)).stopReason).toBe("refusal");
+  });
+
+  // Production QA (GRV-42): a reply that ran out of room came back as a turn
+  // with nothing in it, and the panel's empty reply simply vanished.
+  it("fails a reply cut off at max_tokens as reply_too_long, and logs it", async () => {
+    const h = harness([
+      replyEvents(["Here is a boom bap be"], { stopReason: "max_tokens" }),
+    ]);
+    const error = await failure(run(h));
+    expect(error.code).toBe("reply_too_long");
+    expect(error.details.retryable).toBe(true);
+    expect(h.logs).toHaveLength(1);
+    expect(h.logs[0]?.outcome).toBe("reply_too_long");
   });
 
   it("sends the project context and a pseudonymous ID, never the uid", async () => {
@@ -169,6 +191,112 @@ describe("runAssistantTurn: a completed turn", () => {
   });
 });
 
+describe("runAssistantTurn: new IDs (GRV-6)", () => {
+  it("gives every turn its own stem for the IDs it creates", async () => {
+    const h = harness([replyEvents(["ok"])]);
+    await run(h);
+    await run(h);
+    const [first, second] = h.provider.requests.map(
+      (sent) => sent.system.at(-1)?.text ?? "",
+    );
+    const stemOf = (text: string) => /the stem ([A-Za-z0-9]+),/.exec(text)?.[1];
+    expect(stemOf(first)).toHaveLength(17);
+    expect(stemOf(second)).toHaveLength(17);
+    expect(stemOf(first)).not.toBe(stemOf(second));
+  });
+
+  it("takes the stem it is given", async () => {
+    const h = harness([replyEvents(["ok"])]);
+    await runAssistantTurn(
+      { ...h.deps, idStem: () => "Stem0000000000000" },
+      SIGNED_IN,
+      request(),
+      { signal: new AbortController().signal, onChunk: () => {} },
+    );
+    expect(h.provider.requests[0].system.at(-1)?.text).toContain(
+      "trk_Stem00000000000000001",
+    );
+  });
+});
+
+describe("runAssistantTurn: asking the producer (GRV-42)", () => {
+  const project = createReferenceProject();
+  const [track] = project.song.tracks;
+  const muteCall = call(setTrackFlag(track.id, "muted", !track.mixer.muted));
+  const askInput = {
+    question: "Where should the drop land?",
+    context: "The build, bars 13-16",
+    options: [
+      { label: "Bar 17", description: "Right after the build" },
+      { label: "Bar 25" },
+    ],
+    suggested: 0,
+  };
+  const askCall = { name: ASK_PRODUCER_TOOL_NAME, input: askInput };
+
+  it("returns an ask_producer call as the turn's question, not a proposal", async () => {
+    const h = harness([toolUseEvents("One question first.", [askCall])]);
+    const result = await run(h);
+    expect(result.stopReason).toBe("tool_use");
+    expect(result.proposal).toBeNull();
+    expect(result.ask).toEqual({ id: "toolu_1", ...askInput, multiSelect: false });
+  });
+
+  it("splits a turn that both asks and proposes", async () => {
+    const h = harness([
+      toolUseEvents("Muting it, then a question.", [muteCall, askCall]),
+    ]);
+    const result = await run(h);
+    expect(result.proposal?.calls).toEqual([{ id: "toolu_1", ...muteCall }]);
+    expect(result.ask?.id).toBe("toolu_2");
+  });
+
+  it("keeps the first question when the model asks more than one", async () => {
+    const second = { ...askCall, input: { ...askInput, question: "And the tempo?" } };
+    const h = harness([toolUseEvents("Two questions.", [askCall, second])]);
+    expect((await run(h)).ask?.question).toBe("Where should the drop land?");
+  });
+
+  it("keeps a question whose option carries an extra that does not validate", async () => {
+    const input = {
+      ...askInput,
+      options: [
+        {
+          label: "Bar 17",
+          sound: {
+            kind: "preview",
+            calls: Array.from({ length: 21 }, () => ({
+              name: "parameter_set",
+              input: {},
+            })),
+          },
+        },
+        { label: "Bar 25", ref: { kind: "bars", startBar: 25, endBar: 24 } },
+      ],
+      memory: "likes drops",
+    };
+    const h = harness([
+      toolUseEvents("A question.", [{ name: ASK_PRODUCER_TOOL_NAME, input }]),
+    ]);
+    const result = await run(h);
+    expect(result.ask?.options).toEqual([{ label: "Bar 17" }, { label: "Bar 25" }]);
+  });
+
+  it.each([
+    ["one option", { ...askInput, options: [{ label: "Bar 17" }] }],
+    [
+      "two options with one label",
+      { ...askInput, options: [{ label: "Bar 17" }, { label: "bar 17" }] },
+    ],
+    ["no question", { ...askInput, question: "" }],
+  ])("treats a question with %s as a malformed reply", async (_name, input) => {
+    const h = harness([
+      toolUseEvents("A question.", [{ name: ASK_PRODUCER_TOOL_NAME, input }]),
+    ]);
+    await expectCode(run(h), "malformed_response");
+  });
+});
+
 describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
   const project = createReferenceProject();
   const [track] = project.song.tracks;
@@ -177,14 +305,55 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
     setParameter({ scope: "track", trackId: track.id, parameterId: TRACK_VOLUME.id }, -9),
   );
 
-  it("offers the model every assistant tool on every turn", async () => {
+  it("offers the model every assistant tool on every turn, explain_change and ask_producer", async () => {
     const h = harness([replyEvents(["ok"])]);
     await run(h);
     const sent = h.provider.requests[0];
-    expect(sent.tools.map((tool) => tool.name)).toEqual(
-      assistantTools().map((tool) => tool.name),
-    );
+    expect(sent.tools.map((tool) => tool.name)).toEqual([
+      ...assistantTools().map((tool) => tool.name),
+      EXPLAIN_TOOL_NAME,
+      ASK_PRODUCER_TOOL_NAME,
+    ]);
     for (const tool of sent.tools) expect(tool.input_schema.type).toBe("object");
+  });
+
+  it("offers recommend_sounds, and the library, only on a turn that carries it (GRV-23)", async () => {
+    const without = harness([replyEvents(["ok"])]);
+    await run(without);
+    const plain = without.provider.requests[0];
+    expect(plain.tools.map((tool) => tool.name)).not.toContain(RECOMMEND_SOUNDS_TOOL);
+    // The prompt, the project and the turn's ID stem (GRV-6): no library.
+    expect(plain.system).toHaveLength(3);
+    expect(
+      plain.system.some((block) => block.text.startsWith(LIBRARY_BLOCK_HEADING)),
+    ).toBe(false);
+
+    const library = buildAssistantLibrary();
+    const h = harness([replyEvents(["ok"])]);
+    await run(h, request({ library }));
+    const sent = h.provider.requests[0];
+    expect(sent.tools.map((tool) => tool.name)).toEqual([
+      ...assistantTools().map((tool) => tool.name),
+      EXPLAIN_TOOL_NAME,
+      ASK_PRODUCER_TOOL_NAME,
+      RECOMMEND_SOUNDS_TOOL,
+    ]);
+    // The prompt, the project, the library, then the turn's ID stem (GRV-6).
+    expect(sent.system).toHaveLength(4);
+    expect(sent.system[2].text).toContain("Dusty Kick");
+    expect(sent.system[2].text).toContain(library.packs[0].id);
+  });
+
+  it("returns a recommendation among the turn's calls, for the browser to take out", async () => {
+    const recommend = {
+      name: RECOMMEND_SOUNDS_TOOL,
+      input: { packId: "pak_x", soundIds: ["a"], reason: "Dusty." },
+    };
+    const h = harness([toolUseEvents("Try this.", [recommend])]);
+    const result = await run(h, request({ library: buildAssistantLibrary() }));
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([
+      RECOMMEND_SOUNDS_TOOL,
+    ]);
   });
 
   it("returns the tool calls as a proposal at the request's revision", async () => {
@@ -222,6 +391,16 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
     expect(history.entries).toHaveLength(1);
   });
 
+  it("returns no proposal when the only call is an explanation", async () => {
+    const h = harness([
+      toolUseEvents("Here is why.", [
+        { name: EXPLAIN_TOOL_NAME, input: { goal: "Louder", technique: "More gain" } },
+      ]),
+    ]);
+    const result = await run(h);
+    expect(result.proposal).toBeNull();
+  });
+
   it("returns a proposal the browser refuses once the project has moved on", async () => {
     const h = harness([toolUseEvents("Muting it.", [muteCall])]);
     const result = await run(h, request({ projectRevision: REFERENCE_REVISION + 1 }));
@@ -251,7 +430,7 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
     ]);
   });
 
-  it("drops the tool calls of a turn cut off before it finished", async () => {
+  it("fails a turn whose tool calls were cut off, rather than dropping them silently", async () => {
     const events = toolUseEvents("Muting it.", [muteCall]);
     const h = harness([
       events.map((step) =>
@@ -266,31 +445,48 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
           : step,
       ),
     ]);
+    await expectCode(run(h), "reply_too_long");
+  });
+
+  // The tools stream eagerly, so the API no longer checks their input (GRV-6):
+  // input that is broken or cut short is the model's mistake, a proposal the
+  // browser refuses, never a garbled reply.
+  it.each([
+    ["input that is not JSON", '{"track', '{"track'],
+    ["input that is not an object", "[1, 2]", [1, 2]],
+  ])("returns %s as a proposal the browser refuses", async (_label, json, input) => {
+    const events = toolUseEvents("Muting it.", [muteCall]);
+    const h = harness([
+      events.map((step, index) =>
+        "event" in step &&
+        (step.event as { delta?: { type?: string } }).delta?.type === "input_json_delta"
+          ? {
+              event: {
+                ...(step.event as object),
+                delta: {
+                  type: "input_json_delta",
+                  // The whole input in the first piece, nothing in the second.
+                  partial_json:
+                    (events[index - 1] as { event: { type: string } }).event.type ===
+                    "content_block_start"
+                      ? json
+                      : "",
+                },
+              },
+            }
+          : step,
+      ),
+    ]);
     const result = await run(h);
-    expect(result.stopReason).toBe("max_tokens");
-    expect(result.proposal).toBeNull();
+    expect(result.proposal?.calls).toEqual([
+      { id: "toolu_1", name: muteCall.name, input },
+    ]);
+    expect(h.logs[0]).toMatchObject({ outcome: "completed", failures: [] });
+    const validation = validateProposal(project, result.proposal);
+    expect(validation.ok ? null : validation.issues[0].code).toBe("invalid_payload");
   });
 
   it.each([
-    [
-      "input that is not JSON",
-      (steps: CallScript) =>
-        steps.map((step) =>
-          "event" in step &&
-          (step.event as { delta?: { type?: string } }).delta?.type === "input_json_delta"
-            ? {
-                event: {
-                  ...(step.event as object),
-                  delta: { type: "input_json_delta", partial_json: "{nope" },
-                },
-              }
-            : step,
-        ),
-    ],
-    [
-      "input that is not an object",
-      () => toolUseEvents("Clearing it.", [{ name: "notes_clear", input: [1, 2] }]),
-    ],
     [
       "a tool_use stop with no tool call",
       () => replyEvents(["Muting it."], { stopReason: "tool_use" }),
@@ -353,6 +549,15 @@ describe("runAssistantTurn: the request", () => {
     expect(h.provider.requests).toHaveLength(0);
   });
 
+  it("refuses a library carrying a field the allowlist does not name", async () => {
+    const h = harness([replyEvents(["ok"])]);
+    const library = buildAssistantLibrary();
+    (library.packs[0] as unknown as Record<string, unknown>).manifestPath = "/x.json";
+    const error = await failure(run(h, request({ library })));
+    expect(error.code).toBe("invalid_request");
+    expect(h.provider.requests).toHaveLength(0);
+  });
+
   it("refuses a conversation that does not end with the user", async () => {
     const h = harness([replyEvents(["ok"])]);
     const body = request({
@@ -381,6 +586,9 @@ describe("runAssistantTurn: the request", () => {
 });
 
 describe("runAssistantTurn: timeout", () => {
+  const track = createReferenceProject().song.tracks[0];
+  const muteCall = call(setTrackFlag(track.id, "muted", !track.mixer.muted));
+
   it("abandons a provider call that takes too long, without retrying", async () => {
     const h = harness([[...replyEvents(["Partly"]).slice(0, 2), { hang: true }]], {
       inactivityTimeoutMs: 20,
@@ -389,6 +597,22 @@ describe("runAssistantTurn: timeout", () => {
     expect(h.provider.requests).toHaveLength(1);
     expect(h.provider.aborted).toBe(1);
     expect(h.logs[0]).toMatchObject({ outcome: "timeout", attempts: 1 });
+  });
+
+  // GRV-42: a turn that streams no text for minutes (thinking, a large
+  // proposal) still tells the browser it is alive, and stops once it ends.
+  it("sends empty heartbeat chunks while a silent turn runs, and none after", async () => {
+    const [start, ...rest] = replyEvents(["Done."]);
+    const h = harness([[start, { wait: 60 }, ...rest]], {
+      inactivityTimeoutMs: 1_000,
+      heartbeatIntervalMs: 10,
+    });
+    expect((await run(h)).text).toBe("Done.");
+    const beats = h.chunks.filter((chunk) => chunk.text === "");
+    expect(beats.length).toBeGreaterThanOrEqual(2);
+    const sent = h.chunks.length;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(h.chunks).toHaveLength(sent);
   });
 
   it("lets a reply that keeps streaming run past the timeout", async () => {
@@ -401,6 +625,67 @@ describe("runAssistantTurn: timeout", () => {
     expect(Date.now() - started).toBeGreaterThan(40);
     expect(h.logs[0]).toMatchObject({ outcome: "completed", attempts: 1 });
   });
+
+  // GRV-6: a long think or a large proposal streams no reply text for a
+  // while, but every delta is the provider still working.
+  it.each([
+    ["thinking", "thinking", "thinking_delta", "thinking"],
+    ["a tool's input", "tool_use", "input_json_delta", "partial_json"],
+  ] as const)(
+    "lets a call that keeps streaming %s run past the timeout",
+    async (_label, blockType, deltaType, field) => {
+      const [start, ...rest] = toolUseEvents("Muting it.", [muteCall]);
+      const block = {
+        event: {
+          type: "content_block_start",
+          index: 9,
+          content_block:
+            blockType === "tool_use"
+              ? { type: "tool_use", id: "toolu_9", name: muteCall.name, input: {} }
+              : { type: "thinking" },
+        },
+      };
+      // Each gap is under the 40 ms limit, the whole stream well over it.
+      const pieces =
+        blockType === "tool_use"
+          ? (() => {
+              const json = JSON.stringify(muteCall.input);
+              const size = Math.ceil(json.length / 6);
+              return Array.from({ length: 6 }, (_, i) =>
+                json.slice(i * size, (i + 1) * size),
+              );
+            })()
+          : ["a", "b", "c", "d", "e", "f"];
+      const deltas = pieces.flatMap((piece) => [
+        { wait: 15 },
+        {
+          event: {
+            type: "content_block_delta",
+            index: 9,
+            delta: { type: deltaType, [field]: piece },
+          },
+        },
+      ]);
+      const h = harness(
+        [
+          [
+            start,
+            block,
+            ...deltas,
+            { event: { type: "content_block_stop", index: 9 } },
+            ...rest,
+          ],
+        ],
+        { inactivityTimeoutMs: 40 },
+      );
+      const started = Date.now();
+      const result = await run(h);
+      expect(Date.now() - started).toBeGreaterThan(40);
+      expect(h.logs[0]).toMatchObject({ outcome: "completed", attempts: 1 });
+      expect(result.text).toBe("Muting it.");
+      expect(result.proposal?.calls.length).toBe(blockType === "tool_use" ? 2 : 1);
+    },
+  );
 
   it("times out a call that goes quiet after streaming for a while", async () => {
     const [start, block, first, second] = replyEvents(["a", "b"]);

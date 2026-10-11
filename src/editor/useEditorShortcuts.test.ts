@@ -21,7 +21,10 @@ afterEach(() => cleanup());
  * editing surfaces, and stand-ins for everything that would need audio, a
  * repository or the Library.
  */
-function setup(view: EditorViewName) {
+function setup(
+  view: EditorViewName,
+  ask: { readonly optionCount?: number; readonly pick?: (index: number) => boolean } = {},
+) {
   const project = createDrumMachineFixtureProject();
   const [currentView] = createSignal<EditorViewName>(view);
   const dispatch = vi.fn(() => ({ ok: true }) as never);
@@ -73,8 +76,21 @@ function setup(view: EditorViewName) {
         dismissAction: () => undefined,
         edgeHasFocus: () => false,
         composerHasFocus: () => false,
+        askTextHasFocus: () => false,
+        focusInPanelOutsideFields: () => ask.optionCount !== undefined,
       },
       sendAssistantDraft: vi.fn(),
+      assistantAsk: {
+        pending: () => ask.optionCount !== undefined,
+        optionCount: () => ask.optionCount ?? 0,
+        multiSelect: () => false,
+        pick: ask.pick ?? (() => false),
+        canFinish: () => false,
+        finish: () => false,
+        focused: () => null,
+        canHear: () => false,
+        hear: () => false,
+      },
     });
     return selection;
   });
@@ -83,12 +99,23 @@ function setup(view: EditorViewName) {
   return { selection: result, dispatch, navigation, first, second };
 }
 
-function press(key: string): void {
-  window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+function press(key: string): KeyboardEvent {
+  const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+  window.dispatchEvent(event);
   flush();
+  return event;
 }
 
 describe("useEditorShortcuts", () => {
+  it("picks a question's options by number, and leaves a digit past the last alone (GRV-42)", () => {
+    const pick = vi.fn(() => true);
+    setup("arrangement", { optionCount: 3, pick });
+    expect(press("3").defaultPrevented).toBe(true);
+    expect(pick).toHaveBeenCalledWith(2);
+    expect(press("4").defaultPrevented).toBe(false);
+    expect(pick).toHaveBeenCalledOnce();
+  });
+
   it("steps the chosen track with the arrows", () => {
     const { selection, first, second } = setup("instrument");
     selection.selectTrack(first.id);

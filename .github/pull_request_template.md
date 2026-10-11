@@ -27,6 +27,21 @@ Completes GRV-<!-- the card's number; Refs on an earlier PR of a sequence, Close
   test's failure output from before the fix.
 -->
 
+## Cloud APIs
+
+<!--
+  Any Google Cloud API this PR needs that production does not use yet, such as
+  Cloud Scheduler for an `onSchedule` function. The deploy cannot enable one, so
+  the product owner runs the command before approving. For each API: its
+  name, why it is required (the code that needs it and what that code does),
+  and the command. For example:
+    cloudscheduler.googleapis.com: `purgeExpiredTranscripts` is an `onSchedule`
+    function that deletes expired transcripts every hour, and Firebase deploys
+    a scheduled function as a Cloud Scheduler job.
+    gcloud services enable cloudscheduler.googleapis.com --project <project-id>
+  Delete this section if the PR needs no new API. See CLAUDE.md, "Landing work".
+-->
+
 ## Notes
 
 <!--

@@ -109,9 +109,16 @@ export interface ProjectAudioControls {
    * command, history entry, save or sync. A new sound replaces the previous
    * one and releases its buffer; repeating a call is a no-op. Returns `false`
    * (and drops any preview) for a sound a slot cannot play, such as a loop.
+   * `owner`, when given, marks the override as that caller's, for
+   * {@link clearPreview}.
    */
-  previewInSlot(slot: PreviewSlot, sound: LibraryAsset): boolean;
-  clearPreview(): void;
+  previewInSlot(slot: PreviewSlot, sound: LibraryAsset, owner?: object): boolean;
+  /**
+   * Puts the slot's own sound back. Given an `owner`, only an override that
+   * owner set is dropped, so the Library closing never clears a sound another
+   * surface (the assistant's Try, GRV-23) has just put in the slot.
+   */
+  clearPreview(owner?: object): void;
   /**
    * Follows the waveform of one of the project's sounds for drawing it (#447):
    * `onPeaks` gets `buckets` peaks, 0..1, once the engine has decoded the sound
@@ -250,6 +257,7 @@ export function useProjectAudio(
   let lastProjection: AudioSongProjection | undefined;
   let frameHandle: number | null = null;
   let preview: PreviewOverride | null = null;
+  let previewOwner: object | undefined;
 
   function reconcileGraph(): void {
     if (!graph || !lastProjection) return;
@@ -260,7 +268,11 @@ export function useProjectAudio(
     preview = next;
     reconcileGraph();
   }
-  function previewInSlot(slot: PreviewSlot, asset: LibraryAsset): boolean {
+  function previewInSlot(
+    slot: PreviewSlot,
+    asset: LibraryAsset,
+    owner?: object,
+  ): boolean {
     const sample = asset.type === "loop" ? null : toLibrarySample(asset);
     if (!sample) {
       clearPreview();
@@ -272,14 +284,19 @@ export function useProjectAudio(
       preview.slot.padId === slot.padId &&
       previewAssetId(preview.sound) === previewAssetId(sample)
     ) {
+      previewOwner = owner;
       return true;
     }
+    previewOwner = owner;
     setPreview({ slot, sound: sample });
     return true;
   }
 
-  function clearPreview(): void {
-    if (preview) setPreview(null);
+  function clearPreview(owner?: object): void {
+    if (!preview) return;
+    if (owner !== undefined && previewOwner !== owner) return;
+    previewOwner = undefined;
+    setPreview(null);
   }
 
   function underrunMonitor(): UnderrunMonitor {

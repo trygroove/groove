@@ -30,6 +30,7 @@ import type { TrackSelectionSource } from "../editor/trackSurface";
 import { useTrackDrag } from "../editor/useTrackDrag";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 import {
+  type ArrangementBand,
   type ArrangementPosition,
   type ArrangementSelection,
   barStartPoint,
@@ -259,6 +260,12 @@ export interface ArrangementViewProps {
    * still read out, but the arrows do not step through it.
    */
   readonly onClipListFocusChange?: (focused: boolean) => void;
+  /**
+   * Parts of the song another surface points at (GRV-42: an option of the
+   * assistant's question, hovered), drawn over the clips as bands. Nothing
+   * is selected by it.
+   */
+  readonly highlight?: Accessor<readonly ArrangementBand[]>;
 }
 
 export default function ArrangementView(props: ArrangementViewProps) {
@@ -379,8 +386,16 @@ export default function ArrangementView(props: ArrangementViewProps) {
       selectedPlacementIds: new Set(
         (band ? editing?.bandPlacementIds() : editing?.getSelection()) ?? [],
       ),
+      highlight: untrack(() => props.highlight?.()) ?? [],
     };
   }
+
+  // A highlight from outside redraws the interaction layer alone. The bands
+  // are the one reactive read; marking the layer is the apply half's.
+  createEffect(
+    () => props.highlight?.(),
+    () => shell?.markDirty("interaction"),
+  );
 
   // --- Placement editing (ARR-002) adapters ---------------------------------
   //

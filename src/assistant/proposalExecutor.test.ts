@@ -23,10 +23,10 @@ import {
   TRACK_VOLUME,
 } from "../domain";
 import { createManualClock, type ManualClock } from "../shared/clock";
-import { historyProposalTarget } from "../testing/historyProposalTarget";
+import { historyProposalTarget } from "./historyProposalTarget";
 import { MAX_PROPOSAL_COMMANDS, validateProposal } from "./proposal";
 import { createProposalExecutor, type ProposalExecutor } from "./proposalExecutor";
-import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "./tools";
+import { ASSISTANT_TOOLSET_VERSION, EXPLAIN_TOOL_NAME, toolNameFor } from "./tools";
 
 const INTENT = "Lift the bassline an octave so it clears the kick";
 
@@ -179,6 +179,44 @@ describe("a stale proposal", () => {
     handle.apply();
     // Its own commit moves the revision; that does not make it stale.
     expect(handle.isStale).toBe(false);
+  });
+});
+
+describe("an explanation (explain_change)", () => {
+  const explanation = {
+    goal: "The bassline clears the kick.",
+    technique: "An octave up moves its energy out of the kick's range.",
+  };
+
+  it("is carried beside the commands, never as one", () => {
+    const input = notesProposal();
+    const handle = propose({
+      ...input,
+      calls: [{ name: EXPLAIN_TOOL_NAME, input: explanation }, ...input.calls],
+    });
+    expect(handle.proposal.explanation).toEqual(explanation);
+    expect(handle.proposal.commands).toHaveLength(3);
+    expect(handle.proposal.commands.map((command) => command.type)).not.toContain(
+      EXPLAIN_TOOL_NAME,
+    );
+  });
+
+  it("is null when there is none, and when it does not parse, without costing the proposal", () => {
+    expect(propose().proposal.explanation).toBeNull();
+    const input = notesProposal();
+    const handle = propose({
+      ...input,
+      calls: [...input.calls, { name: EXPLAIN_TOOL_NAME, input: { goal: "" } }],
+    });
+    expect(handle.proposal.explanation).toBeNull();
+  });
+
+  it("is not a proposal on its own", () => {
+    const result = validateProposal(fx.project, {
+      baseRevision: fx.project.metadata.revision,
+      calls: [{ name: EXPLAIN_TOOL_NAME, input: explanation }],
+    });
+    expect(result.ok ? null : result.issues).toMatchObject([{ code: "malformed" }]);
   });
 });
 

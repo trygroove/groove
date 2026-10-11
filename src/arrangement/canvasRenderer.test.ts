@@ -297,6 +297,30 @@ describe("drawInteractionLayer", () => {
     expect(env.ctx.fillRectCalls).toBe(1);
   });
 
+  it("draws what another surface points at as bands, under the drag band (GRV-42)", () => {
+    const env = envFor(baseViewport());
+    const [first, second] = env.projection.tracks;
+    drawInteractionLayer(env, {
+      playheadTicks: null,
+      band: null,
+      point: null,
+      hoverPlacementId: null,
+      selectedPlacementIds: new Set(),
+      highlight: [
+        { trackIds: [first.id], startTicks: 0, endTicks: TICKS_PER_BAR * 2 },
+        {
+          trackIds: [second.id],
+          startTicks: TICKS_PER_BAR * 4,
+          endTicks: TICKS_PER_BAR * 6,
+        },
+      ],
+    });
+    expect(env.ctx.fillRectCalls).toBe(2);
+    expect(env.ctx.strokes).toHaveLength(2);
+    expect(env.ctx.strokes[1]?.x).toBeCloseTo(TICKS_PER_BAR * 4 * 0.08 + 0.5);
+    expect(env.ctx.strokes.every((stroke) => stroke.dash.length > 0)).toBe(true);
+  });
+
   it("draws a point as a cursor line, not an outline", () => {
     const env = envFor(baseViewport());
     drawInteractionLayer(env, {

@@ -33,6 +33,10 @@ import { reportProjectLoad } from "./projectLoadReport";
  * completes before the page actually goes away — that is what "where the
  * browser permits a flush" in the PRD acknowledges — but both start it as
  * early as this code can detect the moment.
+ *
+ * `beforeunload` comes first and is the one chance to ask the user to stay
+ * (GRV-60): while an edit is still unsaved it shows the browser's "leave
+ * site?" prompt and starts the write, which can finish while the prompt is up.
  */
 function watchNavigationFlush(getSession: () => EditorSession | null): void {
   if (typeof window === "undefined") return;
@@ -52,11 +56,20 @@ function watchNavigationFlush(getSession: () => EditorSession | null): void {
     if (document.visibilityState === "hidden") flush();
   }
 
+  function handleBeforeUnload(event: BeforeUnloadEvent): void {
+    if (!getSession()?.warnBeforeExit()) return;
+    event.preventDefault();
+    // Older Chrome and Edge show the prompt only when `returnValue` is set.
+    event.returnValue = "";
+  }
+
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("pagehide", flush);
+  window.addEventListener("beforeunload", handleBeforeUnload);
   onCleanup(() => {
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     window.removeEventListener("pagehide", flush);
+    window.removeEventListener("beforeunload", handleBeforeUnload);
   });
 }
 
@@ -100,6 +113,16 @@ export interface UseEditorSessionResult {
   beginPreview(
     commands: RawCommandInput | readonly RawCommandInput[],
   ): PreviewResult | undefined;
+  /**
+   * The committed project, never a preview of it, or `null` before a session
+   * has loaded. Not reactive: `state.project` is what changes.
+   */
+  committedProject(): Project | null;
+  /**
+   * Whether a preview is open right now. Not reactive, unlike
+   * `state.previewing`, so it is current straight after one ends.
+   */
+  previewOpen(): boolean;
   undo(): TransactionResult | null | undefined;
   redo(): TransactionResult | null | undefined;
   /** The explicit retry affordance PRD `PRJ-03` requires for a failed save. */
@@ -314,6 +337,8 @@ export function useEditorSession(
     dispatch: (commands) => session?.dispatch(commands),
     beginGesture: (options) => session?.beginGesture(options),
     beginPreview: (commands) => session?.beginPreview(commands),
+    committedProject: () => session?.committedProject ?? null,
+    previewOpen: () => (session?.activePreview ?? null) !== null,
     undo: () => session?.undo(),
     redo: () => session?.redo(),
     retry: () => session?.autosave.retry(),

@@ -9,7 +9,8 @@
  * 1. the response must have the expected shape and at most
  *    {@link MAX_PROPOSAL_COMMANDS} calls (`malformed`, `too_many_commands`);
  * 2. the revision must still be the project's (`stale_revision`);
- * 3. every call must name an allowlisted tool with a valid, authorized payload
+ * 3. every call but `explain_change`, which is taken out first and changes
+ *    nothing, must name an allowlisted tool with a valid, authorized payload
  *    (`unknown_tool`, `invalid_payload`, `unauthorized`, see `tools.ts`), from
  *    the tool set this code offers (`toolset_mismatch`);
  * 4. every value must be inside its parameter's range, checked command by
@@ -34,8 +35,11 @@ import type { Project } from "../domain/entities";
 import {
   ASSISTANT_TOOLSET_VERSION,
   type AssistantCapability,
+  EXPLAIN_TOOL_NAME,
   type ProposalCapability,
+  type ProposalExplanationInput,
   proposalCapability,
+  proposalExplanationSchema,
   refuseCommandValue,
   resolveToolCall,
 } from "./tools";
@@ -91,7 +95,10 @@ export type ProposalIssueCode =
 
 export interface ProposalIssue {
   readonly code: ProposalIssueCode;
-  /** Position of the offending call, when one call is to blame. */
+  /**
+   * Position of the offending call among the calls that change something
+   * (`explain_change` aside), when one call is to blame.
+   */
   readonly callIndex: number | null;
   readonly message: string;
 }
@@ -133,6 +140,12 @@ export interface ProposalImpact {
 export interface ValidProposal {
   readonly baseRevision: number;
   readonly intent: string | null;
+  /**
+   * The goal and technique the assistant gave through `explain_change`, or
+   * null when it gave none (or one that does not parse, which never costs the
+   * proposal itself).
+   */
+  readonly explanation: ProposalExplanationInput | null;
   /** The commands, each pinned to the version the tool was generated from. */
   readonly commands: readonly RawCommandInput[];
   readonly capabilities: readonly AssistantCapability[];
@@ -179,7 +192,13 @@ export function validateProposal(project: Project, input: unknown): ProposalVali
       { code: "malformed", callIndex: null, message: describeShape(shape.error) },
     ]);
   }
-  const { baseRevision, toolsetVersion, intent, calls } = shape.data;
+  const { baseRevision, toolsetVersion, intent } = shape.data;
+  const calls = shape.data.calls.filter((call) => call.name !== EXPLAIN_TOOL_NAME);
+  if (calls.length === 0) {
+    return invalid([
+      { code: "malformed", callIndex: null, message: "The proposal changes nothing" },
+    ]);
+  }
   if (toolsetVersion !== undefined && toolsetVersion !== ASSISTANT_TOOLSET_VERSION) {
     return invalid([
       {
@@ -243,6 +262,7 @@ export function validateProposal(project: Project, input: unknown): ProposalVali
     proposal: {
       baseRevision,
       intent: intent ?? null,
+      explanation: explanationOf(shape.data.calls),
       commands,
       capabilities,
       capability: proposalCapability(capabilities),
@@ -254,6 +274,18 @@ export function validateProposal(project: Project, input: unknown): ProposalVali
       },
     },
   };
+}
+
+/** The first `explain_change` call that parses, or null. */
+function explanationOf(
+  calls: readonly { readonly name: string; readonly input: unknown }[],
+): ProposalExplanationInput | null {
+  for (const call of calls) {
+    if (call.name !== EXPLAIN_TOOL_NAME) continue;
+    const parsed = proposalExplanationSchema.safeParse(call.input);
+    if (parsed.success) return parsed.data;
+  }
+  return null;
 }
 
 /**

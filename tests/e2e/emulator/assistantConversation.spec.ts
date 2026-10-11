@@ -16,7 +16,8 @@ import { expect, test } from "./support/test";
  * scripted provider (`src/assistant/emulatorProvider.ts`). A marker in the
  * message picks the script: a plain message streams a short reply, `[hang]`
  * writes one piece and waits for Stop, `[flaky]` fails once and then works,
- * and `[propose]` ends in a proposal.
+ * `[propose]` ends in a proposal, and `[ask]` in a question for the producer
+ * (GRV-42).
  */
 
 const REPLY =
@@ -90,5 +91,58 @@ test.describe("the assistant's conversation", { tag: "@sanity" }, () => {
     const card = conversation(page).getByRole("region", { name: /^Proposal\b/ });
     await expect(card).toContainText(/Tempo\b.*→.*\b100 BPM/);
     await expect(card.getByRole("button", { name: "Apply" })).toBeEnabled();
+  });
+});
+
+test.describe("a question the assistant asks", () => {
+  test("waits above the composer and takes its answer from the number keys (GRV-42)", async ({
+    page,
+  }) => {
+    await newProject(page);
+    await assistantButton(page).click();
+    await composer(page).fill("Build me a drop [ask]");
+    await page.keyboard.press("Enter");
+
+    const card = panel(page).getByRole("region", { name: "The assistant asks" });
+    await expect(card).toContainText("Where should the drop land?");
+    await expect(card.getByRole("button", { name: "Bar 17" })).toHaveClass(
+      /assistant-ask-suggested-option/,
+    );
+    // It took focus from the empty composer, so `1` picks rather than switching view.
+    await expect(card).toBeFocused();
+    await page.keyboard.press("1");
+    await expect(card).toHaveCount(0);
+    await expect(conversation(page)).toContainText(
+      "Answer · Where should the drop land?",
+    );
+    await expect(conversation(page)).toContainText("Asked: Where should the drop land?");
+    await expect(conversation(page).getByText(REPLY)).toHaveCount(1);
+    await expect(page).toHaveURL(/\/projects\/[^/]+$/);
+  });
+
+  test("is answered by making the change in the editor (GRV-42)", async ({ page }) => {
+    await newProject(page);
+    await assistantButton(page).click();
+    await composer(page).fill("Where do I start? [ask-rich]");
+    await page.keyboard.press("Enter");
+
+    const card = panel(page).getByRole("region", { name: "The assistant asks" });
+    await expect(card).toContainText("What should change first?");
+    await expect(card.getByRole("button", { name: "The first track" })).toContainText(
+      "Track BD",
+    );
+    await expect(card.getByRole("button", { name: "The opening" })).toContainText(
+      "Bars 1–2",
+    );
+
+    // Setting the tempo in the header answers it as the option that asked for it.
+    const tempo = page.getByRole("spinbutton", { name: "Tempo (BPM)" });
+    await tempo.fill("96");
+    await tempo.blur();
+    await expect(card).toHaveCount(0);
+    await expect(conversation(page)).toContainText(
+      "Slower, at 100 BPM (done in the editor)",
+    );
+    await expect(conversation(page).getByText(REPLY)).toHaveCount(1);
   });
 });

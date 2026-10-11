@@ -41,6 +41,7 @@ export const SHORTCUT_CONTEXTS = [
   "export_tracks",
   "resize_edge",
   "composer",
+  "assistant_ask",
 ] as const;
 export type ShortcutContext = (typeof SHORTCUT_CONTEXTS)[number];
 
@@ -55,7 +56,9 @@ export type ShortcutContext = (typeof SHORTCUT_CONTEXTS)[number];
  * two of them may claim the same key: `resize_edge` (a focused resize edge,
  * such as the assistant panel's, #849) takes every arrow, as `loop_brace` and
  * `value_field` each take some. `composer` is the assistant's message box
- * (GRV-26), where Enter sends.
+ * (GRV-26), where Enter sends. `assistant_ask` is focus in the assistant's
+ * panel anywhere but a text box or its resize edge while it is asking a
+ * question (GRV-42), where `1`-`8` pick an answer in place of the view keys.
  */
 export const FOCUS_CONTEXTS: readonly ShortcutContext[] = [
   "loop_brace",
@@ -63,6 +66,7 @@ export const FOCUS_CONTEXTS: readonly ShortcutContext[] = [
   "value_field",
   "resize_edge",
   "composer",
+  "assistant_ask",
 ];
 
 /**

@@ -3,7 +3,7 @@ import { Show } from "solid-js";
 import ArrangementView from "../arrangement/ArrangementView";
 import type { Project } from "../domain/entities";
 import type { PlacementId } from "../domain/ids";
-import type { ArrangementSelection } from "../selection";
+import type { ArrangementBand, ArrangementSelection } from "../selection";
 import NewTrackButtons from "./NewTrackButtons";
 import type { NewTrackKindSpec } from "./trackCreation";
 import type { EditingSurfaces } from "./useEditingSurfaces";
@@ -23,6 +23,8 @@ export interface ArrangementPaneProps {
   onSelectionChange(selection: ArrangementSelection | null): void;
   onAddTrack(spec: NewTrackKindSpec): void;
   onAddLoop(): void;
+  /** What the assistant's question points at while an option is hovered (GRV-42). */
+  highlight?(): readonly ArrangementBand[];
 }
 
 /** What the arrangement and the instrument view both show for an empty song. */
@@ -52,6 +54,7 @@ export default function ArrangementPane(props: ArrangementPaneProps): JSX.Elemen
           onSelectionChange={(selected) => props.onSelectionChange(selected)}
           onLoopBraceFocusChange={props.surfaces.setLoopBraceFocused}
           onClipListFocusChange={props.surfaces.setClipListFocused}
+          highlight={() => props.highlight?.() ?? []}
           /* The arrangement's own way to add a track (`UI-001`), the same unit
            and the same route the mixer uses — rendered by the arrangement
            directly below the last track, where the next one would go, rather

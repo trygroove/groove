@@ -74,6 +74,7 @@
     "test:library": "vitest run --project=library-pipeline",
     "test:watch": "vitest --project=domain --project=audio --project=ui --project=data --project=platform --project=functions",
     "test:ui": "vitest --ui",
+    "eval:assistant": "bun scripts/eval-assistant.ts",
     "test:emulator": "firebase emulators:exec --only firestore,storage --project demo-solid-groove \"vitest run --config tests/emulator/vitest.config.ts\"",
     "pretest:browser:emulator:chromium": "bun run samples && bun run functions:build",
     "test:browser:emulator:chromium": "firebase emulators:exec --only firestore,auth,storage,functions --project demo-solid-groove \"playwright test --config=tests/e2e/emulator/playwright.config.ts --project=chromium\"",

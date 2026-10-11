@@ -366,6 +366,10 @@ describe("the OPS-03 content rule against the replay payload (ADR 0002 decision 
       "ASSETS",
       "row.image",
       "INSIDE_ID",
+      // The assistant card's control links (GRV-5): `#control:` and a control
+      // key, which is a prefixed entity ID (or the song or master) and a
+      // parameter key from our own registry. Never a name or a value.
+      "controlHref(props.address)",
     ];
     const offenders: string[] = [];
     for (const file of sourceFiles()) {

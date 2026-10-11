@@ -75,7 +75,7 @@ import {
   toTicks,
 } from "../domain";
 import { createManualClock } from "../shared/clock";
-import { historyProposalTarget } from "../testing/historyProposalTarget";
+import { historyProposalTarget } from "./historyProposalTarget";
 import { type ProposalIssueCode, validateProposal } from "./proposal";
 import { createProposalExecutor } from "./proposalExecutor";
 import {

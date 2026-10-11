@@ -15,6 +15,7 @@ const parts: ProviderRequestParts = {
       name: "track_setFlag",
       description: "Mute a track.",
       input_schema: { type: "object", properties: {} },
+      eager_input_streaming: true,
     },
   ],
   pseudonymousUserId: "abc123",
@@ -34,7 +35,8 @@ const PINNED: Record<AssistantModelId, () => void> = {
       messages: parts.messages,
       tools: parts.tools,
       metadata: { user_id: "abc123" },
-      thinking: { type: "adaptive" },
+      // Summarized, so a long think streams rather than going silent (GRV-6).
+      thinking: { type: "adaptive", display: "summarized" },
       output_config: { effort: "medium" },
     });
   },
@@ -87,6 +89,8 @@ describe("providerTools", () => {
       expect(tool.description.length).toBeGreaterThan(0);
       expect(tool.input_schema.type).toBe("object");
       expect(tool.input_schema).not.toHaveProperty("$schema");
+      // A large proposal streams as it is written, not after a silence (GRV-6).
+      expect(tool.eager_input_streaming).toBe(true);
     }
   });
 

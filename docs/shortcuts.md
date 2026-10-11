@@ -80,6 +80,16 @@ than also meaning `track.move_left`. It suppresses nothing else.
 | `assistant.grow_more` | Grow the assistant more | `Shift+Up / Shift+Left` | `Shift+Up / Shift+Left` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
 | `assistant.shrink_more` | Shrink the assistant more | `Shift+Down / Shift+Right` | `Shift+Down / Shift+Right` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
 | `assistant.send` | Send the message | `Enter` | `Enter` | Navigation | composer | Groove addition — Live has no assistant; Enter sends, as in any chat composer |
+| `assistant.ask_option_1` | Pick answer 1 | `1` | `1` | Navigation | assistant_ask | Groove addition — Live has no assistant; number keys pick an answer |
+| `assistant.ask_option_2` | Pick answer 2 | `2` | `2` | Navigation | assistant_ask | Groove addition — Live has no assistant; number keys pick an answer |
+| `assistant.ask_option_3` | Pick answer 3 | `3` | `3` | Navigation | assistant_ask | Groove addition — Live has no assistant; number keys pick an answer |
+| `assistant.ask_option_4` | Pick answer 4 | `4` | `4` | Navigation | assistant_ask | Groove addition — Live has no assistant; number keys pick an answer |
+| `assistant.ask_option_5` | Pick answer 5 | `5` | `5` | Navigation | assistant_ask | Groove addition — Live has no assistant; number keys pick an answer |
+| `assistant.ask_option_6` | Pick answer 6 | `6` | `6` | Navigation | assistant_ask | Groove addition — Live has no assistant; number keys pick an answer |
+| `assistant.ask_option_7` | Pick answer 7 | `7` | `7` | Navigation | assistant_ask | Groove addition — Live has no assistant; number keys pick an answer |
+| `assistant.ask_option_8` | Pick answer 8 | `8` | `8` | Navigation | assistant_ask | Groove addition — Live has no assistant; number keys pick an answer |
+| `assistant.ask_finish` | Send the answers | `Enter` | `Enter` | Navigation | assistant_ask | Groove addition — Live has no assistant |
+| `assistant.ask_hear` | Hear the answer | `Space` | `Space` | Navigation | assistant_ask | Groove addition — Live has no assistant |
 | `device.move_earlier` | Move device earlier | `Option+Up` | `Alt+Up` | Mixer and Devices | editor | Groove addition — Live reorders devices by dragging only |
 | `device.move_later` | Move device later | `Option+Down` | `Alt+Down` | Mixer and Devices | editor | Groove addition — Live reorders devices by dragging only |
 | `track.move_left` | Move track left | `Left` | `Left` | Mixer and Devices | editor | Groove addition — Live reorders tracks by dragging only |
@@ -165,6 +175,21 @@ may claim the arrows they claim. `assistant.send` is the assistant's composer
 (GRV-26), in the `composer` focus context: Enter sends the message, and
 `Shift+Enter` is left to the text box, which adds a line. While a reply is on
 its way, Enter does nothing; Stop is the button beside the composer.
+
+When the assistant asks a question (GRV-42), the `assistant_ask` focus context
+is live while focus is anywhere in its panel except a text box or the resize
+edge: `1`-`8` pick the question's options in the order its chips number them,
+in place of the view keys, and `assistant.ask_finish` (Enter) sends the
+options picked when the question takes several. With nothing picked or typed
+yet there is nothing to send, so Enter on a focused chip presses it as it
+would any button, toggling it; on a single choice's chip Enter is always the
+chip's, which answers with it. A chip is a button, so Space
+presses it, which picks or toggles it, unless the option has a sound: then
+`assistant.ask_hear` (Space) plays it instead. With focus on the panel rather
+than on a button, Space still plays and stops the song, through the same
+mapping. Typing in the composer or in the
+question's own text box keeps every digit, and Enter in that text box sends
+what it says (`assistant.send`).
 
 ## Deviations from Ableton Live
 

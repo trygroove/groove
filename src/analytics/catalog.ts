@@ -110,6 +110,7 @@ export {
 } from "./catalog/app";
 export {
   ASSISTANT_PROPOSAL_CAPABILITIES,
+  ASSISTANT_RECOMMENDATION_REFUSALS,
   ASSISTANT_SUGGESTION_IDS,
 } from "./catalog/assistant";
 export { SAMPLE_RATE_KEYS, type SampleRateKey, sampleRateKey } from "./catalog/audio";

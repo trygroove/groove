@@ -403,6 +403,48 @@ describe("EditorSession", () => {
     expect(transport.named("undo_used")).toHaveLength(0);
   });
 
+  describe("warnBeforeExit (GRV-60)", () => {
+    function removeFirstNote(): void {
+      const { session, project, clipId } = ctx;
+      const clip = project.clips[0];
+      if (clip.content.kind !== "notes") throw new Error("expected a note clip");
+      session.dispatch(removeNotes(clipId, [clip.content.events[0].id]));
+    }
+
+    it("does not warn or log when nothing is unsaved", () => {
+      const { session, transport } = ctx;
+
+      expect(session.warnBeforeExit()).toBe(false);
+      expect(transport.named("unsaved_exit_warned")).toHaveLength(0);
+    });
+
+    it("warns, logs the pending state once, and starts the write", async () => {
+      const { session, transport } = ctx;
+      removeFirstNote();
+
+      expect(session.warnBeforeExit()).toBe(true);
+      const warned = transport.named("unsaved_exit_warned");
+      expect(warned).toHaveLength(1);
+      expect(warned[0]?.params).toMatchObject({ save_state: "pending" });
+
+      await vi.waitFor(() => expect(session.autosave.status.state).toBe("saved"));
+      expect(session.warnBeforeExit()).toBe(false);
+      expect(transport.named("unsaved_exit_warned")).toHaveLength(1);
+    });
+
+    it("warns after a failed save, whose edit is still queued", async () => {
+      const { session, transport, repository } = ctx;
+      repository.failNextWrites({ count: 2 });
+      removeFirstNote();
+      await session.autosave.flush();
+
+      expect(session.warnBeforeExit()).toBe(true);
+      expect(transport.named("unsaved_exit_warned")[0]?.params).toMatchObject({
+        save_state: "failed",
+      });
+    });
+  });
+
   it("logs project_opened exactly once when the session is constructed", () => {
     const { transport } = ctx;
 

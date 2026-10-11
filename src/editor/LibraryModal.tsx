@@ -1,5 +1,5 @@
 import { For, type JSX, Show } from "@solidjs/web";
-import { createMemo, createSignal, onSettled } from "solid-js";
+import { createEffect, createMemo, createSignal, onSettled } from "solid-js";
 import { type Analytics, analytics as defaultAnalytics } from "../analytics/analytics";
 import { loadEveryAsset } from "../library/allAssets";
 import type { PreviewEngine } from "../library/audition";
@@ -162,6 +162,13 @@ export interface LibraryModalProps {
    * browser's storage; injected in tests.
    */
   readonly recentlyHeard?: RecentlyHeardStore;
+  /**
+   * A pack to open on, by slug: the assistant's "Open in library" (GRV-23).
+   * The library shows that pack's sounds, as opening it from Browse packs
+   * does, then says so through `onPackOpened`.
+   */
+  readonly openPack?: string | null;
+  onPackOpened?(): void;
 }
 
 /** How long a committed insert stays marked on the slot's readout. */
@@ -501,6 +508,18 @@ export default function LibraryModal(props: LibraryModalProps): JSX.Element {
       setView(next);
     });
   }
+
+  // The pack it is asked to open on (GRV-23): the slug is the one reactive
+  // read; opening it is a write, so it is the apply half's.
+  createEffect(
+    () => props.openPack ?? null,
+    (slug) => {
+      if (!slug) return;
+      showView("packs");
+      openPack(slug);
+      props.onPackOpened?.();
+    },
+  );
 
   /** Swap the main area to the similar-sounds view for `asset`. */
   function openSimilar(asset: LibraryAsset): void {

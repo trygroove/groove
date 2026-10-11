@@ -6,7 +6,11 @@ import {
 } from "../domain/fixtures";
 import { selectOnly } from "../selection/selection";
 import { buildAssistantPayload } from "./payload";
-import { assistantContextPayloadSchema, assistantSelectedNotesSchema } from "./protocol";
+import {
+  assistantContextPayloadSchema,
+  assistantSelectedNotesSchema,
+  MAX_CONTEXT_PLACEMENTS,
+} from "./protocol";
 
 describe("buildAssistantPayload", () => {
   it("is what the gateway's allowlist schema accepts", () => {
@@ -25,6 +29,53 @@ describe("buildAssistantPayload", () => {
     }
   });
 
+  it("still accepts a track with no pads, as a tab on the earlier bundle sends", () => {
+    const payload = buildAssistantPayload(createDrumMachineFixtureProject());
+    const legacyTracks = payload.tracks.map(({ pads: _pads, ...track }) => track);
+    const parsed = assistantContextPayloadSchema.parse({
+      ...payload,
+      tracks: legacyTracks,
+    });
+    expect(parsed.tracks.every((track) => track.pads.length === 0)).toBe(true);
+  });
+
+  it("still accepts a track with no placements, as a tab on an earlier bundle sends", () => {
+    const payload = buildAssistantPayload(createReferenceProject());
+    const legacyTracks = payload.tracks.map(
+      ({ placements: _placements, ...track }) => track,
+    );
+    const parsed = assistantContextPayloadSchema.parse({
+      ...payload,
+      tracks: legacyTracks,
+    });
+    expect(parsed.tracks.every((track) => track.placements.length === 0)).toBe(true);
+  });
+
+  it("lists at most MAX_CONTEXT_PLACEMENTS of a track's placements, the earliest first", () => {
+    const project = createReferenceProject({
+      trackCount: 1,
+      placementCount: 200,
+      automationLaneCount: 0,
+    });
+    const [track] = buildAssistantPayload(project).tracks;
+    expect(track.placementCount).toBe(
+      project.song.placements.filter((placement) => placement.trackId === track.id)
+        .length,
+    );
+    expect(track.placements).toHaveLength(MAX_CONTEXT_PLACEMENTS);
+    const starts = track.placements.map((placement) => placement.startTicks);
+    expect(starts).toEqual([...starts].sort((a, b) => a - b));
+    expect(
+      assistantContextPayloadSchema.safeParse(buildAssistantPayload(project)).success,
+    ).toBe(true);
+  });
+
+  it("carries the song's current swing, so a swing change starts from it", () => {
+    const project = createSliceFixtureProject();
+    const swung = { ...project, song: { ...project.song, swing: 62 } };
+    expect(buildAssistantPayload(swung).swing).toBe(62);
+  });
+
   it("carries ADR 0007's allowlist and nothing else", () => {
     const payload = buildAssistantPayload(createReferenceProject());
     expect(Object.keys(payload).sort()).toEqual(
@@ -34,6 +85,7 @@ describe("buildAssistantPayload", () => {
         "sections",
         "selectedNotes",
         "selection",
+        "swing",
         "tempo",
         "timeSignature",
         "totalTicks",

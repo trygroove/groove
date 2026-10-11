@@ -11,6 +11,7 @@
       "!playwright-report",
       "!test-results",
       "!vitest-report",
+      "!tmp",
       "!scripts/starter-library/acquire/candidate-sources",
       "!scripts/starter-library/acquire/candidates.json",
       "!src/library/factoryLibrary.generated.ts",

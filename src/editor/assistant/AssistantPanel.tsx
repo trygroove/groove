@@ -48,9 +48,13 @@ export const CLEARANCE_PROPERTY = "--assistant-clearance";
 /** The status a previewed proposal puts in the panel's header and bar (GRV-5). */
 export const PREVIEWING_STATUS = "Previewing a change";
 
+/** The status a sound being tried from a recommended pack puts there (GRV-23). */
+export const TRYING_STATUS = "Previewing a sound";
+
 function panelStatus(chat: AssistantChat | undefined): string {
   if (chat?.conversation.streaming()) return WRITING_STATUS;
   if (chat?.proposals?.previewing()) return PREVIEWING_STATUS;
+  if (chat?.recommendations?.trying()) return TRYING_STATUS;
   return "";
 }
 
@@ -129,7 +133,8 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
             </span>
             {/* The status slot, so the minimised bar still says it:
                 "Writing…" while a reply streams, "Previewing a change" while a
-                proposal is previewed (GRV-5). */}
+                proposal is previewed (GRV-5), "Previewing a sound" while a
+                recommended sound is tried (GRV-23). */}
             <span class="assistant-panel-status">{panelStatus(props.chat)}</span>
           </div>
           <Switch>
@@ -188,6 +193,7 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
             <AssistantChatView
               chat={chat()}
               bindComposer={(element) => props.panel.bindComposer(element)}
+              bindAskText={(element) => props.panel.bindAskText(element)}
               focusComposer={() => props.panel.focusComposer()}
               settingsOpen={settingsOpen}
               closeSettings={() => setSettingsOpen(false)}

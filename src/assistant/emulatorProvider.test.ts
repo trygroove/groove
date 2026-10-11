@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { executeTransaction } from "../commands/execute";
 import type { Project } from "../domain/entities";
-import { createReferenceProject, createSliceFixtureProject } from "../domain/fixtures";
+import {
+  createDenseStepFixtureProject,
+  createReferenceProject,
+  createSliceFixtureProject,
+} from "../domain/fixtures";
 import { SONG_SWING } from "../domain/parameters";
+import { buildAssistantLibrary, DRUM_PACK_ID } from "../testing/assistantLibrary";
 import {
   createEmulatorAssistantProvider,
+  DUSTIER_ROLE,
+  EMULATOR_ASK,
   EMULATOR_REPLY_CHUNKS,
+  LOOSEN_EXPLANATION,
   LOOSEN_SWING,
   LOOSEN_VOLUME_DROP_DB,
   usesEmulatorProvider,
@@ -14,11 +22,13 @@ import { type AssistantGatewayDeps, runAssistantTurn } from "./gateway";
 import { createInMemoryGuardStores } from "./inMemoryGuardStores";
 import { buildAssistantPayload } from "./payload";
 import { validateProposal } from "./proposal";
+import type { AssistantLibraryContext } from "./protocol";
 import {
   AssistantGatewayError,
   type AssistantStreamChunk,
   type AssistantTurnResult,
 } from "./protocol";
+import { splitRecommendations, validateRecommendation } from "./recommendation";
 
 /** The emulator's provider, behind the real gateway, as the function runs it. */
 function gateway(): AssistantGatewayDeps {
@@ -36,6 +46,7 @@ function turn(
   text: string,
   signal: AbortSignal = new AbortController().signal,
   project: Project = createReferenceProject(),
+  library?: AssistantLibraryContext,
 ): { chunks: AssistantStreamChunk[]; result: Promise<AssistantTurnResult> } {
   const chunks: AssistantStreamChunk[] = [];
   const result = runAssistantTurn(
@@ -45,6 +56,7 @@ function turn(
       projectRevision: project.metadata.revision,
       messages: [{ role: "user", text }],
       context: buildAssistantPayload(project),
+      ...(library ? { library } : {}),
     },
     { signal, onChunk: (chunk) => chunks.push(chunk) },
   );
@@ -131,6 +143,115 @@ describe("the emulator's assistant provider", () => {
       (candidate) => candidate.id === track.id,
     );
     expect(after?.mixer.volume).toBe(track.mixer.volume - LOOSEN_VOLUME_DROP_DB);
+    expect(validation.proposal.explanation).toEqual(LOOSEN_EXPLANATION);
+  });
+
+  it("ends [ask] in a question for the producer, and [ask-multi] in a multi-select", async () => {
+    const single = await turn(gateway(), "Help [ask]").result;
+    expect(single.stopReason).toBe("tool_use");
+    expect(single.proposal).toBeNull();
+    expect(single.ask).toEqual({ id: "toolu_ask", ...EMULATOR_ASK, multiSelect: false });
+    const multi = await turn(gateway(), "Help [ask-multi]").result;
+    expect(multi.ask?.multiSelect).toBe(true);
+  });
+
+  it("ends [ask-rich] in a question about the project's first track, with a preview that applies", async () => {
+    const project = createReferenceProject();
+    const reply = await turn(gateway(), "Where do I start? [ask-rich]").result;
+    const options = reply.ask?.options ?? [];
+    expect(options.map((option) => option.label)).toEqual([
+      "The first track",
+      "The opening",
+      "Slower, at 100 BPM",
+    ]);
+    expect(options[0]?.ref).toEqual({
+      kind: "track",
+      trackId: project.song.tracks[0]?.id,
+    });
+    const preview = options[2]?.sound;
+    if (preview?.kind !== "preview") throw new Error("the third option has no preview");
+    const validation = validateProposal(project, {
+      baseRevision: project.metadata.revision,
+      calls: preview.calls,
+    });
+    expect(validation.ok).toBe(true);
+    expect(options[2]?.doneWhen).toEqual({ kind: "tempo", max: 100 });
+  });
+
+  it("answers CF-034's 'anything dustier?' with unused kicks, dustiest first", async () => {
+    const project = createSliceFixtureProject();
+    const bd = project.song.tracks.find((candidate) => candidate.name === "BD");
+    const library = buildAssistantLibrary();
+    const signal = new AbortController().signal;
+    const reply = await turn(
+      gateway(),
+      "The kick is too clean. Anything dustier?",
+      signal,
+      project,
+      library,
+    ).result;
+    expect(reply.stopReason).toBe("tool_use");
+    if (!reply.proposal) throw new Error("no recommendation");
+    const split = splitRecommendations(reply.proposal);
+    expect(split.proposal).toBeNull();
+    expect(split.recommendations).toHaveLength(1);
+    const validation = validateRecommendation(split.recommendations[0].input, library);
+    if (!validation.ok) throw new Error(validation.message);
+    const { pack, sounds, trackId } = validation.recommendation;
+    expect(pack.id).toBe(DRUM_PACK_ID);
+    // The one the project uses is left out; the grittiest comes first.
+    expect(sounds.map((sound) => sound.name)).toEqual([
+      "Dusty Kick",
+      "Warm Kick",
+      "Tight Kick",
+    ]);
+    expect(sounds.every((sound) => sound.role === DUSTIER_ROLE)).toBe(true);
+    expect(trackId).toBe(bd?.id);
+  });
+
+  it("names the kick's pad on a drum machine, not whichever is selected", async () => {
+    // A kit of BD, SD and HH: the kick is for BD, whatever the producer last touched.
+    const project = createDenseStepFixtureProject();
+    const drums = project.song.tracks[0];
+    if (drums.instrument?.kind !== "drumMachine") throw new Error("not a kit");
+    const bd = drums.instrument.pads.find((pad) => pad.name === "BD");
+    const library = buildAssistantLibrary();
+    const reply = await turn(
+      gateway(),
+      "The kick is too clean. Anything dustier?",
+      new AbortController().signal,
+      project,
+      library,
+    ).result;
+    if (!reply.proposal) throw new Error("no recommendation");
+    const [call] = splitRecommendations(reply.proposal).recommendations;
+    const validation = validateRecommendation(call.input, library);
+    if (!validation.ok) throw new Error(validation.message);
+    expect(validation.recommendation.trackId).toBe(drums.id);
+    expect(validation.recommendation.padId).toBe(bd?.id);
+  });
+
+  it("names no pad on a sampler track", async () => {
+    const library = buildAssistantLibrary();
+    const reply = await turn(
+      gateway(),
+      "Anything dustier?",
+      new AbortController().signal,
+      createSliceFixtureProject(),
+      library,
+    ).result;
+    if (!reply.proposal) throw new Error("no recommendation");
+    const [call] = splitRecommendations(reply.proposal).recommendations;
+    const validation = validateRecommendation(call.input, library);
+    if (!validation.ok) throw new Error(validation.message);
+    expect(validation.recommendation.padId).toBeNull();
+  });
+
+  it("says it can't find one when the turn carries no library", async () => {
+    const reply = await turn(gateway(), "Anything dusty?").result;
+    expect(reply.stopReason).toBe("end_turn");
+    expect(reply.proposal).toBeNull();
+    expect(reply.text).toMatch(/can't find/);
   });
 
   it("is only chosen in the emulator, and only with no key", () => {

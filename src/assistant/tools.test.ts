@@ -6,16 +6,19 @@ import {
   ASSISTANT_COMMAND_TYPES,
   ASSISTANT_TOOLSET_VERSION,
   assistantTools,
+  EXPLAIN_TOOL,
+  EXPLAIN_TOOL_NAME,
   NON_ASSISTANT_COMMANDS,
   PROPOSAL_CAPABILITIES,
   proposalCapability,
+  proposalExplanationSchema,
   resolveToolCall,
   toolNameFor,
 } from "./tools";
 
 describe("the assistant's tool set", () => {
   it("is versioned", () => {
-    expect(ASSISTANT_TOOLSET_VERSION).toBe(2);
+    expect(ASSISTANT_TOOLSET_VERSION).toBe(6);
   });
 
   it("maps every Appendix A family the PRD named", () => {
@@ -111,6 +114,36 @@ describe("the assistant's tool set", () => {
         code: "unknown_tool",
       });
     }
+  });
+
+  it("names the exact parameter IDs parameter_set takes, so a model need not guess them", () => {
+    const tool = assistantTools().find((entry) => entry.name === "parameter_set");
+    for (const id of [
+      "song.tempo",
+      "song.swing",
+      "track.volume (-60 to 6 dB)",
+      "track.pan (-1 to 1, -1 left to 1 right)",
+      "track.sendLevel",
+      "return.volume",
+      "master.volume",
+      // An instrument parameter is named without its instrument's prefix.
+      "filterCutoff",
+      "sampleStart",
+    ]) {
+      expect(tool?.description).toContain(id);
+    }
+    expect(tool?.description).not.toContain("synth.filterCutoff");
+  });
+
+  it("offers explain_change beside the command tools, taking a goal and a technique", () => {
+    expect(assistantTools().map((tool) => tool.name)).not.toContain(EXPLAIN_TOOL_NAME);
+    expect(EXPLAIN_TOOL.inputSchema).toMatchObject({
+      type: "object",
+      required: ["goal", "technique"],
+    });
+    expect(
+      proposalExplanationSchema.safeParse({ goal: "  ", technique: "Swing" }).success,
+    ).toBe(false);
   });
 
   it("does not echo an over-long tool name back in full", () => {

@@ -80,6 +80,15 @@ export interface LibraryTargeting {
   endNewAim(): void;
   /** Goes back from a committed insert to where it belongs. */
   returnFromInsert(via: ViewChangeSource): void;
+  /**
+   * Goes to the Library scoped to one pack, by slug: the assistant's "Open in
+   * library" (GRV-23). The selected track's slot stays the target.
+   */
+  openPack(slug: string, via: ViewChangeSource): void;
+  /** The pack the Library is asked to open on, until it has. */
+  readonly requestedPack: Accessor<string | null>;
+  /** The Library opened the requested pack. */
+  packOpened(): void;
   /** The slot the Library auditions through, if its target has one. */
   slotAudition(): SlotAudition | undefined;
   /** The Library's Insert into `target`, through the pack-upgrade check. */
@@ -131,6 +140,8 @@ export function useLibraryTarget(options: UseLibraryTargetOptions): LibraryTarge
     );
   // Registered by the open library modal; the `library` shortcuts run them.
   const [libraryActions, setLibraryActions] = createSignal<LibraryActions | null>(null);
+  // A pack the Library is asked to open on (GRV-23), until it has.
+  const [requestedPack, setRequestedPack] = createSignal<string | null>(null);
 
   // The project's packs: its derived dependencies and its shelf. Nothing in the
   // library window adds a pack for the session any more; inserting does.
@@ -176,8 +187,10 @@ export function useLibraryTarget(options: UseLibraryTargetOptions): LibraryTarge
           : null;
     if (!slot) return undefined;
     return {
-      preview: (asset) => audio.previewInSlot(slot, asset),
-      clear: () => audio.clearPreview(),
+      preview: (asset) => audio.previewInSlot(slot, asset, LIBRARY_PREVIEW),
+      // Only the Library's own override: leaving the Library for an
+      // assistant's Try (GRV-23) must not clear the sound that Try put there.
+      clear: () => audio.clearPreview(LIBRARY_PREVIEW),
       isPlaying: () => audio.isPlaying(),
     };
   }
@@ -389,6 +402,14 @@ export function useLibraryTarget(options: UseLibraryTargetOptions): LibraryTarge
       setNewPadAim(false);
     },
     returnFromInsert,
+    openPack(slug, via) {
+      setNewTrackAim(false);
+      setNewPadAim(false);
+      setRequestedPack(slug);
+      navigation.selectView("library", via);
+    },
+    requestedPack,
+    packOpened: () => setRequestedPack(null),
     slotAudition,
     insert(target, asset, insertOptions) {
       insertedInto = target;
@@ -410,6 +431,9 @@ const AIMS_BACK: ReadonlySet<LibraryTarget["kind"] | undefined> = new Set([
   "new-track",
   "new-pad",
 ]);
+
+/** Marks a slot override as the Library's own, for its close to clear. */
+const LIBRARY_PREVIEW = Object.freeze({ owner: "library" });
 
 /** The footer's sentence when there is no project to insert into. */
 function notOpen(sample: LibrarySample): string {

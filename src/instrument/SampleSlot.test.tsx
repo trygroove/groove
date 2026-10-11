@@ -1,5 +1,9 @@
 import { cleanup, render, screen } from "@solidjs/testing-library";
+import { flush } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { CONTROL_PARTS, controlAddress } from "../commands/controlAddress";
+import { ControlRegistryContext } from "../controls/control";
+import { createControlRegistry } from "../controls/registry";
 import { clickAndFlush } from "../testing/events";
 import SampleSlot from "./SampleSlot";
 import { SampleSlotTargetingContext } from "./sampleSlotTargeting";
@@ -16,6 +20,27 @@ describe("SampleSlot (#447)", () => {
     expect(slot).toHaveTextContent("Deep Kick");
     clickAndFlush(slot);
     expect(onBrowse).toHaveBeenCalledOnce();
+  });
+
+  it("registers as its pad's sample control, so it can be shown and outlined (GRV-23)", () => {
+    const registry = createControlRegistry();
+    const address = controlAddress("pad_kick", CONTROL_PARTS.sample);
+    render(() => (
+      <ControlRegistryContext value={registry}>
+        <SampleSlot
+          label="Sample for Kick"
+          name="Deep Kick"
+          control={address}
+          onBrowse={() => {}}
+        />
+      </ControlRegistryContext>
+    ));
+    flush();
+    const slot = screen.getByRole("button", { name: "Sample for Kick" });
+    expect(registry.elementsFor(address)).toEqual([slot]);
+    registry.setMark(address, "previewed");
+    flush();
+    expect(slot).toHaveAttribute("data-control-mark", "previewed");
   });
 
   it("says when it is empty", () => {

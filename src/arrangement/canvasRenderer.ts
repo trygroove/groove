@@ -75,6 +75,12 @@ export interface InteractionState {
   readonly hoverPlacementId: PlacementId | null;
   /** The clips the selection selects, each drawn with a solid outline. */
   readonly selectedPlacementIds: ReadonlySet<PlacementId>;
+  /**
+   * What another surface is pointing at (GRV-42: the assistant's question,
+   * while an option about a track, a clip or some bars is hovered), drawn as
+   * bands like the drag band's.
+   */
+  readonly highlight?: readonly ArrangementBand[];
 }
 
 /**
@@ -549,6 +555,7 @@ export function drawInteractionLayer(
   const { ctx, viewport, projection } = env;
   const rulerTop = contentTopOffset();
 
+  for (const band of interaction.highlight ?? []) drawBand(env, band);
   if (interaction.band) drawBand(env, interaction.band);
   if (interaction.point) drawPoint(env, interaction.point);
 

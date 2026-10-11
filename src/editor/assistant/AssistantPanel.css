@@ -313,21 +313,17 @@
   font-weight: 600;
 }
 
-/* A control's name: a link that shows the control in the editor. */
+/* A control's name: a link, underlined like one, that shows the control in the editor. */
 .assistant-control-link {
-  padding: 0;
-  border: none;
-  background: none;
   color: var(--color-foreground-bright);
-  font: inherit;
   font-weight: 600;
-  text-align: left;
-  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--color-foreground-muted);
+  text-underline-offset: 3px;
 }
 
 .assistant-control-link:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  text-decoration-color: currentColor;
 }
 
 .assistant-control-link:focus-visible {
@@ -423,14 +419,112 @@
 
 .assistant-why .assistant-control-link {
   font-weight: 400;
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
-.assistant-why-steps {
+/* A recommended pack (GRV-23), after docs/assistant-panel.html: the cover
+   as the library draws it beside the pack's name, why, status and size; its
+   sounds, each with a button to hear it; and the actions, as a proposal's. */
+.assistant-pack-top {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+}
+
+.assistant-pack-about {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.assistant-card .assistant-pack-name {
+  font-size: var(--font-size-base);
+  overflow-wrap: anywhere;
+}
+
+.assistant-pack-why {
   margin: 0;
-  padding: 0;
+  color: var(--color-foreground);
+  font-size: var(--font-size-small);
+}
+
+.assistant-pack-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.assistant-card .assistant-pack-status {
+  padding: 1px 6px;
+  box-shadow: inset 0 0 0 1px var(--color-border);
+  color: var(--color-foreground-bright);
+  font-size: var(--font-size-tiny);
+}
+
+.assistant-pack-sounds {
+  margin: 0;
+  padding: 0 0 6px;
   list-style: none;
+}
+
+.assistant-pack-sounds li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 3px 12px 3px 8px;
+}
+
+.assistant-pack-sounds li:hover {
+  background: var(--color-background-secondary);
+}
+
+.assistant-pack-hear {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--color-foreground);
+  cursor: pointer;
+}
+
+.assistant-pack-hear:hover {
+  background: var(--color-background-hover);
+  color: var(--color-foreground-bright);
+}
+
+.assistant-pack-hear:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+.assistant-card .assistant-pack-sound {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.assistant-pack-sound b {
+  font-size: var(--font-size-small);
+  font-weight: 600;
+}
+
+.assistant-pack-sound small {
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-tiny);
+}
+
+.assistant-recommendation .assistant-proposal-actions .assistant-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* An inline error: framed and worded, never red (docs/design.md). */
@@ -609,6 +703,222 @@
   margin: 0;
   font-size: var(--font-size-small);
   color: var(--color-foreground);
+}
+
+/* A question the assistant asks (GRV-42), between the log and the composer
+   until it is answered: the question, its options as square chips in a wrap
+   with the suggested one marked, and a "something else" box. */
+.assistant-ask {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 60%;
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--color-background);
+}
+
+.assistant-ask:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+.assistant-ask-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.assistant-ask-dismiss {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-foreground);
+  cursor: pointer;
+}
+
+.assistant-ask-dismiss:hover {
+  background: var(--color-background-hover);
+  color: var(--color-foreground-bright);
+}
+
+.assistant-ask-dismiss:focus-visible,
+.assistant-ask-option:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+.assistant-ask-question {
+  margin: 0;
+  color: var(--color-foreground-bright);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.assistant-ask-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.assistant-ask-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 30px;
+  max-width: 100%;
+  padding: 6px 10px 6px 8px;
+  border: none;
+  border-radius: 0;
+  background: var(--color-background-tertiary);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.assistant-ask-option:hover:not(:disabled) {
+  background: var(--color-background-hover);
+  color: var(--color-foreground-bright);
+}
+
+.assistant-ask-option:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The one the assistant would pick: framed in white, not filled. */
+.assistant-ask-option.assistant-ask-suggested-option {
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+/* Picked, in a multi-select: the brightest thing in the card. */
+.assistant-ask-option[aria-pressed="true"] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.assistant-ask-option[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--color-accent-dim);
+  color: var(--color-on-accent);
+}
+
+.assistant-ask-key {
+  flex: none;
+  min-width: 10px;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-tiny);
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+}
+
+.assistant-ask-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  line-height: 18px;
+}
+
+.assistant-ask-label {
+  overflow-wrap: anywhere;
+}
+
+.assistant-ask-description {
+  color: var(--color-foreground);
+  font-size: var(--font-size-tiny);
+  line-height: 14px;
+  overflow-wrap: anywhere;
+}
+
+/* What an option is about (a track, a clip, some bars), under its label. */
+.assistant-ask-about {
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-tiny);
+  line-height: 14px;
+  overflow-wrap: anywhere;
+}
+
+/* The option has a sound: a small speaker beside the label. */
+.assistant-ask-listen {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 18px;
+  color: var(--color-foreground);
+}
+
+.assistant-ask-suggested {
+  flex: none;
+  color: var(--color-foreground-bright);
+  font-size: var(--font-size-tiny);
+  line-height: 18px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.assistant-ask-option[aria-pressed="true"] .assistant-ask-key,
+.assistant-ask-option[aria-pressed="true"] .assistant-ask-description,
+.assistant-ask-option[aria-pressed="true"] .assistant-ask-about,
+.assistant-ask-option[aria-pressed="true"] .assistant-ask-listen,
+.assistant-ask-option[aria-pressed="true"] .assistant-ask-suggested {
+  color: var(--color-on-accent);
+}
+
+.assistant-ask-other {
+  display: flex;
+  gap: 4px;
+}
+
+.assistant-ask-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: none;
+  border-radius: 0;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-small);
+}
+
+.assistant-ask-input:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+.assistant-ask-input:disabled {
+  opacity: 0.5;
+}
+
+.assistant-button-primary:disabled {
+  background: var(--color-background-tertiary);
+  color: var(--color-foreground-muted);
+  cursor: default;
+}
+
+.assistant-ask-hint {
+  text-align: left;
+}
+
+.assistant-reply p.assistant-reply-asked {
+  color: var(--color-foreground);
+  font-size: var(--font-size-small);
 }
 
 /* The resize edge: an invisible strip astride the panel's top edge while it

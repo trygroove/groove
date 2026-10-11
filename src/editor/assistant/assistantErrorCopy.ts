@@ -43,6 +43,8 @@ export function errorMessage(
       return "Its model refused the request.";
     case "malformed_response":
       return "Its reply came back broken.";
+    case "reply_too_long":
+      return "Its reply ran out of room before it finished. Try asking for a smaller change.";
     case "quota_exceeded":
       return error.resetsAt === undefined
         ? "You've used all your assistant requests for the last 24 hours."

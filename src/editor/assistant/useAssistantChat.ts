@@ -1,8 +1,10 @@
 /**
  * Everything the assistant's composer and conversation need (GRV-26), held
  * once per editor beside the panel's layout (`useAssistantPanel.ts`): the
- * scope the chip says, the draft, the suggestion chips and the conversation.
- * The panel renders it, and the shortcut layer sends the draft on Enter.
+ * scope the chip says, the draft, the suggestion chips and the conversation,
+ * and the answer being put together to a question the assistant asked
+ * (GRV-42). The panel renders it, and the shortcut layer sends the draft on
+ * Enter and picks an answer on `1`-`8`.
  */
 import { type Accessor, createEffect, createMemo, createSignal } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
@@ -11,6 +13,8 @@ import type { AssistantRetentionClient } from "../../assistant/retentionClient";
 import type { Project } from "../../domain/entities";
 import type { Suggestion } from "../../projection/projectAnalysisProjection";
 import type { EditorViewName } from "../editorViews";
+import type { AskEditorLink } from "./askReferences";
+import { type AssistantLibrary, libraryContext } from "./assistantLibrary";
 import {
   type AssistantScope,
   resolveScope,
@@ -20,6 +24,8 @@ import {
   widen,
 } from "./assistantScope";
 import { assistantSuggestions } from "./assistantSuggestions";
+import type { ConversationStore } from "./conversationStore";
+import { type AskDraft, useAskDraft } from "./useAskDraft";
 import {
   type AssistantConversation,
   useAssistantConversation,
@@ -30,6 +36,11 @@ import {
   type UseAssistantProposalsOptions,
   useAssistantProposals,
 } from "./useAssistantProposals";
+import {
+  type AssistantRecommendations,
+  type RecommendationEditorPort,
+  useAssistantRecommendations,
+} from "./useAssistantRecommendations";
 import { type AssistantRetention, useAssistantRetention } from "./useAssistantRetention";
 
 /** Who is here to talk: a signed-in account, or someone who must sign in. */
@@ -65,12 +76,36 @@ export interface UseAssistantChatOptions {
   /**
    * The editor session and controls a proposal previews, applies and shows
    * itself through (GRV-5). Without them a proposal is listed, but there is
-   * nothing to apply it to.
+   * nothing to apply it to. A question's options hear the producer's own
+   * edits through the same session (GRV-42).
    */
   readonly editor?: {
     readonly session: ProposalSessionPort;
     readonly controls: UseAssistantProposalsOptions["controls"];
+    /**
+     * The library a turn may recommend from, and the slots, audio and insert
+     * a recommendation is tried and kept through (GRV-23). Without them the
+     * assistant is sent no library, so it recommends nothing.
+     */
+    readonly recommendations?: {
+      readonly library: AssistantLibrary;
+      readonly port: RecommendationEditorPort;
+    };
   };
+  /**
+   * The committed project, never a preview of it (GRV-42): what a question
+   * is asked against and answered by doing in. Defaults to {@link project}.
+   */
+  readonly committedProject?: () => Project | null;
+  /** What a question's options can do in the editor (GRV-42). */
+  readonly link?: AskEditorLink;
+  /**
+   * Where the conversation is kept across a reload (GRV-42), for this account
+   * and project, or null to keep it in memory only.
+   */
+  readonly conversationKey?: Accessor<string | null>;
+  /** The store it is kept in; this tab's session storage by default. */
+  readonly conversationStore?: ConversationStore;
 }
 
 export interface AssistantChat {
@@ -88,9 +123,15 @@ export interface AssistantChat {
   readonly account: Accessor<AssistantAccount>;
   /** The proposal cards, when there is an editor to apply them to. */
   readonly proposals: AssistantProposals | null;
+  /** The recommended packs, when there is an editor and a library to try them in. */
+  readonly recommendations: AssistantRecommendations | null;
+  /** The pending question's answer so far (GRV-42). */
+  readonly ask: AskDraft;
   /** The account's answer about keeping conversations, when it is asked for. */
   readonly retention: AssistantRetention | null;
 }
+
+export type { AskDraft } from "./useAskDraft";
 
 export function useAssistantChat(options: UseAssistantChatOptions): AssistantChat {
   // The chip's choice, kept against the selection it was made for: a new
@@ -142,6 +183,21 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
       })
     : null;
 
+  const recommending = editor?.recommendations;
+  const recommendations =
+    editor && recommending
+      ? useAssistantRecommendations({
+          session: editor.session,
+          controls: editor.controls,
+          project: options.project,
+          view: options.view,
+          library: recommending.library,
+          editor: recommending.port,
+          analytics: options.analytics,
+          refresh: (entryId) => conversation.refresh(entryId),
+        })
+      : null;
+
   const conversation = useAssistantConversation({
     client: options.client,
     project: options.project,
@@ -150,6 +206,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     canSend: () =>
       options.account().registered && (retention ? retention.answered() : true),
     analytics: options.analytics,
+    committedProject: options.committedProject,
     onProposal: proposals
       ? (entryId, proposal, origin) => {
           if (origin.turnId) turnOfEntry.set(entryId, origin.turnId);
@@ -166,6 +223,27 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         }
       : undefined,
     remoteChanges: proposals ? () => proposals.remoteChanges() : undefined,
+    library: recommending
+      ? async (project) => {
+          const catalog = await recommending.library.load();
+          return catalog ? libraryContext(catalog, project) : null;
+        }
+      : undefined,
+    onRecommendation: recommendations
+      ? (entryId, call, library, origin) =>
+          recommendations.receive(entryId, call, library, origin)
+      : undefined,
+    persistence: options.conversationKey
+      ? { key: options.conversationKey, store: options.conversationStore }
+      : undefined,
+  });
+
+  const ask = useAskDraft({
+    conversation,
+    project: options.project,
+    committedProject: options.committedProject,
+    onEdit: options.editor?.session.onEdit,
+    link: options.link,
   });
 
   const suggestions = createMemo((): readonly Suggestion[] => {
@@ -192,6 +270,8 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     sendSuggestion: (suggestion) => conversation.send(suggestion.label, suggestion.id),
     account: options.account,
     proposals,
+    recommendations,
+    ask,
     retention,
   };
 }

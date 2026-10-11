@@ -28,6 +28,28 @@ async function askToLoosen(page: Page): Promise<void> {
 const muteBd = (page: Page) =>
   page.getByRole("button", { name: "Mute BD", exact: true }).first();
 
+test.describe("an assistant proposal's explanation", () => {
+  test("names the assistant's goal and technique, and links the changed controls", async ({
+    page,
+  }) => {
+    await newProject(page);
+    await askToLoosen(page);
+
+    // The control rows are links that show the control.
+    await expect(
+      proposal(page).getByRole("list", { name: "Changes" }).getByRole("link"),
+    ).toHaveText(["Swing", "BD volume"]);
+
+    await proposal(page).getByText("Why this works").click();
+    const why = proposal(page).locator("details");
+    // The scripted provider's explain_change, not the request repeated.
+    await expect(why).toContainText("played rather than programmed");
+    await expect(why).toContainText("Swing delays every second 16th note");
+    await why.getByRole("link", { name: "Show BD volume" }).click();
+    await expect(page.getByRole("slider", { name: "Volume for BD" })).toBeVisible();
+  });
+});
+
 test.describe("an assistant proposal that goes out of date", () => {
   test("after an edit here: Apply is off, and Refresh asks again", async ({ page }) => {
     await newProject(page);

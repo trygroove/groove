@@ -16,6 +16,7 @@ import {
 import { pageTitle } from "../../site.config.mjs";
 import { type Analytics, analytics as defaultAnalytics } from "../analytics/analytics";
 import type { AssistantClient } from "../assistant/assistantClient";
+import { getAudioRuntime } from "../audio/AudioRuntime";
 import type { AssistantRetentionClient } from "../assistant/retentionClient";
 import {
   getAssistantClient,
@@ -34,6 +35,7 @@ import type { PreviewEngine } from "../library/audition";
 import { withdrawnFactoryPacks } from "../library/factoryAvailability";
 import { type LibraryClient, sharedLibraryClient } from "../library/libraryClient";
 import type { LibraryPackSummary } from "../library/manifest";
+import { ToneAuditionEngine } from "../library/toneAuditionEngine";
 import { useFavourites } from "../library/useFavourites";
 import type { FavouritesRepository } from "../persistence/favouritesRepository";
 import { getProjectRepository } from "../projectRepositoryClient";
@@ -46,7 +48,11 @@ import { userPackAvailability } from "../userLibrary/userPacks";
 import { type UserLibraryAccount, useUserLibrary } from "../userLibrary/useUserLibrary";
 import ArrangementPane from "./ArrangementPane";
 import AssistantPanel from "./assistant/AssistantPanel";
+import { createAssistantLibrary } from "./assistant/assistantLibrary";
 import type { ScopeSelection, ScopeSources } from "./assistant/assistantScope";
+import { conversationStorageKey } from "./assistant/conversationStore";
+import { recommendationSlot } from "./assistant/recommendationCardModel";
+import { useAskEditorLink } from "./assistant/useAskEditorLink";
 import { useAssistantChat } from "./assistant/useAssistantChat";
 import { useAssistantPanel } from "./assistant/useAssistantPanel";
 import CompatibilityNotice from "./CompatibilityNotice";
@@ -400,10 +406,41 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
     }
     return { selection: picked, track: track() };
   });
+  // The published library the assistant may recommend from (GRV-23), read
+  // through the shared client's cache the first time a turn is sent.
+  const assistantLibrary = createAssistantLibrary(libraryClient);
+  // What a question's options do in the editor (GRV-42): a hovered option's
+  // part of the song drawn on the arrangement, a picked one selected, and its
+  // sound auditioned or previewed.
+  const askLink = useAskEditorLink({
+    project,
+    session,
+    audio,
+    selectTrack: (trackId) => selectTrack(trackId),
+    selectArrangement(selected) {
+      const actions = surfaces.arrangementEditingActions();
+      if (actions) {
+        // The arrangement reports it back through `onSelectionChange`.
+        actions.setSelection(selected);
+        return;
+      }
+      // Off the arrangement: kept for its next visit, and one clip is what
+      // the sequence view edits.
+      arrangementSelection = selected;
+      setArrangementPick(selected);
+      if (selected.kind === "clips" && selected.placementIds.length === 1) {
+        selectPlacement(selected.placementIds[0]);
+      }
+    },
+  });
   // The conversation (GRV-26): one per editor, kept while the panel is
-  // closed, gone on a reload.
+  // closed, and across a reload of the same project in this tab (GRV-42).
   const chat = useAssistantChat({
     project,
+    conversationKey: () => {
+      const uid = props.libraryAccount?.uid;
+      return uid ? conversationStorageKey(uid, props.projectId) : null;
+    },
     view: () => props.view,
     sources: assistantSources,
     account: () => ({
@@ -416,6 +453,8 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
     },
     client: props.assistantClient ?? getAssistantClient,
     analytics,
+    committedProject: () => session.committedProject(),
+    link: askLink,
     // The disclosure comes before the first message, and every turn says
     // where its transcript is filed, if the account keeps any (GRV-8).
     retention: {
@@ -433,6 +472,45 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
         previewing: () => session.state.previewing,
       },
       controls: editorControls,
+      // A recommended sound is tried through the library's hot-swap and kept
+      // through its Insert (GRV-23).
+      recommendations: {
+        library: assistantLibrary,
+        port: {
+          slotFor: (trackId, padId) => {
+            const current = project();
+            return current
+              ? recommendationSlot(
+                  current,
+                  trackId,
+                  padId,
+                  track(),
+                  trackSelection.padSelection(),
+                )
+              : null;
+          },
+          previewInSlot: (slot, sound) => audio.previewInSlot(slot, sound),
+          clearPreview: () => audio.clearPreview(),
+          keep: (target, sound) =>
+            library.insert(target, sound, { upgradeAnyway: false }),
+          openLibrary: (slug, slot) => {
+            // Aimed at the slot the card tries its sounds in.
+            if (slot) {
+              selectTrack(slot.target.trackId);
+              if (slot.target.kind === "pad") {
+                trackSelection.selectPad(slot.target.trackId, slot.target.padId);
+              }
+            }
+            library.openPack(slug, "reveal");
+          },
+          createAuditionEngine:
+            props.createAuditionEngine ??
+            (() =>
+              new ToneAuditionEngine(getAudioRuntime(), {
+                songTempo: () => project()?.song.tempo ?? 120,
+              })),
+        },
+      },
     },
   });
   // Docked, the editor's views leave the panel's column free (EditorView.css).
@@ -456,6 +534,17 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
     exportOpen,
     assistant,
     sendAssistantDraft: () => chat.sendDraft(),
+    assistantAsk: {
+      pending: () => chat.conversation.pendingAsk() !== null,
+      optionCount: () => chat.conversation.pendingAsk()?.ask.options.length ?? 0,
+      multiSelect: () => chat.conversation.pendingAsk()?.ask.multiSelect === true,
+      pick: (index) => chat.ask.pick(index),
+      canFinish: () => chat.ask.canFinish(),
+      finish: () => chat.ask.finish(),
+      focused: () => chat.ask.focused(),
+      canHear: (index) => chat.ask.canHear(index),
+      hear: (index) => chat.ask.hear(index),
+    },
   });
 
   /** An empty screen's way out: a view, named and keyed as the dock names it. */
@@ -567,6 +656,7 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
                               }}
                               onAddTrack={(spec) => addTrack(currentProject(), spec)}
                               onAddLoop={() => library.aim("arrangement", "new-track")}
+                              highlight={askLink.bands}
                             />
                           </Match>
                           <Match when={props.view === "sequence"}>

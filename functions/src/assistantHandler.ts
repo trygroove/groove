@@ -29,6 +29,7 @@ const HTTPS_CODES: Record<AssistantErrorCode, FunctionsErrorCode> = {
   provider_unavailable: "unavailable",
   provider_error: "failed-precondition",
   malformed_response: "internal",
+  reply_too_long: "out-of-range",
   quota_exceeded: "resource-exhausted",
   assistant_disabled: "unavailable",
   spend_ceiling_reached: "unavailable",

@@ -6,7 +6,7 @@ import { Analytics } from "../../analytics/analytics";
 import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
 import type { AssistantProposal } from "../../assistant/protocol";
-import { ASSISTANT_TOOLSET_VERSION } from "../../assistant/tools";
+import { ASSISTANT_TOOLSET_VERSION, EXPLAIN_TOOL_NAME } from "../../assistant/tools";
 import {
   type ControlAddress,
   controlAddress,
@@ -45,6 +45,12 @@ import { useAssistantPanel } from "./useAssistantPanel";
  */
 
 afterEach(cleanup);
+
+/** What the assistant says the default proposal is for, through `explain_change`. */
+const EXPLANATION = {
+  goal: "The beat feels played rather than programmed.",
+  technique: "Swing delays every second 16th note, the way a drummer's hand lags.",
+};
 
 const ARRANGEMENT: EditorLocation = {
   view: "arrangement",
@@ -142,7 +148,7 @@ async function setUp(options: { retention?: FakeRetentionClient } = {}) {
       value,
     );
 
-  /** Asks, and answers with swing at 58% and the track 3 dB down. */
+  /** Asks, and answers with swing at 58% and the track 3 dB down, explained. */
   async function propose(
     calls: AssistantProposal["calls"] = [
       {
@@ -158,6 +164,7 @@ async function setUp(options: { retention?: FakeRetentionClient } = {}) {
           value: -3,
         },
       },
+      { id: "toolu_3", name: EXPLAIN_TOOL_NAME, input: EXPLANATION },
     ],
   ) {
     fireAndFlush(() =>
@@ -325,12 +332,15 @@ describe("the proposal card (GRV-5)", () => {
     expect(card()).toHaveFocus();
   });
 
-  it("clears the solid outline at the next edit", async () => {
+  it("clears the solid outline at the next edit, and stops saying it is there", async () => {
     const { propose, session, registry, swing, volumeTo } = await setUp();
     await propose();
     await press(cardButton("Apply"));
+    expect(cardStatus()).toHaveTextContent("Changed controls are outlined.");
     fireAndFlush(() => session.dispatch(volumeTo(-12)));
     expect(registry.markOf(swing)).toBe("none");
+    expect(cardStatus()).toHaveTextContent("Applied as one undo step.");
+    expect(cardStatus()).not.toHaveTextContent("outlined");
   });
 
   it("goes out of date under a local edit: Apply is off and Refresh asks again", async () => {
@@ -347,6 +357,63 @@ describe("the proposal card (GRV-5)", () => {
     expect(asked?.projectRevision).toBe(session.committedProject.metadata.revision);
     expect(asked?.context.selection?.description).toContain("BD");
     expect(within(card()).queryByRole("button", { name: "Refresh" })).toBeNull();
+  });
+
+  it("titles a proposal that answered a question with the answer, and Refresh resends it as an answer (GRV-42)", async () => {
+    const { session, volumeTo, client } = await setUp();
+    fireAndFlush(() =>
+      fireEvent.input(composer(), { target: { value: "Build a drop" } }),
+    );
+    clickAndFlush(button("Send"));
+    await settle();
+    fireAndFlush(() => {
+      client.last().emit({
+        type: "ask",
+        ask: {
+          id: "toolu_ask",
+          question: "How loose?",
+          options: [{ label: "A little" }, { label: "A lot" }],
+          multiSelect: false,
+        },
+      });
+      client.last().done();
+    });
+    clickAndFlush(button(/A little/));
+    await settle();
+    const answer = '[Answer to "How loose?"] Picked: A little.';
+    expect(client.turns[1]?.request.messages.at(-1)).toEqual({
+      role: "user",
+      text: answer,
+    });
+    fireAndFlush(() => {
+      client.last().emit({
+        type: "proposal",
+        proposal: {
+          baseRevision: session.committedProject.metadata.revision,
+          toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+          calls: [
+            {
+              id: "toolu_1",
+              name: "parameter_set",
+              input: { target: { scope: "song", parameterId: SONG_SWING.id }, value: 58 },
+            },
+          ],
+        },
+      });
+      client.last().done();
+    });
+    expect(card()).toHaveTextContent("A little");
+    expect(card()).not.toHaveTextContent("[Answer to");
+
+    fireAndFlush(() => session.dispatch(volumeTo(-6)));
+    await press(cardButton("Refresh"));
+    expect(client.turns).toHaveLength(3);
+    expect(client.turns[2]?.request.messages.at(-1)).toEqual({
+      role: "user",
+      text: answer,
+    });
+    const log = within(panel()).getByRole("log", { name: "Conversation" });
+    expect(within(log).getAllByText("Answer · How loose?")).toHaveLength(2);
   });
 
   it("goes out of date while previewing when the song changes under it", async () => {
@@ -495,30 +562,54 @@ describe("the proposal card (GRV-5)", () => {
     expect(events("assistant_result_edited")).toHaveLength(0);
   });
 
-  it("explains itself: the goal, the technique and the changed controls, each a link", async () => {
+  it("explains itself: the assistant's goal and technique, and the changed controls as links", async () => {
     const { propose, revealControl, swing, volume } = await setUp();
     await propose();
     const why = within(card()).getByText("Why this works");
     fireAndFlush(() => fireEvent.click(why));
     const details = why.closest("details");
     if (!details) throw new Error("no details");
-    expect(details).toHaveTextContent("Goal");
-    expect(details).toHaveTextContent("Loosen the beat");
-    expect(details).toHaveTextContent("Technique");
-    const links = within(details).getAllByRole("button");
-    // A link per technique step, then a link per changed control.
+    expect(details).toHaveTextContent(`Goal${EXPLANATION.goal}`);
+    expect(details).toHaveTextContent(`Technique${EXPLANATION.technique}`);
+    // Neither the request repeated nor the change restated (GRV-5 QA).
+    expect(details).not.toHaveTextContent("Loosen the beat");
+    expect(details).not.toHaveTextContent("Set Swing");
+    const links = within(details).getAllByRole("link");
     expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
-      expect.stringMatching(/^Show .*swing/i),
-      expect.stringMatching(/^Show .*volume/i),
       "Show Swing",
       "Show BD volume",
     ]);
-    clickAndFlush(within(details).getByRole("button", { name: "Show BD volume" }));
+    clickAndFlush(within(details).getByRole("link", { name: "Show BD volume" }));
     expect(revealControl).toHaveBeenLastCalledWith(volume);
     clickAndFlush(
-      within(card()).getAllByRole("button", { name: "Show Swing" })[0] as HTMLElement,
+      within(card()).getAllByRole("link", { name: "Show Swing" })[0] as HTMLElement,
     );
     expect(revealControl).toHaveBeenLastCalledWith(swing);
+  });
+
+  it("folds nothing out when the assistant did not explain the change", async () => {
+    const { propose } = await setUp();
+    await propose([
+      {
+        id: "toolu_1",
+        name: "parameter_set",
+        input: { target: { scope: "song", parameterId: SONG_SWING.id }, value: 58 },
+      },
+    ]);
+    expect(cardButton("Apply")).toBeEnabled();
+    expect(within(card()).queryByText("Why this works")).toBeNull();
+  });
+
+  it("lists its controls as links, not buttons", async () => {
+    const { propose } = await setUp();
+    await propose();
+    const changes = within(card()).getByRole("list", { name: "Changes" });
+    expect(
+      within(changes)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(["Swing", "BD volume"]);
+    expect(within(changes).queryAllByRole("button")).toEqual([]);
   });
 
   it("undoes from the card again after a redo of it from the header", async () => {
@@ -687,14 +778,14 @@ describe("the proposal card from the keyboard (GRV-5)", () => {
     expect(cardButton("Dismiss")).toHaveFocus();
   });
 
-  it("shows a control from its link with Enter or Space", async () => {
+  it("shows a control from its link with Enter", async () => {
     const { propose, revealControl, swing, volume } = await setUp();
     await propose();
-    within(card()).getAllByRole("button", { name: "Show BD volume" })[0]?.focus();
+    within(card()).getAllByRole("link", { name: "Show BD volume" })[0]?.focus();
     await keys("{Enter}");
     expect(revealControl).toHaveBeenLastCalledWith(volume);
-    within(card()).getAllByRole("button", { name: "Show Swing" })[0]?.focus();
-    await keys(" ");
+    within(card()).getAllByRole("link", { name: "Show Swing" })[0]?.focus();
+    await keys("{Enter}");
     expect(revealControl).toHaveBeenLastCalledWith(swing);
   });
 });

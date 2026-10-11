@@ -9,9 +9,11 @@ import {
   shortcutLabel,
   useShortcuts,
 } from "../shortcuts";
+import { ASK_OPTION_SHORTCUT_IDS } from "../shortcuts/registry/assistant";
 import { isTextEntry } from "../shortcuts/textEntry";
 import { arrangementHasFocus } from "./arrangementFocus";
 import { RESIZE_STEP, RESIZE_STEP_LARGE } from "./assistant/assistantPanelLayout";
+import type { AskDraft } from "./assistant/useAssistantChat";
 import type { AssistantPanel } from "./assistant/useAssistantPanel";
 import * as model from "./editorViewModel";
 import type { EditorViewName } from "./editorViews";
@@ -46,13 +48,31 @@ export interface UseEditorShortcutsOptions {
   /** Whether the Export dialog is open (`EXP-004`): a modal, so it takes the keyboard. */
   readonly exportOpen: Accessor<boolean>;
   /** The assistant panel (#849): Cmd/Ctrl+K, Escape inside it, its
-   * resize edge's arrows, and Enter in its composer (GRV-26). */
+   * resize edge's arrows, Enter in its composer (GRV-26), and the keys of a
+   * question it asks (GRV-42). */
   readonly assistant: Pick<
     AssistantPanel,
-    "toggle" | "resizeBy" | "dismissAction" | "edgeHasFocus" | "composerHasFocus"
+    | "toggle"
+    | "resizeBy"
+    | "dismissAction"
+    | "edgeHasFocus"
+    | "composerHasFocus"
+    | "askTextHasFocus"
+    | "focusInPanelOutsideFields"
   >;
   /** Sends the assistant composer's draft (GRV-26). */
   readonly sendAssistantDraft: () => void;
+  /** The answer to a question the assistant asks, when one waits (GRV-42). */
+  readonly assistantAsk: Pick<
+    AskDraft,
+    "pick" | "canFinish" | "finish" | "focused" | "canHear" | "hear"
+  > & {
+    readonly pending: () => boolean;
+    /** How many options the pending question has; 0 with none waiting. */
+    readonly optionCount: () => number;
+    /** Whether the pending question takes several options. */
+    readonly multiSelect: () => boolean;
+  };
 }
 
 /** Controls that use the vertical arrows themselves, so a track step must not
@@ -450,8 +470,59 @@ export function useEditorShortcuts(options: UseEditorShortcutsOptions) {
     // has focus, so an empty draft or a reply on its way swallows the key
     // rather than adding a line; Shift+Enter is not this mapping and adds one.
     "assistant.send": {
-      run: () => options.sendAssistantDraft(),
-      isEnabled: () => assistant.composerHasFocus(),
+      run: () => {
+        // A question's "something else" box sends its answer (GRV-42).
+        if (assistant.askTextHasFocus()) options.assistantAsk.finish();
+        else options.sendAssistantDraft();
+      },
+      isEnabled: () => assistant.composerHasFocus() || assistant.askTextHasFocus(),
+    },
+    // A question the assistant asks (GRV-42): `1`-`8` pick its options, and
+    // Enter sends a multi-select's picks. Enter on any other button in the
+    // panel (Dismiss, the header's) presses that button instead. A digit past
+    // the last option is no option, so it is left alone.
+    ...Object.fromEntries(
+      ASK_OPTION_SHORTCUT_IDS.map((id, index) => [
+        id,
+        {
+          run: () => void options.assistantAsk.pick(index),
+          isEnabled: () => index < options.assistantAsk.optionCount(),
+        },
+      ]),
+    ),
+    // Space on a chip with a sound plays it (GRV-42). On the panel itself it
+    // is still play/stop, which the question's context would otherwise take;
+    // on any other button it presses that button.
+    "assistant.ask_hear": {
+      run: () => {
+        const focused = options.assistantAsk.focused();
+        if (focused !== null && options.assistantAsk.canHear(focused)) {
+          options.assistantAsk.hear(focused);
+        } else {
+          void audio.toggle();
+        }
+      },
+      isEnabled: () => {
+        const focused = options.assistantAsk.focused();
+        if (focused !== null) return options.assistantAsk.canHear(focused);
+        return !(document.activeElement instanceof HTMLButtonElement);
+      },
+    },
+    "assistant.ask_finish": {
+      run: () => void options.assistantAsk.finish(),
+      // Enter on a focused button presses that button, with one exception: a
+      // multi-select's chip, where Enter sends the picks rather than toggling
+      // it. A single choice's chip keeps Enter, so it picks that chip (with
+      // any typed text) rather than sending the text alone.
+      isEnabled: () => {
+        const focused = document.activeElement;
+        const onChip =
+          focused instanceof HTMLButtonElement &&
+          focused.classList.contains("assistant-ask-option");
+        if (focused instanceof HTMLButtonElement && !onChip) return false;
+        if (onChip && !options.assistantAsk.multiSelect()) return false;
+        return options.assistantAsk.canFinish();
+      },
     },
     // A focused Transform value field (ARR-010): ↑/↓ nudge it, in place of
     // the roll's note moves, which its context replaces.
@@ -601,9 +672,20 @@ export function useEditorShortcuts(options: UseEditorShortcutsOptions) {
     return assistant.edgeHasFocus() ? [...withLoopBrace, "resize_edge"] : withLoopBrace;
   };
 
-  /** The assistant's composer, when it has focus, takes Enter (GRV-26). */
-  const withComposer = (base: readonly ShortcutContext[]): readonly ShortcutContext[] =>
-    assistant.composerHasFocus() ? [...base, "composer"] : base;
+  /**
+   * The assistant's composer, or a question's "something else" box, takes
+   * Enter while it has focus (GRV-26, GRV-42); focus elsewhere in the panel,
+   * while a question waits, takes the question's keys.
+   */
+  const withComposer = (base: readonly ShortcutContext[]): readonly ShortcutContext[] => {
+    if (assistant.composerHasFocus() || assistant.askTextHasFocus()) {
+      return [...base, "composer"];
+    }
+    if (options.assistantAsk.pending() && assistant.focusInPanelOutsideFields()) {
+      return [...base, "assistant_ask"];
+    }
+    return base;
+  };
 
   // While a modal is open it is the only active context, so nothing behind it
   // can fire — including playback and selection (PRD KEY-02).

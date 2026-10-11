@@ -15,6 +15,8 @@ import { ConsentStore } from "../analytics/consent";
 import { createRecordingTransport } from "../analytics/transport";
 import { INITIAL_PIXELS_PER_TICK, ROW_METRICS } from "../arrangement/ArrangementView";
 import type { AssistantClient } from "../assistant/assistantClient";
+import { RECOMMEND_SOUNDS_TOOL } from "../assistant/recommendation";
+import { ASSISTANT_TOOLSET_VERSION } from "../assistant/tools";
 import type { AssistantRetentionClient } from "../assistant/retentionClient";
 import { installWebAudioGlobals } from "../audio/testAudioContext";
 import { type CapabilityReport, detectCapabilities } from "../browser/capabilities";
@@ -89,6 +91,8 @@ beforeAll(async () => {
 afterEach(async () => {
   cleanup();
   vi.restoreAllMocks();
+  // The assistant's conversation is kept per tab (GRV-42): never across tests.
+  sessionStorage.clear();
   try {
     await AudioRuntimeModule.getAudioRuntime().close();
   } catch {
@@ -3757,6 +3761,252 @@ describe("EditorView assistant panel", () => {
       name: /^Scope:/,
     });
 
+  /** Ends the latest turn in a question with three options (GRV-42). */
+  function askLatest(client: FakeAssistantClient, multiSelect = false) {
+    fireAndFlush(() => {
+      const turn = client.last();
+      turn.text("One question first.");
+      turn.emit({
+        type: "ask",
+        ask: {
+          id: `toolu_${client.turns.length}`,
+          question: "Where should the drop land?",
+          options: [{ label: "Bar 17" }, { label: "Bar 25" }, { label: "Hold it back" }],
+          multiSelect,
+        },
+      });
+      turn.emit({
+        type: "done",
+        stopped: false,
+        stopReason: "tool_use",
+        requestsRemaining: 98,
+      });
+    });
+  }
+  const askCard = () =>
+    within(panel() as HTMLElement).queryByRole("region", { name: "The assistant asks" });
+  const settleTurn = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const currentView = () =>
+    screen
+      .getByRole("navigation", { name: "Views" })
+      .querySelector("[aria-current='page']");
+
+  it("answers a question with 1-8 while focus is in the panel, in place of the view keys (GRV-42)", async () => {
+    const log = vi.spyOn(defaultAnalytics, "log");
+    const { client } = await renderTalking(createSliceFixtureProject());
+    await openAndSend(client, "Build me a drop");
+    askLatest(client);
+    // The question took focus from the empty composer.
+    expect(askCard()).toHaveFocus();
+
+    press("2");
+    await settleTurn();
+    expect(askCard()).toBeNull();
+    expect(client.turns).toHaveLength(2);
+    expect(client.last().request.messages.at(-1)?.text).toBe(
+      '[Answer to "Where should the drop land?"] Picked: Bar 25.',
+    );
+    // `2` picked; it did not also switch to the sequence view.
+    expect(currentView()).toHaveAccessibleName("Arrangement");
+    expect(
+      log.mock.calls.some(
+        ([name, params]) =>
+          name === "shortcut_used" &&
+          (params as { action_id?: string }).action_id === "assistant.ask_option_2",
+      ),
+    ).toBe(true);
+  });
+
+  it("toggles a multi-select with the number keys and sends it with Enter (GRV-42)", async () => {
+    const { client } = await renderTalking(createSliceFixtureProject());
+    await openAndSend(client, "Which parts?");
+    askLatest(client, true);
+
+    press("1");
+    press("3");
+    // A number past the options does nothing.
+    press("8");
+    const card = within(askCard() as HTMLElement);
+    expect(card.getByRole("button", { name: "Bar 17" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(card.getByRole("button", { name: "Hold it back" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(client.turns).toHaveLength(1);
+
+    // Enter on a focused chip sends the picks rather than toggling it.
+    card.getByRole("button", { name: "Bar 25" }).focus();
+    press("Enter");
+    await settleTurn();
+    expect(client.last().request.messages.at(-1)?.text).toBe(
+      '[Answer to "Where should the drop land?"] Picked: Bar 17, Hold it back.',
+    );
+  });
+
+  it("keeps the digits for typing, and sends the question's own text box on Enter (GRV-42)", async () => {
+    const { client } = await renderTalking(createSliceFixtureProject());
+    await openAndSend(client, "Build me a drop");
+    askLatest(client);
+
+    // In the composer a digit is typing, not an answer.
+    const composer = within(panel() as HTMLElement).getByRole("textbox", {
+      name: "Message the assistant",
+    });
+    composer.focus();
+    press("1");
+    expect(askCard()).toBeInTheDocument();
+
+    const other = within(askCard() as HTMLElement).getByRole("textbox", {
+      name: "Something else",
+    });
+    other.focus();
+    press("2");
+    expect(askCard()).toBeInTheDocument();
+    fireAndFlush(() => fireEvent.input(other, { target: { value: "Bar 21" } }));
+    press("Enter");
+    await settleTurn();
+    expect(askCard()).toBeNull();
+    expect(client.last().request.messages.at(-1)?.text).toBe(
+      '[Answer to "Where should the drop land?"] Bar 21',
+    );
+  });
+
+  it("selects what a picked option is about: a clip, in the arrangement (GRV-42)", async () => {
+    const project = createSliceFixtureProject();
+    const placement = project.song.placements[0];
+    if (!placement) throw new Error("the slice fixture needs a placement");
+    const { client } = await renderTalking(project);
+    await openAndSend(client, "Which part?");
+    fireAndFlush(() => {
+      const turn = client.last();
+      turn.emit({
+        type: "ask",
+        ask: {
+          id: "toolu_ref",
+          question: "Which part?",
+          options: [
+            { label: "That clip", ref: { kind: "clip", clipId: placement.clipId } },
+            { label: "Something else" },
+          ],
+          multiSelect: false,
+        },
+      });
+      turn.emit({
+        type: "done",
+        stopped: false,
+        stopReason: "tool_use",
+        requestsRemaining: 9,
+      });
+    });
+    const chip = within(askCard() as HTMLElement).getByRole("button", {
+      name: "That clip",
+    });
+    expect(chip).toHaveTextContent(/Clip /);
+
+    press("1");
+    await waitFor(() =>
+      expect(screen.getByTestId("arrangement-selection-live")).toHaveTextContent(
+        "Selected clip on BD, bar 1",
+      ),
+    );
+    expect(askCard()).toBeNull();
+  });
+
+  it("previews an option's sound on Space, and puts it away when focus leaves (GRV-42)", async () => {
+    const { client } = await renderTalking(createSliceFixtureProject());
+    await openAndSend(client, "Slower?");
+    fireAndFlush(() => {
+      const turn = client.last();
+      turn.emit({
+        type: "ask",
+        ask: {
+          id: "toolu_hear",
+          question: "How slow?",
+          options: [
+            {
+              label: "100 BPM",
+              sound: {
+                kind: "preview",
+                calls: [
+                  {
+                    name: "parameter_set",
+                    input: {
+                      target: { scope: "song", parameterId: "song.tempo" },
+                      value: 100,
+                    },
+                  },
+                ],
+              },
+            },
+            { label: "Leave it" },
+          ],
+          multiSelect: false,
+        },
+      });
+      turn.emit({
+        type: "done",
+        stopped: false,
+        stopReason: "tool_use",
+        requestsRemaining: 9,
+      });
+    });
+    const tempo = () => screen.getByRole("spinbutton", { name: "Tempo (BPM)" });
+    expect(tempo()).toHaveValue(120);
+    const chip = within(askCard() as HTMLElement).getByRole("button", {
+      name: "100 BPM",
+    });
+    fireAndFlush(() => chip.focus());
+    press(" ");
+    // The song shows the preview; nothing was answered or applied.
+    await waitFor(() => expect(tempo()).toHaveValue(100));
+    expect(askCard()).toBeInTheDocument();
+    expect(client.turns).toHaveLength(1);
+
+    fireAndFlush(() => chip.blur());
+    await waitFor(() => expect(tempo()).toHaveValue(120));
+  });
+
+  it("leaves Enter on a single choice's focused chip to the chip, even with text typed (GRV-42)", async () => {
+    const { client } = await renderTalking(createSliceFixtureProject());
+    await openAndSend(client, "Build me a drop");
+    askLatest(client);
+    const card = within(askCard() as HTMLElement);
+    const other = card.getByRole("textbox", { name: "Something else" });
+    fireAndFlush(() => fireEvent.input(other, { target: { value: "after the fill" } }));
+
+    const chip = card.getByRole("button", { name: "Bar 25" });
+    chip.focus();
+    let notPrevented = true;
+    fireAndFlush(() => {
+      notPrevented = fireEvent.keyDown(chip, { key: "Enter", bubbles: true });
+    });
+    await settleTurn();
+    // The registry stood down: the text alone was not sent, and the browser's
+    // Enter is left to press the chip.
+    expect(notPrevented).toBe(true);
+    expect(client.turns).toHaveLength(1);
+    clickAndFlush(chip);
+    await settleTurn();
+    expect(client.last().request.messages.at(-1)?.text).toBe(
+      '[Answer to "Where should the drop land?"] Picked: Bar 25. Also: after the fill',
+    );
+  });
+
+  it("leaves 1-8 to the views while focus is outside the panel (GRV-42)", async () => {
+    const { client } = await renderTalking(createSliceFixtureProject());
+    await openAndSend(client, "Build me a drop");
+    askLatest(client);
+    (document.activeElement as HTMLElement | null)?.blur();
+
+    press("2");
+    await vi.waitFor(() => expect(currentView()).toHaveAccessibleName("Sequence"));
+    expect(askCard()).toBeInTheDocument();
+    expect(client.turns).toHaveLength(1);
+  });
+
   /** A click on BD's row (the first) at bar 1 of the arrangement. */
   async function clickBdClip(): Promise<void> {
     const canvas = document.querySelector(".arrangement-layer-interactive");
@@ -3778,6 +4028,71 @@ describe("EditorView assistant panel", () => {
       ),
     );
   }
+
+  it("keeps a Try pressed from the Library: leaving it does not clear the override (GRV-23)", async () => {
+    const { ProjectAudioGraph } = await import("../audio/ProjectAudioGraph");
+    const reconcile = vi.spyOn(ProjectAudioGraph.prototype, "reconcile");
+    const client = createFakeAssistantClient();
+    repository = inMemoryModule.createInMemoryProjectRepository();
+    const project = createStarterProject("u1", () => 0.5);
+    const [drums] = project.song.tracks;
+    if (drums?.instrument?.kind !== "drumMachine") throw new Error("no drum machine");
+    const bd = drums.instrument.pads.find((pad) => pad.name === "BD");
+    if (!bd) throw new Error("no BD pad");
+    const created = await repository.createProject(project);
+    if (!created.ok) throw new Error("fixture project failed to create");
+    renderEditor(project.metadata.id, {
+      account: { uid: "u1", registered: true },
+      assistantClient: async () => client,
+      libraryClient: new LibraryClient(fixtureFetcher()),
+      createAuditionEngine: fakePreviewEngine,
+    });
+    await screen.findByTestId("arrangement-view-ready");
+    /** The asset BD plays in the graph's latest projection. */
+    const heardOnBd = () => {
+      const projection = reconcile.mock.lastCall?.[0];
+      const instrument = projection?.tracksById.get(drums.id)?.instrument;
+      if (instrument?.kind !== "drumMachine") return undefined;
+      return instrument.pads.find((entry) => entry.id === bd.id)?.assetId;
+    };
+
+    await openAndSend(client, "Softer kicks?");
+    fireAndFlush(() =>
+      client.last().emit({
+        type: "proposal",
+        proposal: {
+          baseRevision: project.metadata.revision,
+          toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+          calls: [
+            {
+              id: "toolu_1",
+              name: RECOMMEND_SOUNDS_TOOL,
+              input: {
+                packId: "pak_SdlN_OazweXrwury0j27Y",
+                soundIds: ["sg-one-shot-drums-kick-0004"],
+                reason: "Softer.",
+                trackId: drums.id,
+                padId: bd.id,
+              },
+            },
+          ],
+        },
+      }),
+    );
+    fireAndFlush(() => client.last().done());
+    const card = await screen.findByRole("region", { name: /^Recommended pack/ });
+
+    clickAndFlush(within(card).getByRole("button", { name: "Open in library" }));
+    await screen.findByRole("region", { name: "Library" });
+    clickAndFlush(within(card).getByRole("button", { name: "Try on BD" }));
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Library" })).toBeNull(),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(heardOnBd()).toMatch(/^ast_preview/);
+    expect(within(card).getByRole("status")).toHaveTextContent("BD is trying");
+  });
 
   it("scopes to the clips selected in the arrangement, as a section (GRV-26)", async () => {
     const { client, transport } = await renderTalking(createSliceFixtureProject());

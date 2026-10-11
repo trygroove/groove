@@ -6,11 +6,7 @@
  */
 
 import type { ValidProposal } from "../../assistant/proposal";
-import {
-  CONTROL_PARTS,
-  type ControlAddress,
-  controlKey,
-} from "../../commands/controlAddress";
+import { CONTROL_PARTS, type ControlAddress } from "../../commands/controlAddress";
 import { executeTransaction } from "../../commands/execute";
 import { readControl } from "../../controls/readControl";
 import type { Project } from "../../domain/entities";
@@ -88,38 +84,31 @@ export function previewTarget(
   return first;
 }
 
-/** One step of the technique: what a command does, and the control it does it to. */
-export interface TechniqueStep {
-  readonly text: string;
-  readonly address: ControlAddress | null;
-}
-
 /** "Why this works": the goal, the technique and the controls it changes. */
 export interface ProposalExplanation {
-  /** The audible goal, in the producer's words or the assistant's intent. */
+  /** What the producer will hear, in the assistant's words. */
   readonly goal: string;
-  readonly technique: readonly TechniqueStep[];
+  /** The production idea that gets there, in the assistant's words. */
+  readonly technique: string;
+  /** The controls the proposal actually changes, from its dry run. */
   readonly changed: readonly ProposalRow[];
 }
 
 /**
- * Explains a proposal from what it actually does. The goal is what the
- * proposal says it is for, or else what the producer asked; the technique is
- * each command's own one-line summary, which the kernel derives from the
- * command, so it can never describe a change the proposal does not make.
+ * Explains a proposal: the goal and technique the assistant gave with it
+ * (`explain_change`), and the controls it changes, which come from what the
+ * proposal does rather than what it says, so they can never name a control it
+ * leaves alone. With no explanation from the assistant there is nothing worth
+ * folding out: repeating the request and the rows above it teaches nothing.
  */
 export function explainProposal(
   proposal: ValidProposal,
-  asked: string,
   rows: readonly ProposalRow[],
-): ProposalExplanation {
-  const shown = new Set(rows.map((row) => controlKey(row.address)));
+): ProposalExplanation | null {
+  if (!proposal.explanation) return null;
   return {
-    goal: proposal.intent?.trim() || asked,
-    technique: proposal.impact.lines.map((line) => ({
-      text: line.summary,
-      address: line.controls.find((address) => shown.has(controlKey(address))) ?? null,
-    })),
+    goal: proposal.explanation.goal,
+    technique: proposal.explanation.technique,
     changed: rows,
   };
 }

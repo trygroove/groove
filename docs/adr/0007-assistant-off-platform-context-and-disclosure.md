@@ -24,13 +24,14 @@ The projections that would carry the payload already exist. `assistantContextPro
 
 The assistant may be sent, for the project currently open:
 
-- project name, tempo, time signature, total length;
+- project name, tempo, swing, time signature, total length (swing added by GRV-5, so the assistant proposes a swing change from the song's current value);
 - sections, with their names, positions and lengths;
-- tracks, with their names, type, instrument kind, device/clip/placement counts, and mixer state;
+- tracks, with their names, type, instrument kind, device/clip/placement counts, and mixer state, and a drum machine's pads by ID and name (GRV-23, so a recommended sound can name the pad it is for), and each placement's ID, clip ID, start, length and whether it loops (GRV-6, so a new clip is placed beside the existing ones rather than on top of them);
 - derived note statistics — register, mean velocity, density, repetition;
 - a description of the current selection;
 - **raw note events for the current selection only**;
 - the conversation so far, within the bound [ADR 0006](./0006-anthropic-behind-a-model-agnostic-gateway.md) decision 3 sets.
+- the published library the app serves, so the assistant can recommend a pack and its sounds by ID (GRV-23): each pack's name, publisher, version, description and size, its sounds' names, roles and tags, and which of them the project already uses. These are library facts Groove ships, not user content. Never a sound's audio, URL or storage path, and never a producer's own packs, whose names are theirs.
 
 Anything not on this list is not sent. Extending the list is a change to this ADR.
 

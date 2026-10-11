@@ -120,6 +120,47 @@ service cloud.firestore {
         allow read: if signedIn() && request.auth.uid == uid;
         allow write: if false;
       }
+
+      // The producer's profile (GRV-25): whether they have been through
+      // onboarding, and what Cue remembers about them. One document, owner
+      // only, never in a project. `src/persistence/profileDocuments.ts` owns
+      // the full shape; the rules check what keeps it small and theirs (the
+      // note cap is `MAX_MEMORY_NOTES` there).
+      match /profile/{document} {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && document == 'current'
+          && validProfile(request.resource.data);
+      }
+    }
+
+    function profileFields() {
+      return ['schemaVersion', 'onboarding', 'onboardedAt', 'memory', 'notes',
+              'laterQuestions', 'validationConsent', 'lastNudgeDay', 'modifiedAt'];
+    }
+
+    function memoryFields() {
+      return ['taste', 'artists', 'experience', 'goal', 'learn', 'gear'];
+    }
+
+    function validProfile(data) {
+      return data.keys().hasOnly(profileFields())
+        && data.keys().hasAll(profileFields())
+        && data.schemaVersion == 1
+        && (data.onboarding == null || data.onboarding in ['completed', 'skipped'])
+        && (data.onboardedAt == null || data.onboardedAt is int)
+        && data.memory is map
+        && data.memory.keys().hasOnly(memoryFields())
+        && data.memory.keys().hasAll(memoryFields())
+        && data.memory.taste is list && data.memory.taste.size() <= 20
+        && data.memory.artists is string && data.memory.artists.size() <= 300
+        && data.memory.learn is list && data.memory.learn.size() <= 20
+        && data.memory.gear is list && data.memory.gear.size() <= 20
+        && data.notes is list && data.notes.size() <= 20
+        && data.laterQuestions is list && data.laterQuestions.size() <= 5
+        && data.validationConsent is bool
+        && (data.lastNudgeDay == null || data.lastNudgeDay is string)
+        && data.modifiedAt is int && data.modifiedAt >= 0;
     }
 
     match /projects/{projectId} {

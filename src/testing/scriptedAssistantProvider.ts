@@ -181,6 +181,7 @@ export function createScriptedAssistantProvider(
 export const MINIMAL_ASSISTANT_CONTEXT: AssistantContextPayload = {
   projectName: "Song",
   tempo: 120,
+  swing: 50,
   timeSignature: { numerator: 4, denominator: 4 },
   totalTicks: 0,
   tracks: [],

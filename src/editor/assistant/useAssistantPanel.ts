@@ -52,6 +52,16 @@ export interface AssistantPanel {
   edgeHasFocus(): boolean;
   /** Whether the composer has keyboard focus, for the `composer` context. */
   composerHasFocus(): boolean;
+  /**
+   * Whether a question's "something else" box has focus (GRV-42). It is a
+   * composer too: the `composer` context, where Enter sends what it says.
+   */
+  askTextHasFocus(): boolean;
+  /**
+   * Whether focus is in the panel but in neither text box nor on the resize
+   * edge, where a question's keys (`assistant_ask`, GRV-42) go.
+   */
+  focusInPanelOutsideFields(): boolean;
   /** Puts focus in the composer, if there is one to type into. */
   focusComposer(): void;
   /** Bound by the panel and the header's button. */
@@ -63,6 +73,8 @@ export interface AssistantPanel {
    * puts focus there rather than on the panel, so it is ready to type into.
    */
   bindComposer(element: HTMLElement | undefined): void;
+  /** Bound by a question's "something else" box while one is waiting. */
+  bindAskText(element: HTMLElement | undefined): void;
 }
 
 /** Where focus goes once the panel has rendered its next mode. */
@@ -89,6 +101,7 @@ export function useAssistantPanel(
   let edgeElement: HTMLElement | undefined;
   let launcherElement: HTMLElement | undefined;
   let composerElement: HTMLElement | undefined;
+  let askTextElement: HTMLElement | undefined;
   let opener: HTMLElement | null = null;
   let pendingFocus: FocusIntent = null;
 
@@ -171,6 +184,17 @@ export function useAssistantPanel(
       edgeElement !== undefined && document.activeElement === edgeElement,
     composerHasFocus: () =>
       composerElement !== undefined && document.activeElement === composerElement,
+    askTextHasFocus: () =>
+      askTextElement !== undefined && document.activeElement === askTextElement,
+    focusInPanelOutsideFields() {
+      const active = document.activeElement;
+      return (
+        focusIsIn(panelElement) &&
+        active !== composerElement &&
+        active !== askTextElement &&
+        active !== edgeElement
+      );
+    },
     focusComposer() {
       if (composerElement?.isConnected) composerElement.focus();
     },
@@ -185,6 +209,9 @@ export function useAssistantPanel(
     },
     bindComposer(element) {
       composerElement = element;
+    },
+    bindAskText(element) {
+      askTextElement = element;
     },
   };
 }

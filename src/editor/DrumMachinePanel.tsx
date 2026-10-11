@@ -9,6 +9,7 @@ import type {
   TransactionResult,
 } from "../commands";
 import { addPad, MAX_DRUM_PADS, setPadChoke, setPadFlag } from "../commands";
+import { CONTROL_PARTS, controlAddress } from "../commands/controlAddress";
 import DataTable, { type DataTableColumn } from "../components/DataTable";
 import type { Asset, DrumPad, NoteTrigger, Track } from "../domain/entities";
 import {
@@ -207,6 +208,7 @@ export default function DrumMachinePanel(props: DrumMachinePanelProps): JSX.Elem
                 <SampleSlot
                   label={`Sample for ${pad().name}`}
                   slot={{ kind: "pad", padId: pad().id }}
+                  control={controlAddress(pad().id, CONTROL_PARTS.sample)}
                   name={assetOf(pad())?.name ?? null}
                   onBrowse={() => {
                     markFeatureUse();

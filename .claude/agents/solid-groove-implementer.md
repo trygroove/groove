@@ -112,4 +112,6 @@ needs a concrete reason.
 Return the branches in landing order with one-line purposes, what you built,
 assumptions you made, the commands you ran and their real results, whether UI
 changed, the screenshot Markdown, and (for a fix) the root cause and the
-verbatim red output. Report what happened, not what should have happened.
+verbatim red output, and every Google Cloud API the branches need that
+production does not use yet (CLAUDE.md, "Landing work"), with why each is required.
+Report what happened, not what should have happened.

@@ -34,6 +34,29 @@ export interface AssistantTrackSummary {
   readonly soloed: boolean;
   readonly clipCount: number;
   readonly placementCount: number;
+  /**
+   * A drum machine's pads, in order, by ID and name, so the assistant can
+   * name the pad a sound is for (GRV-23). Empty for any other instrument.
+   */
+  readonly pads: readonly AssistantPadSummary[];
+  /**
+   * Where the track's clips sit on the timeline, in start order, so a new
+   * placement can go beside them rather than on top of them (GRV-6).
+   */
+  readonly placements: readonly AssistantPlacementSummary[];
+}
+
+export interface AssistantPlacementSummary {
+  readonly id: string;
+  readonly clipId: string;
+  readonly startTicks: number;
+  readonly durationTicks: number;
+  readonly looped: boolean;
+}
+
+export interface AssistantPadSummary {
+  readonly id: string;
+  readonly name: string;
 }
 
 export interface AssistantSectionSummary {
@@ -53,6 +76,8 @@ export interface AssistantContext {
   readonly projectId: string;
   readonly projectName: string;
   readonly tempo: number;
+  /** The song's swing in percent, 50 straight to 75 (`SONG_SWING`). */
+  readonly swing: number;
   readonly timeSignature: Readonly<{ numerator: number; denominator: number }>;
   readonly totalTicks: number;
   readonly tracks: readonly AssistantTrackSummary[];
@@ -64,6 +89,9 @@ export interface AssistantContext {
 }
 
 function summarizeTrack(track: Track, project: Project): AssistantTrackSummary {
+  const placements = project.song.placements.filter(
+    (placement) => placement.trackId === track.id,
+  );
   return {
     id: track.id,
     name: track.name,
@@ -75,9 +103,20 @@ function summarizeTrack(track: Track, project: Project): AssistantTrackSummary {
     muted: track.mixer.muted,
     soloed: track.mixer.soloed,
     clipCount: project.clips.filter((clip) => clip.trackId === track.id).length,
-    placementCount: project.song.placements.filter(
-      (placement) => placement.trackId === track.id,
-    ).length,
+    placementCount: placements.length,
+    pads:
+      track.instrument?.kind === "drumMachine"
+        ? track.instrument.pads.map((pad) => ({ id: pad.id, name: pad.name }))
+        : [],
+    placements: placements
+      .map((placement) => ({
+        id: placement.id,
+        clipId: placement.clipId,
+        startTicks: placement.startTicks,
+        durationTicks: placement.durationTicks,
+        looped: placement.looped,
+      }))
+      .sort((a, b) => a.startTicks - b.startTicks),
   };
 }
 
@@ -143,6 +182,7 @@ export function buildAssistantContext(
   const shape = {
     projectName: project.metadata.name,
     tempo: project.song.tempo,
+    swing: project.song.swing,
     timeSignature: project.song.timeSignature,
     totalTicks,
     tracks,
@@ -155,6 +195,7 @@ export function buildAssistantContext(
     projectId: project.metadata.id,
     projectName: project.metadata.name,
     tempo: project.song.tempo,
+    swing: project.song.swing,
     timeSignature: project.song.timeSignature,
     totalTicks,
     tracks,

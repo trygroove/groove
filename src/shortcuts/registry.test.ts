@@ -340,6 +340,7 @@ describe("context resolution", () => {
         export_tracks: { key: "arrowup", id: "export.focus_previous" },
         resize_edge: { key: "arrowup", id: "assistant.grow" },
         composer: { key: "enter", id: "assistant.send" },
+        assistant_ask: { key: "1", id: "assistant.ask_option_1" },
       };
     for (const context of SHORTCUT_CONTEXTS) {
       const probe = expected[context];

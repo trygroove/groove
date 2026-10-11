@@ -13,9 +13,22 @@
  * shape to the SDK's own parameter type.
  *
  * Every turn offers the model the assistant's tool set (GRV-4, `tools.ts`),
- * so it can answer a request to change the song with a proposal. The tool
+ * so it can answer a request to change the song with a proposal, and
+ * `explain_change`, which says what that proposal is for. The tool
  * set's version is not on the wire (the Messages API has nowhere to put it);
  * the gateway stamps it on the proposal it returns instead.
+ *
+ * Two settings keep a long turn audible to the gateway's inactivity timeout
+ * (GRV-6's first live run went silent for a minute on its largest proposals):
+ *
+ * - **Thinking is summarized.** Adaptive thinking defaults to `display:
+ *   "omitted"`, which streams no thinking at all; a summary streams as
+ *   thinking deltas the gateway sees but never forwards as reply text.
+ * - **Tool input streams eagerly.** Without `eager_input_streaming` the API
+ *   holds a tool's input back until it is whole, so a large proposal arrives
+ *   after a long silence. With it the API no longer validates that input, so
+ *   one that does not parse is returned as it came (`streamEvents.ts`) and
+ *   refused by `validateProposal` like any other invalid call.
  */
 import type { AssistantModelProfile } from "./config";
 import type { AssistantToolDefinition } from "./tools";
@@ -41,10 +54,12 @@ export interface ProviderTool {
   readonly name: string;
   readonly description: string;
   readonly input_schema: ProviderToolInputSchema;
+  /** Streams the input as it is generated, unvalidated, rather than whole at the end. */
+  readonly eager_input_streaming: true;
 }
 
 export type ProviderThinking =
-  | { readonly type: "adaptive" }
+  | { readonly type: "adaptive"; readonly display: "summarized" }
   | { readonly type: "enabled"; readonly budget_tokens: number };
 
 export interface ProviderMessagesRequest {
@@ -71,8 +86,14 @@ export interface ProviderRequestParts {
   readonly pseudonymousUserId: string;
 }
 
+/** What any offered tool has, a proposal tool or `ask_producer` (GRV-42). */
+export type OfferedTool = Pick<
+  AssistantToolDefinition,
+  "name" | "description" | "inputSchema"
+>;
+
 /** The assistant's tools in the wire shape, in the order they are offered. */
-export function providerTools(tools: readonly AssistantToolDefinition[]): ProviderTool[] {
+export function providerTools(tools: readonly OfferedTool[]): ProviderTool[] {
   return tools.map((tool) => {
     if (tool.inputSchema.type !== "object") {
       throw new TypeError(`Tool "${tool.name}" does not take an object`);
@@ -81,6 +102,7 @@ export function providerTools(tools: readonly AssistantToolDefinition[]): Provid
       name: tool.name,
       description: tool.description,
       input_schema: tool.inputSchema as ProviderToolInputSchema,
+      eager_input_streaming: true,
     };
   });
 }
@@ -103,7 +125,7 @@ export function buildProviderRequest(
     case "adaptive":
       return {
         ...base,
-        thinking: { type: "adaptive" },
+        thinking: { type: "adaptive", display: "summarized" },
         output_config: { effort: model.thinking.effort },
       };
     case "budget":

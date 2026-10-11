@@ -77,6 +77,9 @@ export const COMMAND_IDS = [
 ] as const;
 export type CommandId = (typeof COMMAND_IDS)[number];
 
+/** The save states that still hold an unwritten edit, as `unsaved_exit_warned`'s `save_state`. */
+export const UNSAVED_SAVE_STATES = ["pending", "saving", "failed"] as const;
+
 export const PROJECT_EVENTS = {
   project_created: {
     phase: 1,
@@ -142,5 +145,16 @@ export const PROJECT_EVENTS = {
     phase: 1,
     owners: ["LOOP-002"],
     params: { retry_count: countParam(20) },
+  },
+
+  /**
+   * The browser was asked to leave the editor (reload, close, navigate away)
+   * while an edit was still unsaved, so the "leave site?" prompt was shown
+   * (GRV-60). `save_state` says how far that edit had got.
+   */
+  unsaved_exit_warned: {
+    phase: 1,
+    owners: ["GRV-60"],
+    params: { save_state: enumParam(UNSAVED_SAVE_STATES) },
   },
 } as const satisfies Record<string, AnalyticsEventDefinition>;

@@ -118,7 +118,7 @@ jobs:
           github_token: ${{ secrets.RESTACK_TOKEN || github.token }}
           show_full_output: true
           prompt: |
-            Ship Linear issue ${{ matrix.card.issue }}, unattended. It was moved to Ready on the board.
+            Ship Linear issue ${{ matrix.card.issue }}, unattended. It was moved to Ready on the board, or sent back to In Progress with no PR open and none that completes it merged: then earlier pieces have landed, and you continue from the card's latest "Handoff from /ship" comment.
 
             Follow `.claude/skills/ship/SKILL.md`, with one change for this environment: do NOT use the Workflow tool. This is a headless run that ends the moment your turn ends, so a background workflow would be killed before it does anything. Instead run the stages in `.claude/workflows/solid-groove-ship.js` yourself, in order (triage, build, review for features only, land), giving each stage's prompt to the Agent tool with `run_in_background: false` and waiting for its result before starting the next. Read the agent briefs in `.claude/agents/` the same way the workflow does.
 
@@ -276,12 +276,12 @@ jobs:
           prompt: |
             A comment on Linear issue ${{ matrix.card.issue }} mentions @claude: comment ${{ matrix.card.comment }}. Read the card and every comment on it (`node .github/scripts/linear.mjs issue ${{ matrix.card.issue }}`), find that comment, and do what it asks, in the context of the card and of CLAUDE.md. A QA report listing findings means: fix them on a new branch from `main` and open one PR (title `Fix ${{ matrix.card.issue }}: <what was broken>`, body with `Completes ${{ matrix.card.issue }}`, following CLAUDE.md "Landing work"); a question means answer it on the card; an instruction means carry it out. This is a headless run: nobody will answer questions, and it ends when your turn ends, so do not use the Workflow tool or background agents.
 
-            When you push a branch, open its pull request yourself before you finish (`gh pr create`, ready for review, not draft), then confirm it exists with `gh pr view`. Never end with only a "Create PR" link. Run `bun run typecheck`, `bun run check` and `bun run test` before pushing, and the browser suite you touched. Use the `gh` CLI for GitHub (GH_TOKEN is set) and `node .github/scripts/linear.mjs` for Linear (LINEAR_API_KEY is set).
+            When you push a branch, open its pull request yourself before you finish (`gh pr create`, ready for review, not draft), then confirm it exists with `gh pr view`. Never end with only a "Create PR" link. The run has a turn limit, and work not pushed when it stops is lost, so when the work has several parts, push and open the PR as soon as the first part passes its checks, then push each later part as it is done. Run `bun run typecheck`, `bun run check` and `bun run test` before pushing, and the browser suite you touched. Use the `gh` CLI for GitHub (GH_TOKEN is set) and `node .github/scripts/linear.mjs` for Linear (LINEAR_API_KEY is set).
 
             Keep the card informed through the reply ${{ matrix.card.reply }}, which this run already posted under that comment. Edit it in place (`node .github/scripts/linear.mjs edit-comment ${{ matrix.card.reply }} --body-file <file>`), keeping its first line and run link: replace the placeholder with a short plan as a Markdown checklist, tick items off, and end it with what changed and links to any PR, or your answer. Do not post separate progress comments.
           claude_args: |
             --model opus
-            --max-turns 120
+            --max-turns 300
             --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite,NotebookEdit,WebFetch,WebSearch,Task,Agent,Skill,ToolSearch,Bash"
 
   milestone:

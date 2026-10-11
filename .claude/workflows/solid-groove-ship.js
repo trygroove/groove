@@ -85,6 +85,7 @@ const BUILD_SCHEMA = {
     uiChanged: { type: 'boolean' },
     screenshots: { type: 'string', description: 'Markdown from walkthrough:publish, or empty when no UI changed' },
     rulesChanged: { type: 'boolean', description: 'True if firestore.rules or storage.rules changed' },
+    cloudApis: { type: 'array', items: { type: 'string' }, description: 'Each Google Cloud API the branches need that production does not use yet, as "<api>: why it is required (the code that needs it and what that code does), on <branch>", e.g. "cloudscheduler.googleapis.com: purgeExpiredTranscripts is an onSchedule function that deletes expired transcripts hourly, and Firebase deploys it as a Cloud Scheduler job, on claude/grv-8-retention"; else empty' },
   },
 }
 
@@ -266,6 +267,7 @@ Facts for the body:
 - Summary of the whole issue: ${build.summary}
 ${build.rootCause ? `- Root cause: ${build.rootCause}\n` : ''}${build.redEvidence ? `- Regression test, red before the fix:\n\`\`\`\n${build.redEvidence}\n\`\`\`\n` : ''}- Assumptions made without asking: ${build.assumptions.join('; ') || 'none'}
 - Checks: ${build.checks}
+- New Google Cloud APIs: ${build.cloudApis?.length ? build.cloudApis.join('; ') : 'none'}. For each one this branch needs, fill the template's Cloud APIs section: the API, why it is required (the code that needs it and what that code does), and \`gcloud services enable <api> --project <project-id>\`, because the deploy fails until the product owner runs it. If this branch needs none, delete that section.
 - Built on: ${tier} (${t.tierReason}). Put this one line in the body so the routing can be judged.
 - Screenshots (put them in the Screenshots section if this branch changed the UI, or if it is the last PR): ${build.uiChanged ? build.screenshots || 'MISSING: say so plainly in the body' : 'No UI change'}
 ${i === n - 1 && unresolved.length ? `- Review findings still open after ${MAX_FIX_ROUNDS} fix rounds (list them under a "Open review findings" heading):\n${unresolved.map((f) => `  - ${f}`).join('\n')}\n` : ''}

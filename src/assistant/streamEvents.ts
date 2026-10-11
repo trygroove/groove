@@ -9,9 +9,12 @@
  *
  * A turn may end in tool calls (GRV-4): the model proposing changes through
  * the tools `tools.ts` offers. Their input arrives as JSON in pieces and is
- * parsed once the turn is complete; a call that does not parse is as
- * malformed as a broken text event. Nothing here decides whether a call is
- * allowed — the browser validates the proposal against the open project.
+ * parsed once the turn is complete. The tools stream eagerly
+ * (`providerRequest.ts`), so the API no longer checks that input: one that is
+ * not a JSON object is the model's mistake, not a broken stream, and is
+ * returned as it came for the browser to refuse. Nothing here decides whether
+ * a call is allowed — the browser validates the proposal against the open
+ * project.
  */
 import { z } from "zod";
 import { ESTIMATED_CHARS_PER_TOKEN } from "./config";
@@ -254,7 +257,7 @@ export class StreamReader {
   /**
    * The validated reply, once complete. A turn that ended normally with no
    * text at all is not a reply, and one that stopped for its tool calls must
-   * have made at least one, each with input that parses as a JSON object.
+   * have made at least one.
    * Tool calls in a turn that stopped for any other reason (cut off at
    * `max_tokens`, say) are dropped: a proposal that may be missing its end is
    * not one to show.
@@ -282,17 +285,18 @@ export class StreamReader {
   }
 }
 
-/** A tool call's streamed input: a JSON object, or nothing at all for `{}`. */
-function parseInput(json: string): Record<string, unknown> {
+/**
+ * A tool call's streamed input: the JSON it parses to (nothing at all is
+ * `{}`), or, when it does not parse, the text as it came. Either way the
+ * browser's `validateProposal` refuses anything that is not a valid payload,
+ * so input that is broken or cut short is a refused proposal, never a
+ * malformed reply.
+ */
+function parseInput(json: string): unknown {
   if (json.trim().length === 0) return {};
-  let input: unknown;
   try {
-    input = JSON.parse(json);
+    return JSON.parse(json);
   } catch {
-    throw malformed();
+    return json;
   }
-  if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    throw malformed();
-  }
-  return input as Record<string, unknown>;
 }

@@ -188,6 +188,8 @@ describe("the assistant with retention on, off, or never answered", () => {
             log: () => {},
             now: () => AT,
             transcripts: store,
+            // Fixed, so each run's requests can be compared whole.
+            idStem: () => "Stem0000000000000",
           },
           { uid: "owner-uid", signInProvider: "google.com" },
           request,
