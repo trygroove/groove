@@ -100,6 +100,7 @@ test.describe("a question the assistant asks", () => {
   }) => {
     await newProject(page);
     await assistantButton(page).click();
+    await answerDisclosure(page);
     await composer(page).fill("Build me a drop [ask]");
     await page.keyboard.press("Enter");
 
@@ -123,6 +124,7 @@ test.describe("a question the assistant asks", () => {
   test("is answered by making the change in the editor (GRV-42)", async ({ page }) => {
     await newProject(page);
     await assistantButton(page).click();
+    await answerDisclosure(page);
     await composer(page).fill("Where do I start? [ask-rich]");
     await page.keyboard.press("Enter");
 
