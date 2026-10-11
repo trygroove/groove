@@ -9,6 +9,7 @@ import {
   newProject,
   panel,
   panelButton,
+  storedTranscripts,
 } from "./support/assistant";
 import { expect, test } from "./support/test";
 
@@ -16,7 +17,9 @@ import { expect, test } from "./support/test";
  * The assistant's disclosure and its setting (GRV-8) against the real
  * `assistantRetention` callable in the Functions emulator: a fresh account
  * meets the disclosure before it can type, answers it, and finds the same
- * control, with its scope beside it, in the panel's settings.
+ * control, with its scope beside it, in the panel's settings. What the
+ * server kept is read back from the Firestore emulator, so the spec fails if
+ * a yes keeps nothing or a no leaves anything behind.
  */
 
 const LABEL = "Keep my conversations with the assistant for 30 days";
@@ -26,6 +29,7 @@ const SCOPE =
 test.describe("the assistant's disclosure and setting", () => {
   test("is answered before the first message, and changed later in settings", async ({
     page,
+    invitedProducer,
   }) => {
     const step = walkthrough(page, { id: "GRV-8", title: "Assistant disclosure" });
     await newProject(page);
@@ -44,6 +48,14 @@ test.describe("the assistant's disclosure and setting", () => {
     await page.keyboard.press("Enter");
     await expect(conversation(page)).toContainText("Here is one idea.");
 
+    // A yes keeps the turn, server-side: the message and the reply.
+    await expect
+      .poll(async () => (await storedTranscripts(invitedProducer.uid)).length)
+      .toBe(1);
+    const [kept] = await storedTranscripts(invitedProducer.uid);
+    expect(kept?.userMessage).toBe("Make it groove");
+    expect(kept?.reply).toContain("Here is one idea.");
+
     // The setting shows what was answered, and opening it changes nothing.
     await panelButton(page, "Assistant settings").click();
     const box = panel(page).getByRole("checkbox", { name: LABEL });
@@ -57,6 +69,15 @@ test.describe("the assistant's disclosure and setting", () => {
     );
     await expect(box).not.toBeChecked();
     await step("Turned off: kept conversations are deleted");
+    // Turning it off deleted what was kept, and a later turn is not kept.
+    expect(await storedTranscripts(invitedProducer.uid)).toEqual([]);
+    await panel(page).getByRole("button", { name: "Back to the conversation" }).click();
+    await composer(page).fill("Once more");
+    await page.keyboard.press("Enter");
+    await expect(
+      conversation(page).getByText("then listen to it in the loop."),
+    ).toHaveCount(2);
+    expect(await storedTranscripts(invitedProducer.uid)).toEqual([]);
 
     // A reload asks again from the account's stored answer: no disclosure.
     await page.reload();
@@ -67,5 +88,6 @@ test.describe("the assistant's disclosure and setting", () => {
     await expect(disclosure(page)).toHaveCount(0);
     await panelButton(page, "Assistant settings").click();
     await expect(panel(page).getByRole("checkbox", { name: LABEL })).not.toBeChecked();
+    expect(await storedTranscripts(invitedProducer.uid)).toEqual([]);
   });
 });

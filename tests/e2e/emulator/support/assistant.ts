@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import {
   ASSISTANT_DISCLOSURE_VERSION,
+  ASSISTANT_TRANSCRIPTS_COLLECTION,
   preferenceDocPath,
 } from "../../../../src/assistant/transcripts";
 
@@ -125,10 +126,7 @@ export async function answerDisclosure(
  * no client may write the answer itself.
  */
 export async function seedDisclosureAnswered(uid: string, retain = false): Promise<void> {
-  const host = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8080";
-  const url =
-    `http://${host}/v1/projects/demo-solid-groove/databases/(default)/documents/` +
-    preferenceDocPath(uid);
+  const url = emulatorDocumentsUrl(preferenceDocPath(uid));
   const response = await fetch(url, {
     method: "PATCH",
     headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
@@ -147,6 +145,48 @@ export async function seedDisclosureAnswered(uid: string, retain = false): Promi
         `${await response.text()}`,
     );
   }
+}
+
+/** A path under the Firestore emulator's REST root for the test project. */
+function emulatorDocumentsUrl(path: string): string {
+  const host = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8080";
+  return `http://${host}/v1/projects/demo-solid-groove/databases/(default)/documents/${path}`;
+}
+
+/** One kept turn as the emulator holds it: the fields a spec checks. */
+export interface StoredTranscript {
+  readonly userMessage: string;
+  readonly reply: string;
+  readonly projectId: string;
+}
+
+/**
+ * The transcripts the server has kept for `uid` (GRV-8), read through the
+ * Firestore emulator's REST API with its `owner` token, since no client may
+ * read them: so a spec can check that keeping, and deleting, really happened.
+ */
+export async function storedTranscripts(uid: string): Promise<StoredTranscript[]> {
+  const response = await fetch(
+    `${emulatorDocumentsUrl(ASSISTANT_TRANSCRIPTS_COLLECTION)}?pageSize=300`,
+    { headers: { Authorization: "Bearer owner" } },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `The Firestore emulator refused to list transcripts (${response.status}): ` +
+        `${await response.text()}`,
+    );
+  }
+  type Field = { stringValue?: string };
+  const body = (await response.json()) as {
+    documents?: { fields: Record<string, Field | undefined> }[];
+  };
+  return (body.documents ?? [])
+    .filter((document) => document.fields.uid?.stringValue === uid)
+    .map((document) => ({
+      userMessage: document.fields.userMessage?.stringValue ?? "",
+      reply: document.fields.reply?.stringValue ?? "",
+      projectId: document.fields.projectId?.stringValue ?? "",
+    }));
 }
 
 export const composer = (page: Page): Locator =>
