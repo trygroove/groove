@@ -409,6 +409,14 @@ export async function buildExportSong(
   if (canAssertPlayback) {
     await expect(page.getByRole("button", { name: "Stop playback" })).toBeVisible();
     await page.getByRole("button", { name: "Stop playback" }).click();
+  } else {
+    // Playback is not asserted here, but it may have started: WebKit plays
+    // (the button flips to "Stop playback") while Firefox's resume never
+    // settles. Stop it if it did, so the song is idle either way.
+    await page
+      .getByRole("button", { name: "Stop playback" })
+      .click({ timeout: 3_000 })
+      .catch(() => undefined);
   }
   await expect(page.getByRole("button", { name: "Start playback" })).toBeVisible();
   await step("Five tracks, each with a clip in bar 1 — play, then stop");
