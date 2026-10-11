@@ -1,0 +1,14 @@
+{
+  "id": "grv-95",
+  "title": "After: composer at 14px, matching the assistant text",
+  "steps": [
+    {
+      "file": "01-the-assistant-composer-with-its-placehol.png",
+      "caption": "After: the composer placeholder at 14px"
+    },
+    {
+      "file": "02-the-composer-with-a-draft-typed-in-it.png",
+      "caption": "After: a draft typed in the composer at 14px"
+    }
+  ]
+}
