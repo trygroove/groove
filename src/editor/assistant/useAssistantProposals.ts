@@ -32,6 +32,7 @@ import {
 } from "../../assistant/proposalExecutor";
 import type { AssistantProposal } from "../../assistant/protocol";
 import type { ProposalCapability } from "../../assistant/tools";
+import type { ProposalOutcome } from "../../assistant/transcripts";
 import {
   type ControlAddress,
   controlKey,
@@ -111,6 +112,11 @@ export interface UseAssistantProposalsOptions {
   readonly analytics: () => Analytics;
   /** Asks again, in the same scope, for the proposal in this entry. */
   refresh(entryId: string): boolean;
+  /**
+   * Hears what became of a proposal: turned down, applied (or redone), or
+   * undone, so a kept transcript can record it (GRV-8).
+   */
+  onOutcome?(entryId: string, outcome: ProposalOutcome): void;
 }
 
 export interface AssistantProposals {
@@ -304,6 +310,7 @@ export function useAssistantProposals(
     }
     entry.handle?.cancel();
     update(entryId, { status: "cancelled" });
+    options.onOutcome?.(entryId, "cancelled");
   }
 
   function apply(entryId: string) {
@@ -335,6 +342,7 @@ export function useAssistantProposals(
     entry.marked = true;
     controls.registry.setMark(entry.addresses, "changed");
     update(entryId, { status: "applied", returnView: null, outlined: true });
+    options.onOutcome?.(entryId, "applied");
     options.analytics().logFeatureFirstUse("assistant_proposal");
   }
 
@@ -392,9 +400,11 @@ export function useAssistantProposals(
       if (edit.kind === "undo") {
         entry.watching = false;
         update(entryId, { status: "undone" });
+        options.onOutcome?.(entryId, "undone");
       } else if (edit.kind === "redo") {
         entry.watching = !entry.reported;
         update(entryId, { status: "applied" });
+        options.onOutcome?.(entryId, "applied");
       }
     } else if (edit.kind === "edit" && edit.actor === "user") {
       noticeEditByHand(edit);

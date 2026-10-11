@@ -1,3 +1,4 @@
+import { seedDisclosureAnswered } from "./support/assistant";
 import { expect, type Locator, type Page, test } from "./support/test";
 
 /**
@@ -60,7 +61,10 @@ async function buttonsAnswer(page: Page, mode: string): Promise<void> {
 test.describe("assistant panel", () => {
   test("no app chrome is drawn over its controls, in any of its homes", async ({
     page,
+    invitedProducer,
   }) => {
+    // The composer is checked, so the disclosure has been answered (GRV-8).
+    await seedDisclosureAnswered(invitedProducer.uid);
     await openEditor(page);
     await page.keyboard.press(ASSISTANT_CHORD);
     await expect(panel(page)).toHaveAttribute("data-mode", "floating");

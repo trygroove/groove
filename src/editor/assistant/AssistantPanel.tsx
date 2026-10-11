@@ -1,11 +1,12 @@
 import type { JSX } from "@solidjs/web";
-import { createEffect, Match, Show, Switch } from "solid-js";
+import { createEffect, createSignal, Match, Show, Switch } from "solid-js";
 import {
   CloseIcon,
   DockRightIcon,
   FloatIcon,
   MinimiseIcon,
   RestoreIcon,
+  SettingsIcon,
   SparkIcon,
 } from "../../components/icons";
 import AssistantChatView, { WRITING_STATUS } from "./AssistantChatView";
@@ -75,6 +76,10 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
   const mode = () => props.panel.layout().mode;
   const expanded = () => mode() === "floating" || mode() === "docked";
   const underModal = () => props.underModal?.() ?? false;
+  // The assistant's settings (GRV-8), in place of the conversation.
+  const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const hasSettings = () =>
+    Boolean(props.chat?.retention && props.chat.account().registered);
 
   // The room the panel takes at the window's right edge, published for the
   // app's bottom-right chrome so none of it is ever drawn over the panel's
@@ -167,6 +172,18 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
               </HeaderButton>
             </Match>
           </Switch>
+          <Show when={expanded() && hasSettings()}>
+            <button
+              type="button"
+              class="assistant-panel-button"
+              aria-label="Assistant settings"
+              title="Assistant settings: what Groove keeps of your conversations"
+              aria-pressed={settingsOpen() ? "true" : "false"}
+              onClick={() => setSettingsOpen((open) => !open)}
+            >
+              <SettingsIcon size={14} />
+            </button>
+          </Show>
           <HeaderButton label="Close" onClick={() => props.panel.close()}>
             <CloseIcon size={14} />
           </HeaderButton>
@@ -178,6 +195,8 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
               bindComposer={(element) => props.panel.bindComposer(element)}
               bindAskText={(element) => props.panel.bindAskText(element)}
               focusComposer={() => props.panel.focusComposer()}
+              settingsOpen={settingsOpen}
+              closeSettings={() => setSettingsOpen(false)}
             />
           )}
         </Show>

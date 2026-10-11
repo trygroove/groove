@@ -24,6 +24,10 @@ import {
   createFakeAssistantClient,
   type FakeAssistantClient,
 } from "../../testing/fakeAssistantClient";
+import {
+  createFakeRetentionClient,
+  type FakeRetentionClient,
+} from "../../testing/fakeRetentionClient";
 import { memoryStorage } from "../../testing/storage";
 import { assistantProposalTarget } from "../assistantProposalTarget";
 import { EditorSession } from "../EditorSession";
@@ -55,7 +59,7 @@ const ARRANGEMENT: EditorLocation = {
   openPlacementId: null,
 } as unknown as EditorLocation;
 
-async function setUp() {
+async function setUp(options: { retention?: FakeRetentionClient } = {}) {
   const repository = createInMemoryProjectRepository();
   const project = createSliceFixtureProject();
   const created = await repository.createProject(project);
@@ -103,6 +107,14 @@ async function setUp() {
       expanded: () => panel.layout().mode === "floating",
       client: async () => client,
       analytics: () => analytics,
+      ...(options.retention
+        ? {
+            retention: {
+              client: async () => options.retention as FakeRetentionClient,
+              internal: () => false,
+            },
+          }
+        : {}),
       editor: {
         session: {
           proposalTarget: () => assistantProposalTarget(session),
@@ -125,6 +137,8 @@ async function setUp() {
   };
   render(() => <Harness />);
   clickAndFlush(screen.getByRole("button", { name: "Open it" }));
+  // An account's answer about keeping conversations loads first (GRV-8).
+  if (options.retention) await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
   const swing = controlAddress(SONG_ENTITY, "swing");
   const volume = controlAddress(track.id, "volume");
@@ -475,6 +489,44 @@ describe("the proposal card (GRV-5)", () => {
     await press(cardButton("Dismiss"));
     expect(cardStatus()).toHaveTextContent("Cancelled. Nothing changed.");
     expect(card()).toHaveFocus();
+  });
+
+  it("tells a kept turn what became of its proposal: applied, undone, cancelled (GRV-8)", async () => {
+    const retention = createFakeRetentionClient({ answered: true });
+    const { propose, client } = await setUp({ retention });
+    await propose();
+    const turnId = client.last().request.session?.turnId;
+    expect(turnId).toBeDefined();
+    await press(cardButton("Apply"));
+    await press(cardButton("Undo"));
+    await settle();
+    expect(retention.requests.filter((request) => request.op === "outcome")).toEqual([
+      { op: "outcome", turnId, outcome: "applied" },
+      { op: "outcome", turnId, outcome: "undone" },
+    ]);
+
+    await propose();
+    const next = client.last().request.session?.turnId;
+    await press(
+      within(
+        within(panel())
+          .getAllByRole("region", { name: /^Proposal\b/ })
+          .at(-1) as HTMLElement,
+      ).getByRole("button", { name: "Cancel" }),
+    );
+    await settle();
+    expect(
+      retention.requests.filter((request) => request.op === "outcome").at(-1),
+    ).toEqual({ op: "outcome", turnId: next, outcome: "cancelled" });
+  });
+
+  it("says nothing about outcomes for an account that keeps nothing (GRV-8)", async () => {
+    const retention = createFakeRetentionClient({ answered: false });
+    const { propose } = await setUp({ retention });
+    await propose();
+    await press(cardButton("Apply"));
+    await settle();
+    expect(retention.requests.filter((request) => request.op === "outcome")).toEqual([]);
   });
 
   it("turns a proposal down with Cancel, changing nothing", async () => {

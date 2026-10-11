@@ -16,6 +16,7 @@ import { createRecordingTransport } from "../analytics/transport";
 import { INITIAL_PIXELS_PER_TICK, ROW_METRICS } from "../arrangement/ArrangementView";
 import type { AssistantClient } from "../assistant/assistantClient";
 import { RECOMMEND_SOUNDS_TOOL } from "../assistant/recommendation";
+import type { AssistantRetentionClient } from "../assistant/retentionClient";
 import { ASSISTANT_TOOLSET_VERSION } from "../assistant/tools";
 import { installWebAudioGlobals } from "../audio/testAudioContext";
 import { type CapabilityReport, detectCapabilities } from "../browser/capabilities";
@@ -54,6 +55,7 @@ import {
   createFakeAssistantClient,
   type FakeAssistantClient,
 } from "../testing/fakeAssistantClient";
+import { createFakeRetentionClient } from "../testing/fakeRetentionClient";
 import { memoryStorage } from "../testing/storage";
 import { packAudioPath } from "../userData/userData";
 import { createInMemoryUserLibraryRepository } from "../userLibrary/inMemoryUserLibraryRepository";
@@ -249,8 +251,11 @@ function renderEditor(
     account?: UserLibraryAccount | null;
     userLibraryRepository?: () => Promise<UserLibraryRepository>;
     assistantClient?: () => Promise<AssistantClient>;
+    assistantRetentionClient?: () => Promise<AssistantRetentionClient>;
   } = {},
 ) {
+  // Unless a test is about the disclosure, the account has already answered it.
+  const retentionClient = createFakeRetentionClient({ answered: true });
   const EditorView = EditorViewModule.default;
   const location = memoryHistory(editorViewPath(projectId, "arrangement"));
   const Page = () => {
@@ -269,6 +274,9 @@ function renderEditor(
         libraryAccount={options.account}
         userLibraryRepository={options.userLibraryRepository}
         assistantClient={options.assistantClient}
+        assistantRetentionClient={
+          options.assistantRetentionClient ?? (async () => retentionClient)
+        }
       />
     );
   };
@@ -3684,7 +3692,7 @@ describe("EditorView assistant panel", () => {
     });
     await screen.findByTestId("arrangement-view-ready");
 
-    press("k", assistantChord());
+    await openPanel();
     const composer = within(panel() as HTMLElement).getByRole("textbox", {
       name: "Message the assistant",
     });
@@ -3715,6 +3723,16 @@ describe("EditorView assistant panel", () => {
     expect(within(panel() as HTMLElement).getByText("Writing…")).toBeInTheDocument();
   });
 
+  /**
+   * Opens the assistant with its shortcut, and lets the account's answer to
+   * the disclosure load: it is only asked for once the panel opens (GRV-8).
+   */
+  async function openPanel() {
+    press("k", assistantChord());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    flush();
+  }
+
   /** The editor over `project`, signed in, talking to a fake assistant. */
   async function renderTalking(project: Project) {
     const client = createFakeAssistantClient();
@@ -3733,7 +3751,7 @@ describe("EditorView assistant panel", () => {
 
   /** Opens the panel over what is selected, and sends `text` from it. */
   async function openAndSend(client: FakeAssistantClient, text: string) {
-    if (!panel()) press("k", assistantChord());
+    if (!panel()) await openPanel();
     const composer = within(panel() as HTMLElement).getByRole("textbox", {
       name: "Message the assistant",
     });
@@ -4085,7 +4103,7 @@ describe("EditorView assistant panel", () => {
   it("scopes to the clips selected in the arrangement, as a section (GRV-26)", async () => {
     const { client, transport } = await renderTalking(createSliceFixtureProject());
     await clickBdClip();
-    press("k", assistantChord());
+    await openPanel();
     expect(scopeChip()).toHaveAccessibleName("Scope: 1 clip");
     const request = await openAndSend(client, "Vary this");
     expect(request.context.selection?.countByKind).toEqual({ placement: 1 });
@@ -4098,7 +4116,7 @@ describe("EditorView assistant panel", () => {
     const { client, transport } = await renderTalking(createSliceFixtureProject());
     await clickBdClip();
     await goToView("Mixer");
-    press("k", assistantChord());
+    await openPanel();
     expect(scopeChip()).toHaveAccessibleName("Scope: BD");
     const request = await openAndSend(client, "Mix it");
     expect(request.context.selection?.countByKind).toEqual({ track: 1 });
@@ -4113,7 +4131,7 @@ describe("EditorView assistant panel", () => {
     within(editor).getByRole("region", { name: /Piano roll/ });
     fireAndFlush(() => fireEvent.keyDown(window, { key: "a", ctrlKey: true }));
     expect(within(editor).getByText("4 selected")).toBeInTheDocument();
-    press("k", assistantChord());
+    await openPanel();
     expect(scopeChip()).toHaveAccessibleName("Scope: 4 notes");
     const request = await openAndSend(client, "Humanise these");
     expect(request.context.selectedNotes?.noteCount).toBe(4);
@@ -4131,7 +4149,7 @@ describe("EditorView assistant panel", () => {
     const editor = await openSequenceEditor();
     within(editor).getByRole("region", { name: "Step editor" });
     fireAndFlush(() => fireEvent.keyDown(window, { key: "a", ctrlKey: true }));
-    press("k", assistantChord());
+    await openPanel();
     expect(scopeChip()).toHaveAccessibleName(`Scope: ${notes.length} notes`);
     const request = await openAndSend(client, "Swing these");
     expect(notes.length).toBeGreaterThan(0);
@@ -4139,9 +4157,33 @@ describe("EditorView assistant panel", () => {
     expect(request.context.selection?.countByKind).toEqual({ event: notes.length });
   });
 
+  it("asks for the account's answer to the disclosure only once the assistant opens (GRV-8)", async () => {
+    const retention = createFakeRetentionClient({ answered: true });
+    repository = inMemoryModule.createInMemoryProjectRepository();
+    const project = createSliceFixtureProject();
+    const created = await repository.createProject(project);
+    if (!created.ok) throw new Error("fixture project failed to create");
+    renderEditor(project.metadata.id, {
+      account: { uid: "u1", registered: true },
+      assistantClient: async () => createFakeAssistantClient(),
+      assistantRetentionClient: async () => retention,
+    });
+    await screen.findByTestId("arrangement-view-ready");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(retention.requests).toEqual([]);
+
+    await openPanel();
+    expect(retention.requests).toEqual([{ op: "get" }]);
+    expect(
+      within(panel() as HTMLElement).getByRole("textbox", {
+        name: "Message the assistant",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("offers a sign-in in place of the composer to someone not signed in (GRV-26)", async () => {
     await renderSlice();
-    press("k", assistantChord());
+    await openPanel();
     expect(panel()).toHaveFocus();
     expect(within(panel() as HTMLElement).queryByRole("textbox")).toBeNull();
     expect(panel()).toHaveTextContent("Sign in to talk to the assistant.");
@@ -4176,7 +4218,7 @@ describe("EditorView assistant panel", () => {
   it("minimises a floating panel on Escape, and closes a docked one", async () => {
     await renderSlice();
     launcher().focus();
-    press("k", assistantChord());
+    await openPanel();
     press("Escape");
     expect(panel()).toHaveAttribute("data-mode", "minimised");
 
@@ -4186,7 +4228,7 @@ describe("EditorView assistant panel", () => {
     expect(panel()).toBeNull();
     expect(launcher()).toHaveFocus();
     // Out of the panel, Escape is not the panel's.
-    press("k", assistantChord());
+    await openPanel();
     launcher().focus();
     press("Escape");
     expect(panel()).toHaveAttribute("data-mode", "docked");
@@ -4205,7 +4247,7 @@ describe("EditorView assistant panel", () => {
     const drumRegion = `Drum machine: ${project.song.tracks[0].name}`;
     expect(screen.getByRole("region", { name: drumRegion })).toBeInTheDocument();
 
-    press("k", assistantChord());
+    await openPanel();
     const edge = within(panel() as HTMLElement).getByRole("separator");
     edge.focus();
     press("ArrowUp");
@@ -4229,7 +4271,7 @@ describe("EditorView assistant panel", () => {
   it("leaves the docked column free in the editor's layout, and only while docked", async () => {
     await renderSlice();
     expect(dockSpace()).toBe("0px");
-    press("k", assistantChord());
+    await openPanel();
     expect(dockSpace()).toBe("0px");
     clickAndFlush(panelButton("Dock to the right"));
     expect(dockSpace()).toBe("384px");
@@ -4239,7 +4281,7 @@ describe("EditorView assistant panel", () => {
 
   it("drops under a modal dialog and out of reach until it closes", async () => {
     await renderSlice();
-    press("k", assistantChord());
+    await openPanel();
     expect(panel()).not.toHaveAttribute("inert");
 
     clickAndFlush(screen.getByRole("button", { name: "Export" }));
@@ -4248,7 +4290,7 @@ describe("EditorView assistant panel", () => {
     expect(region).toHaveAttribute("inert");
     expect(region).toHaveClass("assistant-panel-under-modal");
     // Cmd/Ctrl+K is the editor's, which the dialog stands down.
-    press("k", assistantChord());
+    await openPanel();
     expect(region).toHaveAttribute("data-mode", "floating");
 
     clickAndFlush(screen.getByRole("button", { name: "Close export" }));

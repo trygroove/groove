@@ -663,6 +663,7 @@ Neither GA4 nor Sentry can be verified from the unit suite — the last mile is 
 | `sign_in_blocked` | Sign in with a Google address that is not on the alpha allowlist (#854). | Fires once per refusal, with `source: landing` (or `log_in`/`upgrade` from a guest session), and no address. |
 | `allowlist_approved` | As an admin, approve addresses on `/admin` (#854). | Fires once per approval, with `source: paste` or `attempt` and the three counts, and no address. |
 | `access_revoked` | As an admin, Revoke an address on `/admin` and confirm (#1147). | Fires once per revocation, with `was_listed` and `sessions_ended`, and no address. |
+| `assistant_retention_changed` | Answer the assistant's disclosure, then change the answer in the panel's Assistant settings (GRV-8). | Fires once per answer stored, with `state: on` or `off` and nothing else; the first also fires `feature_first_use` with `feature: assistant_retention`. With collection off, the answer is still stored. |
 | `first_edit` | Make the first edit in a project. | Fires once for that project, never again — reload and edit again to confirm. |
 | `feature_first_use` | Use a feature for the first time in that browser. | Fires once per `feature`, carrying the feature key. |
 | `save_failed` | Go offline (DevTools → Network → Offline) and make an edit. | Fires with a stable `error_code` and a `retry_count`. |
@@ -714,6 +715,18 @@ curl -s "https://trygroove.app/_build/assets/<chunk>.js.map" | head -c 60
 The first must return JavaScript. The second must return the SPA shell — `<!DOCTYPE html>...` — and **not** JSON beginning `{"version":3,...`.
 
 **Do not test this with `curl -sI` and a status code.** `firebase.json` rewrites `**` to `/index.html`, so *every* path that does not exist on Hosting returns `200 text/html`, including `/nope-does-not-exist.map`. A 200 here is therefore expected and proves nothing either way; only the body distinguishes a served map from the catch-all. An earlier version of this check compared status codes, and would have reported a leak on every correct deploy. If the body really is a source map, `hosting.ignore` (`**/*.map`) is not doing its job and the deploy should be treated as a leak.
+
+### Verifying assistant transcript retention against a deployed build
+
+Groove keeps a conversation with the assistant only for an account that said yes in its disclosure, and for 30 days from each message (GRV-8, `src/assistant/transcripts.ts`). Nothing in the browser can read the store (`firestore.rules` denies every client), so both checks read it in the Firebase console, or with the Admin SDK, as someone with access to the project.
+
+**Declining leaves nothing.** Sign in as a fresh test account (a `groovetestuser<n>` address, so it is marked internal), open a project and the assistant, and press **Don't keep them**. Send a few messages, and apply, cancel and undo a proposal. In the console, `assistantPreferences/{uid}` reads `retain: false`, and *Firestore → assistantTranscripts*, filtered on `uid == <uid>`, has no documents. Then open **Assistant settings** in the panel, tick the box, send one message, and confirm exactly one document appears for that uid (with `internal: true`). Untick it: the panel says the kept conversations were deleted, and the filter is empty again.
+
+**An expired transcript is gone.** In the console, take one kept document and set its `createdAt` and `expiresAt` back by 31 days (`expiresAt` is `createdAt` plus 30 days, in milliseconds). Within the hour the `purgeExpiredTranscripts` function runs (*Functions → Logs*: "expired assistant transcripts deleted" with a count of at least 1) and the document is gone; the account's other documents are still there. To check without waiting, run the job from *Cloud Scheduler → firebase-schedule-purgeExpiredTranscripts-… → Force run*.
+
+**Deleting a project or an account takes its transcripts.** Delete a project that has kept transcripts from the dashboard and confirm, filtering on `projectId`, that they are gone ("a deleted project's assistant transcripts deleted" in the logs). Deleting the test account in *Authentication* removes its transcripts and its `assistantPreferences` document the same way.
+
+The emulator suite (`tests/emulator/assistantTranscripts.emulator.test.ts`) covers the same rules against a local Firestore on every CI run; this check is for the deployed functions, schedule and triggers, which it cannot reach.
 
 ### What has been verified against the hosted environment
 

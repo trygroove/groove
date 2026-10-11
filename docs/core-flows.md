@@ -1191,8 +1191,8 @@ project dashboard
 
 **Preconditions:** signed in with no projects. The assistant is answered by the
 suite's scripted provider (#69). Asked to loosen the beat, it replies with a
-proposal of two changes: swing up to 58%, and the BD track 3 dB quieter. Once
-the assistant disclosure exists (#95), this account has already seen it.
+proposal of two changes: swing up to 58%, and the BD track 3 dB quieter. This
+account has already answered the assistant's disclosure (GRV-8).
 
 1. Create a new project. It opens on the arrangement.
 2. Press the Assistant button in the header. The assistant opens floating over

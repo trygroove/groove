@@ -126,6 +126,18 @@ export function SparkIcon(props: IconProps) {
   );
 }
 
+/** A panel's settings: three faders at different levels (GRV-8). */
+export function SettingsIcon(props: IconProps) {
+  return (
+    <Icon size={props.size}>
+      <path d="M5 3v18M12 3v18M19 3v18" fill="none" stroke-width="2" />
+      <rect x="2.5" y="13" width="5" height="3" />
+      <rect x="9.5" y="6" width="5" height="3" />
+      <rect x="16.5" y="15" width="5" height="3" />
+    </Icon>
+  );
+}
+
 /** Minimise a floating panel to a bar. */
 export function MinimiseIcon(props: IconProps) {
   return (

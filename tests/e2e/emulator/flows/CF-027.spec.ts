@@ -12,6 +12,7 @@ import {
   proposalButton,
   reloadSaved,
   scope,
+  seedDisclosureAnswered,
   swingPercent,
   volume,
 } from "../support/assistant";
@@ -38,9 +39,9 @@ import { expect, test } from "../support/test";
  * read from the proposal's own rows where they matter, so the spec pins the
  * shape of the proposal, not the fader's scale.
  *
- * **The disclosure.** #95 will ask for the assistant disclosure before the
- * first message. It lands after #72, so that PR seeds the account as having
- * seen it; this spec does not click through it.
+ * **The disclosure.** The assistant asks for its disclosure before the first
+ * message (GRV-8). The flow's precondition is an account that has already
+ * answered it, so the spec seeds that answer; it does not click through it.
  *
  * Out of scope, per the flow: what the assistant says, stopping a reply,
  * provider failure, stale proposals, "Why this works", the preview and changed
@@ -55,7 +56,9 @@ const PROPOSED_SWING = 58;
 test.describe("CF-027", () => {
   test("a producer asks the assistant for a change, tries it, and keeps it", async ({
     page,
+    invitedProducer,
   }) => {
+    await seedDisclosureAnswered(invitedProducer.uid);
     const step = walkthrough(page, {
       id: "CF-027",
       title: "A producer asks the assistant for a change, tries it, and keeps it",

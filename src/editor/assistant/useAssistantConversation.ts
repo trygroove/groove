@@ -5,6 +5,8 @@
  * {@link UseAssistantConversationOptions.persistence} key a reload of the
  * same project brings back what was said and a question still waiting
  * (GRV-42, `conversationStore.ts`).
+ * What Groove keeps of it, for an account that said yes, is the gateway's
+ * transcript (GRV-8), never read back here.
  *
  * Every turn goes through an {@link AssistantClient}, the one door to the
  * gateway, and each is stamped with the scope it was sent with. Nothing here
@@ -75,6 +77,8 @@ export interface TurnOrigin {
    * be out of date (GRV-5).
    */
   readonly remoteChanges: number;
+  /** The ID the transcript files the turn under (GRV-8), when it has one. */
+  readonly turnId?: string;
 }
 
 /** One thing in the conversation's log. */
@@ -205,6 +209,14 @@ export interface UseAssistantConversationOptions {
     readonly key: Accessor<string | null>;
     readonly store?: ConversationStore;
   };
+  /**
+   * What the transcript files each turn under (GRV-8): the open project's ID
+   * and whether this browser is internal traffic. Without it, turns carry no
+   * session and are never kept.
+   */
+  readonly session?: () => { readonly projectId: string; readonly internal: boolean };
+  /** Makes the conversation's and each turn's ID; random by default. */
+  readonly newId?: () => string;
 }
 
 export interface AssistantConversation {
@@ -289,6 +301,9 @@ export function useAssistantConversation(
     nextId += 1;
     return `entry-${nextId}`;
   };
+  const newId = options.newId ?? (() => crypto.randomUUID());
+  /** One conversation per panel session: what its kept turns are filed under. */
+  const conversationId = newId();
   /** The turn on its way: Stop goes to it. */
   let inFlight: AssistantTurnHandle | null = null;
   // Leaving the editor stops the reply on its way, at the gateway too, rather
@@ -459,6 +474,8 @@ export function useAssistantConversation(
     const project = options.project();
     if (!project) return;
     const said = message.wire ?? message.text;
+    const where = options.session?.();
+    const turnId = where ? newId() : undefined;
     const request: AssistantTurnRequest = {
       projectRevision: project.metadata.revision,
       messages: [
@@ -466,6 +483,16 @@ export function useAssistantConversation(
         { role: "user", text: said.slice(0, MAX_MESSAGE_CHARS) },
       ],
       context: scopedContext(project, scope),
+      ...(where && turnId
+        ? {
+            session: {
+              conversationId,
+              turnId,
+              projectId: where.projectId,
+              internal: where.internal,
+            },
+          }
+        : {}),
     };
     append({ kind: "message", id: id(), scopeLabel: scope.label, ...message });
     const analytics = options.analytics();
@@ -475,6 +502,7 @@ export function useAssistantConversation(
       ...message,
       scope,
       remoteChanges: options.remoteChanges?.() ?? 0,
+      ...(turnId ? { turnId } : {}),
     });
   }
 

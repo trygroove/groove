@@ -1,7 +1,12 @@
 import type { JSX } from "@solidjs/web";
-import { createEffect, For, Match, Show, Switch } from "solid-js";
+import { createEffect, For, Match, onSettled, Show, Switch } from "solid-js";
 import { SendIcon, SparkIcon, StopIcon } from "../../components/icons";
 import AssistantAskCard from "./AssistantAskCard";
+import {
+  RETENTION_LOADING,
+  RetentionDisclosure,
+  RetentionSettings,
+} from "./AssistantRetention";
 import { ERROR_HEADING, ERROR_REASSURANCE, errorMessage } from "./assistantErrorCopy";
 import ProposalCard from "./ProposalCard";
 import RecommendationCard from "./RecommendationCard";
@@ -16,6 +21,10 @@ export interface AssistantChatViewProps {
   bindAskText(element: HTMLElement | undefined): void;
   /** Puts focus back in the composer, after Stop or Try again. */
   focusComposer(): void;
+  /** Whether the assistant's settings are open in place of the conversation (GRV-8). */
+  readonly settingsOpen?: () => boolean;
+  /** Closes the settings, back to the conversation. */
+  closeSettings?(): void;
 }
 
 /** The status a streaming reply puts in the panel's header and bar. */
@@ -38,6 +47,55 @@ export const SIGN_IN_NOTE = "Sign in to talk to the assistant.";
  * rather than word by word.
  */
 export default function AssistantChatView(props: AssistantChatViewProps): JSX.Element {
+  const retention = () => props.chat.retention;
+  const registered = () => props.chat.account().registered;
+  return (
+    <Switch fallback={<Conversation {...props} />}>
+      <Match when={registered() && props.settingsOpen?.() && retention()}>
+        {(open) => (
+          <div class="assistant-panel-log assistant-retention-pane">
+            <RetentionSettings
+              retention={open()}
+              onDone={() => props.closeSettings?.()}
+            />
+          </div>
+        )}
+      </Match>
+      {/* Neither the disclosure nor the conversation until the answer is known. */}
+      <Match when={registered() && retention() && !retention()?.known() && retention()}>
+        <div class="assistant-panel-log" aria-busy="true">
+          <p class="assistant-panel-note">{RETENTION_LOADING}</p>
+        </div>
+      </Match>
+      {/* Nobody messages the assistant before answering this (GRV-8). */}
+      <Match
+        when={registered() && retention() && !retention()?.answered() && retention()}
+      >
+        {(unanswered) => (
+          <div class="assistant-panel-log assistant-retention-pane">
+            <RetentionDisclosure retention={unanswered()} />
+          </div>
+        )}
+      </Match>
+    </Switch>
+  );
+}
+
+function Conversation(props: AssistantChatViewProps): JSX.Element {
+  // The conversation can arrive after the panel opened: once the account's
+  // answer has loaded, or the disclosure was just answered, or the settings
+  // closed (GRV-8). Focus left on the panel, or dropped with the button that
+  // went, goes to the composer; focus anywhere else is left where it is.
+  onSettled(() => {
+    const active = document.activeElement;
+    if (
+      !active ||
+      active === document.body ||
+      active.classList.contains("assistant-panel")
+    ) {
+      props.focusComposer();
+    }
+  });
   const conversation = () => props.chat.conversation;
   const streaming = () => conversation().streaming();
   const scope = () => props.chat.scope();

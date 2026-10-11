@@ -983,3 +983,93 @@
     transition: none;
   }
 }
+
+/* The settings button while the settings are open (GRV-8). */
+.assistant-panel-button[aria-pressed="true"] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+/* The disclosure and the settings (GRV-8): read, then answer. */
+.assistant-disclosure,
+.assistant-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--color-foreground);
+  font-size: var(--font-size-small);
+}
+
+.assistant-disclosure p,
+.assistant-settings p {
+  margin: 0;
+}
+
+.assistant-disclosure-title,
+.assistant-disclosure-subtitle {
+  margin: 0;
+  color: var(--color-foreground-bright);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+.assistant-disclosure-subtitle {
+  margin-top: 6px;
+  font-size: var(--font-size-small);
+}
+
+.assistant-retention-choice {
+  min-width: 0;
+  margin: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--color-background);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+.assistant-retention-choice b {
+  color: var(--color-foreground-bright);
+}
+
+/* Keeping and not keeping weigh the same: one style, one width. */
+.assistant-retention-answers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.assistant-retention-scope {
+  color: var(--color-foreground-bright);
+}
+
+.assistant-retention-status {
+  display: block;
+}
+
+.assistant-retention-status:empty {
+  display: none;
+}
+
+.assistant-retention-error {
+  padding: 8px 10px;
+  background: var(--color-danger-wash);
+  box-shadow: inset 0 0 0 1px var(--color-danger-edge);
+  color: var(--color-foreground-bright);
+}
+
+.assistant-setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--color-foreground-bright);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+}
+
+.assistant-setting input {
+  margin: 2px 0 0;
+  accent-color: var(--color-accent);
+}
