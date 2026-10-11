@@ -321,15 +321,70 @@ const DRUM_PAD_PARAMETER_RULE: ToolRule = {
   },
 };
 
+/**
+ * A complete `track_create` input. The model has been seen wrapping the whole
+ * payload in a second `track` key (GRV-90): `{"track": {"track": {...},
+ * "clips": [...]}}`. Showing the exact top-level shape in the tool's
+ * description is what stops that; a test pins it as a payload the command
+ * accepts.
+ */
+export const TRACK_CREATE_EXAMPLE = {
+  track: {
+    id: "trk_BassTrack000000000001",
+    name: "Bass",
+    color: "#808080",
+    order: 1,
+    type: "instrument",
+    instrument: { kind: "synth", parameters: {} },
+    devices: [],
+    sendConfig: [],
+    mixer: { volume: 0, pan: 0, muted: false, soloed: false },
+  },
+  clips: [
+    {
+      id: "clp_BassLine0000000000001",
+      trackId: "trk_BassTrack000000000001",
+      name: "Bassline",
+      color: "#808080",
+      lengthTicks: 768,
+      content: {
+        kind: "notes",
+        events: [
+          {
+            id: "evt_BassNote0000000000001",
+            trigger: { kind: "pitch", pitch: 36 },
+            startTicks: 0,
+            durationTicks: 192,
+            velocity: 0.8,
+            probability: null,
+          },
+        ],
+      },
+    },
+  ],
+  placements: [
+    {
+      id: "plc_BassPlace000000000001",
+      clipId: "clp_BassLine0000000000001",
+      trackId: "trk_BassTrack000000000001",
+      startTicks: 0,
+      durationTicks: 768,
+      clipOffsetTicks: 0,
+      looped: false,
+    },
+  ],
+};
+
+const TRACK_CREATE_DESCRIPTION = [
+  "Add a track, with its instrument, clips and placements. Duplicate a track by creating a copy with new IDs.",
+  'The input object has exactly these top-level keys: "track" (the track itself: id, name, color, order, type, instrument, devices, sendConfig, mixer), "clips" (array) and "placements" (array). "clips" and "placements" sit beside "track", never inside it, and "track" holds the track\'s own fields directly, never another "track" key.',
+  `Example input: ${JSON.stringify(TRACK_CREATE_EXAMPLE)}`,
+].join(" ");
+
 /** The allowlist, in the order the tools are offered to the model. */
 const TOOL_RULES: readonly ToolRule[] = [
   PARAMETER_SET_RULE,
-  rule(
-    "track.create",
-    "tracks",
-    "Add a track, with its instrument, clips and placements. Duplicate a track by creating a copy with new IDs.",
-    automationRestore,
-  ),
+  rule("track.create", "tracks", TRACK_CREATE_DESCRIPTION, automationRestore),
   rule("track.update", "tracks", "Rename or recolour a track."),
   rule("track.reorder", "tracks", "Move a track to a new position in the track list."),
   rule("track.delete", "tracks", "Remove a track and its clips and placements."),
