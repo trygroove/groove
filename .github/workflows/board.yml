@@ -110,6 +110,11 @@ jobs:
         run: bunx playwright install --with-deps chromium
       - name: Ship the card
         uses: anthropics/claude-code-action@v1
+        env:
+          # Headless: the run ends when the agent's turn does, so nothing may wait
+          # in the background (a backgrounded command or subagent is killed, and
+          # an agent that ends its turn to wait for one ends the whole run).
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # A scheduled run's actor is main's last committer, the merge queue
@@ -120,7 +125,7 @@ jobs:
           prompt: |
             Ship Linear issue ${{ matrix.card.issue }}, unattended. It was moved to Ready on the board, or sent back to In Progress with no PR open and none that completes it merged: then earlier pieces have landed, and you continue from the card's latest "Handoff from /ship" comment.
 
-            Follow `.claude/skills/ship/SKILL.md`, with one change for this environment: do NOT use the Workflow tool. This is a headless run that ends the moment your turn ends, so a background workflow would be killed before it does anything. Instead run the stages in `.claude/workflows/solid-groove-ship.js` yourself, in order (triage, build, review for features only, land), giving each stage's prompt to the Agent tool with `run_in_background: false` and waiting for its result before starting the next. Read the agent briefs in `.claude/agents/` the same way the workflow does.
+            Follow `.claude/skills/ship/SKILL.md`, with one change for this environment: do NOT use the Workflow tool. This is a headless run that ends the moment your turn ends, so a background workflow would be killed before it does anything. Instead run the stages in `.claude/workflows/solid-groove-ship.js` yourself, in order (triage, build, review for features only, land), giving each stage's prompt to the Agent tool with `run_in_background: false` and waiting for its result before starting the next. Never end your turn to wait for anything: your turn ending ends this run. If a stage's agent comes back with its work unfinished, start a new Agent call that tells it what is left (not SendMessage, which resumes it in the background). Read the agent briefs in `.claude/agents/` the same way the workflow does.
 
             Do not end your turn until the pull requests are open, or the card is in Blocked with a comment saying why, or triage held it off (a comment naming the open PRs it would conflict with, and the card back in Backlog). Before you report a PR, confirm it exists with `gh pr view`. Never report a result you have not seen. Use the `gh` CLI for GitHub (GH_TOKEN is set) and `node .github/scripts/linear.mjs` for Linear (LINEAR_API_KEY is set).
 
@@ -188,6 +193,11 @@ jobs:
         run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - name: Rework the card's PRs
         uses: anthropics/claude-code-action@v1
+        env:
+          # Headless: the run ends when the agent's turn does, so nothing may wait
+          # in the background (a backgrounded command or subagent is killed, and
+          # an agent that ends its turn to wait for one ends the whole run).
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # A scheduled run's actor is main's last committer, the merge queue
@@ -266,6 +276,11 @@ jobs:
       - uses: ./.github/actions/claude-env
       - name: Do what the comment asks
         uses: anthropics/claude-code-action@v1
+        env:
+          # Headless: the run ends when the agent's turn does, so nothing may wait
+          # in the background (a backgrounded command or subagent is killed, and
+          # an agent that ends its turn to wait for one ends the whole run).
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # A scheduled run's actor is main's last committer, the merge queue
@@ -307,6 +322,11 @@ jobs:
             .github/scripts
       - name: Put the bug on the milestone of its area
         uses: anthropics/claude-code-action@v1
+        env:
+          # Headless: the run ends when the agent's turn does, so nothing may wait
+          # in the background (a backgrounded command or subagent is killed, and
+          # an agent that ends its turn to wait for one ends the whole run).
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # A scheduled run's actor is main's last committer, the merge queue
