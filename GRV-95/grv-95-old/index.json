@@ -1,0 +1,14 @@
+{
+  "id": "grv-95-old",
+  "title": "Before: composer at 11px, message text at 14px",
+  "steps": [
+    {
+      "file": "01-the-assistant-composer-with-its-placehol.png",
+      "caption": "Before: the composer placeholder at 11px"
+    },
+    {
+      "file": "02-the-composer-with-a-draft-typed-in-it.png",
+      "caption": "Before: a draft typed in the composer at 11px"
+    }
+  ]
+}
