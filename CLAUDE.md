@@ -103,7 +103,7 @@ The QA bot ([`docs/qa-bot.md`](./docs/qa-bot.md) holds its instructions) follows
 
 **Asking for something on a card.** A comment that mentions `@claude` on a Linear card starts a Claude run on it within a minute; the run replies "Picking this up" under the comment and keeps its progress there. (On a GitHub PR, `@claude` in a comment or review still starts `claude.yml` at once.) Comments the automation writes start with "**Picking this up**"; never start your own with those words.
 
-**Sending a card back.** To ask for changes on a card whose PRs are open, comment the feedback on the card or a PR, then move the card to In Progress (not Ready, which starts a fresh build). The board runs a rework agent on the open PRs, which fixes them in place, replies to the feedback, and moves the card back to QA (or Ready For Review if there's no preview). It stands down if an `@claude` run is already on it, as after a failed QA.
+**Sending a card back.** To ask for changes on a card whose PRs are open, comment the feedback on the card or a PR, then move the card to In Progress (not Ready, which starts a fresh build). The board runs a rework agent on the open PRs, which fixes them in place, replies to the feedback, and moves the card back to QA (or Ready For Review if there's no preview). It stands down if an `@claude` run is already on it, as after a failed QA. A card with no open PRs whose work is unfinished (no merged PR `Completes` or `Closes` it, as when a sequence stopped at a gated PR) can be sent back the same way: `/ship` continues it from its handoff.
 
 ### Shape, then ship
 

@@ -118,7 +118,7 @@ jobs:
           github_token: ${{ secrets.RESTACK_TOKEN || github.token }}
           show_full_output: true
           prompt: |
-            Ship Linear issue ${{ matrix.card.issue }}, unattended. It was moved to Ready on the board.
+            Ship Linear issue ${{ matrix.card.issue }}, unattended. It was moved to Ready on the board, or sent back to In Progress with no PR open and none that completes it merged: then earlier pieces have landed, and you continue from the card's latest "Handoff from /ship" comment.
 
             Follow `.claude/skills/ship/SKILL.md`, with one change for this environment: do NOT use the Workflow tool. This is a headless run that ends the moment your turn ends, so a background workflow would be killed before it does anything. Instead run the stages in `.claude/workflows/solid-groove-ship.js` yourself, in order (triage, build, review for features only, land), giving each stage's prompt to the Agent tool with `run_in_background: false` and waiting for its result before starting the next. Read the agent briefs in `.claude/agents/` the same way the workflow does.
 
