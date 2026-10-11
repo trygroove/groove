@@ -685,7 +685,7 @@
   background: var(--color-background);
   color: var(--color-text);
   font: inherit;
-  font-size: var(--font-size-small);
+  font-size: var(--font-size-base);
 }
 
 /* A black field on the panel's ground needs no ring at rest; focus has one. */
