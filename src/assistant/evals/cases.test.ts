@@ -6,6 +6,7 @@ import {
   casePairs,
   EVAL_CAPABILITIES,
   EVAL_CASES,
+  EVAL_PARTS,
   resolveScope,
   resolveSelection,
 } from "./cases";
@@ -71,5 +72,13 @@ describe("the eval cases", () => {
     expect(() => resolveSelection(project, { tracks: ["Nope"] })).toThrow(
       /no track named/,
     );
+  });
+
+  it("name the five sketch parts on the loop sketches and nothing elsewhere", () => {
+    for (const evalCase of EVAL_CASES) {
+      expect(evalCase.parts ?? []).toEqual(
+        evalCase.capability === "loopSketch" ? EVAL_PARTS : [],
+      );
+    }
   });
 });

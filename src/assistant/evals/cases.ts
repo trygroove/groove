@@ -24,6 +24,10 @@ export const EVAL_CAPABILITIES = [
 ] as const;
 export type EvalCapability = (typeof EVAL_CAPABILITIES)[number];
 
+/** A part of a sketch a request can ask for (check 7). */
+export const EVAL_PARTS = ["drums", "bass", "chords", "melody", "texture"] as const;
+export type EvalPart = (typeof EVAL_PARTS)[number];
+
 export type EvalAxis = "conventional" | "extreme";
 
 /**
@@ -61,6 +65,8 @@ export interface EvalCase {
   readonly fixture: () => Project;
   readonly selection: EvalSelection;
   readonly scope: EvalScope;
+  /** The parts the request asks for, which check 7 looks for; none skips it. */
+  readonly parts?: readonly EvalPart[];
 }
 
 const NOTHING_ELSE = { song: false, master: false, returns: false, sections: false };
@@ -76,6 +82,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
     selection: { tracks: ["Drums"] },
     // A sketch may set its own tempo and swing.
     scope: { tracks: "all", createTracks: true, ...NOTHING_ELSE, song: true },
+    parts: EVAL_PARTS,
   },
   {
     id: "sketch-broken",
@@ -86,6 +93,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
     fixture: createKitSketchProject,
     selection: { tracks: ["Drums"] },
     scope: { tracks: "all", createTracks: true, ...NOTHING_ELSE, song: true },
+    parts: EVAL_PARTS,
   },
   {
     id: "variation-fill",

@@ -123,7 +123,7 @@ export function renderMarkdown(report: EvalReport): string {
     `- Tool set version: ${report.toolsetVersion}`,
     `- Runs per case: ${report.runsPerCase}; cases: ${report.caseIds.length}; turns: ${report.records.length}; errored turns: ${report.summary.errored.total}`,
     "",
-    "Pass rates count the proposals a check could judge. A reply with no proposal, or one that did not apply, fails check 1 and is not judged by checks 2 to 5. A turn that errored (the provider or the transport failed, or it timed out) is not judged by any check and is counted apart. Check 6 is judged on extreme cases only. Nothing gates on the descriptive numbers.",
+    "Pass rates count the proposals a check could judge. A reply with no proposal, or one that did not apply, fails check 1 and is not judged by checks 2 to 5 or 7. A turn that errored (the provider or the transport failed, or it timed out) is not judged by any check and is counted apart. Check 6 is judged on extreme cases only, and check 7 on the sketch cases only (the ones that name the parts they ask for). Nothing gates on the descriptive numbers.",
     "",
     ...erroredLines(report),
     "## Pass rate per check",

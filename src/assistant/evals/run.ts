@@ -47,6 +47,7 @@ import {
   type CheckResult,
   checkAtomicUndo,
   checkBundled,
+  checkCoverage,
   checkGrounded,
   checkInScope,
   checkNotFlattened,
@@ -277,7 +278,7 @@ export function whyNoProposal(turn: EvalTurn): string {
 }
 
 /**
- * Checks 1 to 5 on one turn, and its descriptive numbers. An errored turn is
+ * Checks 1 to 5 and 7 on one turn, and its descriptive numbers. An errored turn is
  * judged by no check.
  */
 export function evaluateTurn(
@@ -306,6 +307,7 @@ export function evaluateTurn(
         inScope: notJudged,
         atomicUndo: notJudged,
         grounded: notJudged,
+        coverage: notJudged,
       },
       stats: null,
       fingerprint: null,
@@ -320,6 +322,7 @@ export function evaluateTurn(
       inScope: checkInScope(project, after, resolveScope(project, evalCase.scope)),
       atomicUndo: checkAtomicUndo(project, turn.proposal),
       grounded: checkGrounded(project, after, proposal.impact.controls, turn.text),
+      coverage: checkCoverage(project, after, evalCase.parts ?? []),
     },
     stats: describeProposal(project, after, proposal.commands.length),
     fingerprint: proposalFingerprint(project, proposal.commands),
