@@ -307,7 +307,7 @@ describe("runAssistantTurn: tutorial videos (GRV-16, ADR 0009)", () => {
     input: { videoId, reason },
   });
   const verifier: VideoVerifier = async (videoId) =>
-    videoId === real ? { title: "Acid Basslines", channel: "Point Blank" } : null;
+    videoId === real ? { title: "Acid Basslines", channel: "Point Blank" } : "missing";
 
   it("offers recommend_video only when the gateway can check a video", async () => {
     const without = harness([replyEvents(["ok"])]);
@@ -348,7 +348,32 @@ describe("runAssistantTurn: tutorial videos (GRV-16, ADR 0009)", () => {
     ]);
     // A video is not a change to the song.
     expect(result.proposal).toBeNull();
-    expect(h.logs[0]).toMatchObject({ videosShown: 1, videosDropped: 1 });
+    expect(h.logs[0]).toMatchObject({
+      videosShown: 1,
+      videosDropped: 1,
+      videosUnchecked: 0,
+    });
+    // The dropped one is said to be left out, in the stream and the result.
+    expect(result.text).toMatch(/^Watch this\.\n\nOne of the videos I picked/);
+    expect(h.chunks.map((chunk) => chunk.text).join("")).toBe(result.text);
+  });
+
+  it("says there is no video when a reply's only video is dropped, rather than ending on nothing", async () => {
+    const h = harness([toolUseEvents("", [videoCall(missing)])]);
+    h.deps = { ...h.deps, verifyVideo: verifier };
+    const result = await run(h);
+    expect(result.videos).toEqual([]);
+    expect(result.text).toMatch(/^I couldn't find a video on YouTube/);
+    expect(h.chunks.map((chunk) => chunk.text).join("")).toBe(result.text);
+    expect(h.logs[0]).toMatchObject({ videosDropped: 1, videosUnchecked: 0 });
+  });
+
+  it("adds nothing to a reply whose video is shown", async () => {
+    const h = harness([toolUseEvents("The squelch is resonance.", [videoCall(real)])]);
+    h.deps = { ...h.deps, verifyVideo: verifier };
+    const result = await run(h);
+    expect(result.text).toBe("The squelch is resonance.");
+    expect(result.videos).toHaveLength(1);
   });
 
   it("drops every video when the check is unavailable, and never shows one unchecked", async () => {
@@ -361,8 +386,12 @@ describe("runAssistantTurn: tutorial videos (GRV-16, ADR 0009)", () => {
     };
     const result = await run(h);
     expect(result.videos).toEqual([]);
-    expect(result.text).toBe("Watch this.");
-    expect(h.logs[0]).toMatchObject({ outcome: "completed", videosDropped: 1 });
+    expect(result.text).toMatch(/^Watch this\.\n\nI couldn't find a video/);
+    expect(h.logs[0]).toMatchObject({
+      outcome: "completed",
+      videosDropped: 1,
+      videosUnchecked: 1,
+    });
   });
 
   it("drops a video call made without a verifier, and a malformed ID unchecked", async () => {

@@ -270,7 +270,9 @@ describe("the emulator's assistant provider", () => {
         EMULATOR_MISSING_VIDEO_ID,
         new AbortController().signal,
       ),
-    ).toBeNull();
+    ).toBe("missing");
+    // The video it refused is said to be left out, not left implied.
+    expect(reply.text).toMatch(/left it out\.$/);
   });
 
   it("is only chosen in the emulator, and only with no key", () => {

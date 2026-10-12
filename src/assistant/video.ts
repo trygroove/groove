@@ -102,13 +102,22 @@ export interface VideoFacts {
 }
 
 /**
+ * Why a video is dropped: YouTube says it cannot be shown (`missing`: removed,
+ * private, not embeddable, never existed), or the check could not be made
+ * (`unchecked`: a timeout, a network failure, an answer in another shape).
+ * The turn log counts them apart, so a model naming IDs that do not exist
+ * reads differently from YouTube being out of reach.
+ */
+export type VideoRefusal = "missing" | "unchecked";
+
+/**
  * Checks one video ID is real and embeddable. Resolves to the video's facts,
- * or null to drop it; never rejects.
+ * or to why it is dropped; never rejects.
  */
 export type VideoVerifier = (
   videoId: string,
   signal: AbortSignal,
-) => Promise<VideoFacts | null>;
+) => Promise<VideoFacts | VideoRefusal>;
 
 /** YouTube's oEmbed endpoint: public, no API key. */
 export const YOUTUBE_OEMBED_URL = "https://www.youtube.com/oembed";
@@ -125,16 +134,17 @@ const oEmbedSchema = z.looseObject({
 
 /**
  * A verifier over YouTube's oEmbed endpoint. oEmbed answers 200 with a title
- * and channel for a public, embeddable video, and an error status for one that
- * is missing, private or not embeddable; anything but a well-formed 200 (a
- * timeout, a network failure, an answer in another shape) drops the video.
+ * and channel for a public, embeddable video, and a 4xx for one that is
+ * missing, private or not embeddable; anything else (a 5xx, a timeout, a
+ * network failure, an answer in another shape) is a check that could not be
+ * made. Either way the video is dropped.
  */
 export function createOEmbedVideoVerifier(
   fetcher: typeof fetch,
   timeoutMs: number = VIDEO_LIMITS.checkTimeoutMs,
 ): VideoVerifier {
   return async (videoId, signal) => {
-    if (!youtubeVideoIdSchema.safeParse(videoId).success) return null;
+    if (!youtubeVideoIdSchema.safeParse(videoId).success) return "missing";
     const controller = new AbortController();
     const onAbort = () => controller.abort();
     signal.addEventListener("abort", onAbort, { once: true });
@@ -145,15 +155,19 @@ export function createOEmbedVideoVerifier(
         signal: controller.signal,
         headers: { accept: "application/json" },
       });
-      if (response.status !== 200) return null;
+      // A 429 is YouTube refusing to answer, not an answer about the video.
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        return "missing";
+      }
+      if (response.status !== 200) return "unchecked";
       const parsed = oEmbedSchema.safeParse(await response.json());
-      if (!parsed.success) return null;
+      if (!parsed.success) return "unchecked";
       return {
         title: parsed.data.title.slice(0, VIDEO_LIMITS.maxTitleChars),
         channel: (parsed.data.author_name ?? "").slice(0, VIDEO_LIMITS.maxChannelChars),
       };
     } catch {
-      return null;
+      return "unchecked";
     } finally {
       clearTimeout(timer);
       signal.removeEventListener("abort", onAbort);
@@ -161,11 +175,18 @@ export function createOEmbedVideoVerifier(
   };
 }
 
-/** How a turn's video calls fared: what is shown, and how many were dropped. */
+/**
+ * How a turn's video calls fared: what is shown, how many were dropped, and
+ * how many of those were dropped because the check could not be made.
+ */
 export interface CheckedVideos {
   readonly videos: readonly AssistantVideo[];
   readonly dropped: number;
+  readonly unchecked: number;
 }
+
+/** A turn with no video calls. */
+export const NO_VIDEOS: CheckedVideos = { videos: [], dropped: 0, unchecked: 0 };
 
 /**
  * The turn's video calls, checked: each well-formed call's video, in the
@@ -179,7 +200,7 @@ export async function checkVideoCalls(
   signal: AbortSignal,
 ): Promise<CheckedVideos> {
   const videoCalls = calls.filter(isVideoCall);
-  if (videoCalls.length === 0) return { videos: [], dropped: 0 };
+  if (videoCalls.length === 0) return NO_VIDEOS;
   const wanted: VideoRecommendationInput[] = [];
   for (const call of videoCalls) {
     const parsed = videoRecommendationInputSchema.safeParse(call.input);
@@ -187,13 +208,17 @@ export async function checkVideoCalls(
     if (wanted.some((entry) => entry.videoId === parsed.data.videoId)) continue;
     if (wanted.length < VIDEO_LIMITS.maxPerTurn) wanted.push(parsed.data);
   }
-  if (!verify) return { videos: [], dropped: videoCalls.length };
+  if (!verify) {
+    return { videos: [], dropped: videoCalls.length, unchecked: videoCalls.length };
+  }
   const facts = await Promise.all(
-    wanted.map((entry) => verify(entry.videoId, signal).catch(() => null)),
+    wanted.map((entry) =>
+      verify(entry.videoId, signal).catch((): VideoRefusal => "unchecked"),
+    ),
   );
   const videos = wanted.flatMap((entry, index): AssistantVideo[] => {
     const known = facts[index];
-    return known
+    return typeof known === "object"
       ? [
           {
             videoId: entry.videoId,
@@ -204,7 +229,27 @@ export async function checkVideoCalls(
         ]
       : [];
   });
-  return { videos, dropped: videoCalls.length - videos.length };
+  return {
+    videos,
+    dropped: videoCalls.length - videos.length,
+    unchecked: facts.filter((fact) => fact === "unchecked").length,
+  };
+}
+
+/**
+ * What the reply adds when a video it recommended was dropped. The model's
+ * words streamed before the check, and may lead into a video the producer
+ * will never see (GRV-16 QA); this line says plainly that there is none, and
+ * is the whole reply when the model wrote nothing but the video. Empty when
+ * nothing was dropped.
+ */
+export function droppedVideoNote(text: string, checked: CheckedVideos): string {
+  if (checked.dropped === 0) return "";
+  const note =
+    checked.videos.length > 0
+      ? "One of the videos I picked couldn't be found on YouTube, so I've left it out."
+      : "I couldn't find a video on YouTube to show you for this one, so there's no video this time.";
+  return text.trim().length === 0 ? note : `\n\n${note}`;
 }
 
 /**

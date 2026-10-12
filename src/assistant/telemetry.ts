@@ -34,10 +34,13 @@ export interface AssistantTurnLog {
   readonly historyDropped: number;
   /**
    * Tutorial videos the reply recommended that were shown, and that were
-   * dropped because YouTube could not vouch for them (GRV-16).
+   * dropped because YouTube could not vouch for them (GRV-16), and how many
+   * of the dropped could not be checked at all: those climbing means YouTube
+   * is out of reach, while `videosDropped` alone means the IDs were wrong.
    */
   readonly videosShown: number;
   readonly videosDropped: number;
+  readonly videosUnchecked: number;
 }
 
 /** The keys a turn log may have. A test pins this list. */
@@ -58,6 +61,7 @@ export const TURN_LOG_KEYS = [
   "historyDropped",
   "videosShown",
   "videosDropped",
+  "videosUnchecked",
 ] as const satisfies readonly (keyof AssistantTurnLog)[];
 
 export interface TurnLogInput {
@@ -73,6 +77,7 @@ export interface TurnLogInput {
   readonly historyDropped: number;
   readonly videosShown?: number;
   readonly videosDropped?: number;
+  readonly videosUnchecked?: number;
 }
 
 export function toTurnLog(input: TurnLogInput): AssistantTurnLog {
@@ -94,5 +99,6 @@ export function toTurnLog(input: TurnLogInput): AssistantTurnLog {
     historyDropped: input.historyDropped,
     videosShown: input.videosShown ?? 0,
     videosDropped: input.videosDropped ?? 0,
+    videosUnchecked: input.videosUnchecked ?? 0,
   };
 }
