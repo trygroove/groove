@@ -90,7 +90,7 @@ jobs:
       # and error budget. The three `SENTRY_*` build-time values are omitted for
       # the same reason: a preview must not register a Sentry release.
       - name: Build and verify
-        run: bun run build && bun run verify:bundle && bun run verify:client-config && bun run verify:landing-static
+        run: bun run build && bun run verify:bundle && bun run verify:client-config && bun run verify:landing-static && bun run verify:no-inline-styles
         env:
           VITE_RELEASE_SHA: ${{ github.event.pull_request.head.sha }}
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}

@@ -107,7 +107,7 @@ async function createClient(): Promise<AssistantClient> {
   if (isMockBackend) {
     const [
       { createLocalAssistantTransport },
-      { createEmulatorAssistantProvider },
+      { createEmulatorAssistantProvider, emulatorVideoVerifier },
       guards,
       transcripts,
     ] = await Promise.all([
@@ -122,6 +122,8 @@ async function createClient(): Promise<AssistantClient> {
           provider: createEmulatorAssistantProvider(),
           guards: guards.createInMemoryGuardStores(),
           transcripts,
+          // Never YouTube from the page: the mock backend vouches for its own video.
+          verifyVideo: emulatorVideoVerifier,
           log: () => {},
           now: Date.now,
         },

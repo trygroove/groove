@@ -1,22 +1,30 @@
 import { describe, expect, it } from "vitest";
 import { stringifyProject } from "../../domain/serialize";
+import { TICKS_PER_BAR } from "../../domain/time";
 import { buildAssistantPayload } from "../payload";
-import { assistantContextPayloadSchema } from "../protocol";
+import { assistantContextPayloadSchema, assistantTurnRequestSchema } from "../protocol";
+import { CASE_CHECK_IDS } from "./caseChecks";
 import {
+  caseMessages,
   casePairs,
-  EVAL_CAPABILITIES,
   EVAL_CASES,
   EVAL_PARTS,
+  PAIRED_CAPABILITIES,
   resolveScope,
   resolveSelection,
 } from "./cases";
-import { checkBundled } from "./checks";
+import { CHECK_IDS, CHECK_LABELS, checkBundled } from "./checks";
+import {
+  createTechnoDrumsProject,
+  createTechnoLoopProject,
+  TECHNO_TEMPO,
+} from "./fixtures";
 
 describe("the eval cases", () => {
   it("ask every capability once conventionally and once at an extreme, on one fixture", () => {
     const pairs = casePairs();
     expect(pairs.map((pair) => pair.conventional.capability)).toEqual([
-      ...EVAL_CAPABILITIES,
+      ...PAIRED_CAPABILITIES,
     ]);
     for (const { conventional, extreme } of pairs) {
       expect(extreme.fixture).toBe(conventional.fixture);
@@ -80,5 +88,93 @@ describe("the eval cases", () => {
         evalCase.capability === "loopSketch" ? EVAL_PARTS : [],
       );
     }
+  });
+
+  it.each(EVAL_CASES.map((entry) => [entry.id, entry] as const))(
+    "%s: sends a conversation the gateway takes, ending in its request",
+    (_id, entry) => {
+      const project = entry.fixture();
+      const messages = caseMessages(entry);
+      const request = assistantTurnRequestSchema.parse({
+        projectRevision: project.metadata.revision,
+        messages,
+        context: buildAssistantPayload(
+          project,
+          resolveSelection(project, entry.selection),
+        ),
+      });
+      expect(request.messages.at(-1)).toEqual({ role: "user", text: entry.request });
+      // The producer opens, and the two take turns.
+      messages.forEach((message, index) => {
+        expect(message.role).toBe(index % 2 === 0 ? "user" : "assistant");
+      });
+    },
+  );
+
+  it("name only checks that exist, and give every check a label", () => {
+    for (const evalCase of EVAL_CASES) {
+      for (const id of evalCase.checks ?? []) expect(CASE_CHECK_IDS).toContain(id);
+    }
+    for (const id of CHECK_IDS) expect(CHECK_LABELS[id]).toBeTruthy();
+  });
+
+  // GRV-99: the sessions copied from testing.
+  it("expect a question on the broad requests and a proposal on the rest", () => {
+    const asking = EVAL_CASES.filter((entry) => entry.expect === "ask").map(
+      (entry) => entry.id,
+    );
+    expect(asking).toEqual(["develop-track-ask", "pad-genre-unknown"]);
+    const byId = (id: string) => EVAL_CASES.find((entry) => entry.id === id);
+    expect(byId("density-hats")?.checks).toEqual(["hatDensity", "pointsToGenerate"]);
+    expect(byId("develop-track-arrange")?.checks).toEqual(["developsTrack"]);
+    expect(byId("pad-genre-known")?.checks).toEqual(["padSound", "dissonant"]);
+  });
+
+  it("pick the develop-track conversation up after the question and the answers", () => {
+    const arrange = EVAL_CASES.find((entry) => entry.id === "develop-track-arrange");
+    const ask = EVAL_CASES.find((entry) => entry.id === "develop-track-ask");
+    if (!arrange || !ask) throw new Error("no develop-track cases");
+    const [first, question] = arrange.history ?? [];
+    expect(first).toEqual({ role: "user", text: ask.request });
+    expect(question.text).toContain("[I asked the producer (ask_producer");
+    expect(arrange.request).toMatch(/^\[Answer to "/);
+    expect(arrange.request).toContain("About 5 minutes at 140");
+  });
+
+  it("build the techno beat: 140 BPM, five pads, one looped 4-bar clip", () => {
+    const project = createTechnoDrumsProject();
+    expect(project.song.tempo).toBe(TECHNO_TEMPO);
+    const [drums] = project.song.tracks;
+    expect(project.song.tracks).toHaveLength(1);
+    expect(drums.instrument?.kind).toBe("drumMachine");
+    if (drums.instrument?.kind === "drumMachine") {
+      expect(drums.instrument.pads.map((pad) => pad.name)).toEqual([
+        "Kick",
+        "Clap",
+        "Closed Hat",
+        "Open Hat",
+        "Perc",
+      ]);
+    }
+    expect(project.clips).toHaveLength(1);
+    expect(project.clips[0].lengthTicks).toBe(4 * TICKS_PER_BAR);
+    expect(project.song.placements).toEqual([
+      expect.objectContaining({ looped: true, durationTicks: 4 * TICKS_PER_BAR }),
+    ]);
+  });
+
+  it("build the techno loop: the beat plus a synth with a 4-bar clip", () => {
+    const project = createTechnoLoopProject();
+    expect(project.song.tempo).toBe(TECHNO_TEMPO);
+    expect(
+      project.song.tracks.map((track) => [track.name, track.instrument?.kind]),
+    ).toEqual([
+      ["Drums", "drumMachine"],
+      ["Synth", "synth"],
+    ]);
+    const synthClip = project.clips.find(
+      (clip) => clip.trackId === project.song.tracks[1].id,
+    );
+    expect(synthClip?.lengthTicks).toBe(4 * TICKS_PER_BAR);
   });
 });

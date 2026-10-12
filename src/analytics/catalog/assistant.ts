@@ -17,6 +17,7 @@ export const ASSISTANT_FEATURE_KEYS = [
   "assistant_recommendation",
   "assistant_ask",
   "assistant_retention",
+  "assistant_video",
 ] as const;
 
 /**
@@ -291,6 +292,38 @@ export const ASSISTANT_EVENTS = {
       pack_in_project: boolParam(),
       seconds_to_decision_bucket: bucketParam("elapsed_seconds"),
     },
+  },
+
+  /**
+   * A tutorial video the assistant recommended was shown, as a still card
+   * that has loaded nothing from YouTube (GRV-16). Never the video's ID,
+   * title, channel or URL.
+   */
+  assistant_video_shown: {
+    phase: 3,
+    owners: ["GRV-16"],
+    params: {},
+  },
+
+  /** Play on a recommended video: the player loads from YouTube and starts. */
+  assistant_video_played: {
+    phase: 3,
+    owners: ["GRV-16"],
+    params: {},
+  },
+
+  /** A playing video was opened full screen. */
+  assistant_video_expanded: {
+    phase: 3,
+    owners: ["GRV-16"],
+    params: {},
+  },
+
+  /** A video's player did not load, and the card said so. */
+  assistant_video_failed: {
+    phase: 3,
+    owners: ["GRV-16"],
+    params: {},
   },
 
   /**

@@ -35,6 +35,9 @@
  *   the project's first track and bars 1-2, let it be heard, and answer
  *   themselves when the tempo goes to 100 BPM or below
  *   ({@link emulatorRichAsk}).
+ * - `[video]` (GRV-16): a short reply that recommends {@link EMULATOR_VIDEO},
+ *   and a second video {@link emulatorVideoVerifier} refuses, so the turn shows
+ *   one card and drops the other.
  * - anything else: a short reply, streamed in pieces with a pause between.
  *
  * Like the rest of `src/assistant`, it imports no Firebase and no SDK.
@@ -49,6 +52,7 @@ import { ProviderFailure } from "./provider";
 import type { ProviderMessagesRequest } from "./providerRequest";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
 import { EXPLAIN_TOOL_NAME, toolNameFor } from "./tools";
+import { RECOMMEND_VIDEO_TOOL, type VideoFacts, type VideoVerifier } from "./video";
 
 /** The reply every ordinary turn streams, piece by piece. */
 export const EMULATOR_REPLY_CHUNKS = [
@@ -387,6 +391,55 @@ function askReply(multiSelect: boolean): Step[] {
   ]);
 }
 
+/**
+ * The video `[video]` recommends: a real, embeddable YouTube tutorial, so a
+ * screenshot of it playing shows the real player. Its facts are what YouTube's
+ * oEmbed reported for it, which {@link emulatorVideoVerifier} answers without
+ * asking YouTube.
+ */
+export const EMULATOR_VIDEO = {
+  videoId: "tH9LHIyJ0c8",
+  title: "How to Make an Acid Bassline with the TB-303 by Roland Cloud",
+  channel: "pointblank music school",
+  reason: "Shows how resonance and envelope mod make a 303 line squelch.",
+} as const;
+
+/** The second video `[video]` names, which does not exist and is dropped. */
+export const EMULATOR_MISSING_VIDEO_ID = "zzzzzzzzzzz";
+
+/**
+ * The emulator's and the mock backend's video check (GRV-16): it vouches for
+ * {@link EMULATOR_VIDEO} alone and refuses every other ID, with no request to
+ * YouTube, so the browser suite never depends on YouTube being up.
+ */
+export const emulatorVideoVerifier: VideoVerifier = async (videoId) =>
+  videoId === EMULATOR_VIDEO.videoId
+    ? ({
+        title: EMULATOR_VIDEO.title,
+        channel: EMULATOR_VIDEO.channel,
+      } satisfies VideoFacts)
+    : null;
+
+/** `[video]`'s reply: a sentence, then two video recommendations. */
+function videoReply(): Step[] {
+  return proposalReply(
+    "It's the resonance and the envelope sweeping the cutoff together. This walkthrough shows it clearly:",
+    [
+      {
+        name: RECOMMEND_VIDEO_TOOL,
+        input: { videoId: EMULATOR_VIDEO.videoId, reason: EMULATOR_VIDEO.reason },
+      },
+      {
+        name: RECOMMEND_VIDEO_TOOL,
+        input: {
+          videoId: EMULATOR_MISSING_VIDEO_ID,
+          reason: "A video that is not there.",
+        },
+      },
+    ],
+  );
+}
+
 function lastUserMessage(request: ProviderMessagesRequest): string {
   for (let index = request.messages.length - 1; index >= 0; index -= 1) {
     const message = request.messages[index];
@@ -431,6 +484,7 @@ export function createEmulatorAssistantProvider(
     if (message.includes("[ask-rich]")) return richAskReply(request);
     if (message.includes("[ask-multi]")) return askReply(true);
     if (message.includes("[ask]")) return askReply(false);
+    if (message.includes("[video]")) return videoReply();
     return textReply(EMULATOR_REPLY_CHUNKS);
   }
 

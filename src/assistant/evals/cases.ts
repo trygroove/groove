@@ -6,22 +6,41 @@
  * flattened into the conventional answer. A case names its selection and its
  * allowed scope by the fixture's own track and clip names, which are resolved
  * to IDs when the case runs.
+ *
+ * GRV-99 adds cases copied from sessions in testing. They are not pairs: a
+ * case may carry the conversation before its request (`history`), expect a
+ * question rather than a proposal (`expect: "ask"`), and name checks of its
+ * own (`checks`) beside the shared ones.
  */
 import type { Project } from "../../domain/entities";
 import type { SelectionScope, SelectionState } from "../../selection/types";
+import { type AskAnswer, type AssistantAsk, answerMessage, askTranscript } from "../ask";
+import type { AssistantMessage } from "../protocol";
+import type { CaseCheckId, EvalExpectation } from "./caseChecks";
 import {
   createArrangementProject,
   createHouseLoopProject,
   createKitSketchProject,
+  createTechnoDrumsProject,
+  createTechnoLoopProject,
 } from "./fixtures";
 import type { ExportedTranscriptCase, TranscriptCaseFixture } from "./transcriptCase";
 
-export const EVAL_CAPABILITIES = [
+/** The capabilities asked once conventionally and once at an extreme (check 6). */
+export const PAIRED_CAPABILITIES = [
   "loopSketch",
   "variation",
   "arrangement",
   "balancing",
   "processing",
+] as const;
+
+export const EVAL_CAPABILITIES = [
+  ...PAIRED_CAPABILITIES,
+  // GRV-99's session cases.
+  "density",
+  "development",
+  "newPart",
 ] as const;
 export type EvalCapability = (typeof EVAL_CAPABILITIES)[number];
 
@@ -61,8 +80,22 @@ export interface EvalCase {
   readonly id: string;
   readonly capability: EvalCapability;
   readonly axis: EvalAxis;
-  /** The producer's words, sent as the turn's one message. */
+  /** The producer's words, sent as the turn's last message. */
   readonly request: string;
+  /**
+   * The conversation before the request, sent as it is ahead of it: what the
+   * panel resends, a question the assistant asked included. Starts with the
+   * producer and alternates.
+   */
+  readonly history?: readonly AssistantMessage[];
+  /**
+   * What the turn should come back with (check 8): a proposal, or a question
+   * (`ask_producer`) and no proposal. Checks 1 to 7 judge any proposal it
+   * makes either way.
+   */
+  readonly expect: EvalExpectation;
+  /** Checks of its own, judged on an applied proposal beside the shared ones. */
+  readonly checks?: readonly CaseCheckId[];
   readonly fixture: () => Project;
   readonly selection: EvalSelection;
   readonly scope: EvalScope;
@@ -72,6 +105,48 @@ export interface EvalCase {
 
 const NOTHING_ELSE = { song: false, master: false, returns: false, sections: false };
 
+/** GRV-99 case 2: a broad request that should be asked about first. */
+export const DEVELOP_TRACK_REQUEST =
+  "I have this loop which I want to develop into a full track. It's a deep, hypnotic techno track, so I don't want big drops or anything.";
+
+/** The question the assistant asks before developing the loop, scripted. */
+const DEVELOP_TRACK_ASK: AssistantAsk = {
+  id: "toolu_eval_develop_track",
+  question: "How long should the track run, and how should it move?",
+  context: "Developing the loop into a track",
+  options: [
+    {
+      label: "About 5 minutes, slow changes",
+      description: "Parts in and out every 16 or 32 bars",
+    },
+    { label: "About 7 minutes, very gradual", description: "A long DJ-friendly build" },
+    { label: "Short, about 3 minutes", description: "A tight edit" },
+  ],
+  suggested: 0,
+  multiSelect: false,
+};
+
+/** The producer's answer to it, in their own words. */
+const DEVELOP_TRACK_ANSWER: AskAnswer = {
+  picked: [],
+  text: "About 5 minutes at 140. Keep it rolling — change things every 16 or 32 bars, never all at once. Bring the hats and percussion in and out, and use filtered or thinned-out versions of the synth rather than new sounds.",
+};
+
+/** The conversation case 2b picks up from: the request, the question, the answer. */
+const DEVELOP_TRACK_HISTORY: readonly AssistantMessage[] = [
+  { role: "user", text: DEVELOP_TRACK_REQUEST },
+  {
+    role: "assistant",
+    text: `Before I lay this out, a quick question so it moves the way you want.\n\n${askTranscript(DEVELOP_TRACK_ASK)}`,
+  },
+];
+
+/** GRV-99 case 3: a new part on a song whose genre may or may not be known. */
+const PAD_REQUEST = "I think this track needs a high, atmospheric pad sound.";
+
+/** What a case that may add new tracks, and change nothing else, allows. */
+const NEW_TRACKS_ONLY: EvalScope = { tracks: [], createTracks: true, ...NOTHING_ELSE };
+
 export const EVAL_CASES: readonly EvalCase[] = [
   {
     id: "sketch-house",
@@ -79,6 +154,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
     axis: "conventional",
     request:
       "Sketch a four-bar house loop from this kit: a four-on-the-floor beat, a bassline, chords, a melody and a soft pad texture.",
+    expect: "proposal",
     fixture: createKitSketchProject,
     selection: { tracks: ["Drums"] },
     // A sketch may set its own tempo and swing.
@@ -91,6 +167,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
     axis: "extreme",
     request:
       "Sketch a four-bar loop from this kit that sounds broken and lurching: drums that stumble off the grid, a bassline that fights them, dissonant clustered chords, a jagged melody and a harsh, noisy texture.",
+    expect: "proposal",
     fixture: createKitSketchProject,
     selection: { tracks: ["Drums"] },
     scope: { tracks: "all", createTracks: true, ...NOTHING_ELSE, song: true },
@@ -102,6 +179,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
     axis: "conventional",
     request:
       "Make a variation of this drum loop as a new clip: the same feel, a few extra hats and a fill at the end of the bar.",
+    expect: "proposal",
     fixture: createHouseLoopProject,
     selection: { clips: ["House beat"] },
     scope: { tracks: ["Drums"], createTracks: false, ...NOTHING_ELSE },
@@ -112,6 +190,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
     axis: "extreme",
     request:
       "Make a variation of this drum loop as a new clip that is barely recognisable: broken, lurching and abrasive.",
+    expect: "proposal",
     fixture: createHouseLoopProject,
     selection: { clips: ["House beat"] },
     scope: { tracks: ["Drums"], createTracks: false, ...NOTHING_ELSE },
@@ -122,6 +201,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
     axis: "conventional",
     request:
       "Arrange these parts across the sections: a sparse intro, a build that brings parts in one by one, a full drop and an outro that strips back down.",
+    expect: "proposal",
     fixture: createArrangementProject,
     selection: { tracks: ["Drums", "Bass", "Chords", "Lead"] },
     scope: { tracks: "all", createTracks: true, ...NOTHING_ELSE },
@@ -132,6 +212,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
     axis: "extreme",
     request:
       "Arrange these parts with no build at all: slam straight into the full drop from bar one, cut everything to silence for a bar at a few unexpected points, and end abruptly mid-phrase.",
+    expect: "proposal",
     fixture: createArrangementProject,
     selection: { tracks: ["Drums", "Bass", "Chords", "Lead"] },
     scope: { tracks: "all", createTracks: true, ...NOTHING_ELSE },
@@ -142,6 +223,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
     axis: "conventional",
     request:
       "Balance the mix: kick and bass up front, the chords and lead tucked in behind them, and a little stereo width.",
+    expect: "proposal",
     fixture: createHouseLoopProject,
     selection: null,
     scope: { tracks: "all", createTracks: false, ...NOTHING_ELSE },
@@ -152,6 +234,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
     axis: "extreme",
     request:
       "Make the mix lopsided and extreme: drums hard left, the bass buried, the lead far too loud and hard right.",
+    expect: "proposal",
     fixture: createHouseLoopProject,
     selection: null,
     scope: { tracks: "all", createTracks: false, ...NOTHING_ELSE },
@@ -161,6 +244,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
     capability: "processing",
     axis: "conventional",
     request: "Add a compressor on the master to glue the mix.",
+    expect: "proposal",
     fixture: createHouseLoopProject,
     selection: null,
     scope: { tracks: [], createTracks: false, ...NOTHING_ELSE, master: true },
@@ -171,11 +255,80 @@ export const EVAL_CASES: readonly EvalCase[] = [
     axis: "extreme",
     request:
       "Mangle the master: crush it with brutal compression and drive it until it distorts.",
+    expect: "proposal",
     fixture: createHouseLoopProject,
     selection: null,
     scope: { tracks: [], createTracks: false, ...NOTHING_ELSE, master: true },
   },
+  // GRV-99: sessions copied from testing.
+  {
+    id: "density-hats",
+    capability: "density",
+    axis: "conventional",
+    request: "Increase the density of the hihats in this clip",
+    expect: "proposal",
+    fixture: createTechnoDrumsProject,
+    selection: { tracks: ["Drums"] },
+    scope: { tracks: ["Drums"], createTracks: false, ...NOTHING_ELSE },
+    checks: ["hatDensity", "pointsToGenerate"],
+  },
+  {
+    id: "develop-track-ask",
+    capability: "development",
+    axis: "conventional",
+    request: DEVELOP_TRACK_REQUEST,
+    expect: "ask",
+    fixture: createTechnoLoopProject,
+    selection: null,
+    // A full track may set its own loop range.
+    scope: { tracks: "all", createTracks: true, ...NOTHING_ELSE, song: true },
+  },
+  {
+    id: "develop-track-arrange",
+    capability: "development",
+    axis: "conventional",
+    request: answerMessage(DEVELOP_TRACK_ASK, DEVELOP_TRACK_ANSWER),
+    history: DEVELOP_TRACK_HISTORY,
+    expect: "proposal",
+    fixture: createTechnoLoopProject,
+    selection: null,
+    scope: { tracks: "all", createTracks: true, ...NOTHING_ELSE, song: true },
+    checks: ["developsTrack"],
+  },
+  {
+    id: "pad-genre-known",
+    capability: "newPart",
+    axis: "conventional",
+    request: PAD_REQUEST,
+    history: [
+      { role: "user", text: "This is a deep, hypnotic techno track at 140" },
+      {
+        role: "assistant",
+        text: "Got it: deep, hypnotic techno at 140. I'll keep that in mind for whatever we add next.",
+      },
+    ],
+    expect: "proposal",
+    fixture: createTechnoLoopProject,
+    selection: null,
+    scope: NEW_TRACKS_ONLY,
+    checks: ["padSound", "dissonant"],
+  },
+  {
+    id: "pad-genre-unknown",
+    capability: "newPart",
+    axis: "conventional",
+    request: PAD_REQUEST,
+    expect: "ask",
+    fixture: createTechnoLoopProject,
+    selection: null,
+    scope: NEW_TRACKS_ONLY,
+  },
 ];
+
+/** The messages a case's turn sends: its history, then its request. */
+export function caseMessages(evalCase: EvalCase): AssistantMessage[] {
+  return [...(evalCase.history ?? []), { role: "user", text: evalCase.request }];
+}
 
 /**
  * The conventional/extreme pairs, by capability: check 6 compares each
@@ -184,7 +337,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
 export function casePairs(
   cases: readonly EvalCase[] = EVAL_CASES,
 ): { conventional: EvalCase; extreme: EvalCase }[] {
-  return EVAL_CAPABILITIES.flatMap((capability) => {
+  return PAIRED_CAPABILITIES.flatMap((capability) => {
     const conventional = cases.find(
       (entry) => entry.capability === capability && entry.axis === "conventional",
     );

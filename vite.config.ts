@@ -82,7 +82,8 @@ function sentryBuildPlugins() {
 
 export default defineConfig({
   plugins: [
-    // `start: true` with no `ssr` is the plugin's **client start mode**: the
+    // `start` (`true`, or an options bag as here) with no `ssr` is the
+    // plugin's **client start mode**: the
     // serving layer that replaced SolidStart (there is no `@solidjs/start`
     // release for Solid 2, and there is no longer meant to be one -- Start is
     // now a mode of this plugin). It owns the dev server, the entries and the
@@ -98,7 +99,13 @@ export default defineConfig({
     //
     // Entries are generated from `src/app.tsx` -- the plugin's root-component
     // convention accepts the lowercase spelling this repo already used.
-    solid({ start: true }),
+    //
+    // `errorBoundary: false` because the plugin's default boundary renders its
+    // message through an inline `style` attribute, which the CSP refuses
+    // (GRV-105). `src/app.tsx` carries the same boundary with a class instead.
+    // The prerender of `src/Document.tsx` loses its wrapper with it, so a
+    // landing page that throws fails the build rather than prerendering empty.
+    solid({ start: { errorBoundary: false } }),
     ...sentryBuildPlugins(),
   ],
   define: {

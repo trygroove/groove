@@ -17,9 +17,15 @@ provider's API key or talks to the provider directly.
   `src/assistant/config.ts`. Switching between `claude-sonnet-5` and
   `claude-haiku-4-5` is a change to `ASSISTANT_MODEL_ID` and a deploy.
 - Each turn logs one `assistant turn` record to Cloud Logging: outcome code,
-  model, prompt version, attempts, failure kinds, token counts, duration.
-  Never the conversation, the project, the account or the provider's error
-  text.
+  model, prompt version, attempts, failure kinds, token counts, duration, and
+  how many recommended videos were shown and dropped. Never the conversation,
+  the project, the account or the provider's error text.
+- A tutorial video the model recommends (GRV-16, ADR 0009) is checked from
+  `assistantTurn` against YouTube's public oEmbed endpoint
+  (`https://www.youtube.com/oembed`, no key, plain outbound HTTPS, no Google
+  Cloud API). A video it does not describe is dropped, and while it is
+  unreachable every video is dropped: `videosDropped` climbing with
+  `videosShown` at 0 is the sign.
 
 ## Limits and the kill switch
 
@@ -116,7 +122,9 @@ you press Stop (`[hang]`), one that fails once and then works (`[flaky]`), or
 one that ends in a proposal (`[propose]`), or one that ends in a question for
 you with options (`[ask]`, `[ask-multi]` for several picks, or `[ask-rich]`
 for options that point at the first track and bars 1-2, can be heard, and
-answer themselves when you set the tempo to 100 BPM or below; GRV-42). Two
+answer themselves when you set the tempo to 100 BPM or below; GRV-42), or one
+that recommends a tutorial video (`[video]`, GRV-16: one real video, which the
+emulator vouches for without asking YouTube, and one it drops). Two
 scripts serve the core flows: "Loosen the beat" proposes swing and a quieter
 track (CF-027), and asking for something dusty or dustier recommends kicks from
 the library the turn carries (CF-034). The browser suite drives the real

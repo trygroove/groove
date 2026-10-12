@@ -157,4 +157,19 @@ export const PROJECT_EVENTS = {
     owners: ["GRV-60"],
     params: { save_state: enumParam(UNSAVED_SAVE_STATES) },
   },
+
+  /**
+   * Another tab saved first while edits made here were still unsaved, so they
+   * were replayed on top of its change and written at its revision (GRV-88).
+   * `dropped_count` is how many no longer applied and were discarded, each
+   * time with a toast saying so.
+   */
+  unsaved_edits_replayed: {
+    phase: 1,
+    owners: ["GRV-88"],
+    params: {
+      replayed_count: countParam(100),
+      dropped_count: countParam(100),
+    },
+  },
 } as const satisfies Record<string, AnalyticsEventDefinition>;

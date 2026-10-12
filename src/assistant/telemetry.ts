@@ -32,6 +32,12 @@ export interface AssistantTurnLog {
   /** Conversation messages resent, and how many older ones were left out. */
   readonly historySent: number;
   readonly historyDropped: number;
+  /**
+   * Tutorial videos the reply recommended that were shown, and that were
+   * dropped because YouTube could not vouch for them (GRV-16).
+   */
+  readonly videosShown: number;
+  readonly videosDropped: number;
 }
 
 /** The keys a turn log may have. A test pins this list. */
@@ -50,6 +56,8 @@ export const TURN_LOG_KEYS = [
   "cacheReadInputTokens",
   "historySent",
   "historyDropped",
+  "videosShown",
+  "videosDropped",
 ] as const satisfies readonly (keyof AssistantTurnLog)[];
 
 export interface TurnLogInput {
@@ -63,6 +71,8 @@ export interface TurnLogInput {
   readonly usage: ProviderUsage;
   readonly historySent: number;
   readonly historyDropped: number;
+  readonly videosShown?: number;
+  readonly videosDropped?: number;
 }
 
 export function toTurnLog(input: TurnLogInput): AssistantTurnLog {
@@ -82,5 +92,7 @@ export function toTurnLog(input: TurnLogInput): AssistantTurnLog {
     cacheReadInputTokens: input.usage.cacheReadInputTokens,
     historySent: input.historySent,
     historyDropped: input.historyDropped,
+    videosShown: input.videosShown ?? 0,
+    videosDropped: input.videosDropped ?? 0,
   };
 }

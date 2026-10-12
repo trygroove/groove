@@ -338,6 +338,34 @@ describe("the assistant client: every turn ends (GRV-42)", () => {
     },
   );
 
+  it("hands checked videos over after the question, before the done (GRV-16)", async () => {
+    const wire = manualTransport();
+    const { events } = record(wire.transport);
+    const video = {
+      videoId: "tH9LHIyJ0c8",
+      title: "Acid Basslines",
+      channel: "Point Blank",
+      reason: "Shows the squelch.",
+    };
+    wire.finish({ ...RESULT, text: "", stopReason: "tool_use", videos: [video] });
+    await flush();
+    expect(events.map((event) => event.type)).toEqual(["videos", "done"]);
+    expect(events[0]).toEqual({ type: "videos", videos: [video] });
+  });
+
+  it("turns a video whose ID could reach anything but YouTube's player into a malformed_response", async () => {
+    const wire = manualTransport();
+    const { events } = record(wire.transport);
+    wire.finish({
+      ...RESULT,
+      videos: [{ videoId: "../../evil", title: "x", channel: "y", reason: "z" }],
+    });
+    await flush();
+    expect(events).toEqual([
+      { type: "error", error: { code: "malformed_response", retryable: true } },
+    ]);
+  });
+
   it("still ends a question with no text in a done", async () => {
     const wire = manualTransport();
     const { events } = record(wire.transport);
