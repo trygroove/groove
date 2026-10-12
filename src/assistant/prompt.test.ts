@@ -96,4 +96,42 @@ describe("the assistant's system prompt", () => {
     expect(ASSISTANT_SYSTEM_PROMPT).toContain("looped: true to fill its length");
     expect(ASSISTANT_SYSTEM_PROMPT).toContain("never the whole part you would propose");
   });
+
+  // GRV-6 QA: a "broken" re-sketch proposed only notes_clear on the kick and
+  // bass clips, meaning to write the new notes once the calls came back.
+  it("says no tool answers back, so a replacement is cleared and written in one reply", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("No tool ever answers back");
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "to replace a clip's notes, clear them and add the new ones (note_add) in the same reply",
+    );
+  });
+
+  // GRV-6 QA: drum pads are in every drum track's "pads" (GRV-23), not only
+  // in selectedNotes, so a whole-song request can write drums.
+  it("takes drum pads from the track's pads in the description", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(`that track's "pads" in the description`);
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("use only pads you have seen there");
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("select the drum track");
+  });
+
+  // GRV-6 QA: "Nudge the melody down 1 dB" at -3 dB proposed -1 dB.
+  it("makes parameter_set's value the new value, never the change", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "parameter_set's value is always the new value, never the change",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      '"down 1 dB" on a track at -3 dB is the value -4',
+    );
+  });
+
+  // GRV-6 QA: a sketch scoped to the BD track came back unappliable.
+  it("says what a scope allows: new parts on new tracks, asking before widening", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain('When "selection" says what is in scope');
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "goes on a new track made with track_create, whatever the scope",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "ask with ask_producer whether to widen it",
+    );
+  });
 });

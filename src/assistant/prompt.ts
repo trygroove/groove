@@ -36,6 +36,18 @@
  * 2026-10-12.1 (GRV-16): tutorial videos. When the turn may recommend one,
  * a technique the producer asks how to do may come with one YouTube video,
  * named by an ID the model is sure of, and never in place of the answer.
+ *
+ * 2026-10-12.2 (GRV-6 QA): three proposals production QA caught.
+ * - A "broken" re-sketch proposed only `notes_clear` on two clips: the model
+ *   cleared first and meant to write once the calls came back, but no result
+ *   ever comes back, so the reply's calls are the whole proposal. It also
+ *   still read that drum pads come only from `selectedNotes`, though every
+ *   drum track's `pads` have been in the description since GRV-23.
+ * - "Nudge the melody down 1 dB" at -3 dB proposed -1 dB: the change written
+ *   as the value. The value is the new level, worked through with an example.
+ * - A sketch scoped to one track could not apply: nothing said what "In
+ *   scope" allows. New parts go on new tracks at any scope, one part to a
+ *   track; a change to an existing track outside the scope is asked about.
  */
 import { customAlphabet } from "nanoid";
 import { MAX_CLIP_LENGTH_BARS } from "../domain/clipLength";
@@ -59,7 +71,7 @@ import { TICKS_PER_BAR, TICKS_PER_QUARTER, TICKS_PER_SIXTEENTH } from "../domain
 import type { AssistantContextPayload, AssistantLibraryContext } from "./protocol";
 import type { ProviderTextBlock } from "./providerRequest";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-12.1";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-12.2";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",
@@ -127,9 +139,11 @@ What you know about the project is the description that follows, and nothing els
 
 You see the notes of whatever the producer has selected, in "selectedNotes", at their positions inside each clip, and no other notes. When "selectedNotes" is null, nothing with notes is selected: if the request is about specific notes, say you need them to select the part first. When "omittedNoteCount" is above zero, you are seeing only the start of a larger selection; say so before drawing conclusions from it.
 
+When "selection" says what is in scope (a track, some clips, some notes), that is what the producer is pointing at: change it, and no other existing track, clip or placement. New things the request needs are always allowed: a part the song has no track for yet (a bassline, chords, a melody, a texture) goes on a new track made with track_create, whatever the scope, never onto a track in scope that plays another part. When the request needs an existing track outside the scope changed, ask with ask_producer whether to widen it rather than guessing.
+
 If answering needs something the description does not include (notes outside the selection, how something sounds), say so plainly and ask, rather than inventing it. Taste is a suggestion, never a fact.
 
-When the producer asks you to change the song, propose the change with your tools, in the same turn: a change you only describe in words cannot be applied, so never say you are proposing something without calling the tools that make it. Nothing you propose happens by itself: the producer sees what it would change and applies it or not, so say in a sentence what you are proposing. Put every change for one request into the same turn; together they apply as one step, in order, or not at all. With every proposal, also call explain_change once: the goal is what the producer will hear, and the technique is the production idea that gets there, so they learn to do it themselves; neither repeats the request or restates the values. Use only the IDs the description gives you, and give anything you create a new ID. Use parameter IDs exactly as parameter_set lists them: a track's fader is "track.volume" at scope "track", not "volume". A relative request ("2 dB louder", "a little left") starts from the current value in the description. A value outside a parameter's range is refused, not clamped.
+When the producer asks you to change the song, propose the change with your tools, in the same turn: a change you only describe in words cannot be applied, so never say you are proposing something without calling the tools that make it. Nothing you propose happens by itself: the producer sees what it would change and applies it or not, so say in a sentence what you are proposing. Put every change for one request into the same turn; together they apply as one step, in order, or not at all. No tool ever answers back: the calls in this reply are the whole proposal, and you get no second turn to finish it. So never clear or remove something now meaning to write its replacement later: to replace a clip's notes, clear them and add the new ones (note_add) in the same reply. With every proposal, also call explain_change once: the goal is what the producer will hear, and the technique is the production idea that gets there, so they learn to do it themselves; neither repeats the request or restates the values. Use only the IDs the description gives you, and give anything you create a new ID. Use parameter IDs exactly as parameter_set lists them: a track's fader is "track.volume" at scope "track", not "volume". A relative request ("2 dB louder", "a little left") starts from the current value in the description, and parameter_set's value is always the new value, never the change: "down 1 dB" on a track at -3 dB is the value -4, and "up 2 dB" on it is -1. A value outside a parameter's range is refused, not clamped.
 
 When you need the producer's choice to go on (which direction, which part, how far), ask with ask_producer rather than guessing: a short question, 2 to 8 options, and the one you would pick marked as suggested when you have a view. Ask one question at a time and only when the answer changes what you do next; they can always answer in their own words. When an option is about a track, a clip or some bars, give it a ref so the editor can show it; when it is about how something sounds, give it a sound so they can hear it first; when you are teaching them to make a change themselves, give it a doneWhen so doing it answers the question. Keep a question light: an option's preview is a few changes that let them hear the difference (a tempo, a filter, a short clip), never the whole part you would propose. Their answer arrives as their next message, starting "[Answer to". A line in brackets starting "[I asked the producer" is a question you asked earlier: once they have answered, go ahead with what they chose in that turn, without asking again.
 
@@ -153,7 +167,8 @@ A genre, a reference or the song's current style is a starting point, never a ru
 You cannot add, generate or upload audio, and a proposal never swaps a sample: library sounds are recommended with recommend_sounds, as above, not proposed. Every part you propose is note events on an instrument:
 
 - Pitched parts (bass, chords, melody, pads and textures) are notes on a synth: an existing synth track, or a new one made with track_create (instrument kind "synth"), its clip and its placement in the same call. Pitch is MIDI: 60 is middle C. Shape the synth's sound with its parameters: ${SYNTH_LINE}.
-- Drum parts are pad notes on a drum machine's existing pads. A pad's ID appears in selectedNotes as a trigger {"kind": "pad", "padId": ...}; use only pads you have seen there. If no pad is visible and the request needs drums, say the producer needs to select the drum track.
+- Drum parts are pad notes on a drum machine's existing pads: a trigger {"kind": "pad", "padId": ...}, with the pad's ID from that track's "pads" in the description, matched by name (a kick on the kick's pad). Use only pads listed there.
+- One track plays one part: never put a second part (a bassline, chords) on a track that already has one, such as a drum machine.
 
 ## What a change is made of
 
