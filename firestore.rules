@@ -31,9 +31,39 @@ service cloud.firestore {
       );
     }
 
+    function projectPath(projectId) {
+      return /databases/$(database)/documents/projects/$(projectId);
+    }
+
     function memberOfProject(projectId) {
-      return exists(/databases/$(database)/documents/projects/$(projectId))
-        && isMember(get(/databases/$(database)/documents/projects/$(projectId)).data);
+      return exists(projectPath(projectId))
+        && isMember(get(projectPath(projectId)).data);
+    }
+
+    function ownsProject(projectId) {
+      return signedIn()
+        && request.auth.uid == get(projectPath(projectId)).data.get('ownerId', '');
+    }
+
+    // The revision check (GRV-7). Every save is one transaction that reads the
+    // metadata document, writes the tiers it changed stamped with the next
+    // revision, and moves the metadata revision on by exactly one
+    // (`FirestoreProjectRepository.withRevisionCheck`). The rules hold a client
+    // to that, so a write cannot land on a project without every other tab
+    // seeing its revision move: a child document carries the revision the
+    // project is at once the write commits, and changing or removing one
+    // existing document also moves the project's revision in the same commit.
+    // Creating a child at the project's current revision without moving it is
+    // the second step of `createProject`, which files a new project's song and
+    // clips under metadata it has just claimed.
+    function stampedAtProjectRevision(projectId) {
+      return request.resource.data.revision
+        == getAfter(projectPath(projectId)).data.get('revision', -1);
+    }
+
+    function movesProjectRevision(projectId) {
+      return getAfter(projectPath(projectId)).data.get('revision', -1)
+        == get(projectPath(projectId)).data.get('revision', -1) + 1;
     }
 
     // `packDependencies` is the derived pack dependency list (LIB-05): one
@@ -173,36 +203,63 @@ service cloud.firestore {
         && request.auth.uid == request.resource.data.ownerId
         && validMetadata(request.resource.data);
 
-      // Ownership cannot be reassigned, and the revision only moves forward.
+      // Ownership and the creation time cannot be reassigned, and every save
+      // moves the revision on by exactly one: a write that kept it, or jumped
+      // it, would let a stale tab's save land without a conflict. Only the
+      // owner decides who else is a member.
       allow update: if isMember(resource.data)
         && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.createdAt == resource.data.createdAt
         && validMetadata(request.resource.data)
-        && request.resource.data.revision >= resource.data.revision;
+        && request.resource.data.revision == resource.data.revision + 1
+        && (request.auth.uid == resource.data.ownerId
+          || request.resource.data.collaboratorIds == resource.data.collaboratorIds);
 
       allow delete: if signedIn() && request.auth.uid == resource.data.ownerId;
 
       match /song/{songId} {
         allow read: if memberOfProject(projectId);
-        allow create, update: if memberOfProject(projectId)
+        allow create: if memberOfProject(projectId)
           && songId == 'current'
-          && validChild(projectId, request.resource.data);
-        allow delete: if memberOfProject(projectId);
+          && validChild(projectId, request.resource.data)
+          && stampedAtProjectRevision(projectId);
+        allow update: if memberOfProject(projectId)
+          && songId == 'current'
+          && validChild(projectId, request.resource.data)
+          && stampedAtProjectRevision(projectId)
+          && movesProjectRevision(projectId);
+        allow delete: if memberOfProject(projectId)
+          && (ownsProject(projectId) || movesProjectRevision(projectId));
       }
 
       match /clips/{clipId} {
         allow read: if memberOfProject(projectId);
-        allow create, update: if memberOfProject(projectId)
+        allow create: if memberOfProject(projectId)
           && request.resource.data.id == clipId
-          && validChild(projectId, request.resource.data);
-        allow delete: if memberOfProject(projectId);
+          && validChild(projectId, request.resource.data)
+          && stampedAtProjectRevision(projectId);
+        allow update: if memberOfProject(projectId)
+          && request.resource.data.id == clipId
+          && validChild(projectId, request.resource.data)
+          && stampedAtProjectRevision(projectId)
+          && movesProjectRevision(projectId);
+        allow delete: if memberOfProject(projectId)
+          && (ownsProject(projectId) || movesProjectRevision(projectId));
       }
 
       match /arrangement/{trackId} {
         allow read: if memberOfProject(projectId);
-        allow create, update: if memberOfProject(projectId)
+        allow create: if memberOfProject(projectId)
           && request.resource.data.trackId == trackId
-          && validChild(projectId, request.resource.data);
-        allow delete: if memberOfProject(projectId);
+          && validChild(projectId, request.resource.data)
+          && stampedAtProjectRevision(projectId);
+        allow update: if memberOfProject(projectId)
+          && request.resource.data.trackId == trackId
+          && validChild(projectId, request.resource.data)
+          && stampedAtProjectRevision(projectId)
+          && movesProjectRevision(projectId);
+        allow delete: if memberOfProject(projectId)
+          && (ownsProject(projectId) || movesProjectRevision(projectId));
       }
     }
 

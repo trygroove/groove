@@ -9,7 +9,14 @@
 // tests, so a reused path can look like an overwrite to the next one.
 import type { RulesTestEnvironment } from "@firebase/rules-unit-testing";
 import { deleteDoc, doc, getDoc, setDoc } from "firebase/firestore";
-import { deleteObject, getBytes, ref, uploadBytes } from "firebase/storage";
+import {
+  deleteObject,
+  getBytes,
+  listAll,
+  ref,
+  updateMetadata,
+  uploadBytes,
+} from "firebase/storage";
 import { afterAll, afterEach, beforeAll, describe, it } from "vitest";
 import {
   MAX_IMPORT_FILE_BYTES,
@@ -194,9 +201,51 @@ describe("storage.rules: users/{uid}/packs", () => {
     await assertSucceeds(uploadBytes(ref(storage, audioPath("u1")), audio(100), WAV));
   });
 
+  it("refuses an upload from someone signed out", async () => {
+    const storage = testEnv.unauthenticatedContext().storage();
+    await assertFails(uploadBytes(ref(storage, audioPath("u1")), audio(), WAV));
+  });
+
+  it("refuses rewriting a stored sound's metadata, or listing another user's folder", async () => {
+    const owner = registeredContext(testEnv, "u1").storage();
+    const stored = audioPath("u1");
+    await assertSucceeds(uploadBytes(ref(owner, stored), audio(), WAV));
+    await assertFails(updateMetadata(ref(owner, stored), { contentType: "text/html" }));
+    const other = registeredContext(testEnv, "u2").storage();
+    await assertFails(listAll(ref(other, `users/u1/packs/${PACK}`)));
+  });
+
+  it("refuses audio filed outside the one pack folder depth the rules name", async () => {
+    const storage = registeredContext(testEnv, "u1").storage();
+    await assertFails(
+      uploadBytes(
+        ref(storage, `users/u1/packs/${PACK}/nested/${freshAsset()}`),
+        audio(),
+        WAV,
+      ),
+    );
+    await assertFails(
+      uploadBytes(ref(storage, `users/u1/${freshAsset()}`), audio(), WAV),
+    );
+    await assertFails(
+      uploadBytes(ref(storage, `users/u1/recordings/${freshAsset()}`), audio(), WAV),
+    );
+  });
+
+  it("refuses going round the allowance by uploading into another account's space", async () => {
+    await seedUsage("u1", USER_DATA_CAP_BYTES);
+    const storage = registeredContext(testEnv, "u1").storage();
+    await assertFails(uploadBytes(ref(storage, audioPath("u1")), audio(1), WAV));
+    await assertFails(uploadBytes(ref(storage, audioPath("u2")), audio(1), WAV));
+  });
+
   it("keeps the factory library read-only and the rest of the bucket shut", async () => {
     const storage = registeredContext(testEnv, "u1").storage();
     await assertFails(uploadBytes(ref(storage, "library/audio/x.ogg"), audio(), WAV));
     await assertFails(uploadBytes(ref(storage, "users/u1/secrets/x"), audio(), WAV));
+    await assertFails(deleteObject(ref(storage, "library/audio/x.ogg")));
+    const nobody = testEnv.unauthenticatedContext().storage();
+    await assertFails(uploadBytes(ref(nobody, "library/audio/x.ogg"), audio(), WAV));
+    await assertFails(getBytes(ref(nobody, "users/u1/secrets/x")));
   });
 });
