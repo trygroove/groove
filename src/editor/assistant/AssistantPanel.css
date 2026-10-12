@@ -765,7 +765,7 @@
 
 .assistant-ask-options {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 4px;
   min-width: 0;
   margin: 0;
@@ -778,6 +778,7 @@
   align-items: flex-start;
   gap: 8px;
   min-height: 30px;
+  width: 100%;
   max-width: 100%;
   padding: 6px 10px 6px 8px;
   border: none;
@@ -855,6 +856,7 @@
 /* The option has a sound: a small speaker beside the label. */
 .assistant-ask-listen {
   flex: none;
+  margin-left: auto;
   display: flex;
   align-items: center;
   height: 18px;
@@ -863,6 +865,7 @@
 
 .assistant-ask-suggested {
   flex: none;
+  margin-left: auto;
   color: var(--color-foreground-bright);
   font-size: var(--font-size-tiny);
   line-height: 18px;
