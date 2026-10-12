@@ -286,6 +286,45 @@ describe("EditorSession, an unsaved edit when another tab saves (GRV-88)", () =>
     expect(reloaded.song.tracks[0]?.mixer.volume).toBe(-12);
   });
 
+  it("reads again when the load lags the write that refused its own, rather than staying on the conflict", async () => {
+    const base = await setUp();
+    const { repository, project, tempo, volume } = base;
+    const scheduler = createManualScheduler();
+    const held = holdWrites(repository);
+    // Firestore can answer a read from its live listener's view, which may not
+    // have heard of the other tab's write yet: the first load returns the
+    // project as it was before that write.
+    const before = await stored(repository, project);
+    let staleLoads = 1;
+    const lagging: ProjectRepository = Object.create(held.repository);
+    lagging.loadProject = async (...args) => {
+      if (staleLoads > 0) {
+        staleLoads -= 1;
+        return { ok: true, value: before };
+      }
+      return repository.loadProject(...args);
+    };
+    const tabA = openTab(lagging, project, { scheduler });
+
+    tabA.dispatch(volume(-12));
+    const writing = tabA.autosave.flush();
+    base.tabB.dispatch(tempo(140));
+    await base.tabB.autosave.flush();
+    held.release();
+    await writing;
+    await vi.waitFor(() => expect(staleLoads).toBe(0));
+    await settle();
+    expect(tabA.autosave.status.state).toBe("failed");
+
+    scheduler.runAll();
+    await vi.waitFor(() => expect(tabA.committedProject.song.tempo).toBe(140));
+    const saved = await tabA.autosave.flush();
+    expect(saved.state).toBe("saved");
+    const reloaded = await stored(repository, project);
+    expect(reloaded.song.tempo).toBe(140);
+    expect(reloaded.song.tracks[0]?.mixer.volume).toBe(-12);
+  });
+
   it("replays a queued edit on top of the other tab's change and ends on Saved", async () => {
     const { repository, project, tabA, tabB, transport, notices, tempo, volume } =
       await setUp();
