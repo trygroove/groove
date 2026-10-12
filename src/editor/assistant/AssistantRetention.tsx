@@ -1,11 +1,13 @@
 import type { JSX } from "@solidjs/web";
 import { createSignal, For, Show } from "solid-js";
 import {
+  ACCEPT_ANSWER,
   DECLINE_ANSWER,
   DISCLOSURE_CLOSING,
   DISCLOSURE_PARAGRAPHS,
   DISCLOSURE_TITLE,
-  KEEP_ANSWER,
+  NOTICE_CHANGE,
+  NOTICE_HEADING,
   OPTED_IN_CONFIRMATION,
   OPTED_OUT_CONFIRMATION,
   RETENTION_LABEL,
@@ -26,8 +28,9 @@ function DisclosureText(): JSX.Element {
 /**
  * The assistant's disclosure (GRV-8, ADR 0007 decision 5), shown in place of
  * the composer until a signed-in account has answered it: the assistant
- * cannot be messaged before. Keeping and not keeping are two buttons of the
- * same weight, and the control's scope sits right under them.
+ * cannot be messaged before. Keeping is the default (GRV-97), so it is a
+ * notice rather than a question: "OK" keeps them, "Don't keep them" beside
+ * it, the same size, opts out. The control's scope sits right under them.
  */
 export function RetentionDisclosure(props: {
   readonly retention: AssistantRetention;
@@ -40,10 +43,11 @@ export function RetentionDisclosure(props: {
       <DisclosureText />
       <fieldset
         class="assistant-retention-choice"
-        aria-labelledby="assistant-retention-question"
-        aria-describedby="assistant-retention-scope"
+        aria-labelledby="assistant-retention-notice"
+        aria-describedby="assistant-retention-change assistant-retention-scope"
       >
-        <b id="assistant-retention-question">{RETENTION_LABEL}?</b>
+        <b id="assistant-retention-notice">{NOTICE_HEADING}</b>
+        <p id="assistant-retention-change">{NOTICE_CHANGE}</p>
         <div class="assistant-retention-answers">
           <button
             type="button"
@@ -51,7 +55,7 @@ export function RetentionDisclosure(props: {
             disabled={props.retention.saving()}
             onClick={() => void props.retention.answer(true)}
           >
-            {KEEP_ANSWER}
+            {ACCEPT_ANSWER}
           </button>
           <button
             type="button"

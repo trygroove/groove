@@ -663,7 +663,7 @@ Neither GA4 nor Sentry can be verified from the unit suite — the last mile is 
 | `sign_in_blocked` | Sign in with a Google address that is not on the alpha allowlist (#854). | Fires once per refusal, with `source: landing` (or `log_in`/`upgrade` from a guest session), and no address. |
 | `allowlist_approved` | As an admin, approve addresses on `/admin` (#854). | Fires once per approval, with `source: paste` or `attempt` and the three counts, and no address. |
 | `access_revoked` | As an admin, Revoke an address on `/admin` and confirm (#1147). | Fires once per revocation, with `was_listed` and `sessions_ended`, and no address. |
-| `assistant_retention_changed` | Answer the assistant's disclosure, then change the answer in the panel's Assistant settings (GRV-8). | Fires once per answer stored, with `state: on` or `off` and nothing else; the first also fires `feature_first_use` with `feature: assistant_retention`. With collection off, the answer is still stored. |
+| `assistant_retention_changed` | Answer the assistant's disclosure (**OK** or **Don't keep them**), then change the answer in the panel's Assistant settings (GRV-8). | Fires once per answer stored, with `state: on` or `off` and nothing else; the first also fires `feature_first_use` with `feature: assistant_retention`. With collection off, the answer is still stored. |
 | `first_edit` | Make the first edit in a project. | Fires once for that project, never again — reload and edit again to confirm. |
 | `feature_first_use` | Use a feature for the first time in that browser. | Fires once per `feature`, carrying the feature key. |
 | `save_failed` | Go offline (DevTools → Network → Offline) and make an edit. | Fires with a stable `error_code` and a `retry_count`. |
@@ -718,7 +718,7 @@ The first must return JavaScript. The second must return the SPA shell — `<!DO
 
 ### Verifying assistant transcript retention against a deployed build
 
-Groove keeps a conversation with the assistant only for an account that said yes in its disclosure, and for 30 days from each message (GRV-8, `src/assistant/transcripts.ts`). Nothing in the browser can read the store (`firestore.rules` denies every client), so both checks read it in the Firebase console, or with the Admin SDK, as someone with access to the project.
+Groove keeps a conversation with the assistant unless the account has opted out (keeping is the default, GRV-97: no answer keeps, and only an explicit "don't keep" stops it), and for 30 days from each message (GRV-8, `src/assistant/transcripts.ts`). Nothing in the browser can read the store (`firestore.rules` denies every client), so both checks read it in the Firebase console, or with the Admin SDK, as someone with access to the project.
 
 **Declining leaves nothing.** Sign in as a fresh test account (a `groovetestuser<n>` address, so it is marked internal), open a project and the assistant, and press **Don't keep them**. Send a few messages, and apply, cancel and undo a proposal. In the console, `assistantPreferences/{uid}` reads `retain: false`, and *Firestore → assistantTranscripts*, filtered on `uid == <uid>`, has no documents. Then open **Assistant settings** in the panel, tick the box, send one message, and confirm exactly one document appears for that uid (with `internal: true`). Untick it: the panel says the kept conversations were deleted, and the filter is empty again.
 

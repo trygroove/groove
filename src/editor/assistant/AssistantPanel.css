@@ -1034,7 +1034,7 @@
   color: var(--color-foreground-bright);
 }
 
-/* Keeping and not keeping weigh the same: one style, one width. */
+/* "OK" and "Don't keep them" sit side by side: one style, one width. */
 .assistant-retention-answers {
   display: grid;
   grid-template-columns: 1fr 1fr;
