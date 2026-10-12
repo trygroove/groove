@@ -408,6 +408,11 @@ describe("runCaseCheck", () => {
       developsTrack: "fail",
       padSound: "pass",
       dissonant: "pass",
+      // GRV-107's: the fixture's loop adds a pad but no track and no command.
+      addsTracks: "pass",
+      endsAt: "fail",
+      noEmptyClips: "pass",
+      noNoOps: "pass",
     });
   });
 });

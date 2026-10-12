@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Project } from "../../domain/entities";
 import { stringifyProject } from "../../domain/serialize";
 import { TICKS_PER_BAR } from "../../domain/time";
 import { buildAssistantPayload } from "../payload";
@@ -176,5 +177,69 @@ describe("the eval cases", () => {
       (clip) => clip.trackId === project.song.tracks[1].id,
     );
     expect(synthClip?.lengthTicks).toBe(4 * TICKS_PER_BAR);
+  });
+});
+
+// GRV-107: cases from GRV-6's QA findings.
+describe("the cases from GRV-6's QA findings", () => {
+  const byId = (id: string) => {
+    const found = EVAL_CASES.find((entry) => entry.id === id);
+    if (!found) throw new Error(`no case ${id}`);
+    return found;
+  };
+  const track = (project: Project) => project.song.tracks[0];
+
+  it("sketch on a project with only BD, whole song and scoped to BD", () => {
+    const whole = byId("sketch-whole-song");
+    const scoped = byId("sketch-track-scope");
+    expect(whole.fixture().song.tracks.map((entry) => entry.name)).toEqual(["BD"]);
+    expect(whole.selection).toBeNull();
+    expect(whole.expect).toBe("proposal");
+    expect(scoped.request).toBe(whole.request);
+    expect(scoped.selection).toEqual({ tracks: ["BD"] });
+    expect(scoped.expect).toBe("either");
+    expect(whole.checks).toEqual(["addsTracks"]);
+    expect(scoped.checks).toEqual(["addsTracks"]);
+  });
+
+  it.each([
+    ["db-nudge-down", "Nudge the BD down 1 dB", -3, -4],
+    ["db-turn-down", "Turn the BD down by 1 dB", -3, -4],
+    ["db-lower", "Lower the BD by 1 dB", -3, -4],
+    ["db-turn-up", "Turn the BD up by 3 dB", -3, 0],
+    ["db-stale-cancelled", "Turn the BD up by 3 dB", -3, 0],
+    ["db-stale-undone", "Turn the BD down by 3 dB", 0, -3],
+  ] as const)(
+    "%s: starts BD at the real volume and expects the exact end",
+    (id, request, from, to) => {
+      const entry = byId(id);
+      expect(entry.request).toBe(request);
+      expect(track(entry.fixture()).mixer.volume).toBe(from);
+      expect(entry.checks).toEqual(["endsAt"]);
+      expect(entry.expectedValue).toMatchObject({
+        track: "BD",
+        value: to,
+        tolerance: 0.05,
+      });
+    },
+  );
+
+  it("resend a stale proposal's words, which the real volume contradicts", () => {
+    expect(byId("db-stale-cancelled").history?.[1].text).toContain("-5.0 dB");
+    expect(byId("db-stale-undone").history?.[1].text).toContain("-2.0 dB");
+  });
+
+  it("re-sketch after an applied sketch, and on BD alone, checking notes and no-ops", () => {
+    const resketch = byId("resketch-extreme");
+    expect(resketch.fixture().song.tracks.map((entry) => entry.name)).toEqual([
+      "BD",
+      "Bass",
+      "Chords",
+      "Melody",
+      "Texture",
+    ]);
+    expect(resketch.checks).toEqual(["noEmptyClips", "noNoOps"]);
+    expect(byId("noop-bd-only").request).toBe(resketch.request);
+    expect(byId("noop-bd-only").checks).toEqual(["noNoOps"]);
   });
 });
