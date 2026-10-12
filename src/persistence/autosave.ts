@@ -164,10 +164,19 @@ export class ProjectAutosave {
    */
   private readonly queue = new Map<string, PendingEntry>();
   /**
-   * When each queued entry was last queued, as a count of `enqueue` calls
-   * (GRV-88). It is what {@link savedThrough} is worked out from.
+   * For each queued entry, when the oldest value under its key not yet
+   * written was queued, as a count of `enqueue` calls (GRV-88). A later edit
+   * to the same key replaces the value but not this: the earlier edit is not
+   * written until the replacement is. It is what {@link savedThrough} is
+   * worked out from.
    */
   private readonly queuedAt = new Map<string, number>();
+  /**
+   * The keys the write in flight carries, each with when it was first queued
+   * again after that write took it (null if it has not been). Once the write
+   * lands, that is when the key's oldest unwritten value was queued.
+   */
+  private inFlightKeys: Map<string, number | null> | null = null;
   /** How many times anything has been queued. */
   private enqueued = 0;
   /** True from the moment a drain starts writing until it settles. */
@@ -360,7 +369,8 @@ export class ProjectAutosave {
     if (this.disposed) return;
     this.queue.set(key, entry);
     this.enqueued += 1;
-    this.queuedAt.set(key, this.enqueued);
+    if (!this.queuedAt.has(key)) this.queuedAt.set(key, this.enqueued);
+    if (this.inFlightKeys?.get(key) === null) this.inFlightKeys.set(key, this.enqueued);
     this.state = "pending";
     this.publish();
     this.schedule();
@@ -385,6 +395,7 @@ export class ProjectAutosave {
       await this.writeQueue();
     } finally {
       this.writingNow = false;
+      this.inFlightKeys = null;
     }
   }
 
@@ -401,11 +412,14 @@ export class ProjectAutosave {
 
     while (this.queue.size > 0 && !this.disposed) {
       const batch = this.nextBatch();
+      const inFlight = new Map<string, number | null>(batch.map(([key]) => [key, null]));
+      this.inFlightKeys = inFlight;
       const result = await this.repository.saveChanges(
         this.projectId,
         toChangeSet(batch),
         this.revision,
       );
+      this.inFlightKeys = null;
       if (!result.ok) {
         // The entry stays queued with its value so a retry — or the browser
         // coming back online — can write exactly what the user last saw.
@@ -432,6 +446,11 @@ export class ProjectAutosave {
         if (this.queue.get(key) === entry) {
           this.queue.delete(key);
           this.queuedAt.delete(key);
+        } else {
+          // Replaced during the write: what is unwritten under this key was
+          // queued no earlier than the replacement.
+          const requeuedAt = inFlight.get(key);
+          if (requeuedAt != null) this.queuedAt.set(key, requeuedAt);
         }
       }
       this.revision = result.revision;

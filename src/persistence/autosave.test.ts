@@ -615,6 +615,48 @@ describe("ProjectAutosave", () => {
   });
 
   describe("savedThrough (GRV-88)", () => {
+    it("does not count an edit saved when a later edit replaces its queued value", async () => {
+      autosave.queueSong(renamedSong(128));
+      const first = autosave.queuedThrough;
+      autosave.queueSong(renamedSong(129));
+      expect(autosave.savedThrough).toBeLessThan(first);
+      await autosave.flush();
+      expect(autosave.savedThrough).toBe(autosave.queuedThrough);
+    });
+
+    it("counts a written value saved, and its replacement during the write not yet", async () => {
+      const gates: Array<() => void> = [];
+      let calls = 0;
+      const gated: ProjectRepository = Object.create(repository);
+      gated.saveChanges = async (...args) => {
+        calls += 1;
+        await new Promise<void>((resolve) => gates.push(resolve));
+        return repository.saveChanges(...args);
+      };
+      const controller = new ProjectAutosave({
+        repository: gated,
+        projectId: project.metadata.id,
+        revision: project.metadata.revision,
+        scheduler,
+      });
+      controller.queueSong(renamedSong(128));
+      const first = controller.queuedThrough;
+      const writing = controller.flush();
+      controller.queueSong(renamedSong(129));
+      const second = controller.queuedThrough;
+      controller.queueSong(renamedSong(130));
+      await vi.waitFor(() => expect(gates).toHaveLength(1));
+      gates[0]?.();
+      // The first write has landed and the second is held.
+      await vi.waitFor(() => expect(calls).toBe(2));
+      expect(controller.savedThrough).toBeGreaterThanOrEqual(first);
+      expect(controller.savedThrough).toBeLessThan(second);
+      await vi.waitFor(() => expect(gates).toHaveLength(2));
+      gates[1]?.();
+      await writing;
+      expect(controller.savedThrough).toBe(controller.queuedThrough);
+    });
+
     it("moves past a write that landed even when a later write in the drain is refused", async () => {
       let release = () => {};
       const gate = new Promise<void>((resolve) => {

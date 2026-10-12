@@ -319,6 +319,30 @@ describe("EditorSession, an unsaved edit when another tab saves (GRV-88)", () =>
     expect(tabA.committedProject.song.tempo).toBe(140);
   });
 
+  it("replays every queued edit to the same tier, not only the newest", async () => {
+    const { repository, project, tabA, tabB, notices, tempo, volume, note, clipId } =
+      await setUp();
+
+    // Both edits write the song tier: the second replaces the first's value
+    // in the queue, and neither is written.
+    tabA.dispatch(tempo(90));
+    tabA.dispatch(volume(-12));
+    tabB.dispatch(note());
+    await tabB.autosave.flush();
+
+    await vi.waitFor(() =>
+      expect(notesIn(tabA.committedProject, clipId)).toBe(notesIn(project, clipId) + 1),
+    );
+    expect(tabA.committedProject.song.tempo).toBe(90);
+    expect(tabA.committedProject.song.tracks[0]?.mixer.volume).toBe(-12);
+    expect((await tabA.autosave.flush()).state).toBe("saved");
+    expect(notices).toEqual([]);
+    const reloaded = await stored(repository, project);
+    expect(reloaded.song.tempo).toBe(90);
+    expect(reloaded.song.tracks[0]?.mixer.volume).toBe(-12);
+    expect(notesIn(reloaded, clipId)).toBe(notesIn(project, clipId) + 1);
+  });
+
   it("replays an edit whose write was in flight once that write is refused", async () => {
     const base = await setUp();
     const { repository, project, tempo, volume } = base;
