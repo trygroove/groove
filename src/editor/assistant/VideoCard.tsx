@@ -68,6 +68,7 @@ export interface VideoCardProps {
 export default function VideoCard(props: VideoCardProps): JSX.Element {
   const [state, setState] = createSignal<VideoState>("idle");
   const [expanded, setExpanded] = createSignal(false);
+  let playButton: HTMLButtonElement | undefined;
   let closeButton: HTMLButtonElement | undefined;
   let expandButton: HTMLButtonElement | undefined;
   let overlayClose: HTMLButtonElement | undefined;
@@ -104,6 +105,8 @@ export default function VideoCard(props: VideoCardProps): JSX.Element {
     clearTimeout(loadTimer);
     setExpanded(false);
     setState("idle");
+    // Close video is gone with the player: focus goes back to Play.
+    setTimeout(() => playButton?.focus(), 0);
   }
 
   function expand(): void {
@@ -150,6 +153,7 @@ export default function VideoCard(props: VideoCardProps): JSX.Element {
                 <div class="assistant-video-poster">
                   <span class="assistant-video-tag">YouTube · Tutorial</span>
                   <button
+                    ref={playButton}
                     type="button"
                     class="assistant-video-play"
                     aria-label={`Play ${title()} from YouTube`}
