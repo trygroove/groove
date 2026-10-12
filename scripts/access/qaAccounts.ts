@@ -4,7 +4,7 @@
  * Creates or corrects `testuser0`…`testuser10@qa.trygroove.app` (UIDs
  * `qa-testuser-<n>`, address verified, display name `QA testuser<n>`) and puts
  * every address on the allowlist, through `provisionQaAccounts`
- * (`src/access/qaAccounts.ts`). Every account gets the `internal` claim
+ * (`scripts/access/qaPool.ts`). Every account gets the `internal` claim
  * (GRV-113), so CI's traffic stays out of the product's measures. Running it
  * again changes nothing. It never grants `admin`, and it leaves a disabled
  * account disabled.
@@ -14,12 +14,8 @@
  */
 import type { UserRecord } from "firebase-admin/auth";
 import { hasInternalClaim } from "../../src/access/claims";
-import {
-  provisionQaAccounts,
-  type QaUser,
-  type QaUserStore,
-} from "../../src/access/qaAccounts";
 import { adminAllowlistWriter, adminServices, setInternalClaim } from "./adminApp";
+import { provisionQaAccounts, type QaUser, type QaUserStore } from "./qaPool";
 import { printReport } from "./report";
 
 const { auth, db } = adminServices();

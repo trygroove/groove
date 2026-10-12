@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createInMemoryAccessRepository } from "./inMemoryAccessRepository";
+import { createInMemoryAccessRepository } from "../../src/access/inMemoryAccessRepository";
 import {
   isQaSlot,
   MAX_QA_SLOT,
@@ -9,7 +9,7 @@ import {
   type QaUserChanges,
   type QaUserStore,
   qaAccount,
-} from "./qaAccounts";
+} from "./qaPool";
 
 /** Firebase Auth over a map, counting every write. */
 function memoryUsers(seed: QaUser[] = []) {

@@ -5,9 +5,10 @@
  * smoke test sign in as real, allowlisted accounts instead. They are ordinary
  * users with a verified address on a domain that receives no mail; what makes
  * them reachable from CI is that a service account signs a Firebase custom
- * token for one of them (`tests/e2e/hosted/qaSession.ts`). Nothing here is in
- * the app's bundle: only the provisioning script and the hosted suites import
- * it.
+ * token for one of them (`tests/e2e/hosted/qaSession.ts`). It lives under
+ * `scripts/`, not `src/`, so the pool's addresses stay out of the app's source
+ * and bundle (GRV-113): only the provisioning script (`qaAccounts.ts`) and the
+ * hosted suites import it.
  *
  * - Slot 0 belongs to the post-deploy smoke test.
  * - Slots 1 to 10 belong to the sweep: agent *n* signs in as slot *n*, so
@@ -18,10 +19,14 @@
  * `src/access/claims.ts`), so CI's sessions and kept assistant turns stay out
  * of the product's measures.
  *
- * Like the rest of `src/access`, this imports nothing from Firebase: the
+ * Like `src/access`, this imports nothing from Firebase: the
  * script supplies the Admin SDK as a {@link QaUserStore}, and the tests a map.
  */
-import { type AllowlistWriter, type ApprovalReport, approveEmails } from "./allowlist";
+import {
+  type AllowlistWriter,
+  type ApprovalReport,
+  approveEmails,
+} from "../../src/access/allowlist";
 
 /** The product owner's domain for the QA accounts. It receives no mail. */
 export const QA_ACCOUNT_DOMAIN = "qa.trygroove.app";
