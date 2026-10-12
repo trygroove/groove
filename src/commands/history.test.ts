@@ -327,6 +327,24 @@ describe("CommandHistory", () => {
       expect(() => history.adoptProject(history.project)).toThrow(/gesture/);
     });
 
+    it("discards chosen entries from undo and redo without touching the project", () => {
+      history.execute(updateTrack(fixture.trackAId, { name: "Sub" }));
+      const [dropped] = history.entries;
+      history.execute(updateTrack(fixture.trackAId, { name: "Bass" }));
+      history.execute(updateTrack(fixture.trackAId, { name: "Lead" }));
+      history.undo();
+      const [redo] = history.redoEntries;
+      const current = history.project;
+      if (!dropped || !redo) throw new Error("expected entries");
+
+      history.discardEntries(new Set([dropped, redo]));
+
+      expect(history.project).toBe(current);
+      expect(history.entries.map((entry) => entry.summary)).toHaveLength(1);
+      expect(history.entries).not.toContain(dropped);
+      expect(history.canRedo).toBe(false);
+    });
+
     it("clears history without touching the project", () => {
       history.execute(updateTrack(fixture.trackAId, { name: "Sub" }));
       const current = history.project;

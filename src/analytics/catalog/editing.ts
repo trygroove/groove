@@ -26,4 +26,14 @@ export const EDITING_EVENTS = {
       actor: enumParam(["user", "assistant"]),
     },
   },
+
+  /**
+   * An undo or redo no longer applied because a change saved in another tab
+   * moved what it touched, so it was refused with a toast (GRV-88).
+   */
+  undo_refused: {
+    phase: 1,
+    owners: ["GRV-88"],
+    params: { direction: enumParam(["undo", "redo"]) },
+  },
 } as const satisfies Record<string, AnalyticsEventDefinition>;
