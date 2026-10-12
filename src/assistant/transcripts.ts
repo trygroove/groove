@@ -262,12 +262,19 @@ function forbiddenContent(value: unknown, depth = 0): string | null {
   return null;
 }
 
+/** A free-text issue field, or `null` when it carries anything forbidden. */
+function cleanIssueField(value: string | null): string | null {
+  return value !== null && forbiddenContent(value) ? null : value;
+}
+
 /**
  * The gate an outcome passes before a store adds it to a record (GRV-98):
- * the strict shape, then nothing forbidden. An issue's path or message that
- * carries something forbidden loses both, keeping its code and call, so a
- * rejection is never kept without its reason codes and never with a URL or
- * a credential. Returns `null` for anything that is not an outcome.
+ * the strict shape, then nothing forbidden. Every free-text field of an issue
+ * (the call's ID and name, which come from the client, and the path and
+ * message) is dropped on its own when it carries something forbidden, keeping
+ * the code, so a rejection is never kept without its reason codes and never
+ * with a URL or a credential. Returns `null` for anything that is not an
+ * outcome.
  */
 export function checkTranscriptOutcome(raw: unknown): TranscriptOutcome | null {
   const parsed = transcriptOutcomeSchema.safeParse(raw);
@@ -276,9 +283,13 @@ export function checkTranscriptOutcome(raw: unknown): TranscriptOutcome | null {
   if (!issues) return rest;
   return {
     ...rest,
-    issues: issues.map((issue) =>
-      forbiddenContent(issue) ? { ...issue, path: null, message: null } : issue,
-    ),
+    issues: issues.map((issue) => ({
+      code: issue.code,
+      callId: cleanIssueField(issue.callId),
+      callName: cleanIssueField(issue.callName),
+      path: cleanIssueField(issue.path),
+      message: cleanIssueField(issue.message),
+    })),
   };
 }
 
