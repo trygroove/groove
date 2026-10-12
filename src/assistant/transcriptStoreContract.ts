@@ -9,9 +9,11 @@ import { type AssistantCaller, runAssistantTurn } from "./gateway";
 import { createInMemoryGuardStores } from "./inMemoryGuardStores";
 import type { AssistantTurnRequest } from "./protocol";
 import { handleRetentionRequest, recordOutcome, setRetention } from "./retention";
+import { handleTranscriptAdminRequest } from "./transcriptAdmin";
 import {
   ASSISTANT_DISCLOSURE_VERSION,
   type AssistantTurnSession,
+  checkTranscriptRecord,
   TRANSCRIPT_RETENTION_MS,
   type TranscriptRecord,
   type TranscriptStore,
@@ -172,6 +174,175 @@ export function describeTranscriptStoreContract(
         { outcome: "applied", at: START + 1 },
         { outcome: "undone", at: START + 2 },
       ]);
+    });
+
+    it("keeps a rejected outcome with its issues, and it passes the forbidden-content check", async () => {
+      const { store, turn } = await setup();
+      await turn(request("turn-0020"));
+      const issues = [
+        {
+          code: "invalid_project" as const,
+          callId: "toolu_2",
+          callName: "track_create",
+          path: "song.tracks.2.instrument.assetId",
+          message: "Track trk_9 references missing asset ast_pad",
+        },
+        {
+          code: "stale_revision" as const,
+          callId: null,
+          callName: null,
+          path: null,
+          message: null,
+        },
+      ];
+      expect(
+        await handleRetentionRequest(
+          store,
+          OWNER,
+          { op: "outcome", turnId: "turn-0020", outcome: "rejected", issues },
+          START + 1,
+        ),
+      ).toEqual({ recorded: true });
+      const [record] = await harness.records();
+      expect(record?.outcomes).toEqual([{ outcome: "rejected", at: START + 1, issues }]);
+      expect(checkTranscriptRecord(record).ok).toBe(true);
+    });
+
+    it("keeps a rejection's codes but not a path or message that carries a URL or a credential", async () => {
+      const { store, turn } = await setup();
+      await turn(request("turn-0021"));
+      expect(
+        await recordOutcome(store, OWNER, "turn-0021", "rejected", START + 1, [
+          {
+            code: "invalid_payload",
+            callId: "toolu_1",
+            callName: "track_create",
+            path: "input.name",
+            message: "expected a name, got https://example.com/kick.wav",
+          },
+        ]),
+      ).toBe(true);
+      const [record] = await harness.records();
+      expect(record?.outcomes[0]?.issues).toEqual([
+        {
+          code: "invalid_payload",
+          callId: "toolu_1",
+          callName: "track_create",
+          path: null,
+          message: null,
+        },
+      ]);
+      expect(checkTranscriptRecord(record).ok).toBe(true);
+    });
+
+    it("refuses issues on any outcome but a rejection", async () => {
+      const { store, turn } = await setup();
+      await turn(request("turn-0022"));
+      await expect(
+        handleRetentionRequest(
+          store,
+          OWNER,
+          {
+            op: "outcome",
+            turnId: "turn-0022",
+            outcome: "applied",
+            issues: [
+              {
+                code: "rejected",
+                callId: null,
+                callName: null,
+                path: null,
+                message: null,
+              },
+            ],
+          },
+          START + 1,
+        ),
+      ).rejects.toMatchObject({ code: "invalid_request" });
+      expect((await harness.records())[0]?.outcomes).toEqual([]);
+    });
+
+    it("lists the newest turns for an admin, narrowed by account, project, outcome and traffic, and opens one", async () => {
+      const { store, turn, advance } = await setup();
+      await turn(request("turn-0030"));
+      advance(1_000);
+      await turn(
+        request("turn-0031", "other project", { projectId: "prj_another0000000000001" }),
+      );
+      advance(1_000);
+      await turn(request("turn-0032", "theirs"), {
+        uid: OTHER,
+        signInProvider: "google.com",
+      });
+      advance(1_000);
+      await turn(request("turn-0033", "internal", { internal: true }));
+      await recordOutcome(store, OWNER, "turn-0030", "rejected", START + 10, [
+        {
+          code: "rejected",
+          callId: "toolu_1",
+          callName: "track_create",
+          path: null,
+          message: null,
+        },
+      ]);
+      const admin = { admin: true };
+      const ids = async (filter: Record<string, unknown>) => {
+        const response = await handleTranscriptAdminRequest(store, admin, {
+          op: "list",
+          ...filter,
+        });
+        return "turns" in response
+          ? response.turns.map((summary) => summary.turnId)
+          : null;
+      };
+      expect(await ids({})).toEqual(["turn-0033", "turn-0032", "turn-0031", "turn-0030"]);
+      expect(await ids({ uid: OTHER })).toEqual(["turn-0032"]);
+      expect(await ids({ projectId: "prj_another0000000000001" })).toEqual(["turn-0031"]);
+      expect(await ids({ uid: OWNER, projectId: PROJECT })).toEqual([
+        "turn-0033",
+        "turn-0030",
+      ]);
+      expect(await ids({ outcome: "rejected" })).toEqual(["turn-0030"]);
+      expect(await ids({ outcome: "none", internal: false })).toEqual([
+        "turn-0032",
+        "turn-0031",
+      ]);
+      expect(await ids({ internal: true })).toEqual(["turn-0033"]);
+
+      const listed = await handleTranscriptAdminRequest(store, admin, {
+        op: "list",
+        outcome: "rejected",
+      });
+      expect(listed).toMatchObject({
+        turns: [{ issueCodes: ["rejected"], outcome: "rejected" }],
+      });
+      const opened = await handleTranscriptAdminRequest(store, admin, {
+        op: "get",
+        uid: OWNER,
+        turnId: "turn-0030",
+      });
+      expect(opened).toMatchObject({
+        turn: {
+          userMessage: "Make the bass punchier",
+          outcomes: [{ outcome: "rejected" }],
+        },
+      });
+      expect(
+        await handleTranscriptAdminRequest(store, admin, {
+          op: "get",
+          uid: OTHER,
+          turnId: "turn-0030",
+        }),
+      ).toEqual({ turn: null });
+      // Nobody else reads anything.
+      await expect(
+        handleTranscriptAdminRequest(store, { admin: false }, { op: "list" }),
+      ).rejects.toMatchObject({ code: "not_admin" });
+      await expect(
+        handleTranscriptAdminRequest(store, null, { op: "list" }),
+      ).rejects.toMatchObject({
+        code: "unauthenticated",
+      });
     });
 
     it("marks team and test traffic internal", async () => {

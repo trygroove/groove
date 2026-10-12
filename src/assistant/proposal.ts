@@ -32,6 +32,7 @@ import { executeTransaction } from "../commands/execute";
 import { requireCommand } from "../commands/registry";
 import type { CommandIssue, RawCommandInput } from "../commands/types";
 import type { Project } from "../domain/entities";
+import type { ProposalIssueCode } from "./proposalIssues";
 import {
   ASSISTANT_TOOLSET_VERSION,
   type AssistantCapability,
@@ -75,23 +76,7 @@ const proposalInputSchema = z.strictObject({
 /** A proposal as it arrives from the model, before anything is trusted. */
 export type ProposalInput = z.input<typeof proposalInputSchema>;
 
-export type ProposalIssueCode =
-  /** The response is not a proposal at all. */
-  | "malformed"
-  | "too_many_commands"
-  /** The project moved on since the request was built. */
-  | "stale_revision"
-  | "unknown_tool"
-  | "invalid_payload"
-  | "unauthorized"
-  /** The calls were made against another version of the tool set. */
-  | "toolset_mismatch"
-  /** A value is outside its parameter's range. */
-  | "out_of_range"
-  /** The kernel refused a command (a missing ID, a wrong kind of track, …). */
-  | "rejected"
-  /** The commands together would break a domain invariant. */
-  | "invalid_project";
+export { PROPOSAL_ISSUE_CODES, type ProposalIssueCode } from "./proposalIssues";
 
 export interface ProposalIssue {
   readonly code: ProposalIssueCode;

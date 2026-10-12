@@ -15,7 +15,9 @@ import { z } from "zod";
 import {
   ASSISTANT_DISCLOSURE_VERSION,
   type CompletedTurn,
+  checkTranscriptOutcome,
   checkTranscriptRecord,
+  MAX_TRANSCRIPT_ISSUES,
   PROPOSAL_OUTCOMES,
   type ProposalOutcome,
   permitsRetention,
@@ -23,7 +25,9 @@ import {
   readPreference,
   sessionIdSchema,
   TRANSCRIPT_RETENTION_DAYS,
+  type TranscriptIssue,
   type TranscriptStore,
+  transcriptIssueSchema,
   transcriptRecordFor,
 } from "./transcripts";
 
@@ -80,21 +84,27 @@ export async function setRetention(
   return preference;
 }
 
-/** Adds what became of a proposal to its kept turn, if there is one to add to. */
+/**
+ * Adds what became of a proposal to its kept turn, if there is one to add to.
+ * A `rejected` one carries its issues (GRV-98); an outcome that is not one
+ * ({@link checkTranscriptOutcome}) is not added.
+ */
 export async function recordOutcome(
   store: TranscriptStore,
   uid: string,
   turnId: string,
   outcome: ProposalOutcome,
   now: number,
+  issues?: readonly TranscriptIssue[],
 ): Promise<boolean> {
+  const entry = checkTranscriptOutcome({
+    outcome,
+    at: now,
+    ...(issues ? { issues } : {}),
+  });
+  if (!entry) return false;
   try {
-    return await store.addOutcomeIfPermitted(
-      uid,
-      turnId,
-      { outcome, at: now },
-      permitsRetention,
-    );
+    return await store.addOutcomeIfPermitted(uid, turnId, entry, permitsRetention);
   } catch {
     return false;
   }
@@ -111,11 +121,17 @@ export const retentionRequestSchema = z.discriminatedUnion("op", [
     /** The disclosure the answer was given against; must be the current one. */
     disclosureVersion: z.int().min(1),
   }),
-  z.strictObject({
-    op: z.literal("outcome"),
-    turnId: sessionIdSchema,
-    outcome: z.enum(PROPOSAL_OUTCOMES),
-  }),
+  z
+    .strictObject({
+      op: z.literal("outcome"),
+      turnId: sessionIdSchema,
+      outcome: z.enum(PROPOSAL_OUTCOMES),
+      /** Why a `rejected` proposal did not fit (GRV-98); no other outcome has any. */
+      issues: z.array(transcriptIssueSchema).max(MAX_TRANSCRIPT_ISSUES).optional(),
+    })
+    .refine((request) => request.issues === undefined || request.outcome === "rejected", {
+      message: "only a rejected outcome carries issues",
+    }),
 ]);
 export type RetentionRequest = z.infer<typeof retentionRequestSchema>;
 
@@ -184,7 +200,14 @@ export async function handleRetentionRequest(
       return stateOf(await setRetention(store, uid, request.retain, now));
     case "outcome":
       return {
-        recorded: await recordOutcome(store, uid, request.turnId, request.outcome, now),
+        recorded: await recordOutcome(
+          store,
+          uid,
+          request.turnId,
+          request.outcome,
+          now,
+          request.issues,
+        ),
       };
   }
 }
