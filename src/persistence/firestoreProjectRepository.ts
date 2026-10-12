@@ -83,7 +83,9 @@ export class FirestoreProjectRepository implements ProjectRepository {
    * was before the write commits. The metadata document is therefore claimed
    * first; only then can the song, clip, and chunk documents be authorized. If
    * the second step fails, the claimed metadata document is removed rather
-   * than left behind as a project with no song.
+   * than left behind as a project with no song. That second step is a plain
+   * batch Firestore resends if its acknowledgement is lost; the rules let a
+   * resend that rewrites what the first send stored through (#891).
    */
   async createProject(project: Project): Promise<SaveResult> {
     const documents = encodeProject(project);
@@ -440,15 +442,17 @@ export class FirestoreProjectRepository implements ProjectRepository {
   }
 
   /**
-   * The security rules evaluate a commit before Firestore checks the
-   * transaction's read preconditions, and they refuse a save that does not
-   * move the stored revision on by exactly one (GRV-7). So when another tab's
-   * save lands between this transaction's read and its commit, the commit
-   * comes back `permission-denied`, not as the retryable contention error the
-   * SDK would have re-run the transaction for. Reading the revision again
-   * tells the two apart: if it moved, the refusal was the revision check
-   * doing its job, and the caller gets the same conflict a re-run would have
-   * found.
+   * The security rules refuse a save that does not move the stored revision
+   * on by exactly one (GRV-7). When another tab's save lands between this
+   * transaction's read and its commit, the Firestore emulator evaluates the
+   * rules before the transaction's read preconditions, so the commit comes
+   * back `permission-denied` rather than as the retryable contention error the
+   * SDK would re-run the transaction for. Production may check the
+   * preconditions first and return `aborted` instead, in which case the SDK
+   * re-runs the transaction and its fresh read finds the conflict as before.
+   * This handles the emulator's order: reading the revision again tells a
+   * refusal behind a moved revision apart from any other, and the caller gets
+   * the same conflict a re-run would have found.
    */
   private async conflictBehindRefusal(
     projectId: ProjectId,
