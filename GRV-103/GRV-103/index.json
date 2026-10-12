@@ -1,0 +1,22 @@
+{
+  "id": "GRV-103",
+  "title": "Reply rating",
+  "steps": [
+    {
+      "file": "01-a-finished-reply-its-thumbs-out-of-sight.png",
+      "caption": "A finished reply, its thumbs out of sight"
+    },
+    {
+      "file": "02-hovering-the-reply-shows-its-thumbs.png",
+      "caption": "Hovering the reply shows its thumbs"
+    },
+    {
+      "file": "03-rated-down-the-thumb-stays-filled-white.png",
+      "caption": "Rated down: the thumb stays, filled white"
+    },
+    {
+      "file": "04-the-admin-page-lists-the-turns-rated-dow.png",
+      "caption": "The admin page lists the turns rated down"
+    }
+  ]
+}
