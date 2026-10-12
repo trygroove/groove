@@ -38,6 +38,7 @@ import {
   type AssistantStopReason,
 } from "../protocol";
 import type { AssistantProvider } from "../provider";
+import type { ProviderUsage } from "../streamEvents";
 import type { AssistantTurnLog } from "../telemetry";
 import { ASSISTANT_TOOLSET_VERSION } from "../tools";
 import { checkOutcome, runCaseCheck } from "./caseChecks";
@@ -63,6 +64,7 @@ import {
   skip,
 } from "./checks";
 import { describeProposal, type ProposalStats } from "./describe";
+import { type Scorecard, scorecardOf } from "./scorecard";
 
 /** Why a turn errored, as far as the gateway and the provider said. */
 export interface EvalTurnError {
@@ -110,6 +112,18 @@ export interface EvalTurn {
   readonly ask?: AssistantAsk | null;
   /** Where the output tokens went. Absent from reports saved before it existed. */
   readonly tokens?: EvalTokens;
+  /**
+   * The provider's token counts summed over the turn's calls, retries
+   * included (GRV-102); null when the turn ended before the gateway logged
+   * them (an eval timeout). Absent from reports saved before it existed.
+   */
+  readonly usage?: ProviderUsage | null;
+  /**
+   * Milliseconds from the start of the turn to its first streamed text, the
+   * gateway's empty heartbeats aside; null when it streamed none. Absent from
+   * reports saved before it existed.
+   */
+  readonly firstTextMs?: number | null;
 }
 
 /** One run of one case: the request, everything the model returned, every check. */
@@ -139,6 +153,8 @@ export interface EvalReport {
   readonly records: readonly EvalRecord[];
   /** Why the run stopped before every turn ran, or null when it did not. */
   readonly aborted: string | null;
+  /** The headline and secondary numbers (GRV-102), from the records and the summary. */
+  readonly scorecard: Scorecard;
   readonly summary: {
     readonly checks: Record<CheckId, Tally>;
     readonly cases: Record<string, Partial<Record<CheckId, Tally>>>;
@@ -150,6 +166,17 @@ export interface EvalReport {
       readonly cases: Record<string, number>;
     };
   };
+}
+
+/**
+ * A report without its records: every number and no reply, so it can be
+ * committed (`docs/assistant-eval-baseline.json`) and read back as a baseline.
+ */
+export type EvalSummary = Omit<EvalReport, "records">;
+
+export function summaryOf(report: EvalReport): EvalSummary {
+  const { records: _records, ...summary } = report;
+  return summary;
 }
 
 /** The provider refused the API key: every other turn will be refused too. */
@@ -256,7 +283,12 @@ export async function runCaseTurn(
     }, timeoutMs);
   });
   const startedAt = now();
+  let firstTextAt: number | null = null;
   const measured = measureProvider(options.provider);
+  const timing = () => ({
+    usage: turnLog ? usageOfLog(turnLog) : null,
+    firstTextMs: firstTextAt === null ? null : firstTextAt - startedAt,
+  });
   try {
     const result = await Promise.race([
       runAssistantTurn(
@@ -276,7 +308,14 @@ export async function runCaseTurn(
           messages: caseMessages(evalCase),
           context,
         },
-        { signal: controller.signal, onChunk: () => {} },
+        {
+          signal: controller.signal,
+          onChunk: (chunk) => {
+            if (firstTextAt === null && chunk.type === "text" && chunk.text !== "") {
+              firstTextAt = now();
+            }
+          },
+        },
       ),
       timedOut,
     ]);
@@ -289,6 +328,7 @@ export async function runCaseTurn(
       proposal: result.proposal,
       ask: result.ask,
       tokens: measured.tokens(),
+      ...timing(),
     };
   } catch (error) {
     const log = turnLog as AssistantTurnLog | null;
@@ -310,10 +350,23 @@ export async function runCaseTurn(
               message: error instanceof Error ? error.message : String(error),
               ...provider,
             };
-    return { ...erroredTurn(now() - startedAt, turnError), tokens: measured.tokens() };
+    return {
+      ...erroredTurn(now() - startedAt, turnError),
+      tokens: measured.tokens(),
+      ...timing(),
+    };
   } finally {
     clearTimeout(timer);
   }
+}
+
+function usageOfLog(log: AssistantTurnLog): ProviderUsage {
+  return {
+    inputTokens: log.inputTokens,
+    outputTokens: log.outputTokens,
+    cacheCreationInputTokens: log.cacheCreationInputTokens,
+    cacheReadInputTokens: log.cacheReadInputTokens,
+  };
 }
 
 function erroredTurn(durationMs: number, turnError: EvalTurnError): EvalTurn {
@@ -477,16 +530,20 @@ export function buildReport(
   meta: ReportMeta,
 ): EvalReport {
   const judged = judgeFlattening(records, cases);
+  const caseIds = cases.map((entry) => entry.id);
+  const summary = summarize(judged);
+  // Key order is the JSON's: the scorecard leads, the records come last.
   return {
     generatedAt: meta.generatedAt,
     model: meta.model,
     promptVersion: meta.promptVersion ?? ASSISTANT_PROMPT_VERSION,
     toolsetVersion: meta.toolsetVersion ?? ASSISTANT_TOOLSET_VERSION,
     runsPerCase: meta.runsPerCase,
-    caseIds: cases.map((entry) => entry.id),
+    caseIds,
     aborted: meta.aborted ?? null,
+    scorecard: scorecardOf({ model: meta.model, caseIds, records: judged, summary }),
+    summary,
     records: judged,
-    summary: summarize(judged),
   };
 }
 
