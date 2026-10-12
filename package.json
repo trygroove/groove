@@ -102,6 +102,7 @@
     "verify:no-solid-1": "node scripts/check-no-solid-1.mjs",
     "postbuild": "node scripts/emit-app-shell.mjs",
     "verify:landing-static": "node scripts/verify-landing-static.mjs",
+    "verify:no-inline-styles": "node scripts/verify-no-inline-styles.mjs",
     "allowlist:add": "bun scripts/access/allowlistAdd.ts",
     "allowlist:seed": "bun scripts/access/allowlistSeed.ts",
     "admin:grant": "bun scripts/access/adminGrant.ts",
