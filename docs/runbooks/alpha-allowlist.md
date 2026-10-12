@@ -287,6 +287,6 @@ QA account" above):
   in as its own QA account, `testuser1`…`testuser10`, and deletes that
   account's projects when the agent is done.
 - **The QA accounts are internal traffic**: `bun run qa:accounts` gives each
-  one the `internal` claim (see "Internal accounts" below), and the suites'
+  one the `internal` claim (see "Internal accounts" above), and the suites'
   first page load carries `?internal=1` as well, so they never count in the
   product's measures.
