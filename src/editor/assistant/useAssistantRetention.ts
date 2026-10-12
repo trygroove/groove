@@ -26,7 +26,7 @@ import {
   type AssistantRetentionClient,
   answered as isAnswered,
 } from "../../assistant/retentionClient";
-import type { ProposalOutcome } from "../../assistant/transcripts";
+import type { ProposalOutcome, TranscriptIssue } from "../../assistant/transcripts";
 
 export type RetentionStatus = "idle" | "loading" | "ready" | "failed";
 
@@ -51,7 +51,11 @@ export interface AssistantRetention {
   /** Gives an answer. Resolves with whether it was stored. */
   answer(retain: boolean): Promise<boolean>;
   /** Tells a kept turn what became of its proposal, if the account keeps any. */
-  reportOutcome(turnId: string, outcome: ProposalOutcome): void;
+  reportOutcome(
+    turnId: string,
+    outcome: ProposalOutcome,
+    issues?: readonly TranscriptIssue[],
+  ): void;
 }
 
 export interface UseAssistantRetentionOptions {
@@ -151,11 +155,11 @@ export function useAssistantRetention(
       }
       return true;
     },
-    reportOutcome(turnId, outcome) {
+    reportOutcome(turnId, outcome, issues) {
       if (state()?.preference?.retain !== true) return;
       void options
         .client()
-        .then((client) => client.outcome(turnId, outcome))
+        .then((client) => client.outcome(turnId, outcome, issues))
         .catch(() => {});
     },
   };

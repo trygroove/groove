@@ -16,6 +16,9 @@
  *   bun run eval:assistant -- --timeout 180      per-turn limit in seconds (default 540, production's)
  *   bun run eval:assistant -- --replay <report.json>
  *       re-judge a saved report's proposals with the current checks (no model call)
+ *   bun run eval:assistant -- --from-transcript <transcript-<turn>.json>
+ *       run a kept turn the admin transcript viewer downloaded as the one case
+ *       (GRV-98): its message against the fixture the file names
  *
  * It needs ANTHROPIC_API_KEY in the environment and says so, making no call,
  * when it is missing. Each run writes `report.json` (every request, reply,
@@ -31,6 +34,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createAnthropicProvider } from "../functions/src/anthropicProvider";
 import { ASSISTANT_MODELS } from "../src/assistant/config";
+import { evalCaseFromTranscript } from "../src/assistant/evals/cases";
 import { CHECK_IDS, CHECK_LABELS } from "../src/assistant/evals/checks";
 import {
   type EvalCliOptions,
@@ -52,6 +56,7 @@ import {
   evaluateRecords,
   runEvals,
 } from "../src/assistant/evals/run";
+import { parseTranscriptCase } from "../src/assistant/evals/transcriptCase";
 
 async function writeReport(report: EvalReport, out: string | null): Promise<string> {
   const dir =
@@ -121,8 +126,33 @@ async function replay(path: string, options: EvalCliOptions): Promise<EvalReport
   return report;
 }
 
+/** The cases to run: the transcript file's one case, or the named ones. */
+async function casesFor(options: EvalCliOptions) {
+  if (!options.fromTranscript) return selectEvalCases(options.caseIds);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(options.fromTranscript, "utf8"));
+  } catch (error) {
+    throw new EvalUsageError(
+      `Couldn't read ${options.fromTranscript}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const parsed = parseTranscriptCase(raw);
+  if (!parsed.ok) {
+    throw new EvalUsageError(
+      `${options.fromTranscript} is not a transcript case from the admin viewer: ${parsed.message}`,
+    );
+  }
+  const { recorded } = parsed.value;
+  const rejection = recorded.outcomes.findLast((entry) => entry.outcome === "rejected");
+  console.log(
+    `Transcript ${parsed.value.turnId}: ${recorded.calls.length} recorded calls${rejection ? `, rejected (${rejection.issues?.map((issue) => issue.code).join(", ") ?? "no issues kept"})` : ""}; running against the ${parsed.value.fixture} fixture.`,
+  );
+  return [evalCaseFromTranscript(parsed.value)];
+}
+
 async function live(options: EvalCliOptions): Promise<EvalReport> {
-  const cases = selectEvalCases(options.caseIds);
+  const cases = await casesFor(options);
   const apiKey = requireApiKey(process.env);
   const model = ASSISTANT_MODELS[options.model];
   console.log(

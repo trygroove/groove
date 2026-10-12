@@ -18,6 +18,9 @@
  *   Make the message unique per test.
  * - `[propose]`: a short reply that ends in a tool call, so the turn returns
  *   a proposal: the tempo to 100 BPM.
+ * - `[misfit]` (GRV-98): a proposal that does not fit the song, a sampler
+ *   track on a sound the project does not have ({@link MISFIT_ASSET_ID}), so
+ *   the browser rejects it.
  * - "Loosen the beat" (CF-027, any case): a proposal of two changes, swing to
  *   58% and the BD track 3 dB quieter, read from the project context, and
  *   `explain_change`'s goal and technique for them.
@@ -152,6 +155,34 @@ function tempoProposal(): Step[] {
     {
       name: "parameter_set",
       input: { target: { scope: "song", parameterId: "song.tempo" }, value: 100 },
+    },
+  ]);
+}
+
+/** The sound `[misfit]`'s track asks for: shaped like an asset ID, in no project. */
+export const MISFIT_ASSET_ID = "ast_NoisePad0000000000001";
+
+/** `[misfit]`'s one change: a noise pad on a sampler whose sound is not in the song. */
+function misfitProposal(request: ProviderMessagesRequest): Step[] {
+  const trackId = "trk_NoisePad0000000000001";
+  return proposalReply("A noisy pad underneath would add some air.", [
+    {
+      name: "track_create",
+      input: {
+        track: {
+          id: trackId,
+          name: "Noise pad",
+          color: "#808080",
+          order: contextTracks(request).length,
+          type: "instrument",
+          instrument: { kind: "sampler", assetId: MISFIT_ASSET_ID, parameters: {} },
+          devices: [],
+          sendConfig: [],
+          mixer: { volume: -6, pan: 0, muted: false, soloed: false },
+        },
+        clips: [],
+        placements: [],
+      },
     },
   ]);
 }
@@ -394,6 +425,7 @@ export function createEmulatorAssistantProvider(
       return [...textReply([EMULATOR_REPLY_CHUNKS[0]]).slice(0, 3), { fail: true }];
     }
     if (message.includes("[propose]")) return tempoProposal();
+    if (message.includes("[misfit]")) return misfitProposal(request);
     if (/loosen the beat/i.test(message)) return loosenProposal(request);
     if (/\bdust(y|ier)\b/i.test(message)) return dustierRecommendation(request);
     if (message.includes("[ask-rich]")) return richAskReply(request);

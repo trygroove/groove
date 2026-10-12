@@ -16,6 +16,7 @@ import {
   LOOSEN_EXPLANATION,
   LOOSEN_SWING,
   LOOSEN_VOLUME_DROP_DB,
+  MISFIT_ASSET_ID,
   usesEmulatorProvider,
 } from "./emulatorProvider";
 import { type AssistantGatewayDeps, runAssistantTurn } from "./gateway";
@@ -121,6 +122,27 @@ describe("the emulator's assistant provider", () => {
     expect(reply.proposal?.calls).toHaveLength(1);
     const validation = validateProposal(createReferenceProject(), reply.proposal);
     expect(validation.ok).toBe(true);
+  });
+
+  it("ends [misfit] in a proposal the browser rejects: a sound the song does not have (GRV-98)", async () => {
+    for (const project of [createReferenceProject(), createSliceFixtureProject()]) {
+      const reply = await turn(
+        gateway(),
+        "Add a noisy layer [misfit]",
+        new AbortController().signal,
+        project,
+      ).result;
+      expect(reply.stopReason).toBe("tool_use");
+      const validation = validateProposal(project, reply.proposal);
+      expect(validation.ok ? null : validation.issues).toEqual([
+        expect.objectContaining({
+          code: "invalid_project",
+          callIndex: 0,
+          path: expect.stringMatching(/instrument\.assetId$/),
+          message: expect.stringContaining(MISFIT_ASSET_ID),
+        }),
+      ]);
+    }
   });
 
   it("answers CF-027's 'Loosen the beat' with swing and a quieter track", async () => {

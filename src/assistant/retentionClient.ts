@@ -14,6 +14,7 @@ import {
   ASSISTANT_DISCLOSURE_VERSION,
   type ProposalOutcome,
   retentionPreferenceSchema,
+  type TranscriptIssue,
 } from "./transcripts";
 
 /** One call to the callable: the request out, the raw answer back. */
@@ -24,8 +25,15 @@ export interface AssistantRetentionClient {
   get(): Promise<RetentionState>;
   /** Gives the account's answer to the current disclosure. A no deletes what was kept. */
   set(retain: boolean): Promise<RetentionState>;
-  /** Tells a kept turn what became of its proposal. Never rejects. */
-  outcome(turnId: string, outcome: ProposalOutcome): Promise<void>;
+  /**
+   * Tells a kept turn what became of its proposal, and for a rejected one
+   * why (GRV-98). Never rejects.
+   */
+  outcome(
+    turnId: string,
+    outcome: ProposalOutcome,
+    issues?: readonly TranscriptIssue[],
+  ): Promise<void>;
 }
 
 const stateSchema = z.looseObject({
@@ -52,9 +60,14 @@ export function createRetentionClient(call: RetentionCall): AssistantRetentionCl
         }),
       );
     },
-    async outcome(turnId, outcome) {
+    async outcome(turnId, outcome, issues) {
       try {
-        await call({ op: "outcome", turnId, outcome });
+        await call({
+          op: "outcome",
+          turnId,
+          outcome,
+          ...(outcome === "rejected" && issues ? { issues: [...issues] } : {}),
+        });
       } catch {
         // A kept turn missing an outcome is the cost of a dropped call; the
         // producer's action itself is already done.

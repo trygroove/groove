@@ -76,6 +76,27 @@ gateway, or the next `main` deploy fails:
 To check it is live: Cloud Functions in the Google Cloud console lists
 `assistantTurn` in `us-east1`, with `ANTHROPIC_API_KEY` under its secrets.
 
+## Why a proposal was rejected
+
+A proposal the browser cannot apply logs `assistant_proposal_rejected` (its
+kind, capability and issue codes, nothing else), so the rejection rate sits
+beside the other proposal rates in analytics. A kept turn also records the
+`rejected` outcome with each issue's code, the tool call it blames, and the
+validator's own path and message (GRV-98).
+
+To see one, sign in to `/admin` with the `admin` claim: **Assistant
+transcripts** lists the newest kept turns (filter by account, project, outcome
+and internal traffic) through the `assistantTranscriptsAdmin` callable, and
+**Open** shows the message, the reply, every tool call with its input, and the
+outcomes with their issues. No client reads the collection directly, admins
+included.
+
+To make a failure a regression case, **Download eval case** on the opened turn
+and run `bun run eval:assistant -- --from-transcript <file>`. A transcript
+does not keep the song, so the file names an eval fixture to run the message
+against (`house-loop` unless edited to `kit-sketch` or `arrangement`). The file
+carries the producer's words: keep it off the repository.
+
 ## Rotating the key
 
 ```bash

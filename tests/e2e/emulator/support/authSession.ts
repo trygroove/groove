@@ -76,6 +76,12 @@ export interface SeedRegisteredSessionOptions {
    * about onboarding, passes `false` for an account with no profile at all.
    */
   onboarded?: boolean;
+  /**
+   * Gives the account the `admin` claim (#854), for a spec about the admin
+   * page (GRV-98). The claim is set before the session is installed, so the
+   * page's ID token carries it from the first load.
+   */
+  admin?: boolean;
 }
 
 /**
@@ -93,12 +99,41 @@ export async function seedRegisteredSession(
   const displayName = options.displayName ?? "Flow Producer";
 
   await allowlist(email);
-  const record = await signInInThisProcess(email, displayName);
+  let record = await signInInThisProcess(email, displayName);
+  if (options.admin) {
+    await grantAdminClaim(String(record.uid));
+    // Signing in again mints an ID token with the claim in it.
+    record = await signInInThisProcess(email, displayName);
+  }
   if (options.onboarded !== false) await seedSkippedOnboarding(String(record.uid));
 
   await installFirebaseUser(page, API_KEY, record);
 
   return { uid: String(record.uid), email, displayName };
+}
+
+/**
+ * Sets the `admin` claim on an account through the Auth emulator's REST API,
+ * with its `owner` bearer token: the stand-in for `bun run admin:grant`.
+ */
+async function grantAdminClaim(uid: string): Promise<void> {
+  const response = await fetch(
+    `http://${authEmulatorHost}/identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accounts:update`,
+    {
+      method: "POST",
+      headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        localId: uid,
+        customAttributes: JSON.stringify({ admin: true }),
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `The Auth emulator refused to make an account an admin (${response.status}): ` +
+        `${await response.text()}`,
+    );
+  }
 }
 
 /**

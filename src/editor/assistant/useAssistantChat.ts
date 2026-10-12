@@ -179,9 +179,9 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         analytics: options.analytics,
         // The conversation is made just below; Refresh is only ever pressed later.
         refresh: (entryId) => conversation.refresh(entryId),
-        onOutcome: (entryId, outcome) => {
+        onOutcome: (entryId, outcome, issues) => {
           const turnId = turnOfEntry.get(entryId);
-          if (turnId) retention?.reportOutcome(turnId, outcome);
+          if (turnId) retention?.reportOutcome(turnId, outcome, issues);
         },
       })
     : null;

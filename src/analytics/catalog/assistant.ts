@@ -103,6 +103,38 @@ export const ASSISTANT_RECOMMENDATION_REFUSALS = [
   "unknown_sound",
 ] as const;
 
+/**
+ * Why a proposal was refused, as `assistant_proposal_rejected`'s
+ * `issue_code` (GRV-98). Pinned against `PROPOSAL_ISSUE_CODES` in
+ * `src/assistant/proposalIssues.ts` by `catalog.test.ts`, so a new way to
+ * refuse a proposal needs a decision here.
+ */
+export const ASSISTANT_PROPOSAL_ISSUE_CODES = [
+  "malformed",
+  "too_many_commands",
+  "stale_revision",
+  "unknown_tool",
+  "invalid_payload",
+  "unauthorized",
+  "toolset_mismatch",
+  "out_of_range",
+  "rejected",
+  "invalid_project",
+] as const;
+
+/**
+ * What a refused proposal was trying to change: a capability as the other
+ * proposal events carry it, or `unknown` when none of its calls named a tool
+ * the assistant has with a payload it could read.
+ */
+export const ASSISTANT_REJECTED_CAPABILITIES = [
+  ...ASSISTANT_PROPOSAL_CAPABILITIES,
+  "unknown",
+] as const;
+
+/** The most issues `assistant_proposal_rejected` counts (`MAX_TRANSCRIPT_ISSUES`). */
+const MAX_PROPOSAL_ISSUES = 20;
+
 /** The most sounds one recommendation suggests (`ASSISTANT_LIBRARY_LIMITS`). */
 const MAX_RECOMMENDED_SOUNDS = 3;
 
@@ -178,6 +210,27 @@ export const ASSISTANT_EVENTS = {
       capability: enumParam(ASSISTANT_PROPOSAL_CAPABILITIES),
       command_count_bucket: bucketParam("command_count"),
       seconds_to_undo_bucket: bucketParam("elapsed_seconds"),
+    },
+  },
+
+  /**
+   * A proposal the assistant made did not reach the producer as something to
+   * apply (GRV-98): once per proposal, when its card shows it. `kind` is
+   * `stale` when the song had moved on since the request, otherwise
+   * `invalid`. `issue_code` is the first issue's code (the one the card
+   * explains), `issue_code_count` how many different codes it had. Codes
+   * only: never a message, a path, a tool's input or an ID; a kept
+   * transcript holds the rest.
+   */
+  assistant_proposal_rejected: {
+    phase: 3,
+    owners: ["AI-003"],
+    params: {
+      kind: enumParam(["invalid", "stale"]),
+      capability: enumParam(ASSISTANT_REJECTED_CAPABILITIES),
+      command_count_bucket: bucketParam("command_count"),
+      issue_code: enumParam(ASSISTANT_PROPOSAL_ISSUE_CODES),
+      issue_code_count: countParam(MAX_PROPOSAL_ISSUES),
     },
   },
 
