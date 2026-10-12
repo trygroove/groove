@@ -12,7 +12,9 @@ import {
   type AssistantModelId,
 } from "../config";
 import { EVAL_CASES, type EvalCase } from "./cases";
-import { DEFAULT_TURN_TIMEOUT_MS } from "./run";
+import { DEFAULT_TURN_TIMEOUT_MS, type EvalRecord } from "./run";
+import { type Scorecard, type ScorecardSource, scorecardOf } from "./scorecard";
+import type { BaselineLabel } from "./scorecardMarkdown";
 
 export interface EvalCliOptions {
   readonly caseIds: string[];
@@ -20,6 +22,8 @@ export interface EvalCliOptions {
   readonly model: AssistantModelId;
   readonly out: string | null;
   readonly replay: string | null;
+  /** A saved `report.json` or `summary.json` to print the scorecard against. */
+  readonly baseline: string | null;
   /** A kept turn the admin viewer downloaded, run as the one case (GRV-98). */
   readonly fromTranscript: string | null;
   readonly concurrency: number;
@@ -40,7 +44,7 @@ export class EvalUsageError extends Error {
 }
 
 export const EVAL_USAGE =
-  "Usage: bun run eval:assistant -- [case ...] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--concurrency N] [--timeout SECONDS]";
+  "Usage: bun run eval:assistant -- [case ...] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS]";
 
 const DEFAULT_TURN_TIMEOUT_SECONDS = DEFAULT_TURN_TIMEOUT_MS / 1000;
 
@@ -64,6 +68,7 @@ export function parseEvalArgs(
   let model: string = ASSISTANT_MODEL_ID;
   let out: string | null = null;
   let replay: string | null = null;
+  let baseline: string | null = null;
   let fromTranscript: string | null = null;
   let concurrency = 3;
   let timeoutSeconds = DEFAULT_TURN_TIMEOUT_SECONDS;
@@ -79,6 +84,7 @@ export function parseEvalArgs(
     else if (arg === "--model") model = value();
     else if (arg === "--out") out = value();
     else if (arg === "--replay") replay = value();
+    else if (arg === "--baseline") baseline = value();
     else if (arg === "--from-transcript") fromTranscript = value();
     else if (arg === "--concurrency") concurrency = Number(value());
     else if (arg === "--timeout") timeoutSeconds = Number(value());
@@ -108,6 +114,7 @@ export function parseEvalArgs(
       model: model as AssistantModelId,
       out,
       replay,
+      baseline,
       fromTranscript,
       concurrency,
       turnTimeoutMs: timeoutSeconds * 1000,
@@ -138,4 +145,57 @@ export function requireApiKey(env: Readonly<Record<string, string | undefined>>)
     );
   }
   return apiKey;
+}
+
+/** A baseline read back: who it was, and its scorecard. */
+export interface LoadedBaseline {
+  readonly label: BaselineLabel;
+  readonly scorecard: Scorecard;
+}
+
+/**
+ * The scorecard of a saved report. A full `report.json` is scored afresh from
+ * its records and check tallies, so one saved before the scorecard existed
+ * still compares (its missing numbers as n/a); a `summary.json` (no records,
+ * as `docs/assistant-eval-baseline.json` is) brings its scorecard with it.
+ */
+export function loadBaseline(saved: unknown, path: string): LoadedBaseline {
+  const report = saved as Partial<ScorecardSource> & {
+    generatedAt?: string;
+    promptVersion?: string;
+    scorecard?: Scorecard;
+  };
+  if (
+    typeof report !== "object" ||
+    report === null ||
+    typeof report.model !== "string" ||
+    !report.summary?.checks
+  ) {
+    throw new EvalUsageError(`${path} is not an eval report.json or summary.json`);
+  }
+  const label: BaselineLabel = {
+    path,
+    generatedAt: report.generatedAt ?? "unknown",
+    model: report.model,
+    promptVersion: report.promptVersion ?? "unknown",
+  };
+  if (Array.isArray(report.records)) {
+    return {
+      label,
+      scorecard: scorecardOf({
+        model: report.model,
+        caseIds: report.caseIds ?? [
+          ...new Set((report.records as EvalRecord[]).map((record) => record.caseId)),
+        ],
+        records: report.records,
+        summary: report.summary,
+      }),
+    };
+  }
+  if (!report.scorecard) {
+    throw new EvalUsageError(
+      `${path} has neither records nor a scorecard to compare with`,
+    );
+  }
+  return { label, scorecard: report.scorecard };
 }

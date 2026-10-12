@@ -17,7 +17,12 @@ import {
 import { toolNameFor } from "../tools";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { createHouseLoopProject } from "./fixtures";
-import { formatTally, renderMarkdown, validFailureLine } from "./markdown";
+import {
+  formatTally,
+  renderMarkdown,
+  renderSummaryMarkdown,
+  validFailureLine,
+} from "./markdown";
 import {
   AUTH_ABORT_REASON,
   buildReport,
@@ -25,6 +30,7 @@ import {
   evaluateRecords,
   evaluateTurnSafely,
   runEvals,
+  summaryOf,
   whyNoProposal,
 } from "./run";
 
@@ -300,7 +306,34 @@ describe("runEvals", () => {
       runsPerCase: 1,
     });
     expect(replayed.records[0].checks).toEqual(report.records[0].checks);
+    expect(replayed.scorecard).toEqual(report.scorecard);
+    expect(replayed.scorecard.headline.applies).toEqual({ pass: 1, judged: 1, rate: 1 });
     expect(provider.requests).toHaveLength(1);
+  });
+
+  it("records each turn's token usage and time to first streamed text (GRV-102)", async () => {
+    let clock = 1_000;
+    const now = () => {
+      clock += 10;
+      return clock;
+    };
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("A Compressor on the master.", [compressorCall("a", -18)]),
+    ]);
+    const report = await runEvals({ provider, cases: [glue], runs: 1, now });
+    const [record] = report.records;
+    expect(record.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+    });
+    expect(record.firstTextMs).toBeGreaterThan(0);
+    expect(record.firstTextMs).toBeLessThan(record.durationMs);
+    expect(report.scorecard.secondary.tokens).toMatchObject({ turns: 1, input: 100 });
+    // 100 input at $2/M and 20 output at $10/M on claude-sonnet-5.
+    expect(report.scorecard.secondary.costUsd.total).toBeCloseTo(0.0004, 10);
+    expect(Object.keys(report).slice(-3)).toEqual(["scorecard", "summary", "records"]);
   });
 });
 
@@ -381,7 +414,7 @@ describe("check 1 and new IDs", () => {
       textChars: "Nothing to do.".length,
     });
     expect(renderMarkdown(report)).toContain(
-      `Output tokens 16000; streamed characters: thinking ${"private reasoning".length}, tool input 0, text ${"Nothing to do.".length}`,
+      `Output tokens 16000; input 100, cache read 0; streamed characters: thinking ${"private reasoning".length}, tool input 0, text ${"Nothing to do.".length}`,
     );
   });
 
@@ -441,6 +474,35 @@ describe("renderMarkdown", () => {
     ]);
     const report = await runEvals({ provider, cases: [glue], runs: 1, now: fixedNow });
     expect(renderMarkdown(report)).not.toContain("## Why check 1 failed");
+  });
+
+  it("leads with the scorecard and keeps the summary to numbers (GRV-102)", async () => {
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("A Compressor on the master.", [compressorCall("a", -18)]),
+      replyEvents(["No."]),
+    ]);
+    const report = await runEvals({
+      provider,
+      cases: [glue, crushed],
+      runs: 1,
+      now: fixedNow,
+    });
+    const markdown = renderMarkdown(report);
+    const headline = markdown.indexOf("## Headline");
+    expect(headline).toBeGreaterThan(-1);
+    expect(headline).toBeLessThan(markdown.indexOf("## Pass rate per check"));
+    expect(markdown).toContain("| Applies cleanly (check 1) | 50.0% (1/2) |");
+    expect(markdown).toContain("| Expected outcome (check 8) |");
+    expect(markdown).toContain("## Cost by case");
+    expect(markdown).not.toContain("## Against the baseline");
+
+    const summary = renderSummaryMarkdown(summaryOf(report));
+    expect(summary).toContain("## Headline");
+    expect(summary).toContain("## By case");
+    expect(summary).not.toContain("## Runs");
+    expect(summary).not.toContain("Said:");
+    expect(summary).not.toContain("A Compressor on the master");
+    expect(summaryOf(report)).not.toHaveProperty("records");
   });
 
   it("formats a tally over the proposals a check could judge", () => {

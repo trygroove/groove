@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { buildTestReport, testRecord } from "../../testing/evalRecords";
 import { ASSISTANT_MODEL_ID } from "../config";
 import { EVAL_CASES } from "./cases";
-import { EvalUsageError, parseEvalArgs, requireApiKey, selectEvalCases } from "./cli";
+import {
+  EvalUsageError,
+  loadBaseline,
+  parseEvalArgs,
+  requireApiKey,
+  selectEvalCases,
+} from "./cli";
+import { summaryOf } from "./run";
 
 function options(argv: string[], env: Record<string, string | undefined> = {}) {
   const parsed = parseEvalArgs(argv, env);
@@ -17,6 +25,7 @@ describe("parseEvalArgs", () => {
       model: ASSISTANT_MODEL_ID,
       out: null,
       replay: null,
+      baseline: null,
       fromTranscript: null,
       concurrency: 3,
       turnTimeoutMs: 540_000,
@@ -52,6 +61,8 @@ describe("parseEvalArgs", () => {
         "30",
         "--replay",
         "r.json",
+        "--baseline",
+        "b.json",
       ]),
     ).toMatchObject({
       caseIds: ["process-glue", "sketch-house"],
@@ -60,6 +71,7 @@ describe("parseEvalArgs", () => {
       concurrency: 2,
       turnTimeoutMs: 30_000,
       replay: "r.json",
+      baseline: "b.json",
     });
   });
 
@@ -114,4 +126,36 @@ describe("requireApiKey", () => {
       );
     },
   );
+});
+
+describe("loadBaseline", () => {
+  const report = buildTestReport([
+    testRecord({ caseId: "a", durationMs: 1_000 }),
+    testRecord({ caseId: "a", durationMs: 3_000, valid: "fail" }),
+  ]);
+
+  it("scores a full report.json afresh from its records", () => {
+    const saved = JSON.parse(JSON.stringify(report));
+    delete saved.scorecard;
+    const loaded = loadBaseline(saved, "r.json");
+    expect(loaded.scorecard).toEqual(report.scorecard);
+    expect(loaded.label).toEqual({
+      path: "r.json",
+      generatedAt: report.generatedAt,
+      model: report.model,
+      promptVersion: report.promptVersion,
+    });
+  });
+
+  it("takes a summary.json's scorecard as it is", () => {
+    const saved = JSON.parse(JSON.stringify(summaryOf(report)));
+    expect(loadBaseline(saved, "s.json").scorecard).toEqual(report.scorecard);
+  });
+
+  it("refuses a file that is not a report", () => {
+    expect(() => loadBaseline({ hello: 1 }, "x.json")).toThrow(EvalUsageError);
+    expect(() => loadBaseline({ model: "m", summary: { checks: {} } }, "y.json")).toThrow(
+      /neither records nor a scorecard/,
+    );
+  });
 });
