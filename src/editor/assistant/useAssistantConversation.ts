@@ -40,7 +40,6 @@ import {
   type AssistantAsk,
   answerIsEmpty,
   answerMessage,
-  askTranscript,
   pickedLabels,
 } from "../../assistant/ask";
 import type {
@@ -48,7 +47,10 @@ import type {
   AssistantStreamEvent,
   AssistantTurnHandle,
 } from "../../assistant/assistantClient";
-import { ASSISTANT_REQUEST_LIMITS } from "../../assistant/config";
+import {
+  historyOf as historyOfEntries,
+  MAX_MESSAGE_CHARS,
+} from "../../assistant/history";
 import type {
   AssistantErrorDetails,
   AssistantLibraryContext,
@@ -267,52 +269,13 @@ export interface AssistantConversation {
   dismissAsk(): void;
 }
 
-/** The most one message may say, as the gateway counts it. */
-export const MAX_MESSAGE_CHARS = ASSISTANT_REQUEST_LIMITS.maxMessageChars;
+// What a turn resends is built in `src/assistant/history.ts`, so that
+// code outside the editor (GRV-108) builds it the same way.
+export { MAX_MESSAGE_CHARS };
 
-/**
- * The conversation so far, as the next turn resends it: every message that
- * got a reply, with that reply. A message whose turn failed is left out,
- * along with whatever its reply wrote before failing, so the roles always
- * alternate and a broken answer is never passed off as the assistant's; the
- * retry resends the message, and its reply is the one that counts.
- */
-export function historyOf(entries: readonly ConversationEntry[]): AssistantMessage[] {
-  const history: AssistantMessage[] = [];
-  let pending: string | null = null;
-  for (const entry of entries) {
-    // A video the reply recommended (GRV-16) is part of what it said, by the
-    // ID the model itself named, so "more like that" has something to go on.
-    const last = history.at(-1);
-    if (entry.kind === "video" && pending === null && last?.role === "assistant") {
-      history[history.length - 1] = {
-        role: "assistant",
-        text: `${last.text}\n\n[I recommended the YouTube video ${entry.video.videoId}.]`.slice(
-          0,
-          MAX_MESSAGE_CHARS,
-        ),
-      };
-      continue;
-    }
-    if (entry.kind === "message") pending = entry.wire ?? entry.text;
-    if (entry.kind !== "reply" || pending === null || entry.failed) continue;
-    // A question the reply asked is part of what it said (GRV-42), so the
-    // model reads its question back beside the answer.
-    const said = [entry.text.trim(), entry.ask ? askTranscript(entry.ask) : ""]
-      .filter((part) => part.length > 0)
-      .join("\n\n");
-    if (said.length === 0) continue;
-    history.push(
-      { role: "user", text: pending.slice(0, MAX_MESSAGE_CHARS) },
-      { role: "assistant", text: said.slice(0, MAX_MESSAGE_CHARS) },
-    );
-    pending = null;
-  }
-  // Room for the new message; whole pairs only, so it still starts with the user.
-  const room = ASSISTANT_REQUEST_LIMITS.maxMessages - 1;
-  const keep = room - (room % 2);
-  return history.length > keep ? history.slice(history.length - keep) : history;
-}
+/** The conversation so far, as the next turn resends it (`historyOf` in `src/assistant/history.ts`). */
+export const historyOf: (entries: readonly ConversationEntry[]) => AssistantMessage[] =
+  historyOfEntries;
 
 export function useAssistantConversation(
   options: UseAssistantConversationOptions,
