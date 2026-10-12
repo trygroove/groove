@@ -227,10 +227,14 @@ describe("projects: the revision check cannot be bypassed", () => {
     await assertSucceeds(batch.commit());
   });
 
-  it("refuses a save another save overtook, before its preconditions are checked", async () => {
-    // What `FirestoreProjectRepository.conflictBehindRefusal` relies on: the
-    // stale commit comes back `permission-denied` rather than as contention
-    // the SDK would retry, and the repository reports it as a conflict.
+  it("refuses a save another save overtook", async () => {
+    // The emulator evaluates the rules before the transaction's read
+    // preconditions, so the stale commit comes back `permission-denied`
+    // rather than as contention the SDK would retry. That is the emulator's
+    // order, not a documented guarantee: production may return `aborted` and
+    // re-run the transaction instead. `FirestoreProjectRepository`'s
+    // `conflictBehindRefusal` reports the refusal as a conflict, and a re-run
+    // finds the conflict on its own read, so the save is a conflict either way.
     await seedProject();
     const mine = firestoreAs(OWNER);
     const theirs = firestoreAs(OWNER);
@@ -293,6 +297,57 @@ describe("projects: the revision check cannot be bypassed", () => {
     );
   });
 
+  it("takes a child rewritten with what it already holds, as a resent batch writes it (#891)", async () => {
+    await seedProject();
+    const db = firestoreAs(OWNER);
+    // `createProject` files a new project's children in a plain batch, which
+    // Firestore resends when the acknowledgement is lost; if the first send
+    // landed, the resend is an update at the current revision.
+    await assertSucceeds(setDoc(doc(db, songPath), child({ tempo: 120 })));
+    await assertSucceeds(setDoc(doc(db, clipPath), child({ id: CLIP })));
+    await assertSucceeds(
+      setDoc(doc(db, chunkPath), child({ trackId: TRACK, placements: [] })),
+    );
+    const resent = writeBatch(db);
+    resent.set(doc(db, songPath), child({ tempo: 120 }));
+    resent.set(doc(db, clipPath), child({ id: CLIP }));
+    await assertSucceeds(resent.commit());
+    // Anything that differs is still a change, and still refused.
+    await assertFails(setDoc(doc(db, songPath), child({ tempo: 121 })));
+  });
+
+  it("files a new project's children twice without moving its revision, as createProject may", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), projectPath), metadata({ revision: 0 }));
+    });
+    const db = firestoreAs(OWNER);
+    for (let send = 0; send < 2; send += 1) {
+      const batch = writeBatch(db);
+      batch.set(doc(db, songPath), child({ revision: 0, tempo: 120 }));
+      batch.set(doc(db, clipPath), child({ id: CLIP, revision: 0 }));
+      batch.set(
+        doc(db, chunkPath),
+        child({ trackId: TRACK, placements: [], revision: 0 }),
+      );
+      await assertSucceeds(batch.commit());
+    }
+  });
+
+  it("refuses filing a new child without moving the revision once the project has been saved", async () => {
+    await seedProject();
+    const newClip = "clp_bbbbbbbbbbbbbbbbbbbbb";
+    for (const uid of [OWNER, COLLABORATOR]) {
+      const db = firestoreAs(uid);
+      await assertFails(
+        setDoc(doc(db, `${projectPath}/clips/${newClip}`), child({ id: newClip })),
+      );
+    }
+    // The owner's delete-then-recreate cannot swap a child either.
+    const owner = firestoreAs(OWNER);
+    await assertSucceeds(deleteDoc(doc(owner, clipPath)));
+    await assertFails(setDoc(doc(owner, clipPath), child({ id: CLIP, notes: [] })));
+  });
+
   it("refuses a collaborator removing a document without moving the revision", async () => {
     await seedProject();
     const db = firestoreAs(COLLABORATOR);
@@ -353,14 +408,27 @@ describe("projects: membership and shape", () => {
         metadata({ revision: 4, collaboratorIds: [] }),
       ),
     );
-    // A collaborator still saves; the owner still shares.
+    // A collaborator still saves, with the members in any order; the owner
+    // still shares.
     await assertSucceeds(
       setDoc(doc(collaborator, projectPath), metadata({ revision: 4, name: "Renamed" })),
+    );
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), projectPath),
+        metadata({ revision: 4, collaboratorIds: [COLLABORATOR, "collaborator-d"] }),
+      );
+    });
+    await assertSucceeds(
+      setDoc(
+        doc(collaborator, projectPath),
+        metadata({ revision: 5, collaboratorIds: ["collaborator-d", COLLABORATOR] }),
+      ),
     );
     await assertSucceeds(
       setDoc(
         doc(firestoreAs(OWNER), projectPath),
-        metadata({ revision: 5, collaboratorIds: [COLLABORATOR, STRANGER] }),
+        metadata({ revision: 6, collaboratorIds: [COLLABORATOR, STRANGER] }),
       ),
     );
   });

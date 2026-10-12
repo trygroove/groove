@@ -55,7 +55,13 @@ service cloud.firestore {
     // existing document also moves the project's revision in the same commit.
     // Creating a child at the project's current revision without moving it is
     // the second step of `createProject`, which files a new project's song and
-    // clips under metadata it has just claimed.
+    // clips under metadata it has just claimed. Every project is created at
+    // revision 0 (`createProject`, `duplicateProject`) and its first save moves
+    // it to 1, so `filedAtCreation` allows that only while the project is still
+    // at 0. Rewriting a child with exactly what it already holds changes
+    // nothing, so it needs no revision move either: Firestore resends a batch
+    // whose acknowledgement was lost, and when the first send landed the
+    // resend arrives as an update (#891).
     function stampedAtProjectRevision(projectId) {
       return request.resource.data.revision
         == getAfter(projectPath(projectId)).data.get('revision', -1);
@@ -64,6 +70,15 @@ service cloud.firestore {
     function movesProjectRevision(projectId) {
       return getAfter(projectPath(projectId)).data.get('revision', -1)
         == get(projectPath(projectId)).data.get('revision', -1) + 1;
+    }
+
+    function filedAtCreation(projectId) {
+      return request.resource.data.revision == 0
+        || movesProjectRevision(projectId);
+    }
+
+    function unchanged() {
+      return request.resource.data == resource.data;
     }
 
     // `packDependencies` is the derived pack dependency list (LIB-05): one
@@ -206,14 +221,16 @@ service cloud.firestore {
       // Ownership and the creation time cannot be reassigned, and every save
       // moves the revision on by exactly one: a write that kept it, or jumped
       // it, would let a stale tab's save land without a conflict. Only the
-      // owner decides who else is a member.
+      // owner decides who else is a member; a collaborator's save may carry
+      // the same members in another order, so they are compared as sets.
       allow update: if isMember(resource.data)
         && request.resource.data.ownerId == resource.data.ownerId
         && request.resource.data.createdAt == resource.data.createdAt
         && validMetadata(request.resource.data)
         && request.resource.data.revision == resource.data.revision + 1
         && (request.auth.uid == resource.data.ownerId
-          || request.resource.data.collaboratorIds == resource.data.collaboratorIds);
+          || request.resource.data.collaboratorIds.toSet()
+            == resource.data.collaboratorIds.toSet());
 
       allow delete: if signedIn() && request.auth.uid == resource.data.ownerId;
 
@@ -222,12 +239,13 @@ service cloud.firestore {
         allow create: if memberOfProject(projectId)
           && songId == 'current'
           && validChild(projectId, request.resource.data)
-          && stampedAtProjectRevision(projectId);
-        allow update: if memberOfProject(projectId)
-          && songId == 'current'
-          && validChild(projectId, request.resource.data)
           && stampedAtProjectRevision(projectId)
-          && movesProjectRevision(projectId);
+          && filedAtCreation(projectId);
+        allow update: if memberOfProject(projectId)
+          && (unchanged() || (songId == 'current'
+            && validChild(projectId, request.resource.data)
+            && stampedAtProjectRevision(projectId)
+            && movesProjectRevision(projectId)));
         allow delete: if memberOfProject(projectId)
           && (ownsProject(projectId) || movesProjectRevision(projectId));
       }
@@ -237,12 +255,13 @@ service cloud.firestore {
         allow create: if memberOfProject(projectId)
           && request.resource.data.id == clipId
           && validChild(projectId, request.resource.data)
-          && stampedAtProjectRevision(projectId);
-        allow update: if memberOfProject(projectId)
-          && request.resource.data.id == clipId
-          && validChild(projectId, request.resource.data)
           && stampedAtProjectRevision(projectId)
-          && movesProjectRevision(projectId);
+          && filedAtCreation(projectId);
+        allow update: if memberOfProject(projectId)
+          && (unchanged() || (request.resource.data.id == clipId
+            && validChild(projectId, request.resource.data)
+            && stampedAtProjectRevision(projectId)
+            && movesProjectRevision(projectId)));
         allow delete: if memberOfProject(projectId)
           && (ownsProject(projectId) || movesProjectRevision(projectId));
       }
@@ -252,12 +271,13 @@ service cloud.firestore {
         allow create: if memberOfProject(projectId)
           && request.resource.data.trackId == trackId
           && validChild(projectId, request.resource.data)
-          && stampedAtProjectRevision(projectId);
-        allow update: if memberOfProject(projectId)
-          && request.resource.data.trackId == trackId
-          && validChild(projectId, request.resource.data)
           && stampedAtProjectRevision(projectId)
-          && movesProjectRevision(projectId);
+          && filedAtCreation(projectId);
+        allow update: if memberOfProject(projectId)
+          && (unchanged() || (request.resource.data.trackId == trackId
+            && validChild(projectId, request.resource.data)
+            && stampedAtProjectRevision(projectId)
+            && movesProjectRevision(projectId)));
         allow delete: if memberOfProject(projectId)
           && (ownsProject(projectId) || movesProjectRevision(projectId));
       }
