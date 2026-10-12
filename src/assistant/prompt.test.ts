@@ -37,6 +37,46 @@ describe("the assistant's system prompt", () => {
     );
   });
 
+  // GRV-101: the prompt names every panel the producer can use, so a new one is added here and there.
+  it("names each of the app's panels in 'What Groove has'", () => {
+    const section =
+      ASSISTANT_SYSTEM_PROMPT.split("## What Groove has")[1]?.split("\n## ")[0];
+    expect(section).toBeDefined();
+    const panels = [
+      "Synth",
+      "Drum machine",
+      "Sampler",
+      "Step editor",
+      "Piano roll",
+      "Generate panel",
+      "Transform panel",
+      "Loop panel",
+      "Library",
+      "My packs",
+      "Mixer",
+      "device chain",
+      "Sends",
+      "Returns",
+      "Master",
+      "level meter",
+      "Sections",
+      "loop brace",
+      "metronome",
+      "Export dialog",
+    ];
+    for (const panel of panels) {
+      expect(section, panel).toContain(panel);
+    }
+    expect(section?.trim().split("\n").length).toBeLessThanOrEqual(25);
+  });
+
+  it("no longer says audio cannot exist", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain(
+      "You cannot add, generate or upload audio",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("Groove has audio (loops and samples)");
+  });
+
   it("lists every device type and every one of its parameters by key", () => {
     for (const device of deviceTypes()) {
       const line = ASSISTANT_SYSTEM_PROMPT.split("\n").find((candidate) =>
