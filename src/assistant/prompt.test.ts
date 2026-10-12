@@ -28,9 +28,9 @@ describe("the assistant's system prompt", () => {
   });
 
   // GRV-99: a request to change a drum part's density can point at the Generate panel.
-  it("tells the assistant the step grid's Generate panel exists", () => {
+  it("tells the assistant where the Generate panel is", () => {
     expect(ASSISTANT_SYSTEM_PROMPT).toContain(
-      "a drum clip's step grid has a Generate panel",
+      "a Generate panel in the row of panels below its step grid, beside Transform",
     );
     expect(ASSISTANT_SYSTEM_PROMPT).toContain(
       "try more patterns for a row in the Generate panel",

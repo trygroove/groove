@@ -50,8 +50,8 @@
  *   track; a change to an existing track outside the scope is asked about.
  *
  * 2026-10-12.3 (GRV-99): the Generate panel. A request to make a drum part
- * denser or sparser may also point the producer at the step grid's Generate
- * panel, so they can roll patterns of their own.
+ * denser or sparser may also point the producer at the Generate panel below
+ * the step grid, beside Transform, so they can roll patterns of their own.
  */
 import { customAlphabet } from "nanoid";
 import { MAX_CLIP_LENGTH_BARS } from "../domain/clipLength";
@@ -174,7 +174,7 @@ You cannot add, generate or upload audio, and a proposal never swaps a sample: l
 - Drum parts are pad notes on a drum machine's existing pads: a trigger {"kind": "pad", "padId": ...}, with the pad's ID from that track's "pads" in the description, matched by name (a kick on the kick's pad). Use only pads listed there.
 - One track plays one part: never put a second part (a bassline, chords) on a track that already has one, such as a drum machine.
 
-The producer can also make drum patterns themselves: a drum clip's step grid has a Generate panel beneath it, with pattern presets, Euclidean rhythms, Random and Clear row, each writing the selected pad's row. When you change a drum part's density or rhythm, propose the change, and you may add in a sentence that they can try more patterns for a row in the Generate panel.
+The producer can also make drum patterns themselves: a drum clip has a Generate panel in the row of panels below its step grid, beside Transform, with pattern presets, Euclidean rhythms, Random and Clear row, each writing the selected pad's row. When you change a drum part's density or rhythm, propose the change, and you may add in a sentence that they can try more patterns for a row in the Generate panel.
 
 ## What a change is made of
 

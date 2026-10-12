@@ -12,7 +12,7 @@
  *   track drops out somewhere, and at least three different sets of tracks
  *   play over the song.
  * - {@link checkPadSound}: one new synth track with a slow attack and a long
- *   release, playing a sparse 4-bar clip.
+ *   release, playing a sparse 4-bar clip placed on it.
  * - {@link checkDissonant}: a chord on the new synth track holds a minor 2nd,
  *   a major 7th or a tritone.
  */
@@ -71,7 +71,8 @@ export function checkOutcome(expect: EvalExpectation, turn: OutcomeTurn): CheckR
 // Hat density
 // ---------------------------------------------------------------------------
 
-const HAT = /hat/i;
+/** "hat" at the start of a word: "Closed Hat", "Hats", not "Chat". */
+const HAT = /\bhat/i;
 
 /** The IDs of every drum pad in `project` whose name says it is a hat. */
 function hatPadIds(project: Project): Set<string> {
@@ -205,7 +206,8 @@ function activeTracksByBar(project: Project, bars: number): Set<string>[] {
 /**
  * The loop became a track: it runs between `minBars` and `maxBars`, every
  * track is silent for at least one bar somewhere in it, and at least
- * `minCombinations` different sets of tracks play over its bars.
+ * `minCombinations` different sets of tracks play over its bars. A bar where
+ * nothing plays is not a set of tracks, so a silent gap does not count.
  */
 export function checkDevelopsTrack(
   after: Project,
@@ -225,7 +227,11 @@ export function checkDevelopsTrack(
       `never drops out: ${always.map((track: Track) => track.name).join(", ")}`,
     );
   }
-  const combinations = new Set(active.map((playing) => [...playing].sort().join(",")));
+  const combinations = new Set(
+    active
+      .filter((playing) => playing.size > 0)
+      .map((playing) => [...playing].sort().join(",")),
+  );
   if (combinations.size < limits.minCombinations) {
     problems.push(
       `${combinations.size} different sets of tracks play, needs ${limits.minCombinations}`,
@@ -275,7 +281,8 @@ function noteClipsOn(project: Project, trackId: string) {
 /**
  * The proposal adds exactly one track, a synth, whose amp envelope has an
  * attack and a release at least as long as the limits, with a clip of
- * `clipBars` bars whose notes start at no more than `maxNoteStarts` times.
+ * `clipBars` bars whose notes start at no more than `maxNoteStarts` times,
+ * placed on that track: a clip nothing places is silent.
  */
 export function checkPadSound(
   before: Project,
@@ -298,21 +305,29 @@ export function checkPadSound(
   if (release < limits.minReleaseSeconds) {
     problems.push(`release ${release} s, needs ${limits.minReleaseSeconds} s`);
   }
+  const placed = new Set<string>(
+    after.song.placements
+      .filter((placement) => placement.trackId === track.id)
+      .map((placement) => placement.clipId),
+  );
   const clips = noteClipsOn(after, track.id);
   const fitting = clips.filter(
     ({ clip }) => clip.lengthTicks === limits.clipBars * TICKS_PER_BAR,
   );
+  const placedFitting = fitting.filter(({ clip }) => placed.has(clip.id));
   if (fitting.length === 0) {
     problems.push(`no ${limits.clipBars}-bar clip`);
   } else {
-    const sparse = fitting.find(
+    const sparse = placedFitting.find(
       ({ events }) =>
         events.length > 0 &&
         new Set(events.map((event) => event.startTicks)).size <= limits.maxNoteStarts,
     );
     if (!sparse) {
       problems.push(
-        `no ${limits.clipBars}-bar clip with 1 to ${limits.maxNoteStarts} note starts`,
+        placedFitting.length === 0
+          ? `its ${limits.clipBars}-bar clip is not placed on it`
+          : `no placed ${limits.clipBars}-bar clip with 1 to ${limits.maxNoteStarts} note starts`,
       );
     }
   }
@@ -323,7 +338,11 @@ export function checkPadSound(
       );
 }
 
-/** Semitones apart, folded into an octave: minor 2nd, tritone, major 7th. */
+/**
+ * Semitones apart, folded into an octave: minor 2nd, tritone, major 7th.
+ * Compound intervals count as the interval they fold to, so a minor 9th is a
+ * minor 2nd and a major 14th a major 7th: they clash the same way.
+ */
 const DISSONANT_INTERVALS: ReadonlyMap<number, string> = new Map([
   [1, "minor 2nd"],
   [6, "tritone"],
@@ -362,7 +381,8 @@ function dissonance(pitches: readonly number[]): string | null {
 
 /**
  * At least one chord on a new synth track holds a minor 2nd, a major 7th or a
- * tritone (in any octave): notes sounding together when one of them starts.
+ * tritone, compound intervals included (a minor 9th counts as a minor 2nd):
+ * notes sounding together when one of them starts.
  */
 export function checkDissonant(before: Project, after: Project): CheckResult {
   const tracks = newSynthTracks(before, after);

@@ -127,6 +127,36 @@ describe("check 9: denser hats, nothing else", () => {
   it("fails when the clip is gone", () => {
     expect(checkHatDensity(before, { ...before, clips: [] }).status).toBe("fail");
   });
+
+  it('does not take a pad whose name only contains "hat", like Chat, for a hat', () => {
+    const instrument = drums.instrument;
+    if (instrument?.kind !== "drumMachine") throw new Error("unexpected fixture");
+    const renamed: Project = {
+      ...before,
+      song: {
+        ...before.song,
+        tracks: [
+          {
+            ...drums,
+            instrument: {
+              ...instrument,
+              pads: instrument.pads.map((candidate) =>
+                candidate.id === kick ? { ...candidate, name: "Chat" } : candidate,
+              ),
+            },
+          },
+          ...before.song.tracks.slice(1),
+        ],
+      },
+    };
+    const extra = hatsAt(closedHat, [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23]);
+    const result = checkHatDensity(renamed, {
+      ...withEvents([...events, ...extra, ...hatsAt(kick, [2])]),
+      song: renamed.song,
+    });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("other than the hats");
+  });
 });
 
 describe("check 10: points to the Generate panel", () => {
@@ -203,6 +233,20 @@ describe("check 11: develops the loop into a track", () => {
     expect(result.detail).toContain("2 different sets of tracks play, needs 3");
   });
 
+  it("does not count bars where nothing plays as a set of tracks", () => {
+    // Both tracks, then silence, then drums only: two sets of tracks, not three.
+    const after = arranged(before, {
+      Drums: [
+        [0, 64],
+        [96, 160],
+      ],
+      Synth: [[0, 64]],
+    });
+    const result = checkDevelopsTrack(after);
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("2 different sets of tracks play, needs 3");
+  });
+
   it("fails one over 300 bars", () => {
     const after = arranged(before, {
       Drums: [
@@ -219,6 +263,8 @@ interface PadOptions {
   readonly attack?: number;
   readonly release?: number;
   readonly bars?: number;
+  /** Whether the clip is placed on the new track; it is unless this is false. */
+  readonly placed?: boolean;
   /** Each chord: its pitches, all starting at the given bar. */
   readonly chords?: readonly (readonly [bar: number, pitches: readonly number[]])[];
 }
@@ -253,10 +299,23 @@ function withPad(before: Project, options: PadOptions = {}): Project {
       ),
     ),
   });
+  const placements =
+    options.placed === false
+      ? before.song.placements
+      : [
+          ...before.song.placements,
+          createPlacement(ctx, {
+            clipId: clip.id,
+            trackId: track.id,
+            startTicks: 0,
+            durationTicks: bars * TICKS_PER_BAR,
+            looped: true,
+          }),
+        ];
   return {
     ...before,
     clips: [...before.clips, clip],
-    song: { ...before.song, tracks: [...before.song.tracks, track] },
+    song: { ...before.song, tracks: [...before.song.tracks, track], placements },
   };
 }
 
@@ -285,6 +344,15 @@ describe("check 12: a sparse, slow pad", () => {
       checkPadSound(before, withPad(before, { attack: 1, release: 2, chords: busy }))
         .detail,
     ).toContain("1 to 8 note starts");
+  });
+
+  it("fails a sparse 4-bar clip that is never placed, so the pad is silent", () => {
+    const result = checkPadSound(
+      before,
+      withPad(before, { attack: 1, release: 2, placed: false }),
+    );
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("its 4-bar clip is not placed on it");
   });
 
   it("fails no new track", () => {
