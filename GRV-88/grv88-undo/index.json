@@ -1,0 +1,10 @@
+{
+  "id": "grv88-undo",
+  "title": "An undo that no longer applies",
+  "steps": [
+    {
+      "file": "01-undo-in-tab-a-after-tab-b-deleted-the-tr.png",
+      "caption": "Undo in tab A after tab B deleted the track it muted"
+    }
+  ]
+}

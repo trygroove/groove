@@ -1,0 +1,10 @@
+{
+  "id": "grv88-drop",
+  "title": "An unsaved edit the other tab made impossible",
+  "steps": [
+    {
+      "file": "01-tab-a-dropped-its-mute-of-the-track-tab-.png",
+      "caption": "Tab A dropped its mute of the track tab B deleted, and is saved"
+    }
+  ]
+}
