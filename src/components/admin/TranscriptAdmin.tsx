@@ -58,7 +58,9 @@ function downloadFile(fileName: string, contents: string): void {
   link.href = url;
   link.download = fileName;
   link.click();
-  URL.revokeObjectURL(url);
+  // Revoking in the same task can cancel the download (Firefox does), so the
+  // URL is released once the click has been handled.
+  setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
 /**
@@ -114,6 +116,7 @@ export default function TranscriptAdmin(props: TranscriptAdminProps): JSX.Elemen
       if (!turn) setOpenError("That turn is gone: it expired or was deleted.");
     } catch (error) {
       console.error("Error opening an assistant transcript:", error);
+      setOpen(null);
       setOpenError("Couldn't open that turn. Try again.");
     }
   };
@@ -214,7 +217,8 @@ export default function TranscriptAdmin(props: TranscriptAdminProps): JSX.Elemen
                 {(turn) => (
                   <tr
                     class={{
-                      "transcripts-row-open": open()?.turnId === turn().turnId,
+                      "transcripts-row-open":
+                        open()?.uid === turn().uid && open()?.turnId === turn().turnId,
                     }}
                   >
                     <td>{formatTime(turn().createdAt)}</td>

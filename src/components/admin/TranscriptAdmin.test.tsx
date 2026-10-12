@@ -136,6 +136,38 @@ describe("TranscriptAdmin (GRV-98)", () => {
     });
   });
 
+  it("marks only the opened account's row, and clears the opened turn when the next one fails to open", async () => {
+    const store = createInMemoryTranscriptStore();
+    await store.writeIfPermitted(record("turn-0001", "Mine"), () => true);
+    await store.writeIfPermitted(
+      record("turn-0001", "Theirs", { uid: "other-uid", at: AT + 60_000 }),
+      () => true,
+    );
+    let failGets = false;
+    const client = createTranscriptAdminClient((request) =>
+      failGets && (request as { op: string }).op === "get"
+        ? Promise.reject(new Error("unavailable"))
+        : handleTranscriptAdminRequest(store, { admin: true }, request),
+    );
+    render(() => <TranscriptAdmin client={async () => client} />);
+    await screen.findByRole("table", { name: "Turns" });
+    const [theirs, mine] = rows();
+
+    fireEvent.click(mine?.querySelector("button") as HTMLButtonElement);
+    await screen.findByRole("article", { name: "Turn" });
+    expect(mine).toHaveClass("transcripts-row-open");
+    expect(theirs).not.toHaveClass("transcripts-row-open");
+
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    failGets = true;
+    fireEvent.click(theirs?.querySelector("button") as HTMLButtonElement);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Couldn't open that turn.",
+    );
+    expect(screen.queryByRole("article", { name: "Turn" })).not.toBeInTheDocument();
+    expect(mine).not.toHaveClass("transcripts-row-open");
+  });
+
   it("says so when nothing matches, and when the transcripts cannot load", async () => {
     const store = createInMemoryTranscriptStore();
     const empty = createTranscriptAdminClient((request) =>
