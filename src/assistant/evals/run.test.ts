@@ -14,7 +14,7 @@ import {
   createIdStem,
   newId,
 } from "../prompt";
-import { toolNameFor } from "../tools";
+import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { createHouseLoopProject } from "./fixtures";
 import {
@@ -28,6 +28,7 @@ import {
   buildReport,
   evalExitCode,
   evaluateRecords,
+  evaluateTurn,
   evaluateTurnSafely,
   runEvals,
   summaryOf,
@@ -334,6 +335,40 @@ describe("runEvals", () => {
     // 100 input at $2/M and 20 output at $10/M on claude-sonnet-5.
     expect(report.scorecard.secondary.costUsd.total).toBeCloseTo(0.0004, 10);
     expect(Object.keys(report).slice(-3)).toEqual(["scorecard", "summary", "records"]);
+  });
+});
+
+describe("evaluateTurn for GRV-107's cases", () => {
+  const find = (id: string) => EVAL_CASES.find((entry) => entry.id === id) as EvalCase;
+  const base = { durationMs: 1, error: null, stopReason: null, text: "" };
+
+  it("hands a db case's commands and expected value to its check", () => {
+    const evalCase = find("db-nudge-down");
+    const project = evalCase.fixture();
+    const track = project.song.tracks[0];
+    const expected = evalCase.expectedValue;
+    if (!expected) throw new Error("db-nudge-down has no expected value");
+    const command = setParameter(
+      { scope: "track", trackId: track.id, parameterId: "track.volume" },
+      expected.value,
+    );
+    const proposal = {
+      baseRevision: project.metadata.revision,
+      toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+      calls: [{ name: toolNameFor(command.type), input: command.payload }],
+    };
+    const record = evaluateTurn(evalCase, 1, { ...base, proposal } as never);
+    expect(record.checks.endsAt?.status).toBe("pass");
+    expect(record.checks.endsAt?.detail).toContain("BD volume");
+  });
+
+  it("passes an either case with a scope-widening question and no proposal", () => {
+    const evalCase = find("sketch-track-scope");
+    const ask = { question: "Want me to widen the scope to the whole song?" };
+    const record = evaluateTurn(evalCase, 1, { ...base, proposal: null, ask } as never);
+    expect(record.checks).toEqual({
+      outcome: expect.objectContaining({ status: "pass" }),
+    });
   });
 });
 

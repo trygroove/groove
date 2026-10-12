@@ -131,15 +131,20 @@ export function checkNoNoOps(
     const step = executeCommand(working, command, { commitRevision: false });
     if (!step.ok)
       return fail(`${command.type} did not apply: ${step.issues[0]?.message}`);
-    const same = controls.every((address, index) => {
-      const was = readingsBefore[index]?.value;
-      const now = readControl(step.project, address)?.value;
-      return !STRUCTURAL_PARTS.has(address.param) && was != null && was === now;
-    });
+    const unchanged = content(step.project) === content(working);
+    // Equal readings are a no-op only when nothing else moved: a drum machine
+    // reads back as "Drum machine" whatever its pads are.
+    const same =
+      unchanged &&
+      controls.every((address, index) => {
+        const was = readingsBefore[index]?.value;
+        const now = readControl(step.project, address)?.value;
+        return !STRUCTURAL_PARTS.has(address.param) && was != null && was === now;
+      });
     const [first] = readingsBefore;
     if (controls.length > 0 && same) {
       noOps.push(`${first?.label ?? command.type}: ${first?.value} → ${first?.value}`);
-    } else if (content(step.project) === content(working)) {
+    } else if (unchanged) {
       noOps.push(`${command.type} changes nothing`);
     }
     working = step.project;

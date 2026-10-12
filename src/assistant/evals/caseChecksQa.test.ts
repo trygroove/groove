@@ -10,6 +10,7 @@ import type { RawCommandInput } from "../../commands/types";
 import type { Project } from "../../domain/entities";
 import {
   createDrumMachineInstrument,
+  createDrumPad,
   createFactoryContext,
   createNoteClip,
   createNoteEvent,
@@ -179,6 +180,16 @@ describe("check 17: no command sets a value to what it already is", () => {
     const result = checkNoNoOps(before, [changeInstrument(bd.id, same)]);
     expect(result.status).toBe("fail");
     expect(result.detail).toContain("Drum machine → Drum machine");
+  });
+
+  it("passes the same kind of instrument with different pads", () => {
+    if (bd.instrument?.kind !== "drumMachine") throw new Error("unexpected fixture");
+    const [pad] = bd.instrument.pads;
+    const extra = createDrumPad(context, { name: "Two", assetId: pad.assetId });
+    const wider = createDrumMachineInstrument([pad, extra]);
+    const result = checkNoNoOps(before, [changeInstrument(bd.id, wider)]);
+    expect(result.detail).not.toContain("did not apply");
+    expect(result.status).toBe("pass");
   });
 
   it("passes an instrument replaced by another kind", () => {
