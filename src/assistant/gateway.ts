@@ -38,7 +38,10 @@
  * a malformed reply. A turn that carries the published library is offered
  * `recommend_sounds` as well (GRV-23); its calls come back among the
  * proposal's, and the browser takes them out and checks their IDs against the
- * library it sent.
+ * library it sent. A turn whose gateway can check a video with YouTube is
+ * offered `recommend_video` too (GRV-16, ADR 0009): its calls are taken out
+ * of the proposal, checked here, and returned as the turn's `videos`, with
+ * every one YouTube does not vouch for dropped.
  */
 import { type AssistantAsk, askProducerTool, isAskCall, parseAskCall } from "./ask";
 import {
@@ -85,6 +88,13 @@ import {
   EXPLAIN_TOOL_NAME,
 } from "./tools";
 import type { TranscriptStore } from "./transcripts";
+import {
+  type CheckedVideos,
+  checkVideoCalls,
+  isVideoCall,
+  type VideoVerifier,
+  videoRecommendationTool,
+} from "./video";
 
 /** Who is calling, as the function's auth context reports it. */
 export interface AssistantCaller {
@@ -124,6 +134,12 @@ export interface AssistantGatewayDeps {
   readonly transcripts?: TranscriptStore;
   /** Hears how keeping each completed turn went: a code, never the content. */
   readonly onTranscript?: (write: TranscriptWrite) => void;
+  /**
+   * Checks a video the model recommends is real and embeddable (GRV-16, ADR
+   * 0009 decision 5), from the server. Without one the model is not offered
+   * `recommend_video`, and any call it makes anyway is dropped.
+   */
+  readonly verifyVideo?: VideoVerifier;
 }
 
 export interface AssistantTurnOptions {
@@ -211,12 +227,15 @@ async function prepare(
   uid: string,
   turn: AssistantTurnRequest,
   idStem: string,
+  videos: boolean,
 ): Promise<PreparedTurn> {
   const system = buildSystemBlocks(turn.context, turn.library, idStem);
-  // A turn that carries the library may also recommend from it (GRV-23).
+  // A turn that carries the library may also recommend from it (GRV-23), and
+  // one whose videos can be checked may recommend a tutorial (GRV-16).
   const tools = [
     ...providerTools([...assistantTools(), EXPLAIN_TOOL, askProducerTool()]),
     ...(turn.library ? [recommendationTool()] : []),
+    ...(videos ? [videoRecommendationTool()] : []),
   ];
   // The tool definitions take room in the window just as the prompt does.
   const systemTokens =
@@ -415,7 +434,7 @@ function proposalOf(
   turn: AssistantTurnRequest,
   allCalls: readonly AssistantToolCall[],
 ): AssistantProposal | null {
-  const calls = allCalls.filter((call) => !isAskCall(call));
+  const calls = allCalls.filter((call) => !isAskCall(call) && !isVideoCall(call));
   if (calls.every((call) => call.name === EXPLAIN_TOOL_NAME)) return null;
   return {
     baseRevision: turn.projectRevision,
@@ -521,6 +540,7 @@ export async function runAssistantTurn(
   let attempts = 0;
   let usage = NO_USAGE;
   let history: BoundedHistory = { messages: [], dropped: 0 };
+  let checked: CheckedVideos = { videos: [], dropped: 0 };
 
   const finish = (
     outcome: AssistantTurnLog["outcome"],
@@ -538,6 +558,8 @@ export async function runAssistantTurn(
         usage,
         historySent: history.messages.length,
         historyDropped: history.dropped,
+        videosShown: checked.videos.length,
+        videosDropped: checked.dropped,
       }),
     );
 
@@ -551,7 +573,13 @@ export async function runAssistantTurn(
     if (!(await deps.guards.isEnabled())) {
       throw new AssistantGatewayError("assistant_disabled", DISABLED_MESSAGE);
     }
-    const prepared = await prepare(model, uid, turn, (deps.idStem ?? createIdStem)());
+    const prepared = await prepare(
+      model,
+      uid,
+      turn,
+      (deps.idStem ?? createIdStem)(),
+      deps.verifyVideo !== undefined,
+    );
     history = prepared.history;
 
     while (true) {
@@ -588,6 +616,19 @@ export async function runAssistantTurn(
           throw new AssistantGatewayError("reply_too_long", TOO_LONG_MESSAGE);
         }
         const ask = askOf(outcome.toolCalls);
+        // Every video YouTube does not vouch for is dropped, never shown
+        // unchecked (ADR 0009 decision 5).
+        checked = await checkVideoCalls(
+          outcome.toolCalls,
+          deps.verifyVideo,
+          options.signal,
+        );
+        if (options.signal.aborted) {
+          throw new AssistantGatewayError(
+            "cancelled",
+            "The assistant request was cancelled.",
+          );
+        }
         finish("completed", outcome.stopReason);
         const proposal = proposalOf(turn, outcome.toolCalls);
         await keepTranscript(deps, uid, caller, turn, startedAt, {
@@ -601,6 +642,7 @@ export async function runAssistantTurn(
           stopReason: outcome.stopReason,
           proposal,
           ask,
+          videos: checked.videos,
           model: model.id,
           promptVersion: ASSISTANT_PROMPT_VERSION,
           requestsRemaining,

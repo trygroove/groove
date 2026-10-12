@@ -129,6 +129,8 @@ export interface AssistantChat {
   readonly ask: AskDraft;
   /** The account's answer about keeping conversations, when it is asked for. */
   readonly retention: AssistantRetention | null;
+  /** What a card logs its own actions through (a video's Play, GRV-16). */
+  readonly analytics?: () => Analytics;
 }
 
 export type { AskDraft } from "./useAskDraft";
@@ -276,5 +278,6 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     recommendations,
     ask,
     retention,
+    analytics: options.analytics,
   };
 }

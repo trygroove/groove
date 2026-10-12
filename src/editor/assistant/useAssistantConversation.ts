@@ -22,7 +22,8 @@
  * Analytics: `assistant_message_sent` with the scope,
  * `assistant_suggestion_clicked` with the suggestion's ID, and
  * `assistant_ask_shown`/`assistant_ask_answered` with how many options a
- * question had and how it was answered. Never the text of a message, a
+ * question had and how it was answered, and `assistant_video_shown` once per
+ * recommended video (GRV-16). Never the text of a message, a
  * reply, a question or an answer, and nothing about what is in scope.
  */
 import {
@@ -57,6 +58,7 @@ import type {
   AssistantTurnRequest,
 } from "../../assistant/protocol";
 import { splitRecommendations } from "../../assistant/recommendation";
+import type { AssistantVideo } from "../../assistant/video";
 import type { Project } from "../../domain/entities";
 import type { SuggestionId } from "../../projection/projectAnalysisProjection";
 import { type AssistantScope, scopedContext } from "./assistantScope";
@@ -135,6 +137,15 @@ export type ConversationEntry =
       readonly call: AssistantToolCall;
       readonly library: AssistantLibraryContext | null;
       readonly origin: TurnOrigin;
+    }
+  /**
+   * A tutorial video the reply recommends (GRV-16), checked with YouTube by
+   * the gateway. A still card until the producer presses play.
+   */
+  | {
+      readonly kind: "video";
+      readonly id: string;
+      readonly video: AssistantVideo;
     }
   /** The turn failed. The song is untouched. */
   | {
@@ -270,6 +281,19 @@ export function historyOf(entries: readonly ConversationEntry[]): AssistantMessa
   const history: AssistantMessage[] = [];
   let pending: string | null = null;
   for (const entry of entries) {
+    // A video the reply recommended (GRV-16) is part of what it said, by the
+    // ID the model itself named, so "more like that" has something to go on.
+    const last = history.at(-1);
+    if (entry.kind === "video" && pending === null && last?.role === "assistant") {
+      history[history.length - 1] = {
+        role: "assistant",
+        text: `${last.text}\n\n[I recommended the YouTube video ${entry.video.videoId}.]`.slice(
+          0,
+          MAX_MESSAGE_CHARS,
+        ),
+      };
+      continue;
+    }
     if (entry.kind === "message") pending = entry.wire ?? entry.text;
     if (entry.kind !== "reply" || pending === null || entry.failed) continue;
     // A question the reply asked is part of what it said (GRV-42), so the
@@ -397,6 +421,12 @@ export function useAssistantConversation(
           }
           return;
         }
+        case "videos":
+          for (const video of event.videos) {
+            append({ kind: "video", id: id(), video });
+            options.analytics().log("assistant_video_shown", {});
+          }
+          return;
         case "ask":
           update(replyId, (entry) =>
             entry.kind === "reply" ? { ...entry, ask: event.ask } : entry,

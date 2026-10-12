@@ -12,7 +12,10 @@ import {
   createEmulatorAssistantProvider,
   DUSTIER_ROLE,
   EMULATOR_ASK,
+  EMULATOR_MISSING_VIDEO_ID,
   EMULATOR_REPLY_CHUNKS,
+  EMULATOR_VIDEO,
+  emulatorVideoVerifier,
   LOOSEN_EXPLANATION,
   LOOSEN_SWING,
   LOOSEN_VOLUME_DROP_DB,
@@ -252,6 +255,22 @@ describe("the emulator's assistant provider", () => {
     expect(reply.stopReason).toBe("end_turn");
     expect(reply.proposal).toBeNull();
     expect(reply.text).toMatch(/can't find/);
+  });
+
+  it("answers [video] with the one video its verifier vouches for (GRV-16)", async () => {
+    const reply = await turn(
+      { ...gateway(), verifyVideo: emulatorVideoVerifier },
+      "How do I get that acid squelch? [video]",
+    ).result;
+    expect(reply.text.length).toBeGreaterThan(0);
+    expect(reply.proposal).toBeNull();
+    expect(reply.videos).toEqual([EMULATOR_VIDEO]);
+    expect(
+      await emulatorVideoVerifier(
+        EMULATOR_MISSING_VIDEO_ID,
+        new AbortController().signal,
+      ),
+    ).toBeNull();
   });
 
   it("is only chosen in the emulator, and only with no key", () => {

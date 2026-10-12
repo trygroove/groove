@@ -1,4 +1,4 @@
-import type { JSX } from "@solidjs/web";
+import { Errored, type JSX } from "@solidjs/web";
 import { createEffect, For, Match, onSettled, Show, Switch } from "solid-js";
 import { SendIcon, SparkIcon, StopIcon } from "../../components/icons";
 import AssistantAskCard from "./AssistantAskCard";
@@ -12,6 +12,7 @@ import ProposalCard from "./ProposalCard";
 import RecommendationCard from "./RecommendationCard";
 import type { AssistantChat } from "./useAssistantChat";
 import { type ConversationEntry, MAX_MESSAGE_CHARS } from "./useAssistantConversation";
+import VideoCard from "./VideoCard";
 
 export interface AssistantChatViewProps {
   readonly chat: AssistantChat;
@@ -362,6 +363,22 @@ function Entry(props: {
             />
           )}
         </Show>
+      </Match>
+      <Match when={props.entry.kind === "video" && props.entry}>
+        {(entry) => (
+          // A card that cannot render says so in its place, and nothing else
+          // in the conversation goes with it (ADR 0009: failures are isolated).
+          <Errored
+            fallback={
+              <section class="assistant-card" aria-label="Tutorial video">
+                <b>A video was recommended</b>
+                <span>It can't be shown right now. Nothing else is affected.</span>
+              </section>
+            }
+          >
+            <VideoCard video={entry().video} analytics={props.chat.analytics} />
+          </Errored>
+        )}
       </Match>
       <Match when={props.entry.kind === "error" && props.entry}>
         {(failure) => (

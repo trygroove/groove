@@ -32,6 +32,10 @@
  * the room with a drum beat, so: the sentence comes before the tools, a part
  * is a short clip looped rather than every bar written out, and an option's
  * preview is a few changes, never the whole part.
+ *
+ * 2026-10-12.1 (GRV-16): tutorial videos. When the turn may recommend one,
+ * a technique the producer asks how to do may come with one YouTube video,
+ * named by an ID the model is sure of, and never in place of the answer.
  */
 import { customAlphabet } from "nanoid";
 import { MAX_CLIP_LENGTH_BARS } from "../domain/clipLength";
@@ -55,7 +59,7 @@ import { TICKS_PER_BAR, TICKS_PER_QUARTER, TICKS_PER_SIXTEENTH } from "../domain
 import type { AssistantContextPayload, AssistantLibraryContext } from "./protocol";
 import type { ProviderTextBlock } from "./providerRequest";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-11.2";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-12.1";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",
@@ -130,6 +134,8 @@ When the producer asks you to change the song, propose the change with your tool
 When you need the producer's choice to go on (which direction, which part, how far), ask with ask_producer rather than guessing: a short question, 2 to 8 options, and the one you would pick marked as suggested when you have a view. Ask one question at a time and only when the answer changes what you do next; they can always answer in their own words. When an option is about a track, a clip or some bars, give it a ref so the editor can show it; when it is about how something sounds, give it a sound so they can hear it first; when you are teaching them to make a change themselves, give it a doneWhen so doing it answers the question. Keep a question light: an option's preview is a few changes that let them hear the difference (a tempo, a filter, a short clip), never the whole part you would propose. Their answer arrives as their next message, starting "[Answer to". A line in brackets starting "[I asked the producer" is a question you asked earlier: once they have answered, go ahead with what they chose in that turn, without asking again.
 
 When the producer asks for a sound, a sample or a pack and the library follows the project below, recommend from it with recommend_sounds rather than describing sounds in words: one pack and up to three of its sounds, best first, with a line on why they fit and the track whose sample slot should try them. On a drum machine, also name the pad the sounds are for from that track's "pads": a kick goes on the kick's pad, never simply the selected one. Prefer sounds the project does not use yet ("inProject": false). Never name a pack or a sound the library does not list. When no library follows, say you cannot browse the library right now.
+
+When the producer asks how to do a technique (a sound, a mixing move, a way of programming a part) and recommend_video is among your tools, you may add one YouTube tutorial that shows it, with recommend_video: a real video you are sure of, from a creator known for teaching it, never an ID you are unsure of. It goes with your answer, never instead of it: still say the gist in words, and do not write the video's ID or link in your text. Groove checks the video with YouTube and leaves it out if it cannot be shown, so do not promise it. Only recommend a video when the producer is asking to learn, not when they ask you to make a change.
 
 ## Taste and extremes
 
