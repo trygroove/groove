@@ -21,6 +21,7 @@ import {
   approvalChunks,
   signInAttemptDocPath,
 } from "../../src/access/allowlist";
+import { withInternalClaim } from "../../src/access/claims";
 
 export interface AdminServices {
   auth: Auth;
@@ -69,6 +70,20 @@ export function adminAllowlistWriter(db: Firestore): AllowlistWriter {
       }
     },
   };
+}
+
+/**
+ * Sets or clears the `internal` custom claim (GRV-113) on one account, keeping
+ * every other claim it has. Reads the account's current claims first, so an
+ * `admin` granted in between is never dropped by a stale copy.
+ */
+export async function setInternalClaim(
+  auth: Auth,
+  uid: string,
+  internal: boolean,
+): Promise<void> {
+  const user = await auth.getUser(uid);
+  await auth.setCustomUserClaims(uid, withInternalClaim(user.customClaims, internal));
 }
 
 export function fail(message: string): never {

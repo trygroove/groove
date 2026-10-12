@@ -62,6 +62,28 @@ the list is run.
 The scripts use application default credentials
 (`gcloud auth application-default login`, or `GOOGLE_APPLICATION_CREDENTIALS`).
 
+## Internal accounts
+
+An account with the `internal: true` custom claim (GRV-113,
+`src/access/claims.ts`) is a team or test account: the browsers it signs into
+are marked internal traffic, and its kept assistant turns are marked
+`internal`, so the team's own use stays out of the product's measures. Which
+accounts are internal is never written into the code. Flag one (it must have
+signed in once) or stop flagging it:
+
+```sh
+FIREBASE_PROJECT_ID=<project> bun run internal:grant -- you@example.com
+FIREBASE_PROJECT_ID=<project> bun run internal:revoke -- you@example.com
+```
+
+Both keep every other claim (`admin` included), and neither changes access:
+the address still needs to be on the allowlist. The claim reaches the browser
+with the next ID token, so sign out and in again. Revoking does not unmark a
+browser the account already marked; `?internal=0` does. The QA pool is flagged
+by `bun run qa:accounts`. When this replaced the address list, the team's own
+accounts and the hands-on test accounts were flagged once with
+`internal:grant`; a new team or test account needs the same.
+
 ## Approving people
 
 - **Admin page:** `/admin`, visible only to admins (anyone else gets the 404
@@ -253,7 +275,7 @@ QA account" above):
 - **The scheduled QA sweep** (`tests/e2e/hosted/qa-sweep/`) signs each agent
   in as its own QA account, `testuser1`…`testuser10`, and deletes that
   account's projects when the agent is done.
-- **The QA accounts are internal traffic** by address (`isInternalAccount` in
-  `src/shared/internalTraffic.ts` names every account on their domain), and
-  the suites' first page load carries `?internal=1` as well, so they never
-  count in the product's measures.
+- **The QA accounts are internal traffic**: `bun run qa:accounts` gives each
+  one the `internal` claim (see "Internal accounts" below), and the suites'
+  first page load carries `?internal=1` as well, so they never count in the
+  product's measures.

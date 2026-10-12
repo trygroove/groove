@@ -323,7 +323,7 @@ export interface AssistantProposalShown {
 export interface CompletedTurn {
   readonly uid: string;
   readonly session: AssistantTurnSession;
-  /** Whether the account is a team or test one (`isInternalAccount`). */
+  /** Whether the account carries the `internal` claim (`src/access/claims.ts`). */
   readonly internalAccount: boolean;
   readonly projectRevision: number;
   readonly userMessage: string;
