@@ -6,6 +6,7 @@
 | Date | 2026-08-27 |
 | Decides | Which parts of a user's project may be sent to the AI provider, and the disclosure copy that describes it |
 | Supersedes | The draft disclosure copy in `AI-006` ([#95](https://github.com/trygroove/groove/issues/95)), including its "no notes, no project contents beyond the project ID" claim |
+| Amended | 2026-10-12 by GRV-97: retention moves from opt-in to opt-out (decision 9) |
 | Affects | `DEC-005` ([#34](https://github.com/trygroove/groove/issues/34)), `AI-006` ([#95](https://github.com/trygroove/groove/issues/95)), `AI-001` ([#69](https://github.com/trygroove/groove/issues/69)), `src/projection/assistantContextProjection.ts`, `src/projection/projectAnalysisProjection.ts` |
 
 ## Context
@@ -66,6 +67,8 @@ This is a real cost and it is accepted rather than mitigated: a track named for 
 >
 > The assistant behaves exactly the same either way, and every other part of Groove works without it — if you would rather nothing was sent, you can simply not use the assistant.
 
+Decision 9 turns the control into a notice with a way out ("OK" / "Don't keep them") and adds "unless you tell it not to" to the third paragraph; `src/editor/assistant/retentionCopy.ts` holds the current wording.
+
 Wording stays tweakable without reopening this ADR; what may not change is that it remains true and specific about the same four things — what is sent, what the provider may do with it, what we keep and for how long, and what the control does and does not cover.
 
 ### 6. The provider-posture sentence is written from verified terms, and shipping it unverified is a defect
@@ -88,6 +91,16 @@ That draft told the user "Your music itself is not kept: no audio, no notes, and
 ### 8. The opt-out's scope limit renders on the control, in both places it appears
 
 The line stating that the control governs Groove's copy only travels with the control itself — in the first-run dialog and in the durable settings surface, which is where most users will meet it on day three rather than day one. A true statement that only appears where a skimming user will not read it is doing the work of a misleading one.
+
+### 9. Keeping transcripts is the default, and the producer can opt out (amended 2026-10-12, GRV-97)
+
+By product-owner decision, retention moves from opt-in to opt-out. Under GRV-8 a transcript was kept only after an explicit yes in the first-run dialog, so most turns, the product owner's own failing ones included, left nothing to read, and an invalid proposal could not be diagnosed after the fact. Now:
+
+- A turn is kept when the account has no answer, or a malformed or stale one. Only an explicit "don't keep" (`retain: false`, at any disclosure version) stops it (`permitsRetention` in `src/assistant/transcripts.ts`). Existing answers keep their meaning: a no stays no, a yes stays yes.
+- Opting out is unchanged: it still deletes every kept record at once, and a turn racing it either lands first and is deleted or reads the new answer and is not written.
+- The first-run dialog becomes a notice: it says Groove keeps conversations for the retention window and the team may read them, with **OK** and **Don't keep them** side by side, and the scope line under them (decision 8). The setting is unchanged.
+- `ASSISTANT_DISCLOSURE_VERSION` stays at 1. Bumping it would not turn any no into a keep, but it would show the notice again to accounts that already answered, and their answers are as true under the new default as they were under the old one.
+- Declining telemetry does not exclude conversations from retention today ([ADR 0003](./0003-replay-canvas-capture-and-assistant-conversation-retention.md)'s "opt-out covers it" was never wired into `src/analytics/consent.ts`), and this decision changes nothing about that; the assistant's own opt-out is the control.
 
 ## Consequences
 

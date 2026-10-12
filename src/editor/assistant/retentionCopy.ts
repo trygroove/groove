@@ -6,6 +6,11 @@
  * it, what Groove keeps and for how long, and what the control does and does
  * not cover.
  *
+ * Keeping is the default (GRV-97, ADR 0007 decision 9), so the first-run
+ * dialog is a notice with a way out ("OK" or "Don't keep them"), not a
+ * question, and every sentence here has to be true for an account that has
+ * opted out as well as for one that has not.
+ *
  * The retention window is read from the one configured value
  * (`TRANSCRIPT_RETENTION_DAYS`, which the server's expiry reads too), so the
  * copy and the deletion can never disagree.
@@ -28,7 +33,7 @@ export const DISCLOSURE_TITLE = "About the assistant";
 export const DISCLOSURE_PARAGRAPHS: readonly string[] = [
   "Groove sends Anthropic — the AI service behind the assistant — your message along with a description of the project you're working in: its name, your track and section names, the tempo and structure, your mixer settings, and the notes in whatever you currently have selected. It does not send your audio, and it does not send the rest of your project.",
   "Anthropic does not use anything we send it to train their AI models, and they delete it within 30 days — unless their automated safety systems flag something, in which case they can keep it for up to two years.",
-  `Separately, Groove keeps your conversations — your messages, the assistant's replies, and the changes it proposes, including any notes it writes for you — for ${DAYS}. Our goal is to make the assistant better. The team may read them. After ${DAYS} they are deleted.`,
+  `Separately, unless you tell it not to, Groove keeps your conversations — your messages, the assistant's replies, and the changes it proposes, including any notes it writes for you — for ${DAYS}. Our goal is to make the assistant better. The team may read them. After ${DAYS} they are deleted.`,
 ];
 
 /** The control's label, in the dialog and in the setting. */
@@ -44,8 +49,15 @@ export const RETENTION_SCOPE =
 export const DISCLOSURE_CLOSING =
   "The assistant behaves exactly the same either way, and every other part of Groove works without it — if you would rather nothing was sent, you can simply not use the assistant.";
 
-/** The two answers in the first-run dialog, equal in weight. */
-export const KEEP_ANSWER = `Keep for ${DAYS}`;
+/** What the first-run notice says Groove does, above its two answers. */
+export const NOTICE_HEADING = `Groove keeps your conversations for ${DAYS}`;
+
+/** Where the answer can be changed later, and what turning it off does. */
+export const NOTICE_CHANGE =
+  "You can change this at any time in Assistant settings. Turning it off deletes every conversation Groove has kept.";
+
+/** The two answers in the first-run notice, side by side and equal in size. */
+export const ACCEPT_ANSWER = "OK";
 export const DECLINE_ANSWER = "Don't keep them";
 
 /** What turning the setting off does, said as it happens. */

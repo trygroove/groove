@@ -40,15 +40,24 @@ test.describe("the assistant's disclosure and setting", () => {
     await expect(composer(page)).toHaveCount(0);
     await expect(disclosure(page)).toContainText("Anthropic does not use anything");
     await expect(disclosure(page)).toContainText(SCOPE);
+    // Keeping is the default (GRV-97): a notice with a way out, not a question.
+    await expect(
+      disclosure(page).getByRole("group", {
+        name: "Groove keeps your conversations for 30 days",
+      }),
+    ).toBeVisible();
+    await expect(
+      disclosure(page).getByRole("button", { name: "Don't keep them" }),
+    ).toBeVisible();
     await step("Before the first message: what is sent, what is kept");
 
-    await answerDisclosure(page, "Keep for 30 days");
+    await answerDisclosure(page, "OK");
     await expect(composer(page)).toBeFocused();
     await composer(page).fill("Make it groove");
     await page.keyboard.press("Enter");
     await expect(conversation(page)).toContainText("Here is one idea.");
 
-    // A yes keeps the turn, server-side: the message and the reply.
+    // OK keeps the turn, server-side: the message and the reply.
     await expect
       .poll(async () => (await storedTranscripts(invitedProducer.uid)).length)
       .toBe(1);

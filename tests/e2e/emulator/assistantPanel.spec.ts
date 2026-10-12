@@ -45,6 +45,9 @@ async function buttonsAnswer(page: Page, mode: string): Promise<void> {
   for (let index = 0; index < count; index += 1) {
     const button = buttons.nth(index);
     const name = await button.getAttribute("aria-label");
+    // A button scrolled out of the panel's own scroller is not covered by
+    // chrome, just out of view: bring it in before asking what is on top.
+    await button.scrollIntoViewIfNeeded();
     const box = await button.boundingBox();
     if (!box) throw new Error(`${name} has no box`);
     const centreX = box.x + box.width / 2;

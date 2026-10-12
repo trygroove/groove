@@ -20,9 +20,11 @@ import { memoryStorage } from "../../testing/storage";
 import AssistantPanel from "./AssistantPanel";
 import { RETENTION_LOADING } from "./AssistantRetention";
 import {
+  ACCEPT_ANSWER,
   DECLINE_ANSWER,
   DISCLOSURE_PARAGRAPHS,
-  KEEP_ANSWER,
+  NOTICE_CHANGE,
+  NOTICE_HEADING,
   OPTED_IN_CONFIRMATION,
   OPTED_OUT_CONFIRMATION,
   RETENTION_LABEL,
@@ -77,12 +79,26 @@ const composer = (panel: HTMLElement) =>
   within(panel).queryByRole("textbox", { name: "Message the assistant" });
 
 describe("the assistant's disclosure (GRV-8)", () => {
-  it("is shown in place of the composer until it is answered, with both answers of equal weight", async () => {
-    const retention = createFakeRetentionClient();
-    const { panel, client } = await renderPanel(retention);
-    const disclosure = await within(panel).findByRole("region", {
+  async function openNotice(retention: AssistantRetentionClient) {
+    const rendered = await renderPanel(retention);
+    const disclosure = await within(rendered.panel).findByRole("region", {
       name: "About the assistant",
     });
+    const notice = within(disclosure).getByRole("group", { name: NOTICE_HEADING });
+    return { ...rendered, disclosure, notice };
+  }
+
+  async function composerOnceShown(panel: HTMLElement) {
+    return waitFor(() => {
+      const found = composer(panel);
+      if (!found) throw new Error("no composer yet");
+      return found;
+    });
+  }
+
+  it("is a notice that Groove keeps conversations, shown in place of the composer until it is answered (GRV-97)", async () => {
+    const retention = createFakeRetentionClient();
+    const { panel, client, disclosure, notice } = await openNotice(retention);
     expect(composer(panel)).toBeNull();
     expect(client.turns).toHaveLength(0);
 
@@ -97,20 +113,38 @@ describe("the assistant's disclosure (GRV-8)", () => {
     );
     expect(disclosure).not.toHaveTextContent("[provider]");
 
-    const choice = within(disclosure).getByRole("group", { name: `${RETENTION_LABEL}?` });
-    expect(choice).toHaveAccessibleDescription(RETENTION_SCOPE);
-    const keep = within(choice).getByRole("button", { name: KEEP_ANSWER });
-    const decline = within(choice).getByRole("button", { name: DECLINE_ANSWER });
-    expect(keep.className).toBe(decline.className);
+    // A notice, not a question: it says what happens, how to change it, and
+    // the control's scope travels with it (ADR 0007 decision 8).
+    expect(notice).toHaveTextContent(NOTICE_HEADING);
+    expect(notice).not.toHaveTextContent("?");
+    expect(notice).toHaveAccessibleDescription(`${NOTICE_CHANGE} ${RETENTION_SCOPE}`);
+    const ok = within(notice).getByRole("button", { name: ACCEPT_ANSWER });
+    const decline = within(notice).getByRole("button", { name: DECLINE_ANSWER });
+    // "Don't keep them" is as clear as "OK": the same style, right beside it.
+    expect(ok.className).toBe(decline.className);
+    expect(ok.nextElementSibling).toBe(decline);
+  });
 
-    fireEvent.click(decline);
-    const input = await waitFor(() => {
-      const found = composer(panel);
-      if (!found) throw new Error("no composer yet");
-      return found;
-    });
-    expect(input).toHaveFocus();
+  it("keeps them on OK, and opens the composer", async () => {
+    const retention = createFakeRetentionClient();
+    const { panel, transport, notice } = await openNotice(retention);
+    fireEvent.click(within(notice).getByRole("button", { name: ACCEPT_ANSWER }));
+    expect(await composerOnceShown(panel)).toHaveFocus();
+    expect(await retention.get()).toMatchObject({ preference: { retain: true } });
+    expect(transport.named("assistant_retention_changed")).toEqual([
+      expect.objectContaining({ params: expect.objectContaining({ state: "on" }) }),
+    ]);
+  });
+
+  it('stops keeping them on "Don\'t keep them", and opens the composer', async () => {
+    const retention = createFakeRetentionClient();
+    const { panel, transport, notice } = await openNotice(retention);
+    fireEvent.click(within(notice).getByRole("button", { name: DECLINE_ANSWER }));
+    expect(await composerOnceShown(panel)).toHaveFocus();
     expect(await retention.get()).toMatchObject({ preference: { retain: false } });
+    expect(transport.named("assistant_retention_changed")).toEqual([
+      expect.objectContaining({ params: expect.objectContaining({ state: "off" }) }),
+    ]);
   });
 
   it("is not shown again to an account that has answered", async () => {

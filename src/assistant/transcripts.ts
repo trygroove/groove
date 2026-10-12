@@ -19,14 +19,19 @@
  *   ({@link RetentionPreference}), keyed by uid so it survives sign-out,
  *   sign-in, and a guest linking an account (which keeps the uid).
  *
+ * Keeping is the default (GRV-97, ADR 0007 decision 9): an account that has
+ * not answered is kept, and only its explicit "don't keep" stops it.
+ *
  * The rules a store follows are here, Firebase-free, and run as one contract
  * suite against the in-memory store and the Firestore one
  * (`transcriptStoreContract.ts`):
  *
  * - **Read before every write.** A record is written only inside the same
  *   transaction that reads the preference and finds it permits retention
- *   ({@link permitsRetention}); absent, malformed, stale (answered against an
- *   older disclosure) or unreadable means no.
+ *   ({@link permitsRetention}); absent, malformed or stale (answered against
+ *   another disclosure) means yes, an explicit `retain: false` at any
+ *   disclosure version means no, and a preference the store cannot read
+ *   keeps nothing.
  * - **Opting out deletes.** Setting retention off removes every record the
  *   account has, and a turn racing it either lands before (and is deleted)
  *   or reads the new preference (and is not written).
@@ -47,8 +52,10 @@ export const TRANSCRIPT_RETENTION_MS = TRANSCRIPT_RETENTION_DAYS * 24 * 60 * 60 
 
 /**
  * The disclosure an answer was given against. Bump it when the copy changes
- * what it promises: every earlier answer becomes stale, so nothing more is
- * kept until the account has read the new one and answered again.
+ * what it promises: every earlier answer becomes stale, so the browser shows
+ * the notice again. A stale answer never widens retention past what the
+ * account said: a stale "don't keep" still stops it (see
+ * {@link permitsRetention}).
  */
 export const ASSISTANT_DISCLOSURE_VERSION = 1;
 
@@ -87,17 +94,21 @@ export const retentionPreferenceSchema = z.strictObject({
 export type RetentionPreference = z.infer<typeof retentionPreferenceSchema>;
 
 /**
- * Whether a stored preference lets Groove keep a transcript. Only a
- * well-formed `retain: true` given against the current disclosure does;
- * anything else (no answer, a malformed one, one given against older copy)
- * keeps nothing.
+ * Whether a stored preference lets Groove keep a transcript (GRV-97: keeping
+ * is the default). Only an explicit "don't keep" stops it: any stored
+ * document whose `retain` is `false`, whatever disclosure it answered and
+ * however well-formed the rest of it is. No answer, a yes, and a malformed or
+ * stale document that does not say `retain: false` all keep.
  */
 export function permitsRetention(raw: unknown): boolean {
-  const parsed = retentionPreferenceSchema.safeParse(raw);
+  return !declinesRetention(raw);
+}
+
+function declinesRetention(raw: unknown): boolean {
   return (
-    parsed.success &&
-    parsed.data.retain &&
-    parsed.data.disclosureVersion === ASSISTANT_DISCLOSURE_VERSION
+    typeof raw === "object" &&
+    raw !== null &&
+    (raw as { readonly retain?: unknown }).retain === false
   );
 }
 
