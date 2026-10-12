@@ -24,6 +24,8 @@ export interface EvalCliOptions {
   readonly replay: string | null;
   /** A saved `report.json` or `summary.json` to print the scorecard against. */
   readonly baseline: string | null;
+  /** A kept turn the admin viewer downloaded, run as the one case (GRV-98). */
+  readonly fromTranscript: string | null;
   readonly concurrency: number;
   /** Per-turn limit, retries included. */
   readonly turnTimeoutMs: number;
@@ -42,7 +44,7 @@ export class EvalUsageError extends Error {
 }
 
 export const EVAL_USAGE =
-  "Usage: bun run eval:assistant -- [case ...] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--baseline REPORT] [--concurrency N] [--timeout SECONDS]";
+  "Usage: bun run eval:assistant -- [case ...] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS]";
 
 const DEFAULT_TURN_TIMEOUT_SECONDS = DEFAULT_TURN_TIMEOUT_MS / 1000;
 
@@ -67,6 +69,7 @@ export function parseEvalArgs(
   let out: string | null = null;
   let replay: string | null = null;
   let baseline: string | null = null;
+  let fromTranscript: string | null = null;
   let concurrency = 3;
   let timeoutSeconds = DEFAULT_TURN_TIMEOUT_SECONDS;
   for (let index = 0; index < argv.length; index += 1) {
@@ -82,6 +85,7 @@ export function parseEvalArgs(
     else if (arg === "--out") out = value();
     else if (arg === "--replay") replay = value();
     else if (arg === "--baseline") baseline = value();
+    else if (arg === "--from-transcript") fromTranscript = value();
     else if (arg === "--concurrency") concurrency = Number(value());
     else if (arg === "--timeout") timeoutSeconds = Number(value());
     else if (arg === "--help" || arg === "-h") {
@@ -92,6 +96,11 @@ export function parseEvalArgs(
   wholeNumber(runs, "--runs");
   wholeNumber(concurrency, "--concurrency");
   wholeNumber(timeoutSeconds, "--timeout");
+  if (fromTranscript !== null && (replay !== null || caseIds.length > 0)) {
+    throw new EvalUsageError(
+      "--from-transcript runs the transcript's case alone: drop --replay and the case names",
+    );
+  }
   if (!(model in ASSISTANT_MODELS)) {
     throw new EvalUsageError(
       `Unknown model "${model}". Configured: ${Object.keys(ASSISTANT_MODELS).join(", ")}`,
@@ -106,6 +115,7 @@ export function parseEvalArgs(
       out,
       replay,
       baseline,
+      fromTranscript,
       concurrency,
       turnTimeoutMs: timeoutSeconds * 1000,
     },

@@ -383,6 +383,19 @@ export class CommandHistory {
     this.#notify();
   }
 
+  /**
+   * Removes these entries from undo and redo without touching the project:
+   * edits that were dropped because they no longer applied on top of a change
+   * saved elsewhere (GRV-88), so there is nothing left of them to undo.
+   */
+  discardEntries(entries: ReadonlySet<HistoryEntry>): void {
+    if (entries.size === 0) return;
+    this.#undo = this.#undo.filter((entry) => !entries.has(entry));
+    this.#redo = this.#redo.filter((entry) => !entries.has(entry));
+    if (this.#run && entries.has(this.#run.entry)) this.#run = null;
+    this.#notify();
+  }
+
   /** Drops undo/redo without touching the project. */
   clear(): void {
     this.#run = null;

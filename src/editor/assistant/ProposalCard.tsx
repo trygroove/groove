@@ -39,7 +39,10 @@ export function proposalStatusText(card: Card): string {
           ? "Out of date. A new proposal was asked for below."
           : "Out of date. The song changed after this was written, so it can't be applied as it is.";
       case "invalid":
-        return "This doesn't fit your song as it is, so it can't be applied. Nothing changed.";
+        // Which change did not fit, when the issues say (GRV-98).
+        return card.reason
+          ? `${card.reason} It can't be applied as it is. Nothing changed.`
+          : "This doesn't fit your song as it is, so it can't be applied. Nothing changed.";
     }
   })();
   return card.notice ? `${say} ${card.notice}` : say;
