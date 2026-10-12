@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Analytics } from "../analytics/analytics";
 import { ConsentStore } from "../analytics/consent";
 import {
+  createFailingTransport,
   createRecordingTransport,
   type RecordingTransport,
 } from "../analytics/transport";
@@ -363,14 +364,7 @@ describe("analytics failure cannot break reporting", () => {
     const sink = recordingSink();
     const consent = new ConsentStore(memoryStorage());
     const analytics = new Analytics({
-      transport: {
-        logEvent() {
-          throw new Error("analytics blocked");
-        },
-        setUserProperties() {
-          throw new Error("analytics blocked");
-        },
-      },
+      transport: createFailingTransport("analytics blocked"),
       consent,
       storage: memoryStorage(),
     });

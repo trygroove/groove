@@ -19,7 +19,8 @@ describe("TelemetryDisclosure (PRD OPS-02, section 10 Security and privacy)", ()
   it("names both processors, so the user is told what is collected", () => {
     setup();
     const body = screen.getByText(/Two processors receive this/).textContent ?? "";
-    expect(body).toContain("Google Analytics");
+    expect(body).toContain("PostHog");
+    expect(body).not.toContain("Google Analytics");
     expect(body).toContain("Sentry");
   });
 
@@ -70,7 +71,7 @@ describe("TelemetryDisclosure (PRD OPS-02, section 10 Security and privacy)", ()
       setup();
       const body =
         screen.getByText(/conversations with the assistant are stored/).textContent ?? "";
-      expect(body).toContain("never sent to Google Analytics or Sentry");
+      expect(body).toContain("never sent to PostHog or Sentry");
       expect(body).toContain("deleting a project deletes its conversations");
     });
 

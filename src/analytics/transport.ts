@@ -2,8 +2,7 @@
 //
 // The logging boundary in `analytics.ts` validates, enriches, and hands a
 // finished event to a transport. Which vendor actually receives it is behind
-// this interface, so swapping Google Analytics — or running with no vendor at
-// all, which is what every test and every opted-out session does — changes one
+// this interface, so swapping PostHog — or running with no vendor at all, which is what every test and every opted-out session does — changes one
 // wiring line rather than every call site.
 //
 // A transport MUST NOT throw. Analytics fails open (PRD `OPS-02`: "A blocked,
@@ -16,13 +15,23 @@ import type { AnalyticsParamValue } from "./catalog";
 
 export interface AnalyticsTransport {
   logEvent(name: string, params: Readonly<Record<string, AnalyticsParamValue>>): void;
+  /** Person properties: account type and the internal-traffic flag. */
   setUserProperties(properties: Readonly<Record<string, string>>): void;
+  /** Attributes what follows to a signed-in account, by Firebase UID alone. */
+  identify(userId: string): void;
+  /** Forgets the signed-in account, on sign-out. */
+  resetIdentity(): void;
+  /** One page view, sent by the router on navigation. */
+  pageview(): void;
 }
 
 /** Discards everything. The default until a real transport is wired in. */
 export const noopTransport: AnalyticsTransport = {
   logEvent() {},
   setUserProperties() {},
+  identify() {},
+  resetIdentity() {},
+  pageview() {},
 };
 
 export interface RecordedEvent {
@@ -33,6 +42,12 @@ export interface RecordedEvent {
 export interface RecordingTransport extends AnalyticsTransport {
   readonly events: readonly RecordedEvent[];
   readonly userProperties: Readonly<Record<string, string>>;
+  /** The UID the transport was last identified as, or `null`. */
+  readonly userId: string | null;
+  /** How many times the identity was reset (signed out). */
+  readonly identityResets: number;
+  /** How many page views were sent. */
+  readonly pageviews: number;
   /** Events recorded for one name, in order. */
   named(name: string): readonly RecordedEvent[];
   reset(): void;
@@ -42,6 +57,9 @@ export interface RecordingTransport extends AnalyticsTransport {
 export function createRecordingTransport(): RecordingTransport {
   const events: RecordedEvent[] = [];
   let userProperties: Record<string, string> = {};
+  let userId: string | null = null;
+  let identityResets = 0;
+  let pageviews = 0;
 
   return {
     get events() {
@@ -49,6 +67,15 @@ export function createRecordingTransport(): RecordingTransport {
     },
     get userProperties() {
       return userProperties;
+    },
+    get userId() {
+      return userId;
+    },
+    get identityResets() {
+      return identityResets;
+    },
+    get pageviews() {
+      return pageviews;
     },
     named(name) {
       return events.filter((event) => event.name === name);
@@ -59,9 +86,22 @@ export function createRecordingTransport(): RecordingTransport {
     setUserProperties(properties) {
       userProperties = { ...userProperties, ...properties };
     },
+    identify(id) {
+      userId = id;
+    },
+    resetIdentity() {
+      userId = null;
+      identityResets += 1;
+    },
+    pageview() {
+      pageviews += 1;
+    },
     reset() {
       events.length = 0;
       userProperties = {};
+      userId = null;
+      identityResets = 0;
+      pageviews = 0;
     },
   };
 }
@@ -73,12 +113,14 @@ export function createRecordingTransport(): RecordingTransport {
 export function createFailingTransport(
   message = "analytics blocked",
 ): AnalyticsTransport {
+  const fail = () => {
+    throw new Error(message);
+  };
   return {
-    logEvent() {
-      throw new Error(message);
-    },
-    setUserProperties() {
-      throw new Error(message);
-    },
+    logEvent: fail,
+    setUserProperties: fail,
+    identify: fail,
+    resetIdentity: fail,
+    pageview: fail,
   };
 }

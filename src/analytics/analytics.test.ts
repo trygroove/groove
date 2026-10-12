@@ -140,6 +140,88 @@ describe("consent (PRD OPS-02 opt-out)", () => {
   });
 });
 
+describe("identity (GRV-106)", () => {
+  it("identifies the signed-in account by its UID", () => {
+    const { analytics, transport } = setup();
+    analytics.setUserId("uid_123");
+    expect(transport.userId).toBe("uid_123");
+  });
+
+  it("identifies once per account, not once per call", () => {
+    const transport = createRecordingTransport();
+    const identify = vi.spyOn(transport, "identify");
+    const { analytics } = setup({ transport });
+    analytics.setUserId("uid_123");
+    analytics.setUserId("uid_123");
+    analytics.log("app_opened");
+    expect(identify).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets on sign-out and sends the person properties again", () => {
+    const { analytics, transport } = setup();
+    analytics.setUserId("uid_123");
+    transport.reset();
+    analytics.setUserId(null);
+    expect(transport.userId).toBeNull();
+    expect(transport.identityResets).toBe(1);
+    expect(transport.userProperties).toEqual({
+      account_type: "unknown",
+      internal: "false",
+    });
+  });
+
+  it("resets before identifying a different account on the same browser", () => {
+    const { analytics, transport } = setup();
+    analytics.setUserId("uid_a");
+    analytics.setUserId("uid_b");
+    expect(transport.identityResets).toBe(1);
+    expect(transport.userId).toBe("uid_b");
+  });
+
+  it("does not reset for a page that loads signed out", () => {
+    const { analytics, transport } = setup();
+    analytics.setUserId(null);
+    expect(transport.identityResets).toBe(0);
+  });
+
+  it("identifies nobody while opted out, and identifies on a new transport after", () => {
+    const { analytics, transport, consent } = setup();
+    consent.optOut();
+    analytics.setUserId("uid_123");
+    expect(transport.userId).toBeNull();
+
+    consent.optIn();
+    const next = createRecordingTransport();
+    analytics.setTransport(next);
+    expect(next.userId).toBe("uid_123");
+  });
+});
+
+describe("page views (GRV-106)", () => {
+  it("sends one page view per call", () => {
+    const { analytics, transport } = setup();
+    analytics.pageview();
+    analytics.pageview();
+    expect(transport.pageviews).toBe(2);
+  });
+
+  it("sends none while opted out", () => {
+    const { analytics, transport, consent } = setup();
+    consent.optOut();
+    analytics.pageview();
+    expect(transport.pageviews).toBe(0);
+  });
+
+  it("never throws from a failing transport", () => {
+    const { analytics } = setup({ transport: createFailingTransport() });
+    expect(() => {
+      analytics.pageview();
+      analytics.setUserId("uid_123");
+      analytics.setUserId(null);
+    }).not.toThrow();
+  });
+});
+
 describe("library_pack_added (LOOP-013, LIB-08)", () => {
   // Its call site is the library browser's `addPack` (see
   // `useLibraryBrowser.test.ts`), which is the only place a pack's *published*

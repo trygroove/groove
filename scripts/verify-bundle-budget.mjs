@@ -36,13 +36,10 @@ import { brotliCompressSync, constants } from "node:zlib";
  * minifier rewrites local identifiers but not string literals or the public
  * export names other chunks import by name. A package specifier like
  * `"@sentry/browser"` does not survive bundling, so it is not used here.
+ * `"captureException"` is not either: PostHog's SDK (GRV-106) carries it too,
+ * and its chunk is product analytics, not this budget's monitoring cost.
  */
-const SDK_MARKERS = [
-  "sentry-trace",
-  "sentry_key",
-  "browserSessionIntegration",
-  "captureException",
-];
+const SDK_MARKERS = ["sentry-trace", "sentry_key", "browserSessionIntegration"];
 
 /**
  * Brotli ceiling for the lazily-loaded monitoring chunks, combined.

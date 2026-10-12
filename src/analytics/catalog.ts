@@ -209,25 +209,16 @@ export const AUTOMATIC_PARAMS = {
 } as const;
 
 /**
- * GA4 user properties (PRD `OPS-02`: "limited to coarse, non-identifying
- * facts: account type and whether the session is internal").
+ * Person properties (PRD `OPS-02`: "limited to coarse, non-identifying
+ * facts: account type and whether the session is internal"). The PostHog
+ * transport also sends `internal` as an event property on every event, which
+ * is what the project's internal-traffic filter excludes on.
  */
 export const USER_PROPERTIES = {
   account_type: "account_type",
-  /** `"true"`/`"false"` — GA4 user property values are strings. */
+  /** `"true"`/`"false"`, as strings. */
   internal: "internal",
 } as const;
-
-/**
- * GA4's reserved `traffic_type` parameter, which its *Internal Traffic* data
- * filter matches on (Admin → Data streams → Configure tag settings → Define
- * internal traffic; the filter under Data settings → Data filters). The
- * `internal` user property above is a custom dimension for *reading* reports;
- * this is what lets the property *exclude* the sessions. The transport sets it
- * as a default parameter on every event, automatic collection included, for a
- * browser `isInternalTraffic()` is true in.
- */
-export const INTERNAL_TRAFFIC_EVENT_PARAMS = { traffic_type: "internal" } as const;
 
 // ---------------------------------------------------------------------------
 // The event catalog

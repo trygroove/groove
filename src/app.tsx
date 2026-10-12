@@ -24,6 +24,9 @@ import "./app.css";
  * surface to `Telemetry` rather than to `analytics` directly is what makes that
  * one decision instead of three.
  *
+ * It also sends a page view for every pathname the session visits, since the
+ * analytics vendor's own pageview capture is off.
+ *
  * The compute phase reads both the pathname and the telemetry accessor, so the
  * effect re-runs with the current pathname once `initTelemetry` has finished;
  * until then the surface still reaches the analytics boundary directly and
@@ -33,16 +36,26 @@ import "./app.css";
  */
 function SurfaceTracker(props: { telemetry: Accessor<Telemetry | null> }) {
   const location = useLocation();
+  /** The path the last page view was sent for, so each navigation counts once. */
+  let pageviewSentFor: string | null = null;
   createEffect(
     () => ({
-      surface: surfaceForPath(location.pathname),
+      pathname: location.pathname,
       telemetry: props.telemetry(),
     }),
-    ({ surface, telemetry }) => {
-      if (telemetry) {
-        telemetry.setSurface(surface);
-      } else {
+    ({ pathname, telemetry }) => {
+      const surface = surfaceForPath(pathname);
+      if (!telemetry) {
         analytics.setSurface(surface);
+        return;
+      }
+      telemetry.setSurface(surface);
+      // The vendor's own pageview capture is off (GRV-106), so the router is
+      // what counts page views. Sent once telemetry has wired the transport,
+      // so the entry page's view is not lost to mount order.
+      if (pathname !== pageviewSentFor) {
+        pageviewSentFor = pathname;
+        analytics.pageview();
       }
     },
   );

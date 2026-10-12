@@ -185,7 +185,8 @@ browsers is not stored as if it were confidential.
 | `VITE_FIREBASE_API_KEY` | Variable | Firebase console → Project settings → your web app → SDK setup. Public by design. |
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Variable | Same panel. |
 | `VITE_FIREBASE_APP_ID` | Variable | Same panel. |
-| `VITE_FIREBASE_MEASUREMENT_ID` | Variable | Same panel. GA4; the app degrades cleanly without it. |
+| `VITE_POSTHOG_KEY` | Variable | PostHog → Project settings → Project API key (`phc_…`). Public by design; the app runs without analytics when unset. |
+| `VITE_POSTHOG_HOST` | Variable | `https://eu.i.posthog.com`, or `https://us.i.posthog.com` for a US project. |
 | `VITE_SENTRY_DSN` | Variable | The DSN from part 2. Public by design. |
 | `SENTRY_ORG` | Variable | Org slug. |
 | `SENTRY_PROJECT` | Variable | Project slug. |

@@ -91,6 +91,49 @@ describe("AuthProvider", () => {
     expect(transport.named("anon_session_created")).toHaveLength(0);
   });
 
+  // GRV-106: analytics identifies the account by its Firebase UID alone, and
+  // forgets it on sign-out.
+  describe("analytics identity", () => {
+    it("identifies a signed-in account by its UID and nothing else", async () => {
+      const { fake, transport } = await renderAuthProvider();
+
+      fake.emit({
+        uid: "user_123",
+        email: "producer@example.com",
+        displayName: "A Producer",
+        isAnonymous: false,
+      });
+      await settle();
+
+      expect(transport.userId).toBe("user_123");
+      const sent = JSON.stringify(transport.userProperties);
+      expect(sent).not.toContain("producer@example.com");
+      expect(sent).not.toContain("A Producer");
+    });
+
+    it("resets the identity on sign-out", async () => {
+      const { fake, transport } = await renderAuthProvider();
+
+      fake.emit({ uid: "user_123", email: "producer@example.com", isAnonymous: false });
+      await settle();
+      fake.emit(null);
+      await settle();
+
+      expect(transport.userId).toBeNull();
+      expect(transport.identityResets).toBe(1);
+    });
+
+    it("resets nothing for a page that loads signed out", async () => {
+      const { fake, transport } = await renderAuthProvider();
+
+      fake.emit(null);
+      await settle();
+
+      expect(transport.userId).toBeNull();
+      expect(transport.identityResets).toBe(0);
+    });
+  });
+
   // The team's and the test accounts' sessions are internal traffic, so they
   // stay out of the product's measures without anyone typing `?internal=1`.
   describe("internal traffic", () => {

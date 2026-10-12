@@ -66,8 +66,9 @@ export function AuthProvider(props: AuthProviderProps) {
 
   const signOut = () => authService.signOut();
 
-  // PRD `OPS-02`: account type is a GA4 *user property*, not an event
-  // parameter, and it is the only account fact analytics carries. The
+  // PRD `OPS-02`: account type is a *person property*, not an event
+  // parameter, and it is the only account fact analytics carries besides the
+  // UID below. The
   // boundary attaches it to every subsequent event, so no call site passes
   // it and none can get it wrong.
   //
@@ -79,6 +80,17 @@ export function AuthProvider(props: AuthProviderProps) {
   createEffect(
     () => (state.loading || !state.user ? "unknown" : accountTypeOf(state)),
     (accountType) => analytics.setAccountType(accountType),
+  );
+
+  // GRV-106: the signed-in account is identified to analytics by its Firebase
+  // UID and nothing else (no email, no display name), and forgotten again on
+  // sign-out. `undefined` while auth is still resolving, so a page load does
+  // not read as a sign-out before Firebase has restored the session.
+  createEffect(
+    () => (state.loading ? undefined : (state.user?.uid ?? null)),
+    (uid) => {
+      if (uid !== undefined) analytics.setUserId(uid);
+    },
   );
 
   // The team's and the test accounts' sessions are internal traffic
