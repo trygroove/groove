@@ -144,11 +144,77 @@ describe("runEvals", () => {
     const markdown = renderMarkdown(report);
     expect(markdown).toContain("**Errored turns: 1 of 2**");
     expect(markdown).toContain(
-      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 1 |",
+      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | 1 |",
     );
     expect(markdown).toContain(
       "**Run 2** (0 s): errored, not judged: provider_error: The assistant could not take that request. (provider: rejected, HTTP 400)",
     );
+  });
+
+  // GRV-99: cases that carry a conversation, expect a question, or name checks of their own.
+  it("sends a case's history ahead of its request", async () => {
+    const known = EVAL_CASES.find((entry) => entry.id === "pad-genre-known") as EvalCase;
+    const provider = createScriptedAssistantProvider([
+      replyEvents(["A pad, coming up."]),
+    ]);
+    await runEvals({ provider, cases: [known], runs: 1, now: fixedNow });
+    expect(provider.requests[0].messages).toEqual([
+      ...(known.history ?? []).map((message) => ({
+        role: message.role,
+        content: message.text,
+      })),
+      { role: "user", content: known.request },
+    ]);
+  });
+
+  it("passes a case that expects a question only when it asks and proposes nothing", async () => {
+    const unknown = EVAL_CASES.find(
+      (entry) => entry.id === "pad-genre-unknown",
+    ) as EvalCase;
+    const project = unknown.fixture();
+    const synth = project.song.tracks.find((track) => track.name === "Synth");
+    if (!synth) throw new Error("no Synth track");
+    const synthDown = setParameter(
+      { scope: "track", trackId: synth.id, parameterId: "track.volume" },
+      -3,
+    );
+    const askCall = {
+      name: "ask_producer",
+      input: {
+        question: "What kind of track is this?",
+        options: [{ label: "Deep techno" }, { label: "Ambient" }],
+      },
+    };
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("Before I add a pad: what kind of track is this?", [askCall]),
+      toolUseEvents("A pad, and the Synth volume down.", [
+        { name: toolNameFor(synthDown.type), input: synthDown.payload },
+      ]),
+    ]);
+    const report = await runEvals({ provider, cases: [unknown], runs: 2, now: fixedNow });
+    const [asked, proposed] = report.records;
+    expect(asked.checks).toEqual({
+      outcome: { status: "pass", detail: 'Asked "What kind of track is this?"' },
+    });
+    expect(proposed.checks.outcome?.status).toBe("fail");
+    // A proposal it should not have made is still judged by the shared checks.
+    expect(proposed.checks.valid?.status).toBe("pass");
+    expect(proposed.checks.inScope?.status).toBe("fail");
+    expect(report.summary.checks.outcome).toEqual({ pass: 1, fail: 1, skip: 0 });
+  });
+
+  it("judges a case's own checks, and leaves them unjudged when nothing applied", async () => {
+    const hats = EVAL_CASES.find((entry) => entry.id === "density-hats") as EvalCase;
+    const provider = createScriptedAssistantProvider([
+      replyEvents(["Could you select the hi-hat notes first?"]),
+    ]);
+    const report = await runEvals({ provider, cases: [hats], runs: 1, now: fixedNow });
+    const [record] = report.records;
+    expect(record.checks.valid?.status).toBe("fail");
+    expect(record.checks.outcome).toEqual({ status: "fail", detail: "Proposed nothing" });
+    expect(record.checks.hatDensity?.status).toBe("skip");
+    expect(record.checks.pointsToGenerate?.status).toBe("skip");
+    expect(record.checks.padSound).toBeUndefined();
   });
 
   it("stops at once and exits 1 when the provider rejects the API key", async () => {
