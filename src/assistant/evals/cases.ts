@@ -400,7 +400,7 @@ export const TRANSCRIPT_FIXTURE_PROJECTS: Readonly<
 /**
  * The eval case a kept turn's file runs as (GRV-98): its message against its
  * fixture, free to change any track and to add tracks (a real request has no
- * scope the eval knows), with no parts for check 7 to look for.
+ * scope the eval knows), expecting a proposal, with no parts for check 7 to look for.
  */
 export function evalCaseFromTranscript(exported: ExportedTranscriptCase): EvalCase {
   return {
@@ -408,6 +408,7 @@ export function evalCaseFromTranscript(exported: ExportedTranscriptCase): EvalCa
     capability: "loopSketch",
     axis: "conventional",
     request: exported.request,
+    expect: "proposal",
     fixture: TRANSCRIPT_FIXTURE_PROJECTS[exported.fixture],
     selection: null,
     scope: {
