@@ -91,7 +91,9 @@ import type { TranscriptStore } from "./transcripts";
 import {
   type CheckedVideos,
   checkVideoCalls,
+  droppedVideoNote,
   isVideoCall,
+  NO_VIDEOS,
   type VideoVerifier,
   videoRecommendationTool,
 } from "./video";
@@ -540,7 +542,7 @@ export async function runAssistantTurn(
   let attempts = 0;
   let usage = NO_USAGE;
   let history: BoundedHistory = { messages: [], dropped: 0 };
-  let checked: CheckedVideos = { videos: [], dropped: 0 };
+  let checked: CheckedVideos = NO_VIDEOS;
 
   const finish = (
     outcome: AssistantTurnLog["outcome"],
@@ -560,6 +562,7 @@ export async function runAssistantTurn(
         historyDropped: history.dropped,
         videosShown: checked.videos.length,
         videosDropped: checked.dropped,
+        videosUnchecked: checked.unchecked,
       }),
     );
 
@@ -629,16 +632,20 @@ export async function runAssistantTurn(
             "The assistant request was cancelled.",
           );
         }
+        // Words that lead into a dropped video are not left standing alone.
+        const note = droppedVideoNote(outcome.text, checked);
+        if (note) await options.onChunk({ type: "text", text: note });
+        const text = outcome.text + note;
         finish("completed", outcome.stopReason);
         const proposal = proposalOf(turn, outcome.toolCalls);
         await keepTranscript(deps, uid, caller, turn, startedAt, {
-          text: outcome.text,
+          text,
           stopReason: outcome.stopReason,
           proposal,
           model: model.id,
         });
         return {
-          text: outcome.text,
+          text,
           stopReason: outcome.stopReason,
           proposal,
           ask,

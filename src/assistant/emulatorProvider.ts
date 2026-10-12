@@ -418,12 +418,12 @@ export const emulatorVideoVerifier: VideoVerifier = async (videoId) =>
         title: EMULATOR_VIDEO.title,
         channel: EMULATOR_VIDEO.channel,
       } satisfies VideoFacts)
-    : null;
+    : "missing";
 
 /** `[video]`'s reply: a sentence, then two video recommendations. */
 function videoReply(): Step[] {
   return proposalReply(
-    "It's the resonance and the envelope sweeping the cutoff together. This walkthrough shows it clearly:",
+    "It's the resonance and the envelope sweeping the cutoff together: push the resonance up, then let a short filter envelope open and close the cutoff on every note.",
     [
       {
         name: RECOMMEND_VIDEO_TOOL,

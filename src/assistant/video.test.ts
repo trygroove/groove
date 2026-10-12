@@ -4,6 +4,7 @@ import {
   assistantVideoSchema,
   checkVideoCalls,
   createOEmbedVideoVerifier,
+  droppedVideoNote,
   RECOMMEND_VIDEO_TOOL,
   VIDEO_LIMITS,
   videoRecommendationTool,
@@ -33,23 +34,23 @@ describe("the oEmbed video check (ADR 0009 decision 5)", () => {
   });
 
   it.each([
-    ["missing", 404],
-    ["private or not embeddable", 401],
-    ["malformed", 400],
-    ["rate limited", 429],
-    ["down", 503],
-  ])("drops a video oEmbed answers %s (%i)", async (_, status) => {
+    ["missing", 404, "missing"],
+    ["private or not embeddable", 401, "missing"],
+    ["malformed", 400, "missing"],
+    ["rate limited", 429, "unchecked"],
+    ["down", 503, "unchecked"],
+  ])("drops a video oEmbed answers %s (%i) as %s", async (_, status, refusal) => {
     const verify = createOEmbedVideoVerifier(respond(status, { error: "x" }));
-    expect(await verify(ID, signal())).toBeNull();
+    expect(await verify(ID, signal())).toBe(refusal);
   });
 
   it("drops a video when oEmbed is unreachable or answers in another shape", async () => {
     const down = createOEmbedVideoVerifier(async () => {
       throw new TypeError("fetch failed");
     });
-    expect(await down(ID, signal())).toBeNull();
+    expect(await down(ID, signal())).toBe("unchecked");
     const odd = createOEmbedVideoVerifier(respond(200, { html: "<iframe>" }));
-    expect(await odd(ID, signal())).toBeNull();
+    expect(await odd(ID, signal())).toBe("unchecked");
   });
 
   it("gives up on a check that takes too long", async () => {
@@ -57,14 +58,14 @@ describe("the oEmbed video check (ADR 0009 decision 5)", () => {
       new Promise((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
       });
-    expect(await createOEmbedVideoVerifier(hang, 10)(ID, signal())).toBeNull();
+    expect(await createOEmbedVideoVerifier(hang, 10)(ID, signal())).toBe("unchecked");
   });
 
   it("never asks about something that is not a video ID", async () => {
     const fetcher = respond(200, { title: "x", author_name: "y" });
     const verify = createOEmbedVideoVerifier(fetcher);
-    expect(await verify("../watch?v=x", signal())).toBeNull();
-    expect(await verify("short", signal())).toBeNull();
+    expect(await verify("../watch?v=x", signal())).toBe("missing");
+    expect(await verify("short", signal())).toBe("missing");
     expect(fetcher).not.toHaveBeenCalled();
   });
 
@@ -73,8 +74,9 @@ describe("the oEmbed video check (ADR 0009 decision 5)", () => {
       respond(200, { title: "t".repeat(500), author_name: "c".repeat(500) }),
     );
     const facts = await verify(ID, signal());
-    expect(facts?.title).toHaveLength(VIDEO_LIMITS.maxTitleChars);
-    expect(facts?.channel).toHaveLength(VIDEO_LIMITS.maxChannelChars);
+    if (typeof facts !== "object") throw new Error("expected the video's facts");
+    expect(facts.title).toHaveLength(VIDEO_LIMITS.maxTitleChars);
+    expect(facts.channel).toHaveLength(VIDEO_LIMITS.maxChannelChars);
   });
 });
 
@@ -109,7 +111,50 @@ describe("checkVideoCalls", () => {
       verify,
       signal(),
     );
-    expect(checked).toEqual({ videos: [], dropped: 0 });
+    expect(checked).toEqual({ videos: [], dropped: 0, unchecked: 0 });
+  });
+
+  it("counts the videos it could not check apart from the ones YouTube refused", async () => {
+    const checked = await checkVideoCalls(
+      [call("aaaaaaaaaaa"), call("bbbbbbbbbbb")],
+      async (videoId) => {
+        if (videoId === "aaaaaaaaaaa") return "missing";
+        throw new Error("unreachable");
+      },
+      signal(),
+    );
+    expect(checked).toEqual({ videos: [], dropped: 2, unchecked: 1 });
+  });
+});
+
+describe("droppedVideoNote (GRV-16 QA)", () => {
+  const video = { videoId: ID, title: "T", channel: "C", reason: "R" };
+
+  it("says nothing when no video was dropped", () => {
+    expect(droppedVideoNote("Here.", { videos: [video], dropped: 0, unchecked: 0 })).toBe(
+      "",
+    );
+  });
+
+  it("says there is no video when every one was dropped, as its own paragraph", () => {
+    const note = droppedVideoNote("Sidechain the pad to the kick.", {
+      videos: [],
+      dropped: 1,
+      unchecked: 0,
+    });
+    expect(note).toMatch(/^\n\nI couldn't find a video on YouTube/);
+    expect(note).toMatch(/no video this time\.$/);
+  });
+
+  it("is the whole reply when the model wrote nothing but the video", () => {
+    const note = droppedVideoNote("  ", { videos: [], dropped: 1, unchecked: 0 });
+    expect(note).toMatch(/^I couldn't find a video/);
+  });
+
+  it("says one was left out when another is shown", () => {
+    expect(
+      droppedVideoNote("Two.", { videos: [video], dropped: 1, unchecked: 0 }),
+    ).toMatch(/One of the videos I picked couldn't be found on YouTube/);
   });
 });
 

@@ -18,14 +18,17 @@ provider's API key or talks to the provider directly.
   `claude-haiku-4-5` is a change to `ASSISTANT_MODEL_ID` and a deploy.
 - Each turn logs one `assistant turn` record to Cloud Logging: outcome code,
   model, prompt version, attempts, failure kinds, token counts, duration, and
-  how many recommended videos were shown and dropped. Never the conversation,
+  how many recommended videos were shown, dropped, and dropped unchecked.
+  Never the conversation,
   the project, the account or the provider's error text.
 - A tutorial video the model recommends (GRV-16, ADR 0009) is checked from
   `assistantTurn` against YouTube's public oEmbed endpoint
   (`https://www.youtube.com/oembed`, no key, plain outbound HTTPS, no Google
-  Cloud API). A video it does not describe is dropped, and while it is
-  unreachable every video is dropped: `videosDropped` climbing with
-  `videosShown` at 0 is the sign.
+  Cloud API). A video oEmbed answers with a 4xx for (missing, private, not
+  embeddable) is dropped; while YouTube is unreachable every video is dropped
+  unchecked, and `videosUnchecked` climbing is the sign. `videosDropped`
+  climbing with `videosUnchecked` at 0 means the model is naming IDs that do
+  not exist. A reply whose video was dropped ends with a line saying so.
 
 ## Limits and the kill switch
 

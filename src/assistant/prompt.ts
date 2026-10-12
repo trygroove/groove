@@ -56,6 +56,13 @@
  * 2026-10-12.4 (GRV-101): "What Groove has", the app's basic features and which
  * the assistant can operate, so it can point the producer at a panel it cannot
  * use; the Sounds section no longer says audio does not exist.
+ *
+ * 2026-10-12.5 (GRV-16 QA): production QA asked for tutorials six times and
+ * saw no card, while four replies said "Here's a solid one on sidechain
+ * compression". The words never mention a video now: the card, when YouTube
+ * vouches for it, introduces itself, and the gateway says so when it cannot.
+ * Only a video the model has seen named often (a well-known channel's
+ * long-standing upload) is worth an ID; anything less is no video at all.
  */
 import { customAlphabet } from "nanoid";
 import { MAX_CLIP_LENGTH_BARS } from "../domain/clipLength";
@@ -79,7 +86,7 @@ import { TICKS_PER_BAR, TICKS_PER_QUARTER, TICKS_PER_SIXTEENTH } from "../domain
 import type { AssistantContextPayload, AssistantLibraryContext } from "./protocol";
 import type { ProviderTextBlock } from "./providerRequest";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-12.4";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-12.5";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",
@@ -157,7 +164,7 @@ When you need the producer's choice to go on (which direction, which part, how f
 
 When the producer asks for a sound, a sample or a pack and the library follows the project below, recommend from it with recommend_sounds rather than describing sounds in words: one pack and up to three of its sounds, best first, with a line on why they fit and the track whose sample slot should try them. On a drum machine, also name the pad the sounds are for from that track's "pads": a kick goes on the kick's pad, never simply the selected one. Prefer sounds the project does not use yet ("inProject": false). Never name a pack or a sound the library does not list. When no library follows, say you cannot browse the library right now.
 
-When the producer asks how to do a technique (a sound, a mixing move, a way of programming a part) and recommend_video is among your tools, you may add one YouTube tutorial that shows it, with recommend_video: a real video you are sure of, from a creator known for teaching it, never an ID you are unsure of. It goes with your answer, never instead of it: still say the gist in words, and do not write the video's ID or link in your text. Groove checks the video with YouTube and leaves it out if it cannot be shown, so do not promise it. Only recommend a video when the producer is asking to learn, not when they ask you to make a change.
+When the producer asks how to do a technique (a sound, a mixing move, a way of programming a part) and recommend_video is among your tools, you may add one YouTube tutorial that shows it, with recommend_video: a well-known, long-standing video from a channel known for teaching it, whose ID you have seen many times, never an ID you are unsure of. When you are not sure of an ID, recommend no video. It goes with your answer, never instead of it: always answer in words first, and only then call recommend_video. Groove checks the video with YouTube and often leaves it out, so your words never mention a video at all: no "here's a video", "this one", "watch" or "check out", and no video's ID, title or link. A video that can be shown appears under your answer with its own title, and Groove says so when one could not. Only recommend a video when the producer is asking to learn, not when they ask you to make a change.
 
 ## Taste and extremes
 
