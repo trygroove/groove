@@ -96,12 +96,13 @@ describe("a recommended tutorial video (GRV-16, ADR 0009)", () => {
     expect(JSON.stringify(named("assistant_video_played"))).not.toContain(VIDEO.videoId);
   });
 
-  it("goes back to the still card when the video is closed", () => {
+  it("goes back to the still card when the video is closed, with focus on Play", async () => {
     const { view } = setup();
     clickAndFlush(screen.getByRole("button", { name: /^Play / }));
     clickAndFlush(screen.getByRole("button", { name: "Close video" }));
     expect(view.container.querySelector("iframe")).toBeNull();
-    expect(screen.getByRole("button", { name: /^Play / })).toBeInTheDocument();
+    await settle();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Play / }));
   });
 
   it("says so in the card when the player does not load, and Try again makes a new one", async () => {
