@@ -4100,6 +4100,69 @@ describe("EditorView assistant panel", () => {
     expect(within(card).getByRole("status")).toHaveTextContent("BD is trying");
   });
 
+  it("makes a try stale when the pad's level changes under it (GRV-23)", async () => {
+    const client = createFakeAssistantClient();
+    repository = inMemoryModule.createInMemoryProjectRepository();
+    const project = createStarterProject("u1", () => 0.5);
+    const [drums] = project.song.tracks;
+    if (drums?.instrument?.kind !== "drumMachine") throw new Error("no drum machine");
+    const bd = drums.instrument.pads.find((pad) => pad.name === "BD");
+    if (!bd) throw new Error("no BD pad");
+    const created = await repository.createProject(project);
+    if (!created.ok) throw new Error("fixture project failed to create");
+    renderEditor(project.metadata.id, {
+      account: { uid: "u1", registered: true },
+      assistantClient: async () => client,
+      libraryClient: new LibraryClient(fixtureFetcher()),
+      createAuditionEngine: fakePreviewEngine,
+    });
+    await screen.findByTestId("arrangement-view-ready");
+
+    await openAndSend(client, "the kick is too clean, anything dustier?");
+    fireAndFlush(() =>
+      client.last().emit({
+        type: "proposal",
+        proposal: {
+          baseRevision: project.metadata.revision,
+          toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+          calls: [
+            {
+              id: "toolu_1",
+              name: RECOMMEND_SOUNDS_TOOL,
+              input: {
+                packId: "pak_SdlN_OazweXrwury0j27Y",
+                soundIds: ["sg-one-shot-drums-kick-0004"],
+                reason: "Dustier.",
+                trackId: drums.id,
+                padId: bd.id,
+              },
+            },
+          ],
+        },
+      }),
+    );
+    fireAndFlush(() => client.last().done());
+    const card = await screen.findByRole("region", { name: /^Recommended pack/ });
+    clickAndFlush(within(card).getByRole("button", { name: "Try on BD" }));
+    expect(within(card).getByRole("status")).toHaveTextContent("BD is trying");
+
+    const level = await screen.findByRole("slider", { name: "Level for BD" });
+    // An arrow-key nudge: jsdom's range input does not move on a key, so the
+    // events the browser fires for one are fired here.
+    fireAndFlush(() => {
+      level.focus();
+      fireEvent.input(level, { target: { value: "-1" } });
+      fireEvent.change(level, { target: { value: "-1" } });
+    });
+
+    await waitFor(() =>
+      expect(within(card).getByRole("status")).toHaveTextContent(
+        "Out of date. BD changed while a sound was being tried",
+      ),
+    );
+    expect(within(card).queryByRole("button", { name: "Keep" })).toBeNull();
+  });
+
   it("scopes to the clips selected in the arrangement, as a section (GRV-26)", async () => {
     const { client, transport } = await renderTalking(createSliceFixtureProject());
     await clickBdClip();

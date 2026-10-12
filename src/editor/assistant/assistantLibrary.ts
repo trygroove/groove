@@ -24,12 +24,19 @@ import {
   type LibraryAsset,
   type LibraryPackSummary,
 } from "../../library/manifest";
+import { packCounts } from "../../library/packCatalog";
 import { addedPackIds } from "../editorViewModel";
 
 /** One published pack and the sounds of it a recommendation may name. */
 export interface AssistantLibraryPackEntry {
   readonly pack: LibraryPackSummary;
   readonly sounds: readonly LibraryAsset[];
+  /**
+   * How many sounds the library shows for the pack, as its own pack banner
+   * counts them (`packCounts`). Not the index's `assetCount`, which counts
+   * presets and every other asset the shelf leaves out.
+   */
+  readonly soundCount: number;
 }
 
 /** The published library, as far as it loaded. */
@@ -75,7 +82,13 @@ export function createAssistantLibrary(client: LibraryClient): AssistantLibrary 
       packs: published.flatMap((pack, at) => {
         const result = results[at];
         if (!result?.ok) return [];
-        return [{ pack, sounds: result.assets.filter(recommendable) }];
+        return [
+          {
+            pack,
+            sounds: result.assets.filter(recommendable),
+            soundCount: packCounts({ pack, assets: result.assets }).sounds,
+          },
+        ];
       }),
     };
     loaded = catalog;
