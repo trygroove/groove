@@ -116,6 +116,7 @@ describe("the assistant's library (GRV-23)", () => {
             { ...sound, name: long, role: long, genres: [long], characters: [] },
             { ...sound, id: long },
           ],
+          soundCount: 2,
         },
       ],
     };

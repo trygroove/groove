@@ -21,7 +21,10 @@ import type { Clip, Project } from "../domain/entities";
 import type { ClipId } from "../domain/ids";
 import { createProjectAutosave, type ProjectAutosave } from "../persistence/autosave";
 import type { DroppedReferences } from "../persistence/documents";
-import type { ProjectRepository } from "../persistence/projectRepository";
+import type {
+  ProjectRepository,
+  ProjectWatchEvent,
+} from "../persistence/projectRepository";
 import { type Clock, systemClock } from "../shared/clock";
 import type { Scheduler } from "../shared/scheduler";
 import { markProjectOpened } from "./deviceProjectRecord";
@@ -143,6 +146,8 @@ export class EditorSession {
     commitPreview: (preview, actor) => this.commitPreview(preview, actor),
   };
   private preview: SessionPreview | null = null;
+  /** Counts remote loads, so only the latest one is adopted. */
+  private remoteLoads = 0;
   private firstEditLogged = false;
   private disposed = false;
 
@@ -162,14 +167,9 @@ export class EditorSession {
       coalesceMs: options.coalesceMs,
     });
     this.unsubscribeHistory = this.history.subscribe(() => this.onHistoryChange());
-    this.unwatch = options.repository.watchProject(this.projectId, (event) => {
-      // A remote change moves the committed revision under an open preview,
-      // so the preview is stale. An echo or an ignored snapshot moves nothing.
-      if (this.autosave.applyRemote(event) === "adopted") {
-        this.endOpenPreview("stale", "remote_change");
-        for (const listener of [...this.remoteListeners]) listener();
-      }
-    });
+    this.unwatch = options.repository.watchProject(this.projectId, (event) =>
+      this.onRemoteEvent(event),
+    );
     this.logProjectOpened(options.project, options.deviceStorage);
     if (options.dropped) {
       this.queueRepair(options.project, options.dropped);
@@ -466,6 +466,52 @@ export class EditorSession {
       correlationId: result.correlationId,
       commands: result.commands,
     };
+  }
+
+  /**
+   * A snapshot of the metadata tier arrived. An echo of this session's own
+   * write, or one that arrives while a local edit is queued, moves nothing
+   * (`ProjectAutosave.applyRemote`). A change saved elsewhere is adopted with
+   * its content: the project is loaded again first, so the next local edit is
+   * made on top of it. Adopting only the revision would let this session write
+   * its out-of-date song over the newer one at that revision (GRV-23: a kept
+   * sound reverted by a stale second tab).
+   */
+  private onRemoteEvent(event: ProjectWatchEvent): void {
+    const status = this.autosave.status;
+    const changedElsewhere =
+      event.kind === "metadata" &&
+      event.metadata.revision > status.revision &&
+      status.pending === 0 &&
+      status.state !== "saving";
+    if (!changedElsewhere) {
+      this.autosave.applyRemote(event);
+      return;
+    }
+    void this.adoptRemote();
+  }
+
+  /**
+   * Loads the project as it was saved elsewhere and makes it the committed
+   * one. Until it lands the autosave keeps the revision this session's project
+   * is really at, so an edit made meanwhile is refused as a conflict rather
+   * than written over the newer state. Undo and redo go with it: they were
+   * worked out against the project that was replaced.
+   */
+  private async adoptRemote(): Promise<void> {
+    const load = ++this.remoteLoads;
+    const loaded = await this.repository.loadProject(this.projectId);
+    if (this.disposed || load !== this.remoteLoads || !loaded.ok) return;
+    if (this.history.gestureActive) return;
+    const outcome = this.autosave.applyRemote({
+      kind: "metadata",
+      metadata: loaded.value.metadata,
+    });
+    if (outcome !== "adopted") return;
+    // The committed revision moved under an open preview, so it is stale.
+    this.endOpenPreview("stale", "remote_change");
+    this.history.replaceProject(loaded.value);
+    for (const listener of [...this.remoteListeners]) listener();
   }
 
   private emitEdit(edit: SessionEdit): void {

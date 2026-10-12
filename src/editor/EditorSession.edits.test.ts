@@ -4,7 +4,7 @@ import { ConsentStore } from "../analytics/consent";
 import { createRecordingTransport } from "../analytics/transport";
 import { setParameter } from "../commands";
 import { createSliceFixtureProject } from "../domain/fixtures";
-import { TRACK_VOLUME } from "../domain/parameters";
+import { TRACK_PAN, TRACK_VOLUME } from "../domain/parameters";
 import { createInMemoryProjectRepository } from "../persistence/inMemoryProjectRepository";
 import { createManualClock } from "../shared/clock";
 import { memoryStorage } from "../testing/storage";
@@ -124,5 +124,43 @@ describe("EditorSession.subscribeEdits (GRV-5)", () => {
     unsubscribe();
     session.dispatch(volume(-3));
     expect(seen).toHaveLength(0);
+  });
+});
+
+describe("EditorSession, a change saved in another tab (GRV-23)", () => {
+  it("adopts the other tab's song, so its own next edit does not write over it", async () => {
+    const { repository, project, session: tabA, volume } = await setUp();
+    const tabB = new EditorSession({
+      repository,
+      project,
+      clock: createManualClock(1_000),
+      deviceStorage: memoryStorage(),
+    });
+    const trackId = project.song.tracks[0].id;
+    let remote = 0;
+    tabA.subscribeRemoteChanges(() => {
+      remote += 1;
+    });
+
+    // Tab B makes a change and saves it.
+    tabB.dispatch(volume(-12));
+    await tabB.autosave.flush();
+    await vi.waitFor(() => expect(remote).toBe(1));
+    const adopted = tabA.committedProject.song.tracks[0];
+    expect(adopted?.mixer.volume).toBe(-12);
+
+    // Tab A edits something else on the same track, and saves.
+    tabA.dispatch(
+      setParameter({ scope: "track", trackId, parameterId: TRACK_PAN.id }, 0.5),
+    );
+    const saved = await tabA.autosave.flush();
+    expect(saved.state).toBe("saved");
+
+    const loaded = await repository.loadProject(project.metadata.id);
+    if (!loaded.ok) throw new Error("expected the project to load");
+    const track = loaded.value.song.tracks[0];
+    expect(track?.mixer.volume).toBe(-12);
+    expect(track?.mixer.pan).toBe(0.5);
+    tabB.dispose();
   });
 });

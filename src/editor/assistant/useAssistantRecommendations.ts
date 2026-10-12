@@ -14,7 +14,8 @@
  * - **Put back** drops the override and goes back to where the editor was.
  *   Going to the Library puts the sound back too: the Library plays its own
  *   sounds through the slot.
- * - Editing the slot while a sound is being tried, or a change made
+ * - Editing the slot while a sound is being tried (anything on the pad, or
+ *   the sampler's sound and instrument), or a change made
  *   elsewhere, puts the sound back and makes the card **stale**: it can ask
  *   again (Refresh) or be dismissed.
  *
@@ -36,11 +37,7 @@ import {
   type RecommendationIssueCode,
   validateRecommendation,
 } from "../../assistant/recommendation";
-import {
-  type ControlAddress,
-  controlKey,
-  uniqueControls,
-} from "../../commands/controlAddress";
+import { type ControlAddress, uniqueControls } from "../../commands/controlAddress";
 import { controlsTouchedBy } from "../../commands/controls";
 import type { ControlMark } from "../../controls/registry";
 import type { Project } from "../../domain/entities";
@@ -56,6 +53,7 @@ import type { EditorViewName } from "../editorViews";
 import type { LibraryInsertOutcome } from "../libraryInsert";
 import { type AssistantLibrary, projectHasPack } from "./assistantLibrary";
 import {
+  editTouchesSlot,
   type RecommendationSlot,
   type ResolvedRecommendation,
   resolveRecommendation,
@@ -523,8 +521,7 @@ export function useAssistantRecommendations(
   function editHitsSlot(edit: SessionEdit, slot: RecommendationSlot): boolean {
     const after = session.proposalTarget()?.project;
     if (after && !slotExists(after, slot)) return true;
-    const key = controlKey(slot.address);
-    return touchedBy(edit).some((address) => controlKey(address) === key);
+    return editTouchesSlot(slot, touchedBy(edit), edit.commands);
   }
 
   function onEdit(edit: SessionEdit): void {
