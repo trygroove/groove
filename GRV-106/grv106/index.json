@@ -1,0 +1,10 @@
+{
+  "id": "grv106",
+  "title": "Privacy disclosure",
+  "steps": [
+    {
+      "file": "01-the-privacy-disclosure-on-the-landing-pa.png",
+      "caption": "The Privacy disclosure on the landing page, naming PostHog for product events"
+    }
+  ]
+}
