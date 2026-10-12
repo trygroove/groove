@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Proposed |
+| Status | Accepted |
 | Date | 2026-10-12 |
 | Decides | Which vendor receives product analytics and session replay, and how PostHog's error tracking is evaluated against Sentry's |
 | Decided by | The product owner, on GRV-104 |
