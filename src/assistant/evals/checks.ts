@@ -87,6 +87,10 @@ export const CHECK_LABELS: Record<CheckId, string> = {
   developsTrack: "11. Develops the loop into a track",
   padSound: "12. A sparse, slow pad",
   dissonant: "13. Dissonant chords",
+  addsTracks: "14. Adds tracks",
+  endsAt: "15. A parameter ends at the exact value",
+  noEmptyClips: "16. No clip left without notes",
+  noNoOps: "17. No command sets a value to what it already is",
 };
 
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });

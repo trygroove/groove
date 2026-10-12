@@ -413,7 +413,7 @@ export function evaluateTurn(
   if (turn.error) return { ...base, checks: {}, stats: null, fingerprint: null };
   const outcome = checkOutcome(evalCase.expect, turn);
   const proposed = turn.proposal !== null && turn.proposal !== undefined;
-  if (evalCase.expect === "ask" && !proposed) {
+  if (evalCase.expect !== "proposal" && !proposed) {
     return { ...base, checks: { outcome }, stats: null, fingerprint: null };
   }
   const caseChecks = evalCase.checks ?? [];
@@ -449,7 +449,13 @@ export function evaluateTurn(
       coverage: checkCoverage(project, after, evalCase.parts ?? []),
       outcome,
       ...Object.fromEntries(
-        caseChecks.map((id) => [id, runCaseCheck(id, project, after, turn.text)]),
+        caseChecks.map((id) => [
+          id,
+          runCaseCheck(id, project, after, turn.text, {
+            commands: proposal.commands,
+            expectedValue: evalCase.expectedValue,
+          }),
+        ]),
       ),
     },
     stats: describeProposal(project, after, proposal.commands.length),

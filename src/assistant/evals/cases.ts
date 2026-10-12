@@ -17,8 +17,11 @@ import type { SelectionScope, SelectionState } from "../../selection/types";
 import { type AskAnswer, type AssistantAsk, answerMessage, askTranscript } from "../ask";
 import type { AssistantMessage } from "../protocol";
 import type { CaseCheckId, EvalExpectation } from "./caseChecks";
+import type { ExpectedValue } from "./caseChecksQa";
 import {
   createArrangementProject,
+  createBdOnlyProject,
+  createBdSketchProject,
   createHouseLoopProject,
   createKitSketchProject,
   createTechnoDrumsProject,
@@ -41,6 +44,10 @@ export const EVAL_CAPABILITIES = [
   "density",
   "development",
   "newPart",
+  // GRV-107's cases from GRV-6's QA findings.
+  "sketchScope",
+  "relativeLevel",
+  "resketch",
 ] as const;
 export type EvalCapability = (typeof EVAL_CAPABILITIES)[number];
 
@@ -96,6 +103,8 @@ export interface EvalCase {
   readonly expect: EvalExpectation;
   /** Checks of its own, judged on an applied proposal beside the shared ones. */
   readonly checks?: readonly CaseCheckId[];
+  /** What the `endsAt` check holds a parameter to. */
+  readonly expectedValue?: ExpectedValue;
   readonly fixture: () => Project;
   readonly selection: EvalSelection;
   readonly scope: EvalScope;
@@ -146,6 +155,59 @@ const PAD_REQUEST = "I think this track needs a high, atmospheric pad sound.";
 
 /** What a case that may add new tracks, and change nothing else, allows. */
 const NEW_TRACKS_ONLY: EvalScope = { tracks: [], createTracks: true, ...NOTHING_ELSE };
+
+/** GRV-107: the sketch request QA sent, on a project with only BD. */
+const HOUSE_SKETCH_REQUEST =
+  "Sketch a four-on-the-floor house loop with drums, bass, chords, melody and a texture.";
+
+/** GRV-107: the extreme request QA sent. */
+const BROKEN_DNB_REQUEST =
+  "Make a broken, lurching, abrasive drum and bass loop, no straight grid.";
+
+/** The BD track's volume the relative-dB cases start from. */
+const BD_START_DB = -3;
+
+/** What a sketch may change: any track, new tracks, and the song's tempo. */
+const SKETCH_SCOPE: EvalScope = {
+  tracks: "all",
+  createTracks: true,
+  ...NOTHING_ELSE,
+  song: true,
+};
+
+/** What a level request may change: the BD track alone. */
+const BD_ONLY: EvalScope = { tracks: ["BD"], createTracks: false, ...NOTHING_ELSE };
+
+/** A relative-dB case: BD starts at `from`, and should end at `to`. */
+function relativeDbCase(
+  id: string,
+  request: string,
+  from: number,
+  to: number,
+  history?: readonly AssistantMessage[],
+): EvalCase {
+  return {
+    id,
+    capability: "relativeLevel",
+    axis: "conventional",
+    request,
+    history,
+    expect: "proposal",
+    fixture: () => createBdOnlyProject(from),
+    selection: null,
+    scope: BD_ONLY,
+    checks: ["endsAt"],
+    expectedValue: { track: "BD", parameter: "volume", value: to, tolerance: 0.05 },
+  };
+}
+
+/** A turn the panel resends: the producer's words and the reply's. */
+function resentTurn(request: string, reply: string): readonly AssistantMessage[] {
+  return [
+    { role: "user", text: request },
+    { role: "assistant", text: reply },
+  ];
+}
 
 export const EVAL_CASES: readonly EvalCase[] = [
   {
@@ -322,6 +384,81 @@ export const EVAL_CASES: readonly EvalCase[] = [
     fixture: createTechnoLoopProject,
     selection: null,
     scope: NEW_TRACKS_ONLY,
+  },
+  // GRV-107: GRV-6's QA findings.
+  {
+    id: "sketch-whole-song",
+    capability: "sketchScope",
+    axis: "conventional",
+    request: HOUSE_SKETCH_REQUEST,
+    expect: "proposal",
+    fixture: createBdOnlyProject,
+    selection: null,
+    scope: SKETCH_SCOPE,
+    checks: ["addsTracks"],
+  },
+  {
+    id: "sketch-track-scope",
+    capability: "sketchScope",
+    axis: "conventional",
+    request: HOUSE_SKETCH_REQUEST,
+    // A proposal that adds tracks, or a question about widening the scope.
+    expect: "either",
+    fixture: createBdOnlyProject,
+    selection: { tracks: ["BD"] },
+    scope: SKETCH_SCOPE,
+    checks: ["addsTracks"],
+  },
+  relativeDbCase("db-nudge-down", "Nudge the BD down 1 dB", BD_START_DB, -4),
+  relativeDbCase("db-turn-down", "Turn the BD down by 1 dB", BD_START_DB, -4),
+  relativeDbCase("db-lower", "Lower the BD by 1 dB", BD_START_DB, -4),
+  relativeDbCase("db-turn-up", "Turn the BD up by 3 dB", BD_START_DB, 0),
+  // The panel resends what the reply said, whether or not the change stuck.
+  relativeDbCase(
+    "db-stale-cancelled",
+    "Turn the BD up by 3 dB",
+    BD_START_DB,
+    0,
+    resentTurn(
+      "Turn the BD down by 2 dB",
+      "I'll lower the BD volume from -3.0 dB to -5.0 dB.",
+    ),
+  ),
+  relativeDbCase(
+    "db-stale-undone",
+    "Turn the BD down by 3 dB",
+    0,
+    -3,
+    resentTurn(
+      "Turn the BD down by 2 dB",
+      "I'll lower the BD volume from 0.0 dB to -2.0 dB.",
+    ),
+  ),
+  {
+    id: "resketch-extreme",
+    capability: "resketch",
+    axis: "extreme",
+    request: BROKEN_DNB_REQUEST,
+    history: resentTurn(
+      HOUSE_SKETCH_REQUEST,
+      "I've sketched a four-on-the-floor house loop: the BD kicks, an offbeat bass, Am chords, a short melody and a held texture.",
+    ),
+    expect: "proposal",
+    fixture: createBdSketchProject,
+    selection: null,
+    scope: SKETCH_SCOPE,
+    checks: ["noEmptyClips", "noNoOps"],
+  },
+  {
+    id: "noop-bd-only",
+    capability: "resketch",
+    axis: "extreme",
+    request: BROKEN_DNB_REQUEST,
+    expect: "proposal",
+    fixture: createBdOnlyProject,
+    selection: null,
+    scope: SKETCH_SCOPE,
+    checks: ["noNoOps"],
   },
 ];
 
