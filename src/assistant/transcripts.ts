@@ -10,7 +10,10 @@
  * Two top-level collections, written only by the Cloud Functions with the
  * admin credential. `firestore.rules` denies every client both of them, the
  * owner included, so no browser can write a transcript, widen its own
- * preference past what the callable allows, or read anyone's records.
+ * preference past what the callable allows, or read anyone's records. An
+ * account with the `admin` claim reads them through the
+ * `assistantTranscriptsAdmin` callable (`transcriptAdmin.ts`, GRV-98), never
+ * through the rules.
  *
  * - `assistantTranscripts/{uid}_{turnId}`: one completed turn
  *   ({@link TranscriptRecord}): the user's message, the reply, the proposal
@@ -42,6 +45,7 @@
  */
 import { z } from "zod";
 import { ASSISTANT_LIMITS } from "./config";
+import { PROPOSAL_ISSUE_CODES } from "./proposalIssues";
 
 export const ASSISTANT_TRANSCRIPTS_COLLECTION = "assistantTranscripts";
 export const ASSISTANT_PREFERENCES_COLLECTION = "assistantPreferences";
@@ -118,8 +122,45 @@ export function readPreference(raw: unknown): RetentionPreference | null {
   return parsed.success ? parsed.data : null;
 }
 
-export const PROPOSAL_OUTCOMES = ["applied", "cancelled", "undone"] as const;
+/**
+ * What became of a proposal. `rejected` (GRV-98): it never reached the
+ * producer as something to apply, because it did not fit the song (or the
+ * song had moved on); the outcome carries why ({@link TranscriptIssue}).
+ */
+export const PROPOSAL_OUTCOMES = ["applied", "cancelled", "undone", "rejected"] as const;
 export type ProposalOutcome = (typeof PROPOSAL_OUTCOMES)[number];
+
+/** The most issues one rejected outcome keeps. */
+export const MAX_TRANSCRIPT_ISSUES = 20;
+
+/**
+ * One reason a proposal was rejected, as the browser's validator found it
+ * (`ProposalIssue` in `proposal.ts`, GRV-98): its code, the tool call it blames
+ * (by the call's ID and tool name, both the model's), and where the validator
+ * and the kernel say so, the path and message they wrote. Never the
+ * producer's words: those are machine-generated, and a path or message that
+ * carries anything {@link checkTranscriptOutcome} forbids is dropped.
+ */
+export const transcriptIssueSchema = z.strictObject({
+  code: z.enum(PROPOSAL_ISSUE_CODES),
+  callId: z.string().max(200).nullable(),
+  callName: z.string().max(200).nullable(),
+  path: z.string().max(300).nullable(),
+  message: z.string().max(500).nullable(),
+});
+export type TranscriptIssue = z.infer<typeof transcriptIssueSchema>;
+
+/** One outcome as a record keeps it; only `rejected` carries issues. */
+export const transcriptOutcomeSchema = z
+  .strictObject({
+    outcome: z.enum(PROPOSAL_OUTCOMES),
+    at: z.int().min(0),
+    issues: z.array(transcriptIssueSchema).max(MAX_TRANSCRIPT_ISSUES).optional(),
+  })
+  .refine((entry) => entry.issues === undefined || entry.outcome === "rejected", {
+    message: "only a rejected outcome carries issues",
+  });
+export type TranscriptOutcome = z.infer<typeof transcriptOutcomeSchema>;
 
 const text = z.string().max(64_000);
 
@@ -155,9 +196,7 @@ export const transcriptRecordSchema = z.strictObject({
   reply: text,
   stopReason: z.enum(["end_turn", "max_tokens", "refusal", "tool_use"]),
   proposal: transcriptProposalSchema.nullable(),
-  outcomes: z
-    .array(z.strictObject({ outcome: z.enum(PROPOSAL_OUTCOMES), at: z.int().min(0) }))
-    .max(50),
+  outcomes: z.array(transcriptOutcomeSchema).max(50),
   model: z.string().max(100),
   promptVersion: z.string().max(100),
   /** When the message arrived, ms since the epoch: the retention clock. */
@@ -221,6 +260,37 @@ function forbiddenContent(value: unknown, depth = 0): string | null {
     }
   }
   return null;
+}
+
+/** A free-text issue field, or `null` when it carries anything forbidden. */
+function cleanIssueField(value: string | null): string | null {
+  return value !== null && forbiddenContent(value) ? null : value;
+}
+
+/**
+ * The gate an outcome passes before a store adds it to a record (GRV-98):
+ * the strict shape, then nothing forbidden. Every free-text field of an issue
+ * (the call's ID and name, which come from the client, and the path and
+ * message) is dropped on its own when it carries something forbidden, keeping
+ * the code, so a rejection is never kept without its reason codes and never
+ * with a URL or a credential. Returns `null` for anything that is not an
+ * outcome.
+ */
+export function checkTranscriptOutcome(raw: unknown): TranscriptOutcome | null {
+  const parsed = transcriptOutcomeSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const { issues, ...rest } = parsed.data;
+  if (!issues) return rest;
+  return {
+    ...rest,
+    issues: issues.map((issue) => ({
+      code: issue.code,
+      callId: cleanIssueField(issue.callId),
+      callName: cleanIssueField(issue.callName),
+      path: cleanIssueField(issue.path),
+      message: cleanIssueField(issue.message),
+    })),
+  };
 }
 
 export type TranscriptCheck =
@@ -327,9 +397,17 @@ export interface TranscriptStore {
   addOutcomeIfPermitted(
     uid: string,
     turnId: string,
-    outcome: { outcome: ProposalOutcome; at: number },
+    outcome: TranscriptOutcome,
     permits: (preference: unknown) => boolean,
   ): Promise<boolean>;
+  /**
+   * The newest records, unparsed, newest first: every account's, or only the
+   * account's or the project's when the filter names one (GRV-98, the admin
+   * viewer). At most `limit`.
+   */
+  recent(filter: TranscriptListFilter, limit: number): Promise<unknown[]>;
+  /** One record, unparsed, by its account and turn, or `null`. */
+  read(uid: string, turnId: string): Promise<unknown>;
   /** Deletes every record the account has. Returns how many. */
   deleteForUser(uid: string): Promise<number>;
   /** Deletes every record about the project. Returns how many. */
@@ -338,6 +416,12 @@ export interface TranscriptStore {
   deleteExpired(now: number): Promise<number>;
   /** Deletes the account's preference (account deletion). */
   deletePreference(uid: string): Promise<void>;
+}
+
+/** What {@link TranscriptStore.recent} narrows to; an empty filter is every account. */
+export interface TranscriptListFilter {
+  readonly uid?: string;
+  readonly projectId?: string;
 }
 
 /** Records are capped per outcome list; a record never holds more. */

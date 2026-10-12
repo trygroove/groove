@@ -26,6 +26,7 @@
  * account that said yes; `assistantRetention` reads and stores that answer
  * (a no deletes what was kept), an hourly job deletes every transcript past
  * its 30 days, and deleting a project or an account deletes its transcripts.
+ * Admins read them through `assistantTranscriptsAdmin` (GRV-98).
  * `src/assistant/retention.ts` and `transcripts.ts` decide all of it.
  *
  * Every kind of user data (packs today, recordings and presets later) is a
@@ -99,6 +100,7 @@ import { createAssistantHandler } from "./assistantHandler";
 import { firestoreGuardStores } from "./assistantStores";
 import { createRetentionHandler } from "./retentionHandler";
 import { createRevokeAccessHandler } from "./revokeAccessHandler";
+import { createTranscriptAdminHandler } from "./transcriptAdminHandler";
 import { firestoreTranscriptStore } from "./transcriptStore";
 
 /**
@@ -394,6 +396,18 @@ export const assistantTurn = onCall(
  */
 export const assistantRetention = onCall(
   createRetentionHandler(() => firestoreTranscriptStore(getFirestore())),
+);
+
+/**
+ * Kept transcripts for admins (GRV-98): the newest turns, narrowed by
+ * account, project, outcome and traffic, and one turn in full, so the team
+ * can see why a proposal was rejected. Only the `admin` claim gets anything;
+ * the rules still deny every client the collection. The export's name is
+ * what the browser calls (`TRANSCRIPT_ADMIN_CALLABLE` in
+ * `src/assistant/transcriptAdmin.ts`).
+ */
+export const assistantTranscriptsAdmin = onCall(
+  createTranscriptAdminHandler(() => firestoreTranscriptStore(getFirestore())),
 );
 
 /**
