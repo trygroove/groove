@@ -22,6 +22,7 @@ import type { LibraryClient } from "../../library/libraryClient";
 import {
   hasAudio,
   type LibraryAsset,
+  type LibraryAssetType,
   type LibraryPackSummary,
 } from "../../library/manifest";
 import { packCounts } from "../../library/packCatalog";
@@ -32,9 +33,12 @@ export interface AssistantLibraryPackEntry {
   readonly pack: LibraryPackSummary;
   readonly sounds: readonly LibraryAsset[];
   /**
-   * How many sounds the library shows for the pack, as its own pack banner
-   * counts them (`packCounts`). Not the index's `assetCount`, which counts
-   * presets and every other asset the shelf leaves out.
+   * How many sounds the library shows for the pack when the card opens it, as
+   * its own pack banner counts them (`packCounts`). A recommendation's slot is
+   * a pad or a sampler, and the library aimed at one shows one-shots alone, so
+   * these are the pack's one-shots: not its loops, and not the index's
+   * `assetCount`, which counts presets and every other asset the shelf leaves
+   * out.
    */
   readonly soundCount: number;
 }
@@ -55,6 +59,9 @@ export interface AssistantLibrary {
   /** What the last load found, or null before one has finished. */
   current(): AssistantLibraryCatalog | null;
 }
+
+/** What the library shows when it is aimed at a recommendation's slot. */
+const SLOT_ASSET_TYPES: readonly LibraryAssetType[] = ["one-shot"];
 
 /** Whether a recommendation may name `asset`: a one-shot or loop with audio. */
 function recommendable(asset: LibraryAsset): boolean {
@@ -86,7 +93,8 @@ export function createAssistantLibrary(client: LibraryClient): AssistantLibrary 
           {
             pack,
             sounds: result.assets.filter(recommendable),
-            soundCount: packCounts({ pack, assets: result.assets }).sounds,
+            soundCount: packCounts({ pack, assets: result.assets }, SLOT_ASSET_TYPES)
+              .sounds,
           },
         ];
       }),
@@ -167,7 +175,10 @@ export function libraryContext(
   let room: number = ASSISTANT_LIBRARY_LIMITS.maxSounds;
   const packs: AssistantLibraryPack[] = [];
   const sendable = catalog.packs.filter(({ pack }) => pack.id.length <= SENT.packId);
-  for (const { pack, sounds } of sendable.slice(0, ASSISTANT_LIBRARY_LIMITS.maxPacks)) {
+  for (const { pack, sounds, soundCount } of sendable.slice(
+    0,
+    ASSISTANT_LIBRARY_LIMITS.maxPacks,
+  )) {
     const sent = sounds.filter((sound) => sound.id.length <= SENT.soundId).slice(0, room);
     room -= sent.length;
     packs.push({
@@ -179,7 +190,7 @@ export function libraryContext(
         0,
         ASSISTANT_LIBRARY_LIMITS.maxDescriptionChars,
       ),
-      soundCount: pack.assetCount,
+      soundCount,
       inProject: projectHasPack(project, pack.id),
       sounds: sent.map((sound) => soundOf(sound, project)),
     });

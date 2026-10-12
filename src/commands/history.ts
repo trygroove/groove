@@ -18,7 +18,8 @@ import type { CommandActor, CommandEnvelope, RawCommandInput } from "./types";
  * than restoring a copy. It is deliberately independent of persistence — a
  * Firestore acknowledgement or a remote echo must not push, drop, or rewrite
  * an entry, and only an explicit `replaceProject` (opening a different project
- * or reloading this one) clears it. Durable, named history is `PRJ-05` in
+ * or reloading this one) clears it. A change saved elsewhere is taken in with
+ * `adoptProject`, which keeps every entry. Durable, named history is `PRJ-05` in
  * Alpha Milestone 1 and does not change this contract.
  *
  * One history entry is one revision for a single command, a multi-command
@@ -362,6 +363,23 @@ export class CommandHistory {
     this.#project = project;
     this.#undo = [];
     this.#redo = [];
+    this.#notify();
+  }
+
+  /**
+   * Installs this project as it was saved elsewhere (another tab's edit) and
+   * keeps the history, so this session's own edits stay undoable on top of
+   * it (GRV-23). Entries hold commands, not snapshots, so undo and redo replay
+   * them onto the adopted project; one that no longer applies fails like any
+   * other transaction and stays where it is.
+   */
+  adoptProject(project: Project): void {
+    if (this.#gesture) {
+      throw new Error("Cannot adopt a project while a gesture is in progress");
+    }
+    // The remote change came between: a run of nudges cannot join across it.
+    this.#run = null;
+    this.#project = project;
     this.#notify();
   }
 

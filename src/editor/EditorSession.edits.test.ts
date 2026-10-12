@@ -163,4 +163,46 @@ describe("EditorSession, a change saved in another tab (GRV-23)", () => {
     expect(track?.mixer.pan).toBe(0.5);
     tabB.dispose();
   });
+
+  it("keeps its own edits undoable after adopting the other tab's change", async () => {
+    const { repository, project, session: tabB, volume } = await setUp();
+    const tabA = new EditorSession({
+      repository,
+      project,
+      clock: createManualClock(1_000),
+      deviceStorage: memoryStorage(),
+    });
+    const trackId = project.song.tracks[0].id;
+    const pan = (value: number) =>
+      setParameter({ scope: "track", trackId, parameterId: TRACK_PAN.id }, value);
+    let remote = 0;
+    tabB.subscribeRemoteChanges(() => {
+      remote += 1;
+    });
+
+    // Tab B makes its own edit (a kept sound, say) and saves it.
+    tabB.dispatch(pan(0.5), { correlationId: "keep_1" });
+    await tabB.autosave.flush();
+    // Tab A adopts it, edits something else and saves.
+    await vi.waitFor(() =>
+      expect(tabA.committedProject.song.tracks[0]?.mixer.pan).toBe(0.5),
+    );
+    tabA.dispatch(volume(-12));
+    await tabA.autosave.flush();
+    await vi.waitFor(() => expect(remote).toBe(1));
+
+    // Tab B shows A's edit and can still undo its own, on top of it.
+    expect(tabB.committedProject.song.tracks[0]?.mixer.volume).toBe(-12);
+    expect(tabB.latestCorrelationId).toBe("keep_1");
+    const undone = tabB.undo();
+    expect(undone?.ok).toBe(true);
+    const after = tabB.committedProject.song.tracks[0];
+    expect(after?.mixer.pan).toBe(project.song.tracks[0]?.mixer.pan);
+    expect(after?.mixer.volume).toBe(-12);
+    expect(tabB.redo()?.ok).toBe(true);
+    expect(tabB.committedProject.song.tracks[0]?.mixer.pan).toBe(0.5);
+    const saved = await tabB.autosave.flush();
+    expect(saved.state).toBe("saved");
+    tabA.dispose();
+  });
 });

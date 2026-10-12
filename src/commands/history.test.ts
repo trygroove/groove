@@ -299,6 +299,34 @@ describe("CommandHistory", () => {
       expect(history.entries).toHaveLength(0);
     });
 
+    it("adopts the project as saved elsewhere and keeps its entries undoable on it", () => {
+      history.execute(updateTrack(fixture.trackAId, { name: "Sub" }));
+      // Another tab, from the same project, changes something else.
+      const elsewhere = createCommandHistory(history.project);
+      elsewhere.execute(
+        setParameter(
+          { scope: "track", trackId: fixture.trackAId, parameterId: TRACK_VOLUME.id },
+          -9,
+        ),
+      );
+      const remote = elsewhere.project;
+
+      history.adoptProject(remote);
+      expect(history.project).toBe(remote);
+      expect(history.canUndo).toBe(true);
+
+      expect(history.undo()?.ok).toBe(true);
+      const track = findTrack(history.project, fixture.trackAId);
+      expect(track?.name).not.toBe("Sub");
+      expect(volumeOf(history.project, fixture.trackAId)).toBe(-9);
+      expect(history.redo()?.ok).toBe(true);
+    });
+
+    it("refuses to adopt a project mid-gesture", () => {
+      history.beginGesture();
+      expect(() => history.adoptProject(history.project)).toThrow(/gesture/);
+    });
+
     it("clears history without touching the project", () => {
       history.execute(updateTrack(fixture.trackAId, { name: "Sub" }));
       const current = history.project;
