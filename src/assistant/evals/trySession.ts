@@ -29,7 +29,7 @@
 import { createCommandHistory } from "../../commands/history";
 import type { Project } from "../../domain/entities";
 import { parseProject } from "../../domain/parse";
-import { serializeProject, stringifyProject } from "../../domain/serialize";
+import { serializeProject } from "../../domain/serialize";
 import {
   type ProposalRow,
   projectAfter,
@@ -63,7 +63,7 @@ import {
   resolveScope,
   resolveSelection,
 } from "./cases";
-import { CHECK_IDS, CHECK_LABELS, type CheckResult } from "./checks";
+import { CHECK_IDS, CHECK_LABELS, type CheckResult, canonicalSongState } from "./checks";
 import { EvalUsageError } from "./cli";
 import { describeProject, type ProjectOverview } from "./describe";
 import { FIXTURE_NAME, namedFixture, TS_FIXTURES } from "./namedFixtures";
@@ -793,9 +793,10 @@ export function saveCase(session: TrySession, input: SaveCaseInput): Transition 
       `Unknown capability "${input.capability}". Capabilities: ${EVAL_CAPABILITIES.join(", ")}`,
     );
   }
+  // The song, not the revision: apply then undo leaves the fixture as it was.
   const unchanged =
-    stringifyProject(last.project) ===
-    stringifyProject(namedFixture(session.fixture, input.fixturesDir)());
+    canonicalSongState(last.project) ===
+    canonicalSongState(namedFixture(session.fixture, input.fixturesDir)());
   const fixture = unchanged ? session.fixture : input.caseId;
   const files: { path: string; content: string }[] = [];
   if (!unchanged) {

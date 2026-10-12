@@ -217,8 +217,12 @@ function resentTurn(request: string, reply: string): readonly AssistantMessage[]
   ];
 }
 
-/** The cases written here, in TypeScript. */
-const TYPESCRIPT_CASES: readonly EvalCase[] = [
+/**
+ * The cases written here, in TypeScript. Tests that pin what a particular
+ * case says read these, not {@link EVAL_CASES}, so a case saved as JSON can
+ * never break them.
+ */
+export const TYPESCRIPT_CASES: readonly EvalCase[] = [
   {
     id: "sketch-house",
     capability: "loopSketch",

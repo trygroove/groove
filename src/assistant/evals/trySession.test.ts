@@ -408,6 +408,35 @@ describe("save-case", () => {
     expect(stringifyProject(loaded.fixture())).toBe(stringifyProject(applied.project));
   });
 
+  it("names the fixture when an applied proposal was undone before the request", async () => {
+    const { casesDir, fixturesDir } = scratch();
+    const session = started();
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("The Bass down to -6 dB.", [volumeCall(session, "Bass", -6)]),
+      toolUseEvents("One thing first.", [askCall]),
+    ]);
+    const first = await ask(session, { text: "Bass down" }, deps(provider));
+    const undone = undo(apply(first.session).session).session;
+    // The revision moved on; the song did not.
+    expect(undone.project.metadata.revision).not.toBe(
+      createHouseLoopProject().metadata.revision,
+    );
+    const second = await ask(undone, { text: "Busier hats" }, deps(provider));
+    const result = saveCase(second.session, {
+      caseId: "hats-after-undo",
+      capability: "density",
+      existingCaseIds: [],
+      casesDir,
+      fixturesDir,
+      exists: () => false,
+    }).result;
+    if (result.kind !== "save-case") throw new Error("not saved");
+    expect(result.fixture).toBe("house-loop");
+    expect(result.files.map((file) => file.path)).toEqual([
+      `${casesDir}/hats-after-undo.json`,
+    ]);
+  });
+
   it("refuses a taken ID, an unknown capability, and a session with no turn", () => {
     const { casesDir, fixturesDir } = scratch();
     const base = {
