@@ -1,0 +1,18 @@
+{
+  "id": "GRV-97",
+  "title": "Opt-out retention",
+  "steps": [
+    {
+      "file": "01-before-the-first-run-dialog-asked-whethe.png",
+      "caption": "Before: the first-run dialog asked whether to keep conversations"
+    },
+    {
+      "file": "02-first-run-a-notice-that-groove-keeps-con.png",
+      "caption": "First run: a notice that Groove keeps conversations, with Don't keep them"
+    },
+    {
+      "file": "03-the-setting-unchanged-with-its-scope-lin.png",
+      "caption": "The setting, unchanged, with its scope line"
+    }
+  ]
+}
