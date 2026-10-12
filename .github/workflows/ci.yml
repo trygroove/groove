@@ -275,6 +275,14 @@ jobs:
       # added without `data-landing`, is a green build otherwise.
       - name: Verify the landing page is statically generated
         run: bun run verify:landing-static
+      # GRV-105: the CSP (GRV-7) leaves 'unsafe-inline' out of `style-src`, so
+      # a `style` attribute the browser has to parse -- in the prerendered
+      # HTML, or baked into a Solid template in a chunk -- is refused at
+      # runtime and the layout silently loses a rule. Checked against the
+      # build output, where the compiler's folding of constant style entries
+      # into templates is visible.
+      - name: Verify no inline style reaches the build
+        run: bun run verify:no-inline-styles
 
   # FND-001b (PRD OPS-01): deploys to the alpha's one hosted environment --
   # the production Firebase project -- from CI on every merge to `main`, never
