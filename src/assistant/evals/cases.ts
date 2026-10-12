@@ -11,12 +11,19 @@
  * case may carry the conversation before its request (`history`), expect a
  * question rather than a proposal (`expect: "ask"`), and name checks of its
  * own (`checks`) beside the shared ones.
+ *
+ * GRV-108 adds cases saved from `bun run assistant:try`: one JSON file per
+ * case in `cases/`, run against a named fixture (`namedFixtures.ts`), loaded
+ * after the TypeScript ones into {@link EVAL_CASES}.
  */
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { z } from "zod";
 import type { Project } from "../../domain/entities";
 import type { SelectionScope, SelectionState } from "../../selection/types";
 import { type AskAnswer, type AssistantAsk, answerMessage, askTranscript } from "../ask";
-import type { AssistantMessage } from "../protocol";
-import type { CaseCheckId, EvalExpectation } from "./caseChecks";
+import { type AssistantMessage, assistantMessageSchema } from "../protocol";
+import { CASE_CHECK_IDS, type CaseCheckId, type EvalExpectation } from "./caseChecks";
 import type { ExpectedValue } from "./caseChecksQa";
 import {
   createArrangementProject,
@@ -27,6 +34,7 @@ import {
   createTechnoDrumsProject,
   createTechnoLoopProject,
 } from "./fixtures";
+import { FIXTURE_NAME, jsonFixturesDir, namedFixture } from "./namedFixtures";
 import type { ExportedTranscriptCase, TranscriptCaseFixture } from "./transcriptCase";
 
 /** The capabilities asked once conventionally and once at an extreme (check 6). */
@@ -209,7 +217,8 @@ function resentTurn(request: string, reply: string): readonly AssistantMessage[]
   ];
 }
 
-export const EVAL_CASES: readonly EvalCase[] = [
+/** The cases written here, in TypeScript. */
+const TYPESCRIPT_CASES: readonly EvalCase[] = [
   {
     id: "sketch-house",
     capability: "loopSketch",
@@ -461,6 +470,111 @@ export const EVAL_CASES: readonly EvalCase[] = [
     checks: ["noNoOps"],
   },
 ];
+
+// ---------------------------------------------------------------------------
+// GRV-108: cases saved from `bun run assistant:try`, one JSON file each.
+// ---------------------------------------------------------------------------
+
+const evalScopeSchema = z.strictObject({
+  tracks: z.union([z.literal("all"), z.array(z.string().min(1))]),
+  createTracks: z.boolean(),
+  song: z.boolean(),
+  master: z.boolean(),
+  returns: z.boolean(),
+  sections: z.boolean(),
+});
+
+const evalSelectionSchema = z.union([
+  z.strictObject({ tracks: z.array(z.string().min(1)).min(1) }),
+  z.strictObject({ clips: z.array(z.string().min(1)).min(1) }),
+  z.null(),
+]);
+
+/**
+ * A case as its JSON file holds it: an {@link EvalCase} with the fixture
+ * named (a `fixtures.ts` builder or a JSON fixture, see `namedFixtures.ts`)
+ * rather than built.
+ */
+export const jsonEvalCaseSchema = z.strictObject({
+  id: z.string().regex(FIXTURE_NAME, "lower-case words joined by hyphens"),
+  capability: z.enum(EVAL_CAPABILITIES),
+  axis: z.enum(["conventional", "extreme"]),
+  request: z.string().min(1),
+  history: z.array(assistantMessageSchema).optional(),
+  expect: z.enum(["proposal", "ask", "either"]),
+  checks: z.array(z.enum(CASE_CHECK_IDS)).optional(),
+  expectedValue: z
+    .strictObject({
+      track: z.string().min(1),
+      parameter: z.enum(["volume", "pan"]),
+      value: z.number(),
+      tolerance: z.number().min(0),
+    })
+    .optional(),
+  fixture: z.string().regex(FIXTURE_NAME),
+  selection: evalSelectionSchema,
+  scope: evalScopeSchema,
+  parts: z.array(z.enum(EVAL_PARTS)).optional(),
+});
+export type JsonEvalCase = z.infer<typeof jsonEvalCaseSchema>;
+
+/** Where the JSON cases live, from the repository root the tools run in. */
+export function jsonCasesDir(): string {
+  return resolve("src/assistant/evals/cases");
+}
+
+/** Parses a JSON case, or throws naming `label` and what is wrong with it. */
+export function parseJsonEvalCase(raw: unknown, label: string): JsonEvalCase {
+  const parsed = jsonEvalCaseSchema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  const issues = parsed.error.issues
+    .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+    .join("; ");
+  throw new Error(`${label} is not an eval case: ${issues}`);
+}
+
+/** The case a JSON case runs as, its fixture looked up in `fixturesDir`. */
+export function evalCaseFromJson(
+  json: JsonEvalCase,
+  fixturesDir = jsonFixturesDir(),
+): EvalCase {
+  const { fixture, ...rest } = json;
+  return { ...rest, fixture: namedFixture(fixture, fixturesDir) };
+}
+
+/**
+ * Every JSON case in `casesDir`, sorted by file name. A file must be named
+ * for its case's ID; one that does not parse, or names no fixture there is,
+ * throws, so a broken case fails the suite rather than going missing.
+ */
+export function loadJsonCases(
+  casesDir = jsonCasesDir(),
+  fixturesDir = jsonFixturesDir(),
+): EvalCase[] {
+  if (!existsSync(casesDir)) return [];
+  return readdirSync(casesDir)
+    .filter((file) => file.endsWith(".json"))
+    .sort()
+    .map((file) => {
+      const path = join(casesDir, file);
+      let raw: unknown;
+      try {
+        raw = JSON.parse(readFileSync(path, "utf8"));
+      } catch (error) {
+        throw new Error(
+          `${path} is not JSON: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      const json = parseJsonEvalCase(raw, path);
+      if (`${json.id}.json` !== file) {
+        throw new Error(`${path} holds the case "${json.id}"; name it ${json.id}.json`);
+      }
+      return evalCaseFromJson(json, fixturesDir);
+    });
+}
+
+/** Every case: the TypeScript ones, then the JSON ones saved beside them. */
+export const EVAL_CASES: readonly EvalCase[] = [...TYPESCRIPT_CASES, ...loadJsonCases()];
 
 /** The messages a case's turn sends: its history, then its request. */
 export function caseMessages(evalCase: EvalCase): AssistantMessage[] {

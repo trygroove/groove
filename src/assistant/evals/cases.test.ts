@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Project } from "../../domain/entities";
-import { stringifyProject } from "../../domain/serialize";
+import { serializeProject, stringifyProject } from "../../domain/serialize";
 import { TICKS_PER_BAR } from "../../domain/time";
 import { buildAssistantPayload } from "../payload";
 import { assistantContextPayloadSchema, assistantTurnRequestSchema } from "../protocol";
@@ -10,16 +13,22 @@ import {
   casePairs,
   EVAL_CASES,
   EVAL_PARTS,
+  evalCaseFromJson,
+  loadJsonCases,
   PAIRED_CAPABILITIES,
+  parseJsonEvalCase,
   resolveScope,
   resolveSelection,
 } from "./cases";
 import { CHECK_IDS, CHECK_LABELS, checkBundled } from "./checks";
+import { selectEvalCases } from "./cli";
 import {
+  createHouseLoopProject,
   createTechnoDrumsProject,
   createTechnoLoopProject,
   TECHNO_TEMPO,
 } from "./fixtures";
+import { namedFixture, TS_FIXTURES } from "./namedFixtures";
 
 describe("the eval cases", () => {
   it("ask every capability once conventionally and once at an extreme, on one fixture", () => {
@@ -241,5 +250,103 @@ describe("the cases from GRV-6's QA findings", () => {
     expect(resketch.checks).toEqual(["noEmptyClips", "noNoOps"]);
     expect(byId("noop-bd-only").request).toBe(resketch.request);
     expect(byId("noop-bd-only").checks).toEqual(["noNoOps"]);
+  });
+});
+
+describe("JSON eval cases (GRV-108)", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function scratch(files: Record<string, unknown>) {
+    const root = mkdtempSync(join(tmpdir(), "eval-cases-"));
+    dirs.push(root);
+    for (const [path, content] of Object.entries(files)) {
+      mkdirSync(join(root, dirname(path)), { recursive: true });
+      writeFileSync(
+        join(root, path),
+        typeof content === "string" ? content : JSON.stringify(content),
+      );
+    }
+    return { casesDir: join(root, "cases"), fixturesDir: join(root, "fixtures") };
+  }
+
+  const json = {
+    id: "saved-case",
+    capability: "balancing",
+    axis: "conventional",
+    request: "Tuck the bass in",
+    expect: "proposal",
+    fixture: "house-loop",
+    selection: { tracks: ["Bass"] },
+    scope: {
+      tracks: ["Bass"],
+      createTracks: false,
+      song: false,
+      master: false,
+      returns: false,
+      sections: false,
+    },
+  };
+
+  it("load beside the TypeScript ones, on a named or a JSON fixture", () => {
+    const moved = {
+      ...createHouseLoopProject(),
+      metadata: { ...createHouseLoopProject().metadata, name: "Moved" },
+    };
+    const where = scratch({
+      "cases/saved-case.json": json,
+      "cases/on-json.json": { ...json, id: "on-json", fixture: "moved" },
+      "fixtures/moved.json": serializeProject(moved),
+    });
+    const loaded = loadJsonCases(where.casesDir, where.fixturesDir);
+    expect(loaded.map((entry) => entry.id)).toEqual(["on-json", "saved-case"]);
+    const [onJson, saved] = loaded;
+    expect(stringifyProject(saved.fixture())).toBe(
+      stringifyProject(createHouseLoopProject()),
+    );
+    expect(stringifyProject(onJson.fixture())).toBe(stringifyProject(moved));
+    expect(onJson.fixture()).not.toBe(onJson.fixture());
+    expect(selectEvalCases(["saved-case"], [...EVAL_CASES, ...loaded])).toEqual([saved]);
+    expect(evalCaseFromJson(parseJsonEvalCase(json, "it")).scope).toEqual(json.scope);
+  });
+
+  it("refuse a broken case rather than leave it out", () => {
+    const misnamed = scratch({ "cases/other.json": json });
+    expect(() => loadJsonCases(misnamed.casesDir, misnamed.fixturesDir)).toThrow(
+      "name it saved-case.json",
+    );
+    const unknown = scratch({
+      "cases/saved-case.json": { ...json, capability: "vibes" },
+    });
+    expect(() => loadJsonCases(unknown.casesDir, unknown.fixturesDir)).toThrow(
+      /is not an eval case: capability/,
+    );
+    const noFixture = scratch({ "cases/saved-case.json": { ...json, fixture: "gone" } });
+    expect(() => loadJsonCases(noFixture.casesDir, noFixture.fixturesDir)).toThrow(
+      'No eval fixture "gone"',
+    );
+    const broken = scratch({
+      "cases/saved-case.json": { ...json, fixture: "bad" },
+      "fixtures/bad.json": { metadata: {} },
+    });
+    expect(() => loadJsonCases(broken.casesDir, broken.fixturesDir)).toThrow(
+      "is not a valid project",
+    );
+    expect(loadJsonCases(join(tmpdir(), "no-such-dir-for-evals"))).toEqual([]);
+  });
+
+  it("name every fixture fixtures.ts builds", () => {
+    expect(Object.keys(TS_FIXTURES)).toEqual([
+      "kit-sketch",
+      "house-loop",
+      "arrangement",
+      "techno-drums",
+      "techno-loop",
+      "bd-only",
+      "bd-sketch",
+    ]);
+    expect(() => namedFixture("constructor")).toThrow('No eval fixture "constructor"');
   });
 });
