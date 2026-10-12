@@ -208,7 +208,7 @@ export function describeTranscriptStoreContract(
       expect(checkTranscriptRecord(record).ok).toBe(true);
     });
 
-    it("keeps a rejection's codes but not a path or message that carries a URL or a credential", async () => {
+    it("keeps a rejection's codes but not a message that carries a URL or a credential", async () => {
       const { store, turn } = await setup();
       await turn(request("turn-0021"));
       expect(
@@ -228,8 +228,35 @@ export function describeTranscriptStoreContract(
           code: "invalid_payload",
           callId: "toolu_1",
           callName: "track_create",
-          path: null,
+          path: "input.name",
           message: null,
+        },
+      ]);
+      expect(checkTranscriptRecord(record).ok).toBe(true);
+    });
+
+    it("keeps a rejection's codes but not a call ID or call name that carries a credential or a URL", async () => {
+      const { store, turn } = await setup();
+      await turn(request("turn-0023"));
+      expect(
+        await recordOutcome(store, OWNER, "turn-0023", "rejected", START + 1, [
+          {
+            code: "unknown_tool",
+            callId: "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789",
+            callName: "https://evil.example.com/a.wav",
+            path: null,
+            message: "ok",
+          },
+        ]),
+      ).toBe(true);
+      const [record] = await harness.records();
+      expect(record?.outcomes[0]?.issues).toEqual([
+        {
+          code: "unknown_tool",
+          callId: null,
+          callName: null,
+          path: null,
+          message: "ok",
         },
       ]);
       expect(checkTranscriptRecord(record).ok).toBe(true);
