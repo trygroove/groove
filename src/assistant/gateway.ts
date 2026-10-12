@@ -25,8 +25,8 @@
  * 8. sends an empty text chunk every few seconds while it runs, so the
  *    browser can tell a long silent turn (thinking, a large proposal) from a
  *    connection that died (GRV-42);
- * 9. keeps the completed turn in the transcript store if, and only if, the
- *    account has said yes (GRV-8, `retention.ts`). Keeping it never fails or
+ * 9. keeps the completed turn in the transcript store unless the account
+ *    has said no (GRV-8, GRV-97, `retention.ts`). Keeping it never fails or
  *    changes the turn: the reply is the same either way.
  *
  * Every turn offers the model the assistant's tool set (GRV-4) and

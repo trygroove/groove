@@ -98,11 +98,13 @@ export function describeTranscriptStoreContract(
       };
     }
 
-    it("keeps nothing for an account that has not answered", async () => {
+    it("keeps a turn for an account that has not answered (keeping is the default)", async () => {
       const { turn } = await setup();
       const result = await turn(request("turn-0001"));
       expect(result.text).toBe("Here is one idea.");
-      expect(await harness.records()).toEqual([]);
+      expect((await harness.records()).map((record) => record.turnId)).toEqual([
+        "turn-0001",
+      ]);
     });
 
     it("keeps a turn's message, reply, project and timestamps once the account says yes", async () => {
@@ -185,11 +187,32 @@ export function describeTranscriptStoreContract(
       expect(records.map((record) => record.internal)).toEqual([true, true]);
     });
 
-    it("keeps nothing for a declined, malformed, stale or unreadable preference", async () => {
+    it("keeps nothing for an explicit no, at the current disclosure or any other", async () => {
       const { store, turn } = await setup();
       await setRetention(store, OWNER, false, START);
       await turn(request("turn-0005"));
-      await harness.rawPreference(OWNER, { retain: true });
+      for (const disclosureVersion of [
+        ASSISTANT_DISCLOSURE_VERSION - 1,
+        ASSISTANT_DISCLOSURE_VERSION + 1,
+      ]) {
+        await harness.rawPreference(OWNER, {
+          schemaVersion: 1,
+          retain: false,
+          disclosureVersion,
+          answeredAt: START,
+        });
+        await turn(request(`turn-000${6 + disclosureVersion}`));
+      }
+      await harness.rawPreference(OWNER, { retain: false });
+      await turn(request("turn-0009"));
+      expect(await harness.records()).toEqual([]);
+    });
+
+    it("keeps a turn for a yes, and for a malformed or stale preference that does not say no", async () => {
+      const { store, turn } = await setup();
+      await setRetention(store, OWNER, true, START);
+      await turn(request("turn-0005"));
+      await harness.rawPreference(OWNER, { retain: "no" });
       await turn(request("turn-0006"));
       await harness.rawPreference(OWNER, {
         schemaVersion: 1,
@@ -198,7 +221,11 @@ export function describeTranscriptStoreContract(
         answeredAt: START,
       });
       await turn(request("turn-0007"));
-      expect(await harness.records()).toEqual([]);
+      expect((await harness.records()).map((record) => record.turnId)).toEqual([
+        "turn-0005",
+        "turn-0006",
+        "turn-0007",
+      ]);
     });
 
     it("keeps nothing that carries a URL or a credential, and answers the turn regardless", async () => {

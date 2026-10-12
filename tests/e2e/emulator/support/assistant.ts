@@ -107,12 +107,13 @@ export const disclosure = (page: Page): Locator =>
 
 /**
  * Answers the disclosure a fresh account meets the first time it opens the
- * assistant (GRV-8), and waits for the composer it gives way to. Declining is
- * the default: keeping or not, the assistant behaves the same.
+ * assistant (GRV-8), and waits for the composer it gives way to. It declines
+ * unless told otherwise, so tests leave nothing behind: keeping or not, the
+ * assistant behaves the same.
  */
 export async function answerDisclosure(
   page: Page,
-  answer: "Keep for 30 days" | "Don't keep them" = "Don't keep them",
+  answer: "OK" | "Don't keep them" = "Don't keep them",
 ): Promise<void> {
   await disclosure(page).getByRole("button", { name: answer, exact: true }).click();
   await expect(composer(page)).toBeVisible();

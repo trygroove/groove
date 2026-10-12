@@ -1,6 +1,7 @@
 /**
  * What Groove does with an account's retention answer (GRV-8): keeps a
- * completed turn only if the account said yes, adds a proposal's outcome to
+ * completed turn unless the account said no (GRV-97: keeping is the
+ * default), adds a proposal's outcome to
  * it, deletes everything on a no, and answers the `assistantRetention`
  * callable. Firebase-free, over a {@link TranscriptStore}; the Cloud Functions
  * (`functions/src/retentionHandler.ts`, `functions/src/index.ts`) supply the
@@ -30,7 +31,7 @@ import {
 export type TranscriptWrite =
   /** Kept. */
   | "kept"
-  /** The account has not said yes (or its answer could not be read as one). */
+  /** The account has said no. */
   | "not_permitted"
   /** The record failed {@link checkTranscriptRecord}: it carried something forbidden. */
   | "refused"
@@ -38,9 +39,9 @@ export type TranscriptWrite =
   | "failed";
 
 /**
- * Keeps a completed turn if, and only if, the account's stored preference
- * says so at the moment of writing. A preference that cannot be read keeps
- * nothing. Never throws.
+ * Keeps a completed turn unless the account's stored preference declines it
+ * at the moment of writing ({@link permitsRetention}). A preference the store
+ * cannot read keeps nothing. Never throws.
  */
 export async function recordTurn(
   store: TranscriptStore,
