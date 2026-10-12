@@ -5,6 +5,7 @@ import { Analytics } from "../../analytics/analytics";
 import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
 import type { AssistantErrorDetails } from "../../assistant/protocol";
+import type { AssistantVideo } from "../../assistant/video";
 import type { Clip, Project } from "../../domain/entities";
 import { createSliceFixtureProject } from "../../domain/fixtures";
 import { clickAndFlush, fireAndFlush } from "../../testing/events";
@@ -22,6 +23,13 @@ import { type AssistantAccount, useAssistantChat } from "./useAssistantChat";
 import { useAssistantPanel } from "./useAssistantPanel";
 
 afterEach(cleanup);
+
+const VIDEO: AssistantVideo = {
+  videoId: "tH9LHIyJ0c8",
+  title: "Acid Basslines Explained",
+  channel: "Underdog",
+  reason: "Shows how resonance and envelope mod make the squelch.",
+};
 
 function recordingAnalytics() {
   const transport = createRecordingTransport();
@@ -195,6 +203,48 @@ describe("the assistant's conversation", () => {
     await type("Two");
     expect(within(panel()).queryByRole("button", { name: "Send" })).toBeNull();
     expect(client.turns).toHaveLength(1);
+  });
+
+  it("shows a recommended video as its card, and lifts the panel while it fills the window (GRV-16)", async () => {
+    const { client } = renderChat();
+    await send("How do I get an acid bass?");
+    fireAndFlush(() => client.last().text("This one shows it."));
+    fireAndFlush(() => client.last().emit({ type: "videos", videos: [VIDEO] }));
+    fireAndFlush(() => client.last().done());
+
+    const card = within(log()).getByRole("region", {
+      name: `Tutorial video: ${VIDEO.title}`,
+    });
+    expect(card).toHaveTextContent(VIDEO.reason);
+    expect(panel()).not.toHaveClass("assistant-panel-video-expanded");
+    clickAndFlush(within(card).getByRole("button", { name: /^Play / }));
+    clickAndFlush(within(card).getByRole("button", { name: "Full screen" }));
+    expect(panel()).toHaveClass("assistant-panel-video-expanded");
+    clickAndFlush(within(card).getByRole("button", { name: "Close" }));
+    expect(panel()).not.toHaveClass("assistant-panel-video-expanded");
+  });
+
+  it("puts a video card that cannot render in its place, and keeps the rest of the conversation (GRV-16)", async () => {
+    const { client } = renderChat();
+    const broken = {
+      ...VIDEO,
+      get title(): string {
+        throw new Error("a card that cannot render");
+      },
+    };
+    await send("Show me a tutorial");
+    fireAndFlush(() => client.last().text("Here are two."));
+    fireAndFlush(() => client.last().emit({ type: "videos", videos: [broken, VIDEO] }));
+    fireAndFlush(() => client.last().done());
+
+    expect(log()).toHaveTextContent("Show me a tutorial");
+    expect(log()).toHaveTextContent("Here are two.");
+    expect(
+      within(log()).getByRole("region", { name: "Tutorial video" }),
+    ).toHaveTextContent("A video was recommended");
+    expect(
+      within(log()).getByRole("region", { name: `Tutorial video: ${VIDEO.title}` }),
+    ).toBeInTheDocument();
   });
 
   it("lists a proposal with no editor to apply it to, and changes nothing", async () => {

@@ -3,13 +3,6 @@ import { type Analytics, analytics as defaultAnalytics } from "../../analytics/a
 import type { AssistantPanelLayout } from "./assistantPanelLayout";
 import * as layouts from "./assistantPanelLayout";
 
-/**
- * The class a tutorial video's card carries while it fills the window
- * (GRV-16). Escape there is the card's own, to put the player back; the
- * panel stands aside rather than minimising underneath it.
- */
-export const VIDEO_EXPANDED_CLASS = "assistant-video-expanded";
-
 export interface UseAssistantPanelOptions {
   /** Where the layout is remembered. Defaults to this browser's local storage. */
   readonly storage?: Storage | null;
@@ -55,6 +48,17 @@ export interface AssistantPanel {
   resetSize(): void;
   /** Escape, while focus is in the panel; `undefined` when it means nothing. */
   dismissAction(): (() => void) | undefined;
+  /**
+   * Puts back the tutorial video that fills the window (GRV-16), or
+   * `undefined` with none. Escape asks this before anything else, wherever
+   * focus is, since the video covers everything else.
+   */
+  collapseVideo(): (() => void) | undefined;
+  /**
+   * Held by a video's card while it fills the window, with what puts it back.
+   * The returned release lets go, and only if this hold is still the one.
+   */
+  holdExpandedVideo(collapse: () => void): () => void;
   /** Whether the resize edge has keyboard focus, for the `resize_edge` context. */
   edgeHasFocus(): boolean;
   /** Whether the composer has keyboard focus, for the `composer` context. */
@@ -110,6 +114,10 @@ export function useAssistantPanel(
   let composerElement: HTMLElement | undefined;
   let askTextElement: HTMLElement | undefined;
   let opener: HTMLElement | null = null;
+  // Wrapped, so the signal stores the function rather than calling it.
+  const [expandedVideo, setExpandedVideo] = createSignal<
+    { readonly collapse: () => void } | undefined
+  >(undefined);
   let pendingFocus: FocusIntent = null;
 
   const focusIsIn = (element: HTMLElement | undefined): boolean => {
@@ -183,12 +191,17 @@ export function useAssistantPanel(
     resetSize: () => apply(layouts.resetSize(layout(), room()), null),
     dismissAction() {
       if (!focusIsIn(panelElement)) return undefined;
-      // A video full screen closes itself (`VideoCard`); nothing under it
-      // goes with it, so the press is spent here doing nothing.
-      if (document.activeElement?.closest(`.${VIDEO_EXPANDED_CLASS}`)) return () => {};
       const next = layouts.dismiss(layout());
       if (!next) return undefined;
       return next.mode === "closed" ? close : () => move(next);
+    },
+    collapseVideo: () => expandedVideo()?.collapse,
+    holdExpandedVideo(collapse) {
+      const hold = { collapse };
+      setExpandedVideo(hold);
+      return () => {
+        if (expandedVideo() === hold) setExpandedVideo(undefined);
+      };
     },
     edgeHasFocus: () =>
       edgeElement !== undefined && document.activeElement === edgeElement,
