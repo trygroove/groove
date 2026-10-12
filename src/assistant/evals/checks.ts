@@ -21,6 +21,10 @@
  * 7. {@link checkCoverage}: a case that asks for named parts (a sketch asks for
  *    drums, bass, chords, a melody and a texture) gets notes on a distinct
  *    track or clip for each.
+ *
+ * Check 8, the expected outcome (a proposal, or a question and no proposal),
+ * and the checks only some cases name (GRV-99) live in `caseChecks.ts`; their
+ * IDs and labels are here so a report tallies them with the rest.
  */
 import {
   CONTROL_PARTS,
@@ -41,6 +45,7 @@ import { historyProposalTarget } from "../historyProposalTarget";
 import { type ValidProposal, validateProposal } from "../proposal";
 import { createProposalExecutor, type ProposalTarget } from "../proposalExecutor";
 import { ASSISTANT_COMMAND_TYPES } from "../tools";
+import { CASE_CHECK_IDS } from "./caseChecks";
 import type { EvalPart, ResolvedScope } from "./cases";
 
 export type CheckStatus = "pass" | "fail" | "skip";
@@ -63,6 +68,8 @@ export const CHECK_IDS = [
   "grounded",
   "notFlattened",
   "coverage",
+  "outcome",
+  ...CASE_CHECK_IDS,
 ] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
@@ -74,6 +81,12 @@ export const CHECK_LABELS: Record<CheckId, string> = {
   grounded: "5. Grounded explanation",
   notFlattened: "6. Extreme is not flattened",
   coverage: "7. Covers the requested parts",
+  outcome: "8. Expected outcome",
+  hatDensity: "9. Denser hats, nothing else",
+  pointsToGenerate: "10. Points to the Generate panel",
+  developsTrack: "11. Develops the loop into a track",
+  padSound: "12. A sparse, slow pad",
+  dissonant: "13. Dissonant chords",
 };
 
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });

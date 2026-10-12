@@ -40,7 +40,14 @@ import {
 import type { AssistantProvider } from "../provider";
 import type { AssistantTurnLog } from "../telemetry";
 import { ASSISTANT_TOOLSET_VERSION } from "../tools";
-import { casePairs, type EvalCase, resolveScope, resolveSelection } from "./cases";
+import { checkOutcome, runCaseCheck } from "./caseChecks";
+import {
+  caseMessages,
+  casePairs,
+  type EvalCase,
+  resolveScope,
+  resolveSelection,
+} from "./cases";
 import {
   CHECK_IDS,
   type CheckId,
@@ -266,7 +273,7 @@ export async function runCaseTurn(
         EVAL_CALLER,
         {
           projectRevision: project.metadata.revision,
-          messages: [{ role: "user", text: evalCase.request }],
+          messages: caseMessages(evalCase),
           context,
         },
         { signal: controller.signal, onChunk: () => {} },
@@ -332,8 +339,10 @@ export function whyNoProposal(turn: EvalTurn): string {
 }
 
 /**
- * Checks 1 to 5 and 7 on one turn, and its descriptive numbers. An errored turn is
- * judged by no check.
+ * Checks 1 to 5, 7 and 8 and the case's own checks on one turn, and its
+ * descriptive numbers. An errored turn is judged by no check. A case that
+ * expects a question is judged by check 8 alone unless the turn proposed
+ * something anyway, which every other check then judges too.
  */
 export function evaluateTurn(
   evalCase: EvalCase,
@@ -349,6 +358,12 @@ export function evaluateTurn(
     run,
   };
   if (turn.error) return { ...base, checks: {}, stats: null, fingerprint: null };
+  const outcome = checkOutcome(evalCase.expect, turn);
+  const proposed = turn.proposal !== null && turn.proposal !== undefined;
+  if (evalCase.expect === "ask" && !proposed) {
+    return { ...base, checks: { outcome }, stats: null, fingerprint: null };
+  }
+  const caseChecks = evalCase.checks ?? [];
   const project = evalCase.fixture();
   const valid = checkValid(project, turn.proposal, whyNoProposal(turn));
   if (!valid.applied) {
@@ -362,6 +377,8 @@ export function evaluateTurn(
         atomicUndo: notJudged,
         grounded: notJudged,
         coverage: notJudged,
+        outcome,
+        ...Object.fromEntries(caseChecks.map((id) => [id, notJudged])),
       },
       stats: null,
       fingerprint: null,
@@ -377,6 +394,10 @@ export function evaluateTurn(
       atomicUndo: checkAtomicUndo(project, turn.proposal),
       grounded: checkGrounded(project, after, proposal.impact.controls, turn.text),
       coverage: checkCoverage(project, after, evalCase.parts ?? []),
+      outcome,
+      ...Object.fromEntries(
+        caseChecks.map((id) => [id, runCaseCheck(id, project, after, turn.text)]),
+      ),
     },
     stats: describeProposal(project, after, proposal.commands.length),
     fingerprint: proposalFingerprint(project, proposal.commands),

@@ -27,6 +27,16 @@ describe("the assistant's system prompt", () => {
     expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("four at most");
   });
 
+  // GRV-99: a request to change a drum part's density can point at the Generate panel.
+  it("tells the assistant the step grid's Generate panel exists", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "a drum clip's step grid has a Generate panel",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "try more patterns for a row in the Generate panel",
+    );
+  });
+
   it("lists every device type and every one of its parameters by key", () => {
     for (const device of deviceTypes()) {
       const line = ASSISTANT_SYSTEM_PROMPT.split("\n").find((candidate) =>

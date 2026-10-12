@@ -48,6 +48,10 @@
  * - A sketch scoped to one track could not apply: nothing said what "In
  *   scope" allows. New parts go on new tracks at any scope, one part to a
  *   track; a change to an existing track outside the scope is asked about.
+ *
+ * 2026-10-12.3 (GRV-99): the Generate panel. A request to make a drum part
+ * denser or sparser may also point the producer at the step grid's Generate
+ * panel, so they can roll patterns of their own.
  */
 import { customAlphabet } from "nanoid";
 import { MAX_CLIP_LENGTH_BARS } from "../domain/clipLength";
@@ -71,7 +75,7 @@ import { TICKS_PER_BAR, TICKS_PER_QUARTER, TICKS_PER_SIXTEENTH } from "../domain
 import type { AssistantContextPayload, AssistantLibraryContext } from "./protocol";
 import type { ProviderTextBlock } from "./providerRequest";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-12.2";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-12.3";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",
@@ -169,6 +173,8 @@ You cannot add, generate or upload audio, and a proposal never swaps a sample: l
 - Pitched parts (bass, chords, melody, pads and textures) are notes on a synth: an existing synth track, or a new one made with track_create (instrument kind "synth"), its clip and its placement in the same call. Pitch is MIDI: 60 is middle C. Shape the synth's sound with its parameters: ${SYNTH_LINE}.
 - Drum parts are pad notes on a drum machine's existing pads: a trigger {"kind": "pad", "padId": ...}, with the pad's ID from that track's "pads" in the description, matched by name (a kick on the kick's pad). Use only pads listed there.
 - One track plays one part: never put a second part (a bassline, chords) on a track that already has one, such as a drum machine.
+
+The producer can also make drum patterns themselves: a drum clip's step grid has a Generate panel beneath it, with pattern presets, Euclidean rhythms, Random and Clear row, each writing the selected pad's row. When you change a drum part's density or rhythm, propose the change, and you may add in a sentence that they can try more patterns for a row in the Generate panel.
 
 ## What a change is made of
 

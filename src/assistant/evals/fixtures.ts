@@ -14,6 +14,11 @@
  *   balance or a processing request works on.
  * - {@link createArrangementProject}: the same loop under an empty
  *   intro / build / drop / outro form, laid out for 32 bars.
+ * - {@link createTechnoDrumsProject} (GRV-99): a 140 BPM techno beat, one
+ *   drum machine with five pads (kick, clap, closed hat, open hat, perc)
+ *   playing one 4-bar clip, placed looped.
+ * - {@link createTechnoLoopProject} (GRV-99): that beat plus one synth track
+ *   with a 4-bar riff: the loop a producer wants to develop into a track.
  */
 import type {
   Clip,
@@ -291,4 +296,129 @@ export function createArrangementProject(): Project {
     assets: loop.assets,
   };
   return project(loop.context, "Night Bus", song, loop.clips);
+}
+
+/** The techno fixtures' tempo. */
+export const TECHNO_TEMPO = 140;
+
+const TECHNO_BARS = 4;
+
+/** Every bar of `bars`, with `sixteenths` offset into each one. */
+function everyBar(sixteenths: readonly number[], bars = TECHNO_BARS): number[] {
+  return Array.from({ length: bars }, (_, bar) =>
+    sixteenths.map((step) => bar * 16 + step),
+  ).flat();
+}
+
+/**
+ * The techno beat: five pads on the factory kit (the open hat shares the
+ * closed hat's sample, and the perc the snare's) and one 4-bar clip of a
+ * plain four-on-the-floor groove with offbeat hats, placed looped for its
+ * length.
+ */
+function technoDrums(context: DomainFactoryContext) {
+  const kick = createFactoryAsset(context, "starterKick");
+  const clap = createFactoryAsset(context, "starterClap");
+  const snare = createFactoryAsset(context, "starterSnare");
+  const hat = createFactoryAsset(context, "starterHat");
+  const pads = {
+    kick: createDrumPad(context, { name: "Kick", assetId: kick.id }),
+    clap: createDrumPad(context, { name: "Clap", assetId: clap.id }),
+    closedHat: createDrumPad(context, {
+      name: "Closed Hat",
+      assetId: hat.id,
+      chokeGroup: 1,
+    }),
+    openHat: createDrumPad(context, { name: "Open Hat", assetId: hat.id, chokeGroup: 1 }),
+    perc: createDrumPad(context, { name: "Perc", assetId: snare.id }),
+  };
+  const track = createTrack(context, {
+    name: "Drums",
+    order: 0,
+    instrument: createDrumMachineInstrument(Object.values(pads)),
+  });
+  const clip = createNoteClip(context, {
+    trackId: track.id,
+    name: "Techno beat",
+    lengthTicks: TECHNO_BARS * TICKS_PER_BAR,
+    events: [
+      ...hits(context, pads.kick.id, everyBar([0, 4, 8, 12]), 0.9),
+      ...hits(context, pads.clap.id, everyBar([4, 12]), 0.75),
+      ...hits(context, pads.closedHat.id, everyBar([2, 6, 10, 14]), 0.6),
+      // An open hat at the end of every second bar.
+      ...hits(context, pads.openHat.id, [16 + 14, 48 + 14], 0.55),
+      ...hits(context, pads.perc.id, everyBar([7]), 0.5),
+    ],
+  });
+  const placement = createPlacement(context, {
+    clipId: clip.id,
+    trackId: track.id,
+    startTicks: 0,
+    durationTicks: TECHNO_BARS * TICKS_PER_BAR,
+    looped: true,
+  });
+  return { track, clip, placement, assets: [kick, clap, snare, hat] };
+}
+
+/** One drum machine with five pads playing a 4-bar techno beat at 140 BPM. */
+export function createTechnoDrumsProject(): Project {
+  const context = evalContext("eval-techno-drums");
+  const drums = technoDrums(context);
+  const song: Song = {
+    ...createEmptySong(TECHNO_TEMPO),
+    master: createNewProjectMaster(context),
+    tracks: [drums.track],
+    placements: [drums.placement],
+    assets: drums.assets,
+  };
+  return project(context, "Warehouse", song, [drums.clip]);
+}
+
+/**
+ * The techno beat plus a synth riff: a one-bar A minor figure, played four
+ * times across its 4-bar clip with the last bar lifted, placed looped.
+ */
+export function createTechnoLoopProject(): Project {
+  const context = evalContext("eval-techno-loop");
+  const drums = technoDrums(context);
+  const synth = createTrack(context, {
+    name: "Synth",
+    order: 1,
+    instrument: createSynthInstrument(),
+  });
+  const figure = (bar: number, root: number) =>
+    [0, 3, 6, 10, 14].map(
+      (step, index) =>
+        [
+          index === 2 ? root + 12 : root,
+          (bar * 16 + step) * SIXTEENTH,
+          SIXTEENTH,
+        ] as const,
+    );
+  const riff = createNoteClip(context, {
+    trackId: synth.id,
+    name: "Riff",
+    lengthTicks: TECHNO_BARS * TICKS_PER_BAR,
+    events: notes(context, [
+      ...figure(0, 45),
+      ...figure(1, 45),
+      ...figure(2, 45),
+      ...figure(3, 48),
+    ]),
+  });
+  const riffPlacement = createPlacement(context, {
+    clipId: riff.id,
+    trackId: synth.id,
+    startTicks: 0,
+    durationTicks: TECHNO_BARS * TICKS_PER_BAR,
+    looped: true,
+  });
+  const song: Song = {
+    ...createEmptySong(TECHNO_TEMPO),
+    master: createNewProjectMaster(context),
+    tracks: [drums.track, synth],
+    placements: [drums.placement, riffPlacement],
+    assets: drums.assets,
+  };
+  return project(context, "Warehouse", song, [drums.clip, riff]);
 }
