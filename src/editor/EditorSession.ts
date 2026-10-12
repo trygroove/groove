@@ -6,10 +6,12 @@ import { bucketOf, projectAgeBucket } from "../analytics/buckets";
 import { COMMAND_IDS, type CommandId } from "../analytics/catalog";
 import {
   type CommandActor,
+  type CommandEnvelope,
   CommandHistory,
   executeTransaction,
   type Gesture,
   type GestureOptions,
+  type HistoryEntry,
   type HistorySnapshot,
   type RawCommandInput,
   type TransactionFailure,
@@ -19,7 +21,11 @@ import {
 } from "../commands";
 import type { Clip, Project } from "../domain/entities";
 import type { ClipId } from "../domain/ids";
-import { createProjectAutosave, type ProjectAutosave } from "../persistence/autosave";
+import {
+  createProjectAutosave,
+  type ProjectAutosave,
+  type SaveStatus,
+} from "../persistence/autosave";
 import type { DroppedReferences } from "../persistence/documents";
 import type {
   ProjectRepository,
@@ -73,6 +79,35 @@ export interface SessionEdit {
 }
 
 export type SessionEditListener = (edit: SessionEdit) => void;
+
+/**
+ * Something the producer should be told about this session that no control
+ * shows (GRV-88): the editor shows each one as a toast.
+ *
+ * - `edits_discarded`: another tab saved first, and `count` of this session's
+ *   unsaved edits no longer applied on top of its change, so they were dropped.
+ * - `undo_refused`: an undo or redo no longer applies because a change saved
+ *   elsewhere moved what it touched.
+ */
+export type SessionNotice =
+  | { readonly kind: "edits_discarded"; readonly count: number }
+  | { readonly kind: "undo_refused"; readonly direction: "undo" | "redo" };
+
+export type SessionNoticeListener = (notice: SessionNotice) => void;
+
+/**
+ * One change this session committed that is not yet written (GRV-88): the
+ * commands it applied, so it can be replayed onto a project another tab saved
+ * first.
+ */
+interface UnsavedEdit {
+  readonly commands: readonly RawCommandInput[];
+  readonly actor: CommandActor;
+  readonly correlationId: string;
+  readonly summary: string;
+  /** The history entry an edit made; null for an undo or a redo. */
+  readonly entry: HistoryEntry | null;
+}
 
 export interface EditorSessionOptions {
   readonly repository: ProjectRepository;
@@ -140,14 +175,24 @@ export class EditorSession {
   private readonly listeners = new Set<EditorSessionListener>();
   private readonly editListeners = new Set<SessionEditListener>();
   private readonly remoteListeners = new Set<() => void>();
+  private readonly noticeListeners = new Set<SessionNoticeListener>();
   private readonly unsubscribeHistory: () => void;
+  private readonly unsubscribeSave: () => void;
   private readonly previewHost: PreviewHost = {
     cancelPreview: (preview) => this.endPreview(preview, "cancelled", "cancelled"),
     commitPreview: (preview, actor) => this.commitPreview(preview, actor),
   };
   private preview: SessionPreview | null = null;
-  /** Counts remote loads, so only the latest one is adopted. */
-  private remoteLoads = 0;
+  /** This session's committed changes not yet written, oldest first. */
+  private unsaved: UnsavedEdit[] = [];
+  /** What an open gesture has applied so far, dispatches folded into it included. */
+  private gestureCommands: RawCommandInput[] | null = null;
+  /** The newest revision known to be saved elsewhere. */
+  private remoteRevision: number;
+  /** True while the saved project is being loaded to take a remote change in. */
+  private syncing = false;
+  /** Whether a change saved elsewhere has been taken in, so an entry may no longer apply. */
+  private remoteAdopted = false;
   private firstEditLogged = false;
   private disposed = false;
 
@@ -166,7 +211,9 @@ export class EditorSession {
       scheduler: options.scheduler,
       coalesceMs: options.coalesceMs,
     });
+    this.remoteRevision = options.project.metadata.revision;
     this.unsubscribeHistory = this.history.subscribe(() => this.onHistoryChange());
+    this.unsubscribeSave = this.autosave.subscribe((status) => this.onSaveStatus(status));
     this.unwatch = options.repository.watchProject(this.projectId, (event) =>
       this.onRemoteEvent(event),
     );
@@ -234,6 +281,18 @@ export class EditorSession {
     this.remoteListeners.add(listener);
     return () => {
       this.remoteListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Notified of each {@link SessionNotice}: an unsaved edit dropped because
+   * another tab's change made it impossible, or an undo or redo refused for
+   * the same reason. The editor shows them as toasts.
+   */
+  subscribeNotices(listener: SessionNoticeListener): () => void {
+    this.noticeListeners.add(listener);
+    return () => {
+      this.noticeListeners.delete(listener);
     };
   }
 
@@ -335,6 +394,8 @@ export class EditorSession {
   beginGesture(options: GestureOptions = {}): Gesture {
     const before = this.history.project;
     const gesture = this.history.beginGesture(options);
+    const applied: RawCommandInput[] = [];
+    this.gestureCommands = applied;
     let firstEditResult: TransactionSuccess | null = null;
     return {
       get active() {
@@ -344,13 +405,22 @@ export class EditorSession {
       // stale (see `onHistoryChange`), like any other local edit.
       apply: (commands) => {
         const result = gesture.apply(commands);
+        if (result.ok) applied.push(...toRaw(result.commands));
         if (result.ok && !firstEditResult) firstEditResult = result;
         return result;
       },
       commit: (options) => {
         const entry = gesture.commit(options);
+        this.endGesture(applied);
         if (!entry) return entry;
         if (firstEditResult) this.logFirstEdit(firstEditResult);
+        this.recordUnsaved({
+          commands: applied,
+          actor: entry.actor,
+          correlationId: entry.correlationId,
+          summary: entry.summary,
+          entry,
+        });
         this.queueDiff(this.history.project, before);
         this.emitEdit({
           kind: "edit",
@@ -359,10 +429,13 @@ export class EditorSession {
           commands: entry.commands,
           before,
         });
+        this.reconcileRemote();
         return entry;
       },
       cancel: () => {
         gesture.cancel();
+        this.endGesture(applied);
+        this.reconcileRemote();
       },
     };
   }
@@ -382,7 +455,9 @@ export class EditorSession {
     const before = this.history.project;
     const undone = this.history.entries.at(-1);
     const result = this.history.undo();
+    if (result && !result.ok) this.refused("undo");
     if (result?.ok) {
+      this.recordUnsaved(this.unsavedOf(result));
       this.queueAutosave(result, before);
       this.analytics.log("undo_used", { direction: "undo", actor });
       this.emitEdit({
@@ -401,8 +476,10 @@ export class EditorSession {
     if (!this.history.gestureActive) this.endOpenPreview("stale", "redo");
     const before = this.history.project;
     const result = this.history.redo();
+    if (result && !result.ok) this.refused("redo");
     if (result?.ok) {
       this.logFirstEdit(result);
+      this.recordUnsaved(this.unsavedOf(result));
       this.queueAutosave(result, before);
       this.analytics.log("undo_used", { direction: "redo", actor });
       this.emitEdit({ kind: "redo", ...this.editOf(result), before });
@@ -434,7 +511,9 @@ export class EditorSession {
     this.listeners.clear();
     this.editListeners.clear();
     this.remoteListeners.clear();
+    this.noticeListeners.clear();
     this.unsubscribeHistory();
+    this.unsubscribeSave();
     this.unwatch();
     this.autosave.dispose();
     this.history.dispose();
@@ -448,6 +527,15 @@ export class EditorSession {
     const result = this.history.execute(commands, options);
     if (result.ok) {
       this.logFirstEdit(result);
+      // Folded into an open gesture, the dispatch is replayed with it.
+      if (this.history.gestureActive) {
+        this.gestureCommands?.push(...toRaw(result.commands));
+      } else {
+        this.recordUnsaved({
+          ...this.unsavedOf(result),
+          entry: this.history.entries.at(-1) ?? null,
+        });
+      }
       this.queueAutosave(result, before);
       // Inside an open gesture the history folds the dispatch into it, and
       // the gesture's commit reports the whole of it once.
@@ -468,51 +556,186 @@ export class EditorSession {
     };
   }
 
-  /**
-   * A snapshot of the metadata tier arrived. An echo of this session's own
-   * write, or one that arrives while a local edit is queued, moves nothing
-   * (`ProjectAutosave.applyRemote`). A change saved elsewhere is adopted with
-   * its content: the project is loaded again first, so the next local edit is
-   * made on top of it. Adopting only the revision would let this session write
-   * its out-of-date song over the newer one at that revision (GRV-23: a kept
-   * sound reverted by a stale second tab).
-   */
-  private onRemoteEvent(event: ProjectWatchEvent): void {
-    const status = this.autosave.status;
-    const changedElsewhere =
-      event.kind === "metadata" &&
-      event.metadata.revision > status.revision &&
-      status.pending === 0 &&
-      status.state !== "saving";
-    if (!changedElsewhere) {
-      this.autosave.applyRemote(event);
-      return;
-    }
-    void this.adoptRemote();
+  private unsavedOf(result: TransactionSuccess): UnsavedEdit {
+    return {
+      commands: toRaw(result.commands),
+      actor: result.actor,
+      correlationId: result.correlationId,
+      summary: result.summary,
+      entry: null,
+    };
+  }
+
+  /** The gesture that `applied` belongs to is over, committed or cancelled. */
+  private endGesture(applied: RawCommandInput[]): void {
+    if (this.gestureCommands === applied) this.gestureCommands = null;
+  }
+
+  private recordUnsaved(edit: UnsavedEdit): void {
+    this.unsaved.push(edit);
   }
 
   /**
-   * Loads the project as it was saved elsewhere and makes it the committed
-   * one. Until it lands the autosave keeps the revision this session's project
-   * is really at, so an edit made meanwhile is refused as a conflict rather
-   * than written over the newer state. Undo and redo stay: this session's
-   * own edits replay onto the adopted project (`CommandHistory.adoptProject`),
-   * so a sound kept here can still be undone after another tab edits.
+   * The autosave moved. Once everything queued is written, no edit here is
+   * unsaved any more. A write refused as a conflict is proof that a change was
+   * saved elsewhere, even if its snapshot has not arrived. And once no write
+   * is in flight, a newer revision seen meanwhile can be told apart from this
+   * session's own echo, so it is taken in.
    */
-  private async adoptRemote(): Promise<void> {
-    const load = ++this.remoteLoads;
-    const loaded = await this.repository.loadProject(this.projectId);
-    if (this.disposed || load !== this.remoteLoads || !loaded.ok) return;
-    if (this.history.gestureActive) return;
+  private onSaveStatus(status: SaveStatus): void {
+    if (status.state === "saved" && status.pending === 0) this.unsaved = [];
+    if (status.state === "failed" && status.failure?.reason === "revision_conflict") {
+      this.remoteRevision = Math.max(
+        this.remoteRevision,
+        status.failure.currentRevision ?? status.revision + 1,
+      );
+    }
+    this.reconcileRemote();
+  }
+
+  /**
+   * A snapshot of the metadata tier arrived. One at or below the revision this
+   * session has written is its own echo and moves nothing. A newer one is a
+   * change saved elsewhere, taken in by {@link reconcileRemote}.
+   */
+  private onRemoteEvent(event: ProjectWatchEvent): void {
+    if (event.kind !== "metadata") {
+      this.autosave.applyRemote(event);
+      return;
+    }
+    this.remoteRevision = Math.max(this.remoteRevision, event.metadata.revision);
+    this.reconcileRemote();
+  }
+
+  /**
+   * Takes in a change saved elsewhere, if one is known and it is safe to.
+   * While a write is in flight it waits: that write's outcome says whether the
+   * newer revision was this session's own (it succeeds) or another tab's (it
+   * is refused as a conflict). While a gesture is open it waits for the
+   * gesture to end. Either way it is called again when that happens.
+   */
+  private reconcileRemote(): void {
+    if (this.disposed || this.syncing) return;
+    const status = this.autosave.status;
+    if (this.remoteRevision <= status.revision) return;
+    if (status.state === "saving" || this.history.gestureActive) return;
+    void this.syncRemote();
+  }
+
+  /**
+   * Loads the project as it was saved elsewhere and takes it in. With nothing
+   * unsaved here it is adopted as it is (GRV-23). With unsaved edits, they are
+   * replayed on top of it and written at its revision (GRV-88). Adopting only
+   * the revision would let this session write its out-of-date song over the
+   * newer one (GRV-23: a kept sound reverted by a stale second tab). Undo and
+   * redo stay either way: this session's own edits replay onto the adopted
+   * project (`CommandHistory.adoptProject`), so a sound kept here can still be
+   * undone after another tab edits.
+   */
+  private async syncRemote(): Promise<void> {
+    this.syncing = true;
+    const seen = this.remoteRevision;
+    let loaded: Awaited<ReturnType<ProjectRepository["loadProject"]>>;
+    try {
+      loaded = await this.repository.loadProject(this.projectId);
+    } finally {
+      this.syncing = false;
+    }
+    if (this.disposed || !loaded.ok) return;
+    const saved = loaded.value;
+    // What the store held when it was read, unless a newer snapshot came in
+    // during the read. A revision guessed from a conflict settles here too.
+    this.remoteRevision =
+      this.remoteRevision === seen
+        ? saved.metadata.revision
+        : Math.max(this.remoteRevision, saved.metadata.revision);
+    const status = this.autosave.status;
+    // A write started, or a gesture opened, while the project loaded; each
+    // calls `reconcileRemote` again once it is over.
+    if (status.state === "saving" || this.history.gestureActive) return;
+    if (saved.metadata.revision > status.revision) {
+      if (this.unsaved.length === 0 && status.pending === 0) {
+        this.adoptRemote(saved);
+      } else {
+        this.replayOnto(saved, loaded.dropped);
+      }
+    }
+    this.reconcileRemote();
+  }
+
+  /** Takes in a change saved elsewhere when nothing here is unsaved. */
+  private adoptRemote(saved: Project): void {
     const outcome = this.autosave.applyRemote({
       kind: "metadata",
-      metadata: loaded.value.metadata,
+      metadata: saved.metadata,
     });
     if (outcome !== "adopted") return;
     // The committed revision moved under an open preview, so it is stale.
     this.endOpenPreview("stale", "remote_change");
-    this.history.adoptProject(loaded.value);
+    this.history.adoptProject(saved);
+    this.remoteAdopted = true;
     for (const listener of [...this.remoteListeners]) listener();
+  }
+
+  /**
+   * Another tab saved first while this session had edits not yet written
+   * (GRV-88). Each unsaved edit is replayed, in order, on top of the saved
+   * project; one that no longer applies (the other tab deleted what it
+   * touched) is dropped alone, with its history entry, and the rest are kept.
+   * The autosave is rebased onto the saved revision and queues what the
+   * replay changed, so it ends on Saved with both tabs' changes rather than on
+   * a conflict no retry can clear.
+   */
+  private replayOnto(saved: Project, repaired: DroppedReferences | undefined): void {
+    const unsaved = this.unsaved;
+    let project = saved;
+    const replayed: UnsavedEdit[] = [];
+    const dropped: UnsavedEdit[] = [];
+    for (const edit of unsaved) {
+      const result = executeTransaction(project, edit.commands, {
+        actor: edit.actor,
+        correlationId: edit.correlationId,
+        summary: edit.summary,
+        clock: this.clock,
+      });
+      if (result.ok) {
+        project = result.project;
+        replayed.push(edit);
+      } else {
+        dropped.push(edit);
+      }
+    }
+    this.endOpenPreview("stale", "remote_change");
+    this.autosave.rebase(saved.metadata.revision);
+    this.history.adoptProject(project);
+    this.history.discardEntries(
+      new Set(dropped.flatMap((edit) => (edit.entry ? [edit.entry] : []))),
+    );
+    this.remoteAdopted = true;
+    if (repaired) this.queueRepair(project, repaired);
+    this.queueDiff(project, saved);
+    this.unsaved = this.autosave.status.pending > 0 ? replayed : [];
+    if (unsaved.length > 0) {
+      this.analytics.log("unsaved_edits_replayed", {
+        replayed_count: replayed.length,
+        dropped_count: dropped.length,
+      });
+    }
+    for (const listener of [...this.remoteListeners]) listener();
+    if (dropped.length > 0) {
+      this.emitNotice({ kind: "edits_discarded", count: dropped.length });
+    }
+  }
+
+  /** An undo or redo did not apply. After a remote change, that is why. */
+  private refused(direction: "undo" | "redo"): void {
+    if (!this.remoteAdopted) return;
+    this.analytics.log("undo_refused", { direction });
+    this.emitNotice({ kind: "undo_refused", direction });
+  }
+
+  private emitNotice(notice: SessionNotice): void {
+    for (const listener of [...this.noticeListeners]) listener(notice);
   }
 
   private emitEdit(edit: SessionEdit): void {
@@ -698,6 +921,10 @@ export class EditorSession {
       this.autosave.queueClipDeletion(clipId);
     }
   }
+}
+
+function toRaw(commands: readonly CommandEnvelope[]): RawCommandInput[] {
+  return commands.map(({ type, version, payload }) => ({ type, version, payload }));
 }
 
 function toList(

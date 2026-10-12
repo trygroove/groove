@@ -1,0 +1,45 @@
+/* The shared toast (GRV-88): bottom left, small, one at a time. Its fill is the
+   product owner's one exception for notices (docs/design.md): a muted dark red
+   that says "something went wrong" without shouting. Only this stylesheet may
+   read `--toast-alert`. */
+
+.toast {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 1000;
+  box-sizing: border-box;
+  max-width: min(360px, calc(100vw - 32px));
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 10px 10px 14px;
+  border-radius: 0;
+  background: var(--toast-alert);
+  border: 1px solid var(--tint-medium);
+  box-shadow: 0 12px 40px var(--shade-medium);
+  color: var(--color-text);
+  font-size: var(--font-size-small);
+}
+
+.toast-message {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.toast-close {
+  flex: none;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-base);
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.toast-close:hover,
+.toast-close:focus-visible {
+  color: var(--color-foreground-bright);
+}

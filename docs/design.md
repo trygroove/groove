@@ -46,6 +46,11 @@ equal. Colour is kept for the few things that must stand out.
 - **A level meter's clip is the one status in colour.** A meter is green while
   its track peaks under 0 dBFS, and red for a moment after a peak goes over
   (`--signal-ok`, `--signal-clip`). Only `LevelMeter.css` may read them.
+- **A toast is the one notice in colour** (GRV-88): the shared toast
+  (`src/components/Toast.tsx`, bottom left, closing itself) fills a muted dark
+  red, `--toast-alert`, so "your change was discarded" or "can't undo" reads
+  as a problem without becoming a bright alert. A product-owner decision like
+  the meters' pair; only `Toast.css` may read it.
 - **A marked control is outlined in white** (`UI-004`): dashed while a
   proposed change to it is previewed, solid once the change has landed. One
   rule draws it for every part (`src/controls/controlMarks.css`), and an
@@ -55,8 +60,8 @@ equal. Colour is kept for the few things that must stand out.
 - Style against semantic aliases (`--color-text`, `--color-background-secondary`),
   not ramp steps, and never add a near-duplicate of a token that already exists.
 - Enforced by `src/theme.test.ts`: no colour literal outside the theme, no
-  tinted grey, no tint that borrows anything but black or white, no third hue
-  beside the signal pair, and every token that is read is defined.
+  tinted grey, no tint that borrows anything but black or white, no hue beside
+  the signal pair and the toast's dark red, and every token that is read is defined.
 
 ## 3. Clearly organised sections
 

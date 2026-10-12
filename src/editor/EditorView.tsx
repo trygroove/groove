@@ -74,6 +74,7 @@ import MissingSounds, {
 import Mixer from "./Mixer";
 import ProjectLoadStates from "./ProjectLoadStates";
 import SequencePane from "./SequencePane";
+import { SessionToast } from "./SessionToast";
 import { noteEventsOf } from "./stepEditorModel";
 import {
   type AddTrackHost,
@@ -755,6 +756,7 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
               )}
             </Match>
           </Switch>
+          <SessionToast onNotice={session.onNotice} />
         </main>
       </EditorControlsContext>
     </ControlRegistryContext>

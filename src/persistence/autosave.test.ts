@@ -532,6 +532,69 @@ describe("ProjectAutosave", () => {
     expect(adopted).toEqual([4]);
   });
 
+  describe("rebase (GRV-88)", () => {
+    it("drops the queue and writes what is queued next at the new revision", async () => {
+      autosave.queueSong(renamedSong(128));
+      // Another tab saves first, moving the store to the next revision.
+      const elsewhere = await repository.saveChanges(
+        project.metadata.id,
+        { song: renamedSong(140), clips: [], deletedClipIds: [] },
+        project.metadata.revision,
+      );
+      if (!elsewhere.ok) throw new Error("expected the other tab's write to land");
+
+      autosave.rebase(elsewhere.revision);
+      expect(autosave.status).toMatchObject({
+        state: "saved",
+        pending: 0,
+        revision: elsewhere.revision,
+        failure: null,
+      });
+      expect(scheduler.pending).toBe(0);
+
+      autosave.queueSong(renamedSong(141));
+      scheduler.runAll();
+      const status = await autosave.flush();
+      expect(status.state).toBe("saved");
+      expect(status.revision).toBeGreaterThan(elsewhere.revision);
+      const loaded = await repository.loadProject(project.metadata.id);
+      if (!loaded.ok) throw new Error("expected the project to load");
+      expect(loaded.value.song.tempo).toBe(141);
+    });
+
+    it("clears a conflict, so the next write is not refused again", async () => {
+      autosave.queueSong(renamedSong(128));
+      const elsewhere = await repository.saveChanges(
+        project.metadata.id,
+        { song: renamedSong(140), clips: [], deletedClipIds: [] },
+        project.metadata.revision,
+      );
+      if (!elsewhere.ok) throw new Error("expected the other tab's write to land");
+      const failed = await autosave.flush();
+      expect(failed.failure?.reason).toBe("revision_conflict");
+
+      autosave.rebase(elsewhere.revision);
+      autosave.queueSong(renamedSong(128));
+      const status = await autosave.flush();
+      expect(status).toMatchObject({ state: "saved", failure: null, pending: 0 });
+    });
+
+    it("refuses while a write is in flight", async () => {
+      const { repository: gated, release } = gateFirstSongSave(repository);
+      const controller = new ProjectAutosave({
+        repository: gated,
+        projectId: project.metadata.id,
+        revision: project.metadata.revision,
+        scheduler,
+      });
+      controller.queueSong(renamedSong(128));
+      const writing = controller.flush();
+      expect(() => controller.rebase(5)).toThrow(/in flight/);
+      release();
+      await writing;
+    });
+  });
+
   it("stops writing after disposal and cancels the pending timer", async () => {
     autosave.queueSong(renamedSong(129));
     autosave.dispose();

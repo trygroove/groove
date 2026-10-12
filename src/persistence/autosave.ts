@@ -287,6 +287,27 @@ export class ProjectAutosave {
     return "adopted";
   }
 
+  /**
+   * Drops everything queued and makes `revision` the base of the next write
+   * (GRV-88). The caller has loaded that revision as it was saved elsewhere,
+   * replayed its own unsaved edits on top, and re-queues what they changed, so
+   * the edits are written over the other tab's change rather than refused as a
+   * conflict at the old base. Only legal while no write is in flight: that
+   * write's outcome is what says whether a newer revision is someone else's.
+   */
+  rebase(revision: number): void {
+    if (this.state === "saving") {
+      throw new Error("Cannot rebase the autosave while a write is in flight");
+    }
+    this.cancelPending();
+    this.queue.clear();
+    this.revision = revision;
+    this.failure = null;
+    this.consecutiveFailures = 0;
+    this.state = "saved";
+    this.publish();
+  }
+
   dispose(): void {
     this.disposed = true;
     this.cancelPending();

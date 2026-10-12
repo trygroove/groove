@@ -47,6 +47,7 @@ import {
   parsePackManifest,
 } from "../library/manifest";
 import type { InMemoryProjectRepository } from "../persistence/inMemoryProjectRepository";
+import { saveFailure } from "../persistence/projectRepository";
 import { systemClock } from "../shared/clock";
 import { detectPlatform, shortcutLabel } from "../shortcuts";
 import { buildArrangementProject } from "../testing/arrangementProject";
@@ -1198,7 +1199,7 @@ describe("EditorView", () => {
     expect(clip.content.events).toHaveLength(5);
   });
 
-  it("does not offer a retry button for a non-retryable failure", async () => {
+  it("replays its edit over a change another tab wrote first, and ends on Saved (GRV-88)", async () => {
     repository = inMemoryModule.createInMemoryProjectRepository();
     const project = createStepGridProject();
     const created = await repository.createProject(project);
@@ -1209,10 +1210,11 @@ describe("EditorView", () => {
 
     // Another client's write lands in the store directly, without going
     // through `saveMetadata` (which would notify this session's own
-    // `watchProject` listener and let it adopt the newer revision before the
-    // edit below ever conflicts). That models the real race the revision
-    // check exists for: the remote write reaches the server before this
-    // tab's watcher has delivered word of it.
+    // `watchProject` listener before the edit below is written). That models
+    // the real race the revision check exists for: the remote write reaches
+    // the server before this tab's watcher has delivered word of it. The
+    // write is refused as a conflict, and the session takes the saved project
+    // in, replays the edit on top of it and writes it at the new revision.
     const path = documentsModule.projectDocumentPath(project.metadata.id);
     const stored = repository.readDocument(path);
     if (!stored) throw new Error("expected the metadata document to exist");
@@ -1223,9 +1225,39 @@ describe("EditorView", () => {
 
     paintStep("BD, step 2, off");
 
+    await vi.waitFor(
+      async () => {
+        const loaded = await repository.loadProject(project.metadata.id);
+        if (!loaded.ok) throw new Error("expected the project to load");
+        const clip = loaded.value.clips[0];
+        if (clip.content.kind !== "notes") throw new Error("expected a note clip");
+        expect(clip.content.events).toHaveLength(5);
+      },
+      { timeout: 3_000 },
+    );
+    await screen.findByText("Saved", {}, { timeout: 3_000 });
+    expect(
+      screen.queryByText("This project changed in another tab or session."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not offer a retry button for a non-retryable failure", async () => {
+    repository = inMemoryModule.createInMemoryProjectRepository();
+    const project = createStepGridProject();
+    const created = await repository.createProject(project);
+    if (!created.ok) throw new Error("fixture project failed to create");
+
+    renderEditor(project.metadata.id);
+    await openSequenceEditor();
+
+    vi.spyOn(repository, "saveChanges").mockResolvedValue(
+      saveFailure("document_too_large", "too large"),
+    );
+    paintStep("BD, step 2, off");
+
     await screen.findByText("Save failed", {}, { timeout: 3_000 });
     expect(
-      screen.getByText("This project changed in another tab or session."),
+      screen.getByText("This project is too large to save further changes."),
     ).toBeInTheDocument();
     expect(saveRetryButton()).toBeNull();
   });
