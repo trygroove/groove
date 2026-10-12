@@ -36,6 +36,7 @@ import {
 } from "../../assistant/video";
 import { CloseIcon, PlayIcon } from "../../components/icons";
 import { type ShortcutHandlers, useShortcuts } from "../../shortcuts";
+import { VIDEO_EXPANDED_CLASS } from "./useAssistantPanel";
 
 /** How long the player has to load before the card says it did not. */
 export const VIDEO_LOAD_TIMEOUT_MS = 15_000;
@@ -121,10 +122,7 @@ export default function VideoCard(props: VideoCardProps): JSX.Element {
 
   return (
     <section
-      class={[
-        "assistant-card assistant-video",
-        { "assistant-video-expanded": expanded() },
-      ]}
+      class={["assistant-card assistant-video", { [VIDEO_EXPANDED_CLASS]: expanded() }]}
       aria-label={`Tutorial video: ${title()}`}
     >
       <div class="assistant-video-stage">

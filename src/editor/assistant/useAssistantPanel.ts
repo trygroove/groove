@@ -3,6 +3,13 @@ import { type Analytics, analytics as defaultAnalytics } from "../../analytics/a
 import type { AssistantPanelLayout } from "./assistantPanelLayout";
 import * as layouts from "./assistantPanelLayout";
 
+/**
+ * The class a tutorial video's card carries while it fills the window
+ * (GRV-16). Escape there is the card's own, to put the player back; the
+ * panel stands aside rather than minimising underneath it.
+ */
+export const VIDEO_EXPANDED_CLASS = "assistant-video-expanded";
+
 export interface UseAssistantPanelOptions {
   /** Where the layout is remembered. Defaults to this browser's local storage. */
   readonly storage?: Storage | null;
@@ -176,6 +183,9 @@ export function useAssistantPanel(
     resetSize: () => apply(layouts.resetSize(layout(), room()), null),
     dismissAction() {
       if (!focusIsIn(panelElement)) return undefined;
+      // A video full screen closes itself (`VideoCard`); nothing under it
+      // goes with it, so the press is spent here doing nothing.
+      if (document.activeElement?.closest(`.${VIDEO_EXPANDED_CLASS}`)) return () => {};
       const next = layouts.dismiss(layout());
       if (!next) return undefined;
       return next.mode === "closed" ? close : () => move(next);
