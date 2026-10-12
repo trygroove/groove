@@ -8,7 +8,12 @@ import {
 import { type AssistantCaller, runAssistantTurn } from "./gateway";
 import { createInMemoryGuardStores } from "./inMemoryGuardStores";
 import type { AssistantTurnRequest } from "./protocol";
-import { handleRetentionRequest, recordOutcome, setRetention } from "./retention";
+import {
+  handleRetentionRequest,
+  recordOutcome,
+  recordRating,
+  setRetention,
+} from "./retention";
 import { handleTranscriptAdminRequest } from "./transcriptAdmin";
 import {
   ASSISTANT_DISCLOSURE_VERSION,
@@ -287,6 +292,99 @@ export function describeTranscriptStoreContract(
         ),
       ).rejects.toMatchObject({ code: "invalid_request" });
       expect((await harness.records())[0]?.outcomes).toEqual([]);
+    });
+
+    it("keeps the producer's rating of a reply, changed or cleared, and only on the account's own turn", async () => {
+      const { store, turn } = await setup();
+      await turn(request("turn-0040"));
+      expect((await harness.records())[0]).not.toHaveProperty("rating");
+      expect(
+        await handleRetentionRequest(
+          store,
+          OWNER,
+          { op: "rate", turnId: "turn-0040", rating: "down" },
+          START + 1,
+        ),
+      ).toEqual({ recorded: true });
+      expect((await harness.records())[0]?.rating).toEqual({
+        rating: "down",
+        at: START + 1,
+      });
+      expect(await recordRating(store, OWNER, "turn-0040", "up", START + 2)).toBe(true);
+      expect((await harness.records())[0]?.rating).toEqual({
+        rating: "up",
+        at: START + 2,
+      });
+      // Another account cannot rate it, and a turn nobody kept is not made up.
+      expect(await recordRating(store, OTHER, "turn-0040", "down", START + 3)).toBe(
+        false,
+      );
+      expect(await recordRating(store, OWNER, "turn-0049", "down", START + 3)).toBe(
+        false,
+      );
+      expect(await recordRating(store, OWNER, "turn-0040", null, START + 4)).toBe(true);
+      const [record] = await harness.records();
+      expect(record?.rating).toBeNull();
+      expect(checkTranscriptRecord(record).ok).toBe(true);
+      expect(await harness.records()).toHaveLength(1);
+    });
+
+    it("keeps no rating for an account that said no", async () => {
+      const { store, turn } = await setup();
+      await turn(request("turn-0041"));
+      await harness.rawPreference(OWNER, {
+        schemaVersion: 1,
+        retain: false,
+        disclosureVersion: ASSISTANT_DISCLOSURE_VERSION,
+        answeredAt: START,
+      });
+      expect(await recordRating(store, OWNER, "turn-0041", "down", START + 1)).toBe(
+        false,
+      );
+      expect((await harness.records())[0]).not.toHaveProperty("rating");
+    });
+
+    it("refuses a rating that is not up, down or cleared", async () => {
+      const { store, turn } = await setup();
+      await turn(request("turn-0042"));
+      await expect(
+        handleRetentionRequest(
+          store,
+          OWNER,
+          { op: "rate", turnId: "turn-0042", rating: "meh" },
+          START + 1,
+        ),
+      ).rejects.toMatchObject({ code: "invalid_request" });
+    });
+
+    it("lists the turns an admin asks for by rating", async () => {
+      const { store, turn, advance } = await setup();
+      await turn(request("turn-0043"));
+      advance(1_000);
+      await turn(request("turn-0044"));
+      advance(1_000);
+      await turn(request("turn-0045"));
+      await recordRating(store, OWNER, "turn-0043", "down", START + 10);
+      await recordRating(store, OWNER, "turn-0044", "up", START + 11);
+      const response = await handleTranscriptAdminRequest(
+        store,
+        { admin: true },
+        { op: "list", rating: "down" },
+      );
+      expect(response).toMatchObject({
+        turns: [{ turnId: "turn-0043", rating: "down" }],
+      });
+      expect("turns" in response && response.turns).toHaveLength(1);
+      const all = await handleTranscriptAdminRequest(
+        store,
+        { admin: true },
+        { op: "list" },
+      );
+      expect("turns" in all && all.turns.map((summary) => summary.rating)).toEqual([
+        null,
+        "up",
+        "down",
+      ]);
     });
 
     it("lists the newest turns for an admin, narrowed by account, project, outcome and traffic, and opens one", async () => {

@@ -1,8 +1,8 @@
 /**
  * What Groove does with an account's retention answer (GRV-8): keeps a
  * completed turn unless the account said no (GRV-97: keeping is the
- * default), adds a proposal's outcome to
- * it, deletes everything on a no, and answers the `assistantRetention`
+ * default), adds a proposal's outcome and the producer's rating of the reply
+ * (GRV-103) to it, deletes everything on a no, and answers the `assistantRetention`
  * callable. Firebase-free, over a {@link TranscriptStore}; the Cloud Functions
  * (`functions/src/retentionHandler.ts`, `functions/src/index.ts`) supply the
  * Firestore store, and the mock backend an in-memory one.
@@ -21,6 +21,8 @@ import {
   PROPOSAL_OUTCOMES,
   type ProposalOutcome,
   permitsRetention,
+  REPLY_RATINGS,
+  type ReplyRating,
   type RetentionPreference,
   readPreference,
   sessionIdSchema,
@@ -110,6 +112,29 @@ export async function recordOutcome(
   }
 }
 
+/**
+ * Sets the producer's rating of a kept turn's reply (GRV-103), or clears it
+ * with `null`, if there is a kept turn to rate. Never throws.
+ */
+export async function recordRating(
+  store: TranscriptStore,
+  uid: string,
+  turnId: string,
+  rating: ReplyRating | null,
+  now: number,
+): Promise<boolean> {
+  try {
+    return await store.setRatingIfPermitted(
+      uid,
+      turnId,
+      rating === null ? null : { rating, at: now },
+      permitsRetention,
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** The callable's name, as the browser calls it. */
 export const ASSISTANT_RETENTION_CALLABLE = "assistantRetention";
 
@@ -132,6 +157,12 @@ export const retentionRequestSchema = z.discriminatedUnion("op", [
     .refine((request) => request.issues === undefined || request.outcome === "rejected", {
       message: "only a rejected outcome carries issues",
     }),
+  z.strictObject({
+    op: z.literal("rate"),
+    turnId: sessionIdSchema,
+    /** Thumbs up or down on the reply (GRV-103), or `null` to clear it. */
+    rating: z.enum(REPLY_RATINGS).nullable(),
+  }),
 ]);
 export type RetentionRequest = z.infer<typeof retentionRequestSchema>;
 
@@ -208,6 +239,10 @@ export async function handleRetentionRequest(
           now,
           request.issues,
         ),
+      };
+    case "rate":
+      return {
+        recorded: await recordRating(store, uid, request.turnId, request.rating, now),
       };
   }
 }

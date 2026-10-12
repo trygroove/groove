@@ -1,7 +1,8 @@
 /**
  * The browser's door to the `assistantRetention` callable (GRV-8): read the
  * account's answer about keeping its assistant conversations, give one, and
- * say what became of a proposal so a kept turn records it.
+ * say what became of a proposal, or how the producer rated a reply (GRV-103),
+ * so a kept turn records it.
  *
  * Firebase-free, like `assistantClient.ts`: the call is injected. The app's
  * is the callable (`src/firebaseAssistantTransport.ts`); the mock backend
@@ -13,6 +14,7 @@ import type { RetentionRequest, RetentionState } from "./retention";
 import {
   ASSISTANT_DISCLOSURE_VERSION,
   type ProposalOutcome,
+  type ReplyRating,
   retentionPreferenceSchema,
   type TranscriptIssue,
 } from "./transcripts";
@@ -34,6 +36,11 @@ export interface AssistantRetentionClient {
     outcome: ProposalOutcome,
     issues?: readonly TranscriptIssue[],
   ): Promise<void>;
+  /**
+   * Tells a kept turn how the producer rated its reply, or with `null` that
+   * the rating was cleared (GRV-103). Never rejects.
+   */
+  rate(turnId: string, rating: ReplyRating | null): Promise<void>;
 }
 
 const stateSchema = z.looseObject({
@@ -71,6 +78,13 @@ export function createRetentionClient(call: RetentionCall): AssistantRetentionCl
       } catch {
         // A kept turn missing an outcome is the cost of a dropped call; the
         // producer's action itself is already done.
+      }
+    },
+    async rate(turnId, rating) {
+      try {
+        await call({ op: "rate", turnId, rating });
+      } catch {
+        // As for an outcome: the rating on screen stands either way.
       }
     },
   };

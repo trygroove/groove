@@ -14,6 +14,8 @@ import type {
 } from "./transcriptAdmin";
 import {
   PROPOSAL_OUTCOMES,
+  REPLY_RATINGS,
+  type ReplyRating,
   type TranscriptRecord,
   transcriptRecordSchema,
 } from "./transcripts";
@@ -26,6 +28,8 @@ export interface TranscriptListQuery {
   readonly uid?: string;
   readonly projectId?: string;
   readonly outcome?: TranscriptOutcomeFilter;
+  /** Only turns whose reply was rated so (GRV-103). */
+  readonly rating?: ReplyRating;
   readonly internal?: boolean;
 }
 
@@ -46,6 +50,8 @@ const summarySchema = z.looseObject({
   callCount: z.number(),
   outcome: z.enum(PROPOSAL_OUTCOMES).nullable(),
   issueCodes: z.array(z.string()),
+  // A callable deployed before ratings (GRV-103) sends none.
+  rating: z.enum(REPLY_RATINGS).nullable().default(null),
   model: z.string(),
 });
 
@@ -59,6 +65,7 @@ function requestFor(query: TranscriptListQuery): TranscriptAdminRequest {
     ...(query.uid ? { uid: query.uid } : {}),
     ...(query.projectId ? { projectId: query.projectId } : {}),
     ...(query.outcome ? { outcome: query.outcome } : {}),
+    ...(query.rating ? { rating: query.rating } : {}),
     ...(query.internal !== undefined ? { internal: query.internal } : {}),
   };
 }

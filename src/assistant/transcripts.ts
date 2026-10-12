@@ -17,7 +17,8 @@
  *
  * - `assistantTranscripts/{uid}_{turnId}`: one completed turn
  *   ({@link TranscriptRecord}): the user's message, the reply, the proposal
- *   shown and what became of it, the project's ID and revision, timestamps.
+ *   shown and what became of it, the producer's rating of the reply
+ *   (GRV-103), the project's ID and revision, timestamps.
  * - `assistantPreferences/{uid}`: whether the account lets Groove keep them
  *   ({@link RetentionPreference}), keyed by uid so it survives sign-out,
  *   sign-in, and a guest linking an account (which keeps the uid).
@@ -162,6 +163,20 @@ export const transcriptOutcomeSchema = z
   });
 export type TranscriptOutcome = z.infer<typeof transcriptOutcomeSchema>;
 
+/**
+ * How the producer rated a reply (GRV-103): thumbs up or down. One rating per
+ * turn, which a later click changes or clears.
+ */
+export const REPLY_RATINGS = ["up", "down"] as const;
+export type ReplyRating = (typeof REPLY_RATINGS)[number];
+
+/** A turn's rating as a record keeps it, and when it was given. */
+export const transcriptRatingSchema = z.strictObject({
+  rating: z.enum(REPLY_RATINGS),
+  at: z.int().min(0),
+});
+export type TranscriptRating = z.infer<typeof transcriptRatingSchema>;
+
 const text = z.string().max(64_000);
 
 /** One proposal as the card showed it: the tool calls the model made. */
@@ -197,6 +212,11 @@ export const transcriptRecordSchema = z.strictObject({
   stopReason: z.enum(["end_turn", "max_tokens", "refusal", "tool_use"]),
   proposal: transcriptProposalSchema.nullable(),
   outcomes: z.array(transcriptOutcomeSchema).max(50),
+  /**
+   * The producer's rating of the reply (GRV-103): absent until it is rated,
+   * `null` once a rating has been cleared.
+   */
+  rating: transcriptRatingSchema.nullable().optional(),
   model: z.string().max(100),
   promptVersion: z.string().max(100),
   /** When the message arrived, ms since the epoch: the retention clock. */
@@ -398,6 +418,17 @@ export interface TranscriptStore {
     uid: string,
     turnId: string,
     outcome: TranscriptOutcome,
+    permits: (preference: unknown) => boolean,
+  ): Promise<boolean>;
+  /**
+   * Sets, or with `null` clears, the rating on the account's record for
+   * `turnId` (GRV-103), if the record exists, is the account's, and `permits`
+   * still approves the preference.
+   */
+  setRatingIfPermitted(
+    uid: string,
+    turnId: string,
+    rating: TranscriptRating | null,
     permits: (preference: unknown) => boolean,
   ): Promise<boolean>;
   /**

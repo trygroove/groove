@@ -8,8 +8,8 @@
  * run with the admin credential, is the one way in, and it only reads.
  *
  * - `list`: the newest turns, as summaries (no tool inputs, the message cut
- *   short), narrowed by account, project, outcome and whether the turn was
- *   internal.
+ *   short), narrowed by account, project, outcome, the producer's rating of
+ *   the reply (GRV-103) and whether the turn was internal.
  * - `get`: one turn in full: the message, the reply, every tool call with its
  *   input, the outcomes and a rejection's issues.
  *
@@ -22,6 +22,8 @@ import { z } from "zod";
 import {
   PROPOSAL_OUTCOMES,
   type ProposalOutcome,
+  REPLY_RATINGS,
+  type ReplyRating,
   sessionIdSchema,
   type TranscriptRecord,
   type TranscriptStore,
@@ -36,7 +38,7 @@ export const TRANSCRIPT_LIST_LIMIT = 100;
 
 /**
  * How many of the newest records a listing reads before narrowing them by
- * outcome and traffic, which the store cannot filter on.
+ * outcome, rating and traffic, which the store cannot filter on.
  */
 const TRANSCRIPT_SCAN_LIMIT = 500;
 
@@ -55,6 +57,8 @@ export const transcriptAdminRequestSchema = z.discriminatedUnion("op", [
     uid: uidSchema.optional(),
     projectId: z.string().min(1).max(64).optional(),
     outcome: z.enum(TRANSCRIPT_OUTCOME_FILTERS).optional(),
+    /** Only turns whose reply the producer rated so (GRV-103). */
+    rating: z.enum(REPLY_RATINGS).optional(),
     internal: z.boolean().optional(),
   }),
   z.strictObject({
@@ -79,6 +83,8 @@ export interface TranscriptSummary {
   readonly outcome: ProposalOutcome | null;
   /** A rejection's issue codes, without repeats. */
   readonly issueCodes: readonly string[];
+  /** How the producer rated the reply (GRV-103), or `null` if it is unrated. */
+  readonly rating: ReplyRating | null;
   readonly model: string;
 }
 
@@ -136,6 +142,7 @@ export function summarizeTranscript(record: TranscriptRecord): TranscriptSummary
     callCount: record.proposal?.calls.length ?? 0,
     outcome: last?.outcome ?? null,
     issueCodes: [...new Set(rejection?.issues?.map((issue) => issue.code) ?? [])],
+    rating: record.rating?.rating ?? null,
     model: record.model,
   };
 }
@@ -147,6 +154,7 @@ function matches(
   if (request.internal !== undefined && summary.internal !== request.internal) {
     return false;
   }
+  if (request.rating !== undefined && summary.rating !== request.rating) return false;
   if (request.outcome === undefined) return true;
   return request.outcome === "none"
     ? summary.outcome === null
@@ -174,7 +182,10 @@ export async function handleTranscriptAdminRequest(
   if (request.op === "get") {
     return { turn: parseRecord(await store.read(request.uid, request.turnId)) };
   }
-  const narrowed = request.outcome !== undefined || request.internal !== undefined;
+  const narrowed =
+    request.outcome !== undefined ||
+    request.rating !== undefined ||
+    request.internal !== undefined;
   const raws = await store.recent(
     { uid: request.uid, projectId: request.projectId },
     narrowed ? TRANSCRIPT_SCAN_LIMIT : TRANSCRIPT_LIST_LIMIT,
