@@ -5,6 +5,7 @@ import {
   type AssistantRetentionClient,
   createRetentionClient,
 } from "./assistant/retentionClient";
+import type { TranscriptAdminClient } from "./assistant/transcriptAdminClient";
 import { isMockBackend, resolveEmulatorHosts } from "./devBackend";
 
 /**
@@ -71,6 +72,34 @@ async function createRetention(): Promise<AssistantRetentionClient> {
   ]);
   return createRetentionClient(
     createFirebaseRetentionCall(app, resolveEmulatorHosts()?.functions ?? null),
+  );
+}
+
+/**
+ * The admin page's transcript client (GRV-98): the
+ * `assistantTranscriptsAdmin` callable, or on the mock backend the same
+ * logic over the store its gateway keeps transcripts in, as an admin (the
+ * mock backend's one account is one).
+ */
+export async function getTranscriptAdminClient(): Promise<TranscriptAdminClient> {
+  const { createTranscriptAdminClient } = await import(
+    "./assistant/transcriptAdminClient"
+  );
+  if (isMockBackend) {
+    const [{ handleTranscriptAdminRequest }, store] = await Promise.all([
+      import("./assistant/transcriptAdmin"),
+      mockTranscriptStore(),
+    ]);
+    return createTranscriptAdminClient((request) =>
+      handleTranscriptAdminRequest(store, { admin: true }, request),
+    );
+  }
+  const [{ createFirebaseTranscriptAdminCall }, { app }] = await Promise.all([
+    import("./firebaseAssistantTransport"),
+    import("./firebaseConfig"),
+  ]);
+  return createTranscriptAdminClient(
+    createFirebaseTranscriptAdminCall(app, resolveEmulatorHosts()?.functions ?? null),
   );
 }
 

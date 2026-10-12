@@ -1,0 +1,153 @@
+/* The admin page's transcript viewer (GRV-98): filters in one row, the turns
+   in the shared table, and an opened turn below in two columns, what was
+   said beside what was proposed and what became of it. */
+.transcripts-admin {
+  max-width: 1000px;
+  margin-top: 40px;
+}
+
+.transcripts-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.transcripts-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.transcripts-input {
+  box-sizing: border-box;
+  min-width: 160px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background-color: var(--color-background-well);
+  color: var(--color-text);
+  font-size: var(--font-size-base);
+}
+
+.transcripts-input:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 0;
+}
+
+/* The opened turn's row stands out the way a selection does: brighter. */
+.transcripts-row-open td {
+  background-color: var(--color-background-secondary);
+  font-weight: 600;
+}
+
+.transcripts-tag {
+  padding: 1px 6px;
+  border: 1px solid var(--color-border);
+  font-size: var(--font-size-tiny);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.transcripts-detail {
+  margin-top: 24px;
+  border: 1px solid var(--color-border);
+}
+
+.transcripts-detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-background-secondary);
+}
+
+.transcripts-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  margin: 0;
+  font-size: var(--font-size-small);
+}
+
+.transcripts-meta dt {
+  color: var(--color-text-secondary);
+}
+
+.transcripts-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.transcripts-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.transcripts-column {
+  min-width: 0;
+  padding: 12px 16px 16px;
+}
+
+.transcripts-column + .transcripts-column {
+  border-left: 1px solid var(--color-border);
+}
+
+.transcripts-heading {
+  margin: 12px 0 6px;
+  font-size: var(--font-size-tiny);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-foreground-muted);
+}
+
+.transcripts-heading:first-child {
+  margin-top: 0;
+}
+
+.transcripts-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.transcripts-outcomes,
+.transcripts-issues {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.transcripts-issues {
+  margin-top: 4px;
+}
+
+.transcripts-issues li + li {
+  margin-top: 6px;
+}
+
+.transcripts-mono {
+  margin: 2px 0 0;
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-size-small);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary);
+}
+
+.transcripts-call {
+  border-top: 1px solid var(--color-border);
+  padding: 6px 0;
+}
+
+.transcripts-call pre {
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px;
+  background-color: var(--color-background-well);
+}

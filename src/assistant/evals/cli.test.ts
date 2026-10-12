@@ -17,9 +17,24 @@ describe("parseEvalArgs", () => {
       model: ASSISTANT_MODEL_ID,
       out: null,
       replay: null,
+      fromTranscript: null,
       concurrency: 3,
       turnTimeoutMs: 540_000,
     });
+  });
+
+  it("reads a transcript case file, alone (GRV-98)", () => {
+    expect(options(["--from-transcript", "tmp/transcript-turn.json"])).toMatchObject({
+      fromTranscript: "tmp/transcript-turn.json",
+      caseIds: [],
+    });
+    expect(() => parseEvalArgs(["--from-transcript", "a.json", "sketch-house"])).toThrow(
+      EvalUsageError,
+    );
+    expect(() =>
+      parseEvalArgs(["--from-transcript", "a.json", "--replay", "r.json"]),
+    ).toThrow(EvalUsageError);
+    expect(() => parseEvalArgs(["--from-transcript"])).toThrow(EvalUsageError);
   });
 
   it("reads cases and every option", () => {

@@ -24,6 +24,7 @@ import {
   createTechnoDrumsProject,
   createTechnoLoopProject,
 } from "./fixtures";
+import type { ExportedTranscriptCase, TranscriptCaseFixture } from "./transcriptCase";
 
 /** The capabilities asked once conventionally and once at an extreme (check 6). */
 export const PAIRED_CAPABILITIES = [
@@ -385,4 +386,38 @@ export function resolveScope(project: Project, scope: EvalScope): ResolvedScope 
       ? project.song.tracks.map((track) => track.id)
       : trackIdsByName(project, scope.tracks);
   return { ...scope, tracks: new Set(tracks) };
+}
+
+/** The project each transcript case fixture name stands for (GRV-98). */
+export const TRANSCRIPT_FIXTURE_PROJECTS: Readonly<
+  Record<TranscriptCaseFixture, () => Project>
+> = {
+  "house-loop": createHouseLoopProject,
+  "kit-sketch": createKitSketchProject,
+  arrangement: createArrangementProject,
+};
+
+/**
+ * The eval case a kept turn's file runs as (GRV-98): its message against its
+ * fixture, free to change any track and to add tracks (a real request has no
+ * scope the eval knows), expecting a proposal, with no parts for check 7 to look for.
+ */
+export function evalCaseFromTranscript(exported: ExportedTranscriptCase): EvalCase {
+  return {
+    id: `transcript-${exported.turnId}`,
+    capability: "loopSketch",
+    axis: "conventional",
+    request: exported.request,
+    expect: "proposal",
+    fixture: TRANSCRIPT_FIXTURE_PROJECTS[exported.fixture],
+    selection: null,
+    scope: {
+      tracks: "all",
+      createTracks: true,
+      song: true,
+      master: true,
+      returns: true,
+      sections: false,
+    },
+  };
 }
