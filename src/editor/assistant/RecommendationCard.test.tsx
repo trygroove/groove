@@ -271,15 +271,19 @@ describe("the recommended pack card (GRV-23)", () => {
     expect(card()).toHaveTextContent("Softer kicks that sit back in the beat.");
     expect(card()).toHaveTextContent(PACK_IN_PROJECT);
     expect(card()).toHaveTextContent(/Groove · 1\.1\.0 · \d+ sounds/);
-    // The count the library's own pack banner shows, not the index's.
+    // The count the library's own pack banner shows when Open in library aims
+    // it at the pad: one-shots alone, not the index's count.
     const client = new LibraryClient(fixtureFetcher());
     const summary = (await client.loadIndex()).find((pack) => pack.id === DRUMS);
     if (!summary) throw new Error("no drums pack in the fixtures");
     const manifest = await client.loadPack(summary);
     if (!manifest.ok) throw new Error("the drums pack did not load");
-    const shown = packCounts({ pack: summary, assets: manifest.assets }).sounds;
+    const shown = packCounts({ pack: summary, assets: manifest.assets }, [
+      "one-shot",
+    ]).sounds;
     expect(card()).toHaveTextContent(`Groove · 1.1.0 · ${shown} sounds`);
     expect(shown).not.toBe(summary.assetCount);
+    expect(shown).not.toBe(packCounts({ pack: summary, assets: manifest.assets }).sounds);
     const sounds = within(
       within(card()).getByRole("list", { name: "Sounds" }),
     ).getAllByRole("listitem");

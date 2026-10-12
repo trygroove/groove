@@ -495,8 +495,9 @@ export class EditorSession {
    * Loads the project as it was saved elsewhere and makes it the committed
    * one. Until it lands the autosave keeps the revision this session's project
    * is really at, so an edit made meanwhile is refused as a conflict rather
-   * than written over the newer state. Undo and redo go with it: they were
-   * worked out against the project that was replaced.
+   * than written over the newer state. Undo and redo stay: this session's
+   * own edits replay onto the adopted project (`CommandHistory.adoptProject`),
+   * so a sound kept here can still be undone after another tab edits.
    */
   private async adoptRemote(): Promise<void> {
     const load = ++this.remoteLoads;
@@ -510,7 +511,7 @@ export class EditorSession {
     if (outcome !== "adopted") return;
     // The committed revision moved under an open preview, so it is stale.
     this.endOpenPreview("stale", "remote_change");
-    this.history.replaceProject(loaded.value);
+    this.history.adoptProject(loaded.value);
     for (const listener of [...this.remoteListeners]) listener();
   }
 
