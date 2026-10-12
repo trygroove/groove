@@ -827,6 +827,7 @@
 }
 
 .assistant-ask-text {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -856,7 +857,6 @@
 /* The option has a sound: a small speaker beside the label. */
 .assistant-ask-listen {
   flex: none;
-  margin-left: auto;
   display: flex;
   align-items: center;
   height: 18px;
@@ -865,7 +865,6 @@
 
 .assistant-ask-suggested {
   flex: none;
-  margin-left: auto;
   color: var(--color-foreground-bright);
   font-size: var(--font-size-tiny);
   line-height: 18px;

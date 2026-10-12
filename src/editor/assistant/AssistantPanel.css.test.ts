@@ -32,10 +32,12 @@ describe("assistant question options (GRV-100)", () => {
   });
 
   it("pins the speaker and the Suggested tag to the option's right edge", () => {
-    // After the label they sat at a different x in each option. Pushed to the
-    // end of the row, they line up down the card.
-    expect(declarationsOf(".assistant-ask-suggested")).toContain("margin-left: auto");
-    expect(declarationsOf(".assistant-ask-listen")).toContain("margin-left: auto");
+    // After the label they sat at a different x in each option. The text
+    // column takes the free space, so both sit together at the end of the
+    // row and line up down the card.
+    expect(declarationsOf(".assistant-ask-text")).toContain("flex: 1");
+    expect(declarationsOf(".assistant-ask-listen")).toContain("flex: none");
+    expect(declarationsOf(".assistant-ask-suggested")).toContain("flex: none");
   });
 });
 
