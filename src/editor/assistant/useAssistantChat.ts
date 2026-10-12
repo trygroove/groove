@@ -10,7 +10,7 @@ import { type Accessor, createEffect, createMemo, createSignal } from "solid-js"
 import type { Analytics } from "../../analytics/analytics";
 import type { AssistantClient } from "../../assistant/assistantClient";
 import type { AssistantRetentionClient } from "../../assistant/retentionClient";
-import { createSessionHealth } from "../../assistant/sessionHealth";
+import { createSessionHealth, type SessionTurn } from "../../assistant/sessionHealth";
 import type { ReplyRating } from "../../assistant/transcripts";
 import type { Project } from "../../domain/entities";
 import type { Suggestion } from "../../projection/projectAnalysisProjection";
@@ -183,11 +183,19 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
   /** The turn each proposal card came from, so its outcome reaches the right record. */
   const turnOfEntry = new Map<string, string>();
   /** Which turn of the session each proposal card came from (GRV-103). */
-  const sessionTurnOfEntry = new Map<string, number>();
-  const health = createSessionHealth({
+  const sessionTurnOfEntry = new Map<string, SessionTurn>();
+  const detector = createSessionHealth({
     clock: options.clock ?? systemClock,
     analytics: options.analytics,
   });
+  // A new conversation forgets the old one's cards along with its session.
+  const health = {
+    ...detector,
+    reset() {
+      sessionTurnOfEntry.clear();
+      detector.reset();
+    },
+  };
 
   const editor = options.editor;
   const proposals = editor

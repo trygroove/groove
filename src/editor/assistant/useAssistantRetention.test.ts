@@ -5,6 +5,11 @@ import {
   createFailingTransport,
   createRecordingTransport,
 } from "../../analytics/transport";
+import type { AssistantRetentionClient } from "../../assistant/retentionClient";
+import {
+  ASSISTANT_DISCLOSURE_VERSION,
+  type ReplyRating,
+} from "../../assistant/transcripts";
 import { createSliceFixtureProject } from "../../domain/fixtures";
 import { createFakeAssistantClient } from "../../testing/fakeAssistantClient";
 import {
@@ -13,6 +18,7 @@ import {
 } from "../../testing/fakeRetentionClient";
 import { memoryStorage } from "../../testing/storage";
 import { type AssistantChat, useAssistantChat } from "./useAssistantChat";
+import { useAssistantRetention } from "./useAssistantRetention";
 
 const project = createSliceFixtureProject();
 const track = project.song.tracks[0] ?? null;
@@ -196,5 +202,112 @@ describe("answering (GRV-8)", () => {
     await settle();
     expect(retention.requests).toEqual([]);
     expect(chat.retention?.answered()).toBe(false);
+  });
+});
+
+describe("telling a kept turn its rating (GRV-103)", () => {
+  /**
+   * A retention client whose `rate` calls each wait for the test to settle
+   * them, and a stored rating that is whichever call settled last, as two
+   * transactions on one turn would leave it.
+   */
+  function deferredRatings() {
+    const calls: { rating: ReplyRating | null; settle(): void }[] = [];
+    let stored: ReplyRating | null = null;
+    const client: AssistantRetentionClient = {
+      get: async () => ({
+        preference: {
+          schemaVersion: 1,
+          retain: true,
+          disclosureVersion: ASSISTANT_DISCLOSURE_VERSION,
+          answeredAt: 0,
+        },
+        disclosureVersion: ASSISTANT_DISCLOSURE_VERSION,
+        retentionDays: 30,
+      }),
+      set: async () => {
+        throw new Error("not in this test");
+      },
+      outcome: async () => {},
+      rate: (_turnId, rating) =>
+        new Promise<void>((resolve) => {
+          calls.push({
+            rating,
+            settle() {
+              stored = rating;
+              resolve();
+            },
+          });
+        }),
+    };
+    return { client, calls, stored: () => stored };
+  }
+
+  it("sends one turn's changes one at a time, so the last one clicked is the one kept", async () => {
+    const fake = deferredRatings();
+    const retention = createRoot(() =>
+      useAssistantRetention({
+        client: async () => fake.client,
+        registered: () => true,
+        analytics: () =>
+          new Analytics({
+            transport: createRecordingTransport(),
+            storage: memoryStorage(),
+          }),
+      }),
+    );
+    flush();
+    await settle();
+    expect(retention.retain()).toBe(true);
+
+    retention.reportRating("turn-1", "down");
+    retention.reportRating("turn-1", "up");
+    retention.reportRating("turn-1", null);
+    retention.reportRating("turn-1", "up");
+    await settle();
+    // Settle whatever is on its way, the latest call first, as a slow first
+    // transaction would commit after a quick second one.
+    let inFlightAtOnce = 0;
+    for (let round = 0; round < 10 && fake.calls.length > 0; round += 1) {
+      const outstanding = fake.calls.splice(0);
+      inFlightAtOnce = Math.max(inFlightAtOnce, outstanding.length);
+      for (const call of outstanding.reverse()) call.settle();
+      await settle();
+    }
+    expect(fake.stored()).toBe("up");
+    expect(inFlightAtOnce).toBe(1);
+  });
+
+  it("goes on to the next change after a call that failed", async () => {
+    const fake = deferredRatings();
+    let failing = true;
+    const rate = fake.client.rate;
+    fake.client.rate = async (turnId, rating) => {
+      if (failing) {
+        failing = false;
+        throw new Error("unavailable");
+      }
+      return rate(turnId, rating);
+    };
+    const retention = createRoot(() =>
+      useAssistantRetention({
+        client: async () => fake.client,
+        registered: () => true,
+        analytics: () =>
+          new Analytics({
+            transport: createRecordingTransport(),
+            storage: memoryStorage(),
+          }),
+      }),
+    );
+    flush();
+    await settle();
+    retention.reportRating("turn-1", "down");
+    retention.reportRating("turn-1", "up");
+    await settle();
+    expect(fake.calls.map((call) => call.rating)).toEqual(["up"]);
+    fake.calls[0]?.settle();
+    await settle();
+    expect(fake.stored()).toBe("up");
   });
 });

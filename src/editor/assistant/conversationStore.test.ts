@@ -207,7 +207,7 @@ describe("the conversation across a reload (GRV-42)", () => {
             streaming: false,
             stopped: false,
             turnId: "turn-00000001",
-            sessionTurn: 1,
+            sessionTurn: { session: 1, index: 1 },
             rating: "down",
           },
         ],

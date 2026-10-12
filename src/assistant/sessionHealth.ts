@@ -22,7 +22,9 @@
  *
  * Signals come from the paths that already exist (the turn's end, a
  * proposal's outcome, the rating control); nothing here logs anything else.
- * Framework-free, with the clock injected. A new conversation resets it.
+ * Framework-free, with the clock injected. A new conversation resets it, and
+ * from then on a signal from one of the old conversation's turns (a late
+ * error, an outcome on one of its cards) counts for nothing.
  */
 import type { Analytics } from "../analytics/analytics";
 import { bucketOf } from "../analytics/buckets";
@@ -51,6 +53,15 @@ export const SAD_SIGNAL_CLASSES: Readonly<Record<SadReason, SadSignalClass>> = {
 
 /** An undo this soon after applying, or sooner, says the proposal was wrong. */
 export const FAST_UNDO_MS = 60_000;
+
+/**
+ * One turn of one session, as {@link SessionHealth.messageSent} hands it out:
+ * which session (it changes on every reset) and which turn of it, from 1.
+ */
+export interface SessionTurn {
+  readonly session: number;
+  readonly index: number;
+}
 
 /** How a turn ended, as the conversation saw it. */
 export type TurnEnding =
@@ -85,11 +96,12 @@ export interface SessionHealthOptions {
 export interface SessionHealth {
   /**
    * A message was sent: a new turn. The first of a session logs
-   * `assistant_session_started`. Returns the turn's index, from 1.
+   * `assistant_session_started`. Returns the turn, which every later signal
+   * about it names.
    */
-  messageSent(): number;
-  /** The turn numbered `turn` ended so. */
-  turnEnded(ending: TurnEnding, turn: number): void;
+  messageSent(): SessionTurn;
+  /** The turn `turn` ended so. */
+  turnEnded(ending: TurnEnding, turn: SessionTurn): void;
   /**
    * What became of the proposal `key` (a card's entry ID) from turn `turn`.
    * `stale` says a rejected one was rejected because the song moved on.
@@ -97,28 +109,33 @@ export interface SessionHealth {
   proposalOutcome(
     key: string,
     outcome: ProposalOutcome,
-    turn: number,
+    turn: SessionTurn,
     options?: { readonly stale?: boolean },
   ): void;
   /** The reply from turn `turn` was rated so. */
-  rated(rating: ReplyRating, turn: number): void;
-  /** A new conversation: forgets everything, so its first message starts a session. */
+  rated(rating: ReplyRating, turn: SessionTurn): void;
+  /**
+   * A new conversation: forgets everything, so its first message starts a
+   * session, and ignores every turn handed out before.
+   */
   reset(): void;
 }
 
 export function createSessionHealth(options: SessionHealthOptions): SessionHealth {
+  /** Which session this is: one more on every reset. */
+  let session = 1;
   let turns = 0;
   let sadFull = false;
   let sadHard = false;
   /** When each proposal was last applied, by its key. */
   const appliedAt = new Map<string, number>();
 
-  function log(name: "full" | "hard", reason: SadReason, turn: number): void {
+  function log(name: "full" | "hard", reason: SadReason, turn: SessionTurn): void {
     try {
       options.analytics().log("assistant_session_sad", {
         reason,
         signal_class: SAD_SIGNAL_CLASSES[reason],
-        turn_index_bucket: bucketOf("turn_index", turn),
+        turn_index_bucket: bucketOf("turn_index", turn.index),
         counts_for: name,
       });
     } catch {
@@ -126,9 +143,14 @@ export function createSessionHealth(options: SessionHealthOptions): SessionHealt
     }
   }
 
-  function signal(reason: SadReason, turn: number): void {
-    // Before a message has been sent there is no session to be sad.
-    if (turns === 0) return;
+  /**
+   * Whether `turn` is one of this session's: an old conversation's counts for
+   * nothing, and before a message has been sent there is no turn to name.
+   */
+  const current = (turn: SessionTurn) => turn.session === session && turns > 0;
+
+  function signal(reason: SadReason, turn: SessionTurn): void {
+    if (!current(turn)) return;
     const hard = SAD_SIGNAL_CLASSES[reason] !== "soft";
     if (!sadFull) {
       sadFull = true;
@@ -150,13 +172,14 @@ export function createSessionHealth(options: SessionHealthOptions): SessionHealt
           // As above.
         }
       }
-      return turns;
+      return { session, index: turns };
     },
     turnEnded(ending, turn) {
       const reason = turnSadReason(ending);
       if (reason) signal(reason, turn);
     },
     proposalOutcome(key, outcome, turn, outcomeOptions) {
+      if (!current(turn)) return;
       const now = options.clock.now();
       switch (outcome) {
         case "applied":
@@ -181,6 +204,7 @@ export function createSessionHealth(options: SessionHealthOptions): SessionHealt
       if (rating === "down") signal("rated_down", turn);
     },
     reset() {
+      session += 1;
       turns = 0;
       sadFull = false;
       sadHard = false;

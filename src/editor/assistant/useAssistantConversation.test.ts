@@ -282,7 +282,10 @@ describe("a conversation's session health (GRV-103)", () => {
   function talk() {
     const client = createFakeAssistantClient();
     const health = {
-      messageSent: vi.fn(() => health.messageSent.mock.calls.length),
+      messageSent: vi.fn(() => ({
+        session: 1,
+        index: health.messageSent.mock.calls.length,
+      })),
       turnEnded: vi.fn(),
       proposalOutcome: vi.fn(),
       rated: vi.fn(),
@@ -330,9 +333,18 @@ describe("a conversation's session health (GRV-103)", () => {
     });
     expect(health.messageSent).toHaveBeenCalledTimes(2);
     expect(health.turnEnded.mock.calls).toEqual([
-      [{ kind: "done", stopped: false, stopReason: "end_turn" }, 1],
-      [{ kind: "error", code: "timeout" }, 2],
-      [{ kind: "done", stopped: false, stopReason: "max_tokens" }, 2],
+      [
+        { kind: "done", stopped: false, stopReason: "end_turn" },
+        { session: 1, index: 1 },
+      ],
+      [
+        { kind: "error", code: "timeout" },
+        { session: 1, index: 2 },
+      ],
+      [
+        { kind: "done", stopped: false, stopReason: "max_tokens" },
+        { session: 1, index: 2 },
+      ],
     ]);
     dispose();
   });
@@ -345,7 +357,9 @@ describe("a conversation's session health (GRV-103)", () => {
     client.last().done();
     flush();
     const replyId = conversation.entries()[1]?.id ?? "";
-    expect(conversation.rateReply(replyId, "down")).toMatchObject({ sessionTurn: 1 });
+    expect(conversation.rateReply(replyId, "down")).toMatchObject({
+      sessionTurn: { session: 1, index: 1 },
+    });
     flush();
     expect(conversation.entries()[1]).toMatchObject({ rating: "down" });
     conversation.rateReply(replyId, null);

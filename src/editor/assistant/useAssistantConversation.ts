@@ -58,7 +58,7 @@ import type {
   AssistantTurnRequest,
 } from "../../assistant/protocol";
 import { splitRecommendations } from "../../assistant/recommendation";
-import type { SessionHealth } from "../../assistant/sessionHealth";
+import type { SessionHealth, SessionTurn } from "../../assistant/sessionHealth";
 import type { ReplyRating } from "../../assistant/transcripts";
 import type { AssistantVideo } from "../../assistant/video";
 import type { Project } from "../../domain/entities";
@@ -84,10 +84,10 @@ export interface TurnOrigin {
   /** The ID the transcript files the turn under (GRV-8), when it has one. */
   readonly turnId?: string;
   /**
-   * Which turn of this session it was, from 1 (GRV-103), when a session
-   * health detector is counting. A turn restored from before a reload has none.
+   * Which turn of which session it was (GRV-103), when a session health
+   * detector is counting. A turn restored from before a reload has none.
    */
-  readonly sessionTurn?: number;
+  readonly sessionTurn?: SessionTurn;
 }
 
 /** One thing in the conversation's log. */
@@ -125,7 +125,7 @@ export type ConversationEntry =
       /** The turn's transcript ID (GRV-8), so a rating reaches its record. */
       readonly turnId?: string;
       /** Its turn of this session (GRV-103); see {@link TurnOrigin.sessionTurn}. */
-      readonly sessionTurn?: number;
+      readonly sessionTurn?: SessionTurn;
       /** The producer's thumbs up or down on it (GRV-103). */
       readonly rating?: ReplyRating;
     }
@@ -352,8 +352,12 @@ export function useAssistantConversation(
     return `entry-${nextId}`;
   };
   const newId = options.newId ?? (() => crypto.randomUUID());
-  /** One conversation per panel session: what its kept turns are filed under. */
-  const conversationId = newId();
+  /**
+   * What the conversation's kept turns are filed under: one per panel
+   * session, and a new one when another project's conversation takes this
+   * one's place, so a conversation is one session (GRV-103).
+   */
+  let conversationId = newId();
   /** The turn on its way: Stop goes to it. */
   let inFlight: AssistantTurnHandle | null = null;
   // Leaving the editor stops the reply on its way, at the gateway too, rather
@@ -710,7 +714,8 @@ export function useAssistantConversation(
         restoredKey = key;
         if (switching) {
           inFlight?.stop();
-          // Another project's conversation is a new session.
+          // Another project's conversation is a new conversation and session.
+          conversationId = newId();
           options.health?.reset();
         }
         const stored = store.load(key);
