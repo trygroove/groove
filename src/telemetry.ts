@@ -30,7 +30,9 @@
 //
 // - **The vendor SDK.** A declined session never loads PostHog at all, and
 //   withdrawing consent at runtime calls its `opt_out_capturing()`
-//   (`setVendorAnalyticsCollection`). Until the user has made a choice, the
+//   (`setVendorAnalyticsCollection`). Withdrawn before the SDK has loaded (on
+//   the landing page, where it waits), the transport is disposed: its queue is
+//   dropped and its load never runs. Until the user has made a choice, the
 //   SDK keeps its identity in memory; once they have granted it, in
 //   `localStorage` and a cookie.
 // - **The surface.** Navigation off the landing page is client-side, so
@@ -41,7 +43,7 @@
 //   later grant rebuilds it. A one-way switch leaves a user who changes their
 //   mind uncollected with the checkbox showing "on".
 
-import { analytics } from "./analytics/analytics";
+import { type Analytics, analytics } from "./analytics/analytics";
 import type { Surface } from "./analytics/catalog";
 import { type ConsentStore, consentStore } from "./analytics/consent";
 import {
@@ -174,7 +176,15 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     (() =>
       postHog
         ? createPostHogTransport({
-            load: () => analyticsGate.then(() => postHog.load(persistence())),
+            // Consent is read again when the gate opens, not only when the
+            // transport was made: an opt-out on the landing page disposes this
+            // transport (aborting the signal) long before the SDK would load.
+            load: (signal) =>
+              analyticsGate.then(() =>
+                signal.aborted || !consent.analyticsAllowed
+                  ? null
+                  : postHog.load(persistence()),
+              ),
           })
         : noopTransport);
   const setVendorCollection =
@@ -270,6 +280,9 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     startMonitoringIfAllowed();
   };
 
+  /** Whether the vendor transport is the one attached to the boundary. */
+  let analyticsWired = false;
+
   // Delivered synchronously on subscribe, which is what wires the initial
   // state, and again on every change. Symmetric in both directions: a grant
   // rebuilds exactly what a withdrawal tore down.
@@ -297,17 +310,26 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
 
     if (state.productAnalytics) {
       setVendorCollection(true, persistence());
-      // The transport is swapped in synchronously; it buffers internally until
-      // the vendor SDK resolves, so `app_opened` is not lost to lazy loading.
-      try {
-        analytics.setTransport(createTransport());
-      } catch {
-        // Leaves the previous transport in place. Analytics fails open.
+      // Only a change *to* allowed builds a transport: another flag changing
+      // (replay alone, say) must not replace one whose queue is still waiting
+      // for the SDK, because replacing it drops that queue.
+      if (!analyticsWired) {
+        // The transport is swapped in synchronously; it buffers internally
+        // until the vendor SDK resolves, so `app_opened` is not lost to lazy
+        // loading.
+        try {
+          analytics.setTransport(createTransport());
+          analyticsWired = true;
+        } catch {
+          // Leaves the previous transport in place. Analytics fails open.
+        }
       }
     } else {
       // The boundary already refuses to send while consent is withdrawn;
-      // dropping the transport as well means nothing is buffered either, and
-      // opting the SDK out stops a client that is already running.
+      // replacing the transport disposes it as well, which drops what it had
+      // buffered and cancels its pending SDK load, and opting the SDK out
+      // stops a client that is already running.
+      analyticsWired = false;
       analytics.setTransport(noopTransport);
       setVendorCollection(false, persistence());
     }
@@ -478,6 +500,35 @@ export function afterFirstPaint(task: () => void): void {
   // the tab may never be foregrounded, and monitoring that only starts if the
   // user happens to look at the page is not monitoring.
   whenIdle();
+}
+
+/**
+ * What the router does on each location: hands the surface to telemetry, and
+ * sends one page view per new pathname (the vendor's own pageview capture is
+ * off, GRV-106). `SurfaceTracker` in `src/app.tsx` calls it from an effect.
+ *
+ * Until `initTelemetry` has run there is no telemetry and no transport, so the
+ * surface goes to the analytics boundary directly and no page view is sent;
+ * the call that follows with telemetry sends the entry page's view then, so
+ * it is not lost to mount order. A repeat of the same pathname (a query or
+ * hash change, or the effect re-running) sends nothing.
+ */
+export function createRouteTracker(
+  boundary: Pick<Analytics, "setSurface" | "pageview"> = analytics,
+): (pathname: string, telemetry: Pick<Telemetry, "setSurface"> | null) => void {
+  /** The path the last page view was sent for, so each navigation counts once. */
+  let pageviewSentFor: string | null = null;
+  return (pathname, telemetry) => {
+    const surface = surfaceForPath(pathname);
+    if (!telemetry) {
+      boundary.setSurface(surface);
+      return;
+    }
+    telemetry.setSurface(surface);
+    if (pathname === pageviewSentFor) return;
+    pageviewSentFor = pathname;
+    boundary.pageview();
+  };
 }
 
 /** Maps a pathname onto the surface it belongs to. */

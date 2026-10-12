@@ -51,10 +51,14 @@ an omission.
       That subdomain keeps serving after a custom domain is connected; the
       alpha's public origin is `https://trygroove.app` (`SITE_ORIGIN` in
       `site.config.mjs`), and that is what the smoke gate targets.
-- [ ] **Enable Google Analytics** during creation, or link it afterwards under
-      Project Settings → Integrations. This is what produces the GA4 property and
-      the measurement ID; `FND-001c` rides the Firebase config rather than
-      configuring GA4 separately.
+- [ ] **Leave Google Analytics off** during creation. Product analytics is
+      PostHog (GRV-106, ADR 0011), set up separately: create a PostHog project
+      (EU region unless there is a reason not to), set its project API key and
+      ingestion host as the `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST`
+      environment variables (`docs/testing.md` has the table), and add its internal-traffic
+      filter (*Settings → Project → Product analytics → Filter out internal and
+      test users*: `internal` event property is not `true`, on for all new
+      insights).
 - [ ] **Enable Authentication** → Sign-in method, with both providers the app
       uses (`src/auth/authService.ts`): **Anonymous** and **Google**. The smoke
       test starts an anonymous session, so a missing Anonymous provider fails the
@@ -255,16 +259,20 @@ In short:
       traffic is excluded from the PRD section 11 measures.
 - [ ] Confirm collection is on in the Privacy disclosure, and disable any
       tracker blocker — a blocked endpoint looks exactly like a broken pipeline.
-- [ ] Trigger and confirm each Alpha Milestone 0 event in GA4 Realtime: `app_opened`,
+- [ ] Trigger and confirm each Alpha Milestone 0 event in PostHog's *Activity →
+      Live events* (with the internal-traffic filter off there, or your own
+      verification events are hidden): `app_opened`,
       `first_edit`, `feature_first_use`, `save_failed`, `audio_start_failed`,
       `exception`.
 - [ ] Throw a deliberate error from the console and confirm the Sentry issue
       carries the deployed SHA, a **symbolicated** stack trace naming `src/`
       files, the expected tags, a redacted message, and no PII — and that it
       produced exactly one issue.
-- [ ] Exercise the opt-out in both directions, including GA4's automatic
-      collection (`page_view`, `session_start`), and confirm no `_ga` cookie is
-      written for a session that declined before the SDK initialized.
+- [ ] Exercise the opt-out in both directions, including the router's
+      `$pageview`, and confirm the SDK collects nothing by itself (no
+      `$autocapture`, `$pageleave`, `$exception` or `$snapshot`), and that no
+      `ph_*` cookie or `localStorage` entry is written for a session that
+      declined, or that has not yet touched the Privacy control.
 - [ ] Confirm no source map is publicly fetchable:
       `curl -sI https://trygroove.app/_build/assets/<chunk>.js.map` must
       not return 200.
@@ -360,7 +368,8 @@ feature set, so the event list to confirm in part 5 is every Alpha Milestone 0,
       the Sentry issue an error produces to confirm its release SHA,
       symbolicated `src/` trace, tags, redacted message, single-issue grouping,
       and crash-free session rate; **(b)** confirming the `internal` user
-      property in GA4 and that internal traffic is excluded from the section 11
+      property in PostHog and that the project's internal-traffic filter excludes
+      internal traffic from the section 11
       measures. Neither affects a cohort session, both are covered by automated
       tests against a fake SDK, and source-map upload with matching debug IDs is
       independently confirmed. Re-run both once the alpha is built —

@@ -68,6 +68,13 @@ export class Analytics {
   private userId: string | null = null;
   /** The UID the current transport has been identified as. */
   private identifiedAs: string | null = null;
+  /**
+   * A sign-out the vendor has not been told about yet. Signing out while no
+   * transport is identified (opted out, so on `noopTransport`) skips the reset,
+   * but the vendor client underneath may still hold the last account; the debt
+   * is paid on the next transport that may collect, before anything else.
+   */
+  private resetOwed = false;
   /** Fallback for once-only events when storage is unavailable. */
   private readonly onceMemory = new Set<string>();
 
@@ -88,7 +95,13 @@ export class Analytics {
    * a vendor SDK that loads lazily.
    */
   setTransport(transport: AnalyticsTransport): void {
+    const previous = this.transport;
     this.transport = transport;
+    if (previous !== transport) {
+      this.guard(() => {
+        previous.dispose?.();
+      });
+    }
     // The new transport has no idea who this user is yet.
     this.identifiedAs = null;
     this.userPropertiesSent = false;
@@ -107,8 +120,11 @@ export class Analytics {
    */
   setUserId(userId: string | null): void {
     if (userId === this.userId) return;
+    const previous = this.userId;
     this.userId = userId;
-    if (this.identifiedAs !== null) {
+    if (this.identifiedAs === null) {
+      if (previous !== null) this.resetOwed = true;
+    } else {
       this.identifiedAs = null;
       this.guard(() => {
         this.transport.resetIdentity();
@@ -239,8 +255,15 @@ export class Analytics {
   }
 
   private flushIdentity(): void {
-    if (this.userId === null || this.identifiedAs === this.userId) return;
     if (!this.consent.analyticsAllowed) return;
+    if (this.resetOwed) {
+      this.resetOwed = false;
+      this.guard(() => {
+        this.transport.resetIdentity();
+      });
+      this.userPropertiesSent = false;
+    }
+    if (this.userId === null || this.identifiedAs === this.userId) return;
     const userId = this.userId;
     this.identifiedAs = userId;
     this.guard(() => {

@@ -195,6 +195,66 @@ describe("identity (GRV-106)", () => {
     analytics.setTransport(next);
     expect(next.userId).toBe("uid_123");
   });
+
+  it("owes the vendor a reset for a sign-out made while opted out", () => {
+    // The vendor client under every PostHog transport is the same one, and it
+    // still holds the account it was identified as. Opting back in without a
+    // reset would persist that account's ID for later signed-out visits.
+    const { analytics, consent } = setup();
+    analytics.setUserId("uid_a");
+    consent.optOut();
+    analytics.setTransport(createRecordingTransport());
+    analytics.setUserId(null);
+
+    consent.optIn();
+    const next = createRecordingTransport();
+    analytics.setTransport(next);
+
+    expect(next.identityResets).toBe(1);
+    expect(next.userId).toBeNull();
+
+    analytics.log("app_opened");
+    expect(next.identityResets).toBe(1);
+  });
+
+  it("resets before identifying the next account after an opted-out switch", () => {
+    const { analytics, consent } = setup();
+    analytics.setUserId("uid_a");
+    consent.optOut();
+    analytics.setTransport(createRecordingTransport());
+    analytics.setUserId("uid_b");
+
+    consent.optIn();
+    const next = createRecordingTransport();
+    const calls: string[] = [];
+    vi.spyOn(next, "resetIdentity").mockImplementation(() => void calls.push("reset"));
+    vi.spyOn(next, "identify").mockImplementation((id) => void calls.push(id));
+    analytics.setTransport(next);
+
+    expect(calls).toEqual(["reset", "uid_b"]);
+  });
+});
+
+describe("transport replacement (GRV-106)", () => {
+  it("disposes the transport it replaces, so its buffer is never sent", () => {
+    const { analytics, transport } = setup();
+    const dispose = vi.fn();
+    const buffering: AnalyticsTransport = { ...transport, dispose };
+    analytics.setTransport(buffering);
+    analytics.setTransport(createRecordingTransport());
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("never throws from a transport whose dispose throws", () => {
+    const { analytics, transport } = setup();
+    analytics.setTransport({
+      ...transport,
+      dispose: () => {
+        throw new Error("blocked");
+      },
+    });
+    expect(() => analytics.setTransport(createRecordingTransport())).not.toThrow();
+  });
 });
 
 describe("page views (GRV-106)", () => {
@@ -266,7 +326,7 @@ describe("library_pack_added (LOOP-013, LIB-08)", () => {
 
   it("drops an event whose pack id is not a published slug", () => {
     // The untyped edge: a caller that reaches past the compiler with a pack's
-    // own ID gets the event dropped, not a pack ID delivered to GA4.
+    // own ID gets the event dropped, not a pack ID delivered to the vendor.
     const { analytics, transport } = setup();
     analytics.log("library_pack_added", {
       pack_kind: "user",

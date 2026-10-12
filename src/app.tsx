@@ -3,14 +3,18 @@ import { useLocation } from "@solidjs/router";
 import { Errored, Loading } from "@solidjs/web";
 import { type Accessor, createEffect, createSignal, onSettled } from "solid-js";
 import { APP_TITLE } from "../site.config.mjs";
-import { analytics } from "./analytics/analytics";
 import AppErrorFallback from "./components/AppErrorFallback";
 import FloatingTelemetryDisclosure from "./components/FloatingTelemetryDisclosure";
 import ReleaseBadge from "./components/ReleaseBadge";
 import TapeLoader from "./components/TapeLoader";
 import { Router } from "./router";
 import { syncInternalTraffic } from "./shared/internalTraffic";
-import { initTelemetry, surfaceForPath, type Telemetry } from "./telemetry";
+import {
+  createRouteTracker,
+  initTelemetry,
+  surfaceForPath,
+  type Telemetry,
+} from "./telemetry";
 import "./app.css";
 
 /**
@@ -25,7 +29,7 @@ import "./app.css";
  * one decision instead of three.
  *
  * It also sends a page view for every pathname the session visits, since the
- * analytics vendor's own pageview capture is off.
+ * analytics vendor's own pageview capture is off (`createRouteTracker`).
  *
  * The compute phase reads both the pathname and the telemetry accessor, so the
  * effect re-runs with the current pathname once `initTelemetry` has finished;
@@ -36,28 +40,13 @@ import "./app.css";
  */
 function SurfaceTracker(props: { telemetry: Accessor<Telemetry | null> }) {
   const location = useLocation();
-  /** The path the last page view was sent for, so each navigation counts once. */
-  let pageviewSentFor: string | null = null;
+  const track = createRouteTracker();
   createEffect(
     () => ({
       pathname: location.pathname,
       telemetry: props.telemetry(),
     }),
-    ({ pathname, telemetry }) => {
-      const surface = surfaceForPath(pathname);
-      if (!telemetry) {
-        analytics.setSurface(surface);
-        return;
-      }
-      telemetry.setSurface(surface);
-      // The vendor's own pageview capture is off (GRV-106), so the router is
-      // what counts page views. Sent once telemetry has wired the transport,
-      // so the entry page's view is not lost to mount order.
-      if (pathname !== pageviewSentFor) {
-        pageviewSentFor = pathname;
-        analytics.pageview();
-      }
-    },
+    ({ pathname, telemetry }) => track(pathname, telemetry),
   );
   return null;
 }

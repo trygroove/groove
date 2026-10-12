@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Analytics, analytics } from "./analytics/analytics";
 import type { Surface } from "./analytics/catalog";
 import { ConsentStore } from "./analytics/consent";
-import type { PostHogLoader, PostHogPersistence } from "./analytics/posthogTransport";
+import {
+  createPostHogLoader,
+  type PostHogClient,
+  type PostHogLoader,
+  type PostHogPersistence,
+} from "./analytics/posthogTransport";
 import {
   createFailingTransport,
   createRecordingTransport,
@@ -18,6 +23,7 @@ import { InMemoryProjectRepository } from "./persistence/inMemoryProjectReposito
 import { createManualScheduler } from "./shared/scheduler";
 import {
   afterFirstPaint,
+  createRouteTracker,
   initTelemetry,
   type StartErrorSink,
   surfaceForPath,
@@ -74,6 +80,43 @@ describe("surfaceForPath", () => {
     expect(surfaceForPath("/projects")).toBe("dashboard");
     expect(surfaceForPath("/projects/")).toBe("dashboard");
     expect(surfaceForPath("/projects/prj_abc")).toBe("editor");
+  });
+});
+
+describe("createRouteTracker: the router's page views (GRV-106)", () => {
+  function setup() {
+    const boundary = { setSurface: vi.fn(), pageview: vi.fn() };
+    const telemetry = { setSurface: vi.fn() };
+    return { boundary, telemetry, track: createRouteTracker(boundary) };
+  }
+
+  it("sends nothing before telemetry resolves, then one view for the entry path", () => {
+    const { boundary, telemetry, track } = setup();
+
+    track("/projects", null);
+    expect(boundary.setSurface).toHaveBeenCalledWith("dashboard");
+    expect(boundary.pageview).not.toHaveBeenCalled();
+
+    track("/projects", telemetry);
+    expect(telemetry.setSurface).toHaveBeenCalledWith("dashboard");
+    expect(boundary.pageview).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends one view per new pathname and none for a repeat", () => {
+    const { boundary, telemetry, track } = setup();
+
+    track("/", telemetry);
+    track("/projects", telemetry);
+    track("/projects", telemetry);
+    track("/projects/prj_1", telemetry);
+
+    expect(boundary.pageview).toHaveBeenCalledTimes(3);
+    expect(telemetry.setSurface.mock.calls.map(([surface]) => surface)).toEqual([
+      "landing",
+      "dashboard",
+      "dashboard",
+      "editor",
+    ]);
   });
 });
 
@@ -726,6 +769,97 @@ describe("the PostHog SDK loads lazily, and never on the landing page (GRV-106)"
     analytics.log("app_opened");
     // The recording transport was replaced, and nothing else received it.
     expect(transportBefore.named("app_opened")).toHaveLength(0);
+  });
+});
+
+describe("withdrawing consent before the SDK loads (GRV-106)", () => {
+  // The transport is made on the landing page, where its SDK load waits for an
+  // app page. An opt-out there must cancel that load and drop what it queued:
+  // otherwise the load runs once the visitor reaches the dashboard, with cookie
+  // persistence, and sends the page view queued before the opt-out.
+
+  function recordingClient() {
+    const calls: { method: string; args: unknown[] }[] = [];
+    const record =
+      (method: string) =>
+      (...args: unknown[]) => {
+        calls.push({ method, args });
+      };
+    const client: PostHogClient = {
+      capture: record("capture"),
+      identify: record("identify"),
+      reset: record("reset"),
+      setPersonProperties: record("setPersonProperties"),
+      register: record("register"),
+      set_config: record("set_config"),
+      opt_out_capturing: record("opt_out_capturing"),
+      opt_in_capturing: record("opt_in_capturing"),
+      has_opted_out_capturing: () => false,
+    };
+    return { client, calls };
+  }
+
+  function setup() {
+    const { client, calls } = recordingClient();
+    const init = vi.fn((_key: string, _config: unknown) => client);
+    const consent = new ConsentStore(memoryStorage());
+    const paint = deferredPaint();
+    const telemetry = initTelemetry({
+      surface: "landing",
+      consent,
+      target: fakeTarget(),
+      afterPaint: paint.schedule,
+      startErrorSink: async () => {},
+      postHogLoader: createPostHogLoader({
+        settings: { key: "phc_test", host: "https://eu.i.posthog.com" },
+        importSdk: async () => ({ init }),
+      }),
+    });
+    return { calls, init, consent, paint, telemetry };
+  }
+
+  function captured(calls: { method: string; args: unknown[] }[]) {
+    return calls.filter((call) => call.method === "capture").map((call) => call.args[0]);
+  }
+
+  it("never loads the SDK or sends what was queued before the opt-out", async () => {
+    const { calls, init, consent, paint, telemetry } = setup();
+
+    analytics.pageview();
+    consent.optOut();
+    telemetry.setSurface("dashboard");
+    paint.flush();
+    await tick();
+
+    expect(init).not.toHaveBeenCalled();
+    expect(captured(calls)).toEqual([]);
+  });
+
+  it("does not flush the old queue when consent is toggled off and on again", async () => {
+    const { calls, init, consent, paint, telemetry } = setup();
+
+    analytics.pageview();
+    consent.optOut();
+    consent.optIn();
+    telemetry.setSurface("dashboard");
+    paint.flush();
+    await tick();
+
+    expect(init).toHaveBeenCalledTimes(1);
+    // Only what the dashboard sent after the re-grant: its `app_opened`.
+    expect(captured(calls)).toEqual(["app_opened"]);
+  });
+
+  it("keeps the queue when a different consent flag changes", async () => {
+    const { calls, consent, paint, telemetry } = setup();
+
+    analytics.pageview();
+    consent.set({ sessionReplay: false });
+    telemetry.setSurface("dashboard");
+    paint.flush();
+    await tick();
+
+    expect(captured(calls)).toEqual(["$pageview", "app_opened"]);
   });
 });
 

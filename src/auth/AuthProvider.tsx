@@ -150,7 +150,7 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
-/** Coarse, non-identifying account fact for the GA4 user property. */
+/** Coarse, non-identifying account fact for the analytics person property. */
 function accountTypeOf(state: AuthState): "anonymous" | "registered" {
   return state.isAnonymous ? "anonymous" : "registered";
 }

@@ -23,6 +23,12 @@ export interface AnalyticsTransport {
   resetIdentity(): void;
   /** One page view, sent by the router on navigation. */
   pageview(): void;
+  /**
+   * Called once the boundary has replaced this transport (on an opt-out, say).
+   * A transport that buffers drops its buffer and stops any pending vendor
+   * load here, so nothing queued before the swap is sent after it.
+   */
+  dispose?(): void;
 }
 
 /** Discards everything. The default until a real transport is wired in. */

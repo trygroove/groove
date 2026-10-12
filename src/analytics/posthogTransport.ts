@@ -15,6 +15,7 @@
 // cards' decisions (ADR 0011).
 
 import type { PostHogConfig } from "posthog-js";
+import { type Clock, systemClock } from "../shared/clock";
 import { type AnalyticsParamValue, USER_PROPERTIES } from "./catalog";
 import type { AnalyticsTransport } from "./transport";
 
@@ -36,7 +37,11 @@ export type PostHogPersistence = "memory" | "localStorage+cookie";
  * implements. The real `PostHog` instance satisfies it structurally.
  */
 export interface PostHogClient {
-  capture(event: string, properties?: Record<string, unknown>): unknown;
+  capture(
+    event: string,
+    properties?: Record<string, unknown>,
+    options?: { timestamp?: Date },
+  ): unknown;
   identify(distinctId: string): void;
   reset(): void;
   setPersonProperties(properties: Record<string, unknown>): void;
@@ -191,11 +196,22 @@ export function createPostHogLoader(options: PostHogLoaderOptions): PostHogLoade
 /** Events buffered while the SDK resolves. */
 const MAX_BUFFERED_EVENTS = 20;
 
-type Operation = (client: PostHogClient) => void;
+/**
+ * One call on the client. `queuedAt` is when the app made it, set only for a
+ * call that waited in the queue, so a buffered event keeps its own time rather
+ * than the moment the SDK happened to load.
+ */
+type Operation = (client: PostHogClient, queuedAt: number | null) => void;
 
 export interface PostHogTransportOptions {
-  /** Resolves the initialized client, or `null` where it cannot run. */
-  load: () => Promise<PostHogClient | null>;
+  /**
+   * Resolves the initialized client, or `null` where it cannot run. The signal
+   * aborts when the transport is disposed, so a load still waiting for its
+   * gate can stand down instead of starting the SDK for nobody.
+   */
+  load: (signal: AbortSignal) => Promise<PostHogClient | null>;
+  /** Stamps queued events. Defaults to the real clock. */
+  clock?: Clock;
 }
 
 /**
@@ -206,18 +222,32 @@ export interface PostHogTransportOptions {
  * keeps call order, which is what puts an `identify` ahead of the events it
  * should own. Every failure path (no key, a blocked script, a throwing SDK)
  * degrades to discarding events, never to throwing (PRD `OPS-02` fail-open).
+ *
+ * `dispose` (which the boundary calls when it replaces this transport, as on
+ * an opt-out) drops the queue and aborts a load that has not run yet, so
+ * nothing buffered before a withdrawal is ever sent.
  */
 export function createPostHogTransport(
   options: PostHogTransportOptions,
 ): AnalyticsTransport {
+  const clock = options.clock ?? systemClock;
+  const aborter = new AbortController();
   let client: PostHogClient | null = null;
   let unavailable = false;
   let queuedEvents = 0;
-  const queue: Operation[] = [];
+  const queue: { operation: Operation; queuedAt: number }[] = [];
+  /**
+   * Whether the client is identified, in call order. PostHog runs with
+   * `person_profiles: "identified_only"`, so person properties wait for an
+   * identity: sent for an anonymous visitor, they would create the profile
+   * that setting exists to avoid.
+   */
+  let identified = false;
+  let personProperties: Record<string, string> | null = null;
 
-  const run = (target: PostHogClient, operation: Operation) => {
+  const run = (target: PostHogClient, operation: Operation, queuedAt: number | null) => {
     try {
-      operation(target);
+      operation(target, queuedAt);
     } catch {
       // Blocked by an extension, offline, or the SDK threw.
     }
@@ -225,79 +255,102 @@ export function createPostHogTransport(
 
   const discard = () => {
     unavailable = true;
+    client = null;
     queue.length = 0;
   };
 
   let loading: Promise<PostHogClient | null>;
   try {
-    loading = options.load();
+    loading = options.load(aborter.signal);
   } catch (error) {
     loading = Promise.reject(error);
   }
   void loading
     .then((resolved) => {
+      if (aborter.signal.aborted) return;
       if (!resolved) {
         discard();
         return;
       }
       client = resolved;
-      for (const operation of queue.splice(0, queue.length)) run(resolved, operation);
+      for (const { operation, queuedAt } of queue.splice(0, queue.length)) {
+        run(resolved, operation, queuedAt);
+      }
     })
     .catch(discard);
 
   const submit = (operation: Operation, isEvent = false) => {
     if (unavailable) return;
     if (client) {
-      run(client, operation);
+      run(client, operation, null);
       return;
     }
     if (isEvent) {
       if (queuedEvents >= MAX_BUFFERED_EVENTS) return;
       queuedEvents += 1;
     }
-    queue.push(operation);
+    queue.push({ operation, queuedAt: clock.now() });
+  };
+
+  const capture = (event: string, properties: Record<string, unknown>) =>
+    submit((target, queuedAt) => {
+      if (queuedAt === null) target.capture(event, properties);
+      else target.capture(event, properties, { timestamp: new Date(queuedAt) });
+    }, true);
+
+  const sendPersonProperties = () => {
+    if (!identified || !personProperties) return;
+    const snapshot = personProperties;
+    submit((target) => target.setPersonProperties(snapshot));
   };
 
   return {
     logEvent(name, params) {
       const properties: Record<string, AnalyticsParamValue> = { ...params };
-      submit((target) => target.capture(name, properties), true);
+      capture(name, properties);
     },
     setUserProperties(properties) {
-      const snapshot = { ...properties };
-      submit((target) => {
-        target.setPersonProperties(snapshot);
-        // The person property is for reading; the event property is what the
-        // project's internal-traffic filter excludes on, so it rides every
-        // later event as a super property.
-        const internal = snapshot[USER_PROPERTIES.internal];
-        if (internal !== undefined) {
-          target.register({ [INTERNAL_EVENT_PROPERTY]: internal });
-        }
-      });
+      personProperties = { ...personProperties, ...properties };
+      // The event property is what the project's internal-traffic filter
+      // excludes on, so it rides every later event as a super property,
+      // anonymous or not.
+      const internal = properties[USER_PROPERTIES.internal];
+      if (internal !== undefined) {
+        submit((target) => target.register({ [INTERNAL_EVENT_PROPERTY]: internal }));
+      }
+      sendPersonProperties();
     },
     identify(userId) {
       submit((target) => target.identify(userId));
+      identified = true;
+      sendPersonProperties();
     },
     resetIdentity() {
       submit((target) => target.reset());
+      identified = false;
     },
     pageview() {
       // Read now, not when a queued capture finally runs: a pageview buffered
       // on one route must not be attributed to the route the SDK loaded on.
-      const url = currentUrl();
-      submit(
-        (target) => target.capture("$pageview", url ? { $current_url: url } : {}),
-        true,
-      );
+      capture("$pageview", currentLocation());
+    },
+    dispose() {
+      aborter.abort();
+      discard();
     },
   };
 }
 
-function currentUrl(): string | undefined {
+/** The page-view properties PostHog would read itself, taken now. */
+function currentLocation(): Record<string, string> {
   try {
-    return typeof location === "undefined" ? undefined : location.href;
+    if (typeof location === "undefined") return {};
+    return {
+      $current_url: location.href,
+      $host: location.host,
+      $pathname: location.pathname,
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }

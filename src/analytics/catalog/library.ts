@@ -24,8 +24,8 @@ import {
  *
  * What the list still buys is a decision point for *our* catalogue: a factory
  * pack shipped without an analytics decision fails `catalog.test.ts` rather than
- * quietly appearing in reports, and the frozen slugs document what a saved GA4
- * exploration of the first-party library can rely on.
+ * quietly appearing in reports, and the frozen slugs document what a saved PostHog
+ * insight of the first-party library can rely on.
  */
 export const LIBRARY_PACK_SLUGS = [
   "core-electronic-drums",

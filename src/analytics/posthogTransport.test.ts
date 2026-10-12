@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createManualClock } from "../shared/clock";
 import { memoryStorage } from "../testing/storage";
 import { Analytics } from "./analytics";
 import { ConsentStore } from "./consent";
@@ -247,28 +248,78 @@ describe("createPostHogTransport", () => {
     resolve(client);
     await settled(() =>
       expect(client.calls.map((call) => call.method)).toEqual([
-        "setPersonProperties",
         "register",
         "identify",
+        "setPersonProperties",
         "capture",
       ]),
     );
   });
 
-  it("maps user properties to person properties, and internal to an event property", async () => {
+  it("stamps a queued event with the time it was logged, not the time it was sent", async () => {
     const client = fakeClient();
-    const transport = createPostHogTransport({ load: async () => client });
-    transport.setUserProperties({ account_type: "google", internal: "true" });
+    const clock = createManualClock(1_000);
+    let resolve: (value: PostHogClient) => void = () => {};
+    const transport = createPostHogTransport({
+      clock,
+      load: () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    });
+
+    transport.logEvent("app_opened", { surface: "dashboard" });
+    clock.advance(5_000);
+    resolve(client);
 
     await settled(() =>
       expect(client.calls).toEqual([
         {
-          method: "setPersonProperties",
-          args: [{ account_type: "google", internal: "true" }],
+          method: "capture",
+          args: ["app_opened", { surface: "dashboard" }, { timestamp: new Date(1_000) }],
         },
+      ]),
+    );
+  });
+
+  it("only registers the internal flag for an anonymous visitor (identified_only)", async () => {
+    const client = fakeClient();
+    const transport = createPostHogTransport({ load: async () => client });
+    transport.setUserProperties({ account_type: "unknown", internal: "true" });
+
+    await settled(() =>
+      expect(client.calls).toEqual([
         { method: "register", args: [{ [INTERNAL_EVENT_PROPERTY]: "true" }] },
       ]),
     );
+  });
+
+  it("sends person properties once the visitor is identified", async () => {
+    const client = fakeClient();
+    const transport = createPostHogTransport({ load: async () => client });
+    await settled(() => expect(client.calls).toEqual([]));
+
+    transport.setUserProperties({ account_type: "google", internal: "false" });
+    transport.identify("uid_123");
+    transport.setUserProperties({ account_type: "google", internal: "true" });
+    transport.resetIdentity();
+    transport.setUserProperties({ account_type: "unknown", internal: "true" });
+
+    expect(client.calls).toEqual([
+      { method: "register", args: [{ [INTERNAL_EVENT_PROPERTY]: "false" }] },
+      { method: "identify", args: ["uid_123"] },
+      {
+        method: "setPersonProperties",
+        args: [{ account_type: "google", internal: "false" }],
+      },
+      { method: "register", args: [{ [INTERNAL_EVENT_PROPERTY]: "true" }] },
+      {
+        method: "setPersonProperties",
+        args: [{ account_type: "google", internal: "true" }],
+      },
+      { method: "reset", args: [] },
+      { method: "register", args: [{ [INTERNAL_EVENT_PROPERTY]: "true" }] },
+    ]);
   });
 
   it("identifies by the UID it is given and nothing else", async () => {
@@ -288,15 +339,67 @@ describe("createPostHogTransport", () => {
     await settled(() => expect(client.calls).toEqual([{ method: "reset", args: [] }]));
   });
 
-  it("sends a $pageview with the URL of the moment it was asked for", async () => {
+  it("sends a $pageview with the location of the moment it was asked for", async () => {
     const client = fakeClient();
     const transport = createPostHogTransport({ load: async () => client });
+    await settled(() => expect(client.calls).toEqual([]));
     transport.pageview();
-    await settled(() =>
-      expect(client.calls).toEqual([
-        { method: "capture", args: ["$pageview", { $current_url: location.href }] },
-      ]),
-    );
+    expect(client.calls).toEqual([
+      {
+        method: "capture",
+        args: [
+          "$pageview",
+          {
+            $current_url: location.href,
+            $host: location.host,
+            $pathname: location.pathname,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps a queued $pageview's path, not the one the SDK loaded on", async () => {
+    const client = fakeClient();
+    let resolve: (value: PostHogClient) => void = () => {};
+    const transport = createPostHogTransport({
+      load: () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    });
+    const entry = location.pathname;
+    transport.pageview();
+    history.pushState(null, "", "/projects");
+    try {
+      resolve(client);
+      await settled(() => expect(client.calls).toHaveLength(1));
+      expect(client.calls[0]?.args[1]).toMatchObject({ $pathname: entry });
+    } finally {
+      history.pushState(null, "", entry);
+    }
+  });
+
+  it("drops its queue and aborts its load when disposed", async () => {
+    const client = fakeClient();
+    let resolve: (value: PostHogClient) => void = () => {};
+    let signal: AbortSignal | undefined;
+    const transport = createPostHogTransport({
+      load: (abort) => {
+        signal = abort;
+        return new Promise((done) => {
+          resolve = done;
+        });
+      },
+    });
+    transport.logEvent("app_opened", { surface: "dashboard" });
+    transport.dispose?.();
+    expect(signal?.aborted).toBe(true);
+
+    resolve(client);
+    await new Promise((done) => setTimeout(done, 0));
+    transport.logEvent("app_opened", { surface: "dashboard" });
+    expect(client.calls).toEqual([]);
   });
 
   it("caps the queue so a client that never resolves cannot grow it forever", async () => {

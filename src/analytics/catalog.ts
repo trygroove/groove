@@ -40,7 +40,7 @@
 // ## Changing this file
 //
 // Event names, parameter names, and parameter values are a published contract:
-// they appear in Google Analytics reports and saved explorations, and renaming
+// they appear in PostHog insights and saved dashboards, and renaming
 // one splits a metric across two values for the same behavior. Adding is
 // routine; renaming or removing is a task of its own.
 
@@ -153,7 +153,7 @@ export {
 /**
  * `feature_first_use` keys (PRD `OPS-02`). One low-cardinality key rather than
  * an event name per feature, so first-use is comparable across features in one
- * report and the catalog stays well inside GA4's distinct-event-name limit.
+ * report and the catalog's event list stays short and readable.
  * A feature task adds its key to its own area's list under `./catalog/` with
  * the feature.
  */
