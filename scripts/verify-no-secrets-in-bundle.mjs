@@ -67,9 +67,34 @@ export const FORBIDDEN_PATTERNS = [
     pattern: /\bgh[pousr]_[A-Za-z0-9]{36,}\b/,
   },
   {
+    // A real key is `sk-ant-api03-` and some 95 characters; tests that check
+    // a key is scrubbed from text use short stand-ins, which this skips.
+    name: "Anthropic API key",
+    pattern: /\bsk-ant-[a-z]+\d*-[A-Za-z0-9_-]{80,}/,
+  },
+  {
+    name: "Linear API key",
+    pattern: /\blin_api_[A-Za-z0-9]{32,}\b/,
+  },
+  {
+    name: "Slack token",
+    pattern: /\bxox[abpors]-[A-Za-z0-9-]{10,}/,
+  },
+  {
+    name: "Google OAuth client secret",
+    pattern: /\bGOCSPX-[A-Za-z0-9_-]{20,}/,
+  },
+  {
+    // `ALLOWLIST_ALERT_SMTP_URL` is a Secret Manager secret in this shape. A
+    // real password is long (a Gmail app password is 16 letters); the docs'
+    // `user:pass` examples are not.
+    name: "a mail server URL with a password in it",
+    pattern: /\bsmtps?:\/\/[^\s:@/'"`]+:[A-Za-z0-9%._~+-]{12,}@/,
+  },
+  {
     name: "a raw .env-style assignment of a known server-only secret",
     pattern:
-      /\b(?:FIREBASE_SERVICE_ACCOUNT|FIREBASE_DEPLOY_SERVICE_ACCOUNT|GOOGLE_APPLICATION_CREDENTIALS|SENTRY_AUTH_TOKEN)\s*=/,
+      /\b(?:FIREBASE_SERVICE_ACCOUNT|FIREBASE_DEPLOY_SERVICE_ACCOUNT|GOOGLE_APPLICATION_CREDENTIALS|SENTRY_AUTH_TOKEN|ANTHROPIC_API_KEY|QA_SIGN_IN_SERVICE_ACCOUNT|LINEAR_API_KEY)\s*=/,
   },
 ];
 

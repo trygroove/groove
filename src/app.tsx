@@ -1,3 +1,5 @@
+// First, before any module that builds a Zod schema (see the module).
+import "./zodConfig";
 import { Title } from "@solidjs/meta";
 import { useLocation } from "@solidjs/router";
 import { Errored, Loading } from "@solidjs/web";

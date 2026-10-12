@@ -203,11 +203,19 @@ jobs:
         # With `functions`, built first, as in `browser-emulator`: sign-in goes
         # through the real allowlist gate (#854).
         run: bun run functions:build && bunx firebase emulators:exec --only firestore,auth,storage,functions --project demo-solid-groove "bunx playwright test --config=tests/e2e/emulator/playwright.config.ts --project=chromium --grep @sanity"
+      # GRV-7: the same subset, plus the export flows and the header checks,
+      # against the *built* app served with firebase.json's security headers
+      # (the dev server above applies none). Any CSP violation fails it.
+      - name: Run the sanity subset on the built app under the security headers
+        if: ${{ !cancelled() }}
+        run: bunx firebase emulators:exec --only firestore,auth,storage,functions --project demo-solid-groove "bunx playwright test --config=tests/e2e/emulator/playwright.hosting.config.ts"
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
           name: playwright-report-sanity
-          path: playwright-report/
+          path: |
+            playwright-report/
+            playwright-report-hosting/
           retention-days: 7
 
   # Firebase Emulator suite: contract tests for firestore.rules against a
@@ -283,6 +291,12 @@ jobs:
       # into templates is visible.
       - name: Verify no inline style reaches the build
         run: bun run verify:no-inline-styles
+      # GRV-7: firebase.json's security headers are the ones
+      # scripts/security-headers.mjs generates for this build: the inline
+      # script's hash from the built HTML, and every third-party origin the
+      # bundle names either allowed or listed as never loaded.
+      - name: Verify the security headers match the build
+        run: bun run verify:security-headers
 
   # FND-001b (PRD OPS-01): deploys to the alpha's one hosted environment --
   # the production Firebase project -- from CI on every merge to `main`, never
