@@ -163,6 +163,15 @@ export class ProjectAutosave {
    * writes the whole queue as one change set (see `nextBatch`).
    */
   private readonly queue = new Map<string, PendingEntry>();
+  /**
+   * When each queued entry was last queued, as a count of `enqueue` calls
+   * (GRV-88). It is what {@link savedThrough} is worked out from.
+   */
+  private readonly queuedAt = new Map<string, number>();
+  /** How many times anything has been queued. */
+  private enqueued = 0;
+  /** True from the moment a drain starts writing until it settles. */
+  private writingNow = false;
 
   private revision: number;
   private state: SaveState = "idle";
@@ -193,6 +202,38 @@ export class ProjectAutosave {
       lastSavedAt: this.lastSavedAt,
       failure: this.failure,
     };
+  }
+
+  /**
+   * Whether a write is in flight right now (GRV-88). `status.state` cannot say
+   * so: an edit queued while a write is in flight sets it to `pending`. While
+   * this is true, a newer revision seen elsewhere may be this controller's own
+   * write echoing back before `saveChanges` has resolved.
+   */
+  get writing(): boolean {
+    return this.writingNow;
+  }
+
+  /**
+   * A watermark for what has been queued (GRV-88): it counts every entry
+   * queued so far. Read it right after queueing an edit's writes, and that
+   * edit is written once {@link savedThrough} reaches it.
+   */
+  get queuedThrough(): number {
+    return this.enqueued;
+  }
+
+  /**
+   * Everything queued at or before this watermark has been written (or
+   * dropped by {@link rebase}). It moves forward with each write that lands,
+   * including each part of a split write, so an edit carried by a write that
+   * landed is known to be saved even if a later write in the same drain is
+   * refused.
+   */
+  get savedThrough(): number {
+    let oldest = Number.POSITIVE_INFINITY;
+    for (const at of this.queuedAt.values()) oldest = Math.min(oldest, at);
+    return oldest === Number.POSITIVE_INFINITY ? this.enqueued : oldest - 1;
   }
 
   subscribe(listener: (status: SaveStatus) => void): () => void {
@@ -278,7 +319,7 @@ export class ProjectAutosave {
     if (event.metadata.revision <= this.revision) {
       return "ignored_stale";
     }
-    if (this.queue.size > 0 || this.state === "saving") {
+    if (this.queue.size > 0 || this.writingNow) {
       return "ignored_local_pending";
     }
     this.revision = event.metadata.revision;
@@ -296,11 +337,12 @@ export class ProjectAutosave {
    * write's outcome is what says whether a newer revision is someone else's.
    */
   rebase(revision: number): void {
-    if (this.state === "saving") {
+    if (this.writingNow) {
       throw new Error("Cannot rebase the autosave while a write is in flight");
     }
     this.cancelPending();
     this.queue.clear();
+    this.queuedAt.clear();
     this.revision = revision;
     this.failure = null;
     this.consecutiveFailures = 0;
@@ -317,6 +359,8 @@ export class ProjectAutosave {
   private enqueue(key: string, entry: PendingEntry): void {
     if (this.disposed) return;
     this.queue.set(key, entry);
+    this.enqueued += 1;
+    this.queuedAt.set(key, this.enqueued);
     this.state = "pending";
     this.publish();
     this.schedule();
@@ -336,6 +380,15 @@ export class ProjectAutosave {
   }
 
   private async drain(): Promise<void> {
+    this.writingNow = true;
+    try {
+      await this.writeQueue();
+    } finally {
+      this.writingNow = false;
+    }
+  }
+
+  private async writeQueue(): Promise<void> {
     this.state = "saving";
     this.failure = null;
     this.publish();
@@ -358,6 +411,7 @@ export class ProjectAutosave {
         // coming back online — can write exactly what the user last saw.
         this.failure = result;
         this.state = "failed";
+        this.writingNow = false;
         // PRD `OPS-02`: the reliability event for this task's principal
         // failure path. `reason` is already a stable, enumerated code, so
         // nothing derived from the failure *message* is logged.
@@ -377,6 +431,7 @@ export class ProjectAutosave {
       for (const [key, entry] of batch) {
         if (this.queue.get(key) === entry) {
           this.queue.delete(key);
+          this.queuedAt.delete(key);
         }
       }
       this.revision = result.revision;
@@ -394,6 +449,7 @@ export class ProjectAutosave {
       }
       this.consecutiveFailures = 0;
       this.state = "saved";
+      this.writingNow = false;
       this.publish();
     }
   }

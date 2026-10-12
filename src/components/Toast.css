@@ -3,11 +3,18 @@
    that says "something went wrong" without shouting. Only this stylesheet may
    read `--toast-alert`. */
 
-.toast {
+/* The live region is always there and takes no room while it is empty. It
+   sits level with the view dock, inside the band every view keeps clear for
+   the dock (`--view-dock-clearance`), so it covers nothing a view has not
+   already left free, rather than the last line of the editor's own content. */
+.toast-region {
   position: fixed;
   left: 16px;
-  bottom: 16px;
+  bottom: 32px;
   z-index: 1000;
+}
+
+.toast {
   box-sizing: border-box;
   max-width: min(360px, calc(100vw - 32px));
   display: flex;

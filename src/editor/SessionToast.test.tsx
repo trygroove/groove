@@ -32,7 +32,7 @@ describe("SessionToast (GRV-88)", () => {
 
   it("shows a refused undo, and replaces it with the next notice", () => {
     const { notify } = renderWithNotices();
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
 
     notify({ kind: "undo_refused", direction: "undo" });
     expect(screen.getByRole("status")).toHaveTextContent(

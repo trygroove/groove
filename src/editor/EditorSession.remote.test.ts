@@ -15,6 +15,7 @@ import {
 } from "../persistence/inMemoryProjectRepository";
 import type { ProjectRepository } from "../persistence/projectRepository";
 import { createManualClock } from "../shared/clock";
+import { createManualScheduler, type Scheduler } from "../shared/scheduler";
 import { memoryStorage } from "../testing/storage";
 import { EditorSession, type SessionNotice } from "./EditorSession";
 
@@ -31,13 +32,14 @@ afterEach(() => {
 function openTab(
   repository: ProjectRepository,
   project: Project,
-  options: { analytics?: Analytics } = {},
+  options: { analytics?: Analytics; scheduler?: Scheduler } = {},
 ): EditorSession {
   const session = new EditorSession({
     repository,
     project,
     clock: createManualClock(1_000),
     analytics: options.analytics,
+    scheduler: options.scheduler,
     deviceStorage: memoryStorage(),
     coalesceMs: 60_000,
   });
@@ -122,7 +124,168 @@ function holdWrites(repository: InMemoryProjectRepository): {
   return { repository: gated, release };
 }
 
+/**
+ * Holds tab A's first `held` writes, each until its own `release(i)`; later
+ * writes go straight through. Counts every write, and stops writing (the call
+ * never settles) past `cap`, so a session that loops on its own writes ends
+ * the test with a count rather than starving the event loop.
+ */
+function gateWrites(
+  repository: InMemoryProjectRepository,
+  held: number,
+  cap = 20,
+): {
+  repository: ProjectRepository;
+  release: (index: number) => void;
+  readonly writes: number;
+} {
+  const releases: Array<() => void> = [];
+  const gates = Array.from(
+    { length: held },
+    (_, index) =>
+      new Promise<void>((resolve) => {
+        releases[index] = resolve;
+      }),
+  );
+  let writes = 0;
+  const gated: ProjectRepository = Object.create(repository);
+  gated.saveChanges = async (...args) => {
+    const index = writes++;
+    if (index >= cap) return new Promise(() => {});
+    if (index < held) await gates[index];
+    return repository.saveChanges(...args);
+  };
+  return {
+    repository: gated,
+    release: (index) => releases[index]?.(),
+    get writes() {
+      return writes;
+    },
+  };
+}
+
+/** Lets every pending promise and the in-memory store's notifications settle. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+describe("EditorSession, its own write echoing back mid-write (GRV-88)", () => {
+  it("does not mistake its own echo for another tab's change when it edits during a write", async () => {
+    const { repository, project, volume, note, clipId } = await setUp();
+    const gate = gateWrites(repository, 1);
+    const tab = openTab(gate.repository, project);
+    const notices: SessionNotice[] = [];
+    tab.subscribeNotices((notice) => notices.push(notice));
+
+    tab.dispatch(note());
+    const writing = tab.autosave.flush();
+    tab.dispatch(volume(-12));
+    // An edit made during a write sets the state to pending; the write is
+    // still in flight.
+    expect(tab.autosave.status.state).toBe("pending");
+    expect(tab.autosave.writing).toBe(true);
+
+    gate.release(0);
+    await writing;
+    await tab.autosave.flush();
+    await settle();
+
+    expect(gate.writes).toBeLessThanOrEqual(2);
+    expect(notices).toEqual([]);
+    expect(tab.history.entries).toHaveLength(2);
+    expect(tab.autosave.status.state).toBe("saved");
+    const reloaded = await stored(repository, project);
+    expect(reloaded.metadata.revision).toBe(tab.autosave.status.revision);
+    expect(notesIn(reloaded, clipId)).toBe(notesIn(project, clipId) + 1);
+    expect(reloaded.song.tracks[0]?.mixer.volume).toBe(-12);
+  });
+});
+
 describe("EditorSession, an unsaved edit when another tab saves (GRV-88)", () => {
+  it("does not replay an edit whose write landed before a later write was refused", async () => {
+    const base = await setUp();
+    const { repository, project, tempo, volume, note, clipId } = base;
+    const gate = gateWrites(repository, 2);
+    const transport = createRecordingTransport();
+    const analytics = new Analytics({
+      transport,
+      consent: new ConsentStore(memoryStorage()),
+      storage: memoryStorage(),
+    });
+    analytics.setAccountType("anonymous");
+    const tabA = openTab(gate.repository, project, { analytics });
+    const notices: SessionNotice[] = [];
+    tabA.subscribeNotices((notice) => notices.push(notice));
+    const start = project.metadata.revision;
+
+    // Edit 1 goes out; edit 2 is made while it is in flight.
+    tabA.dispatch(note());
+    const writing = tabA.autosave.flush();
+    tabA.dispatch(volume(-12));
+    gate.release(0);
+    // Edit 1 lands at start + 1, and the same drain writes edit 2 (held).
+    await vi.waitFor(() => expect(gate.writes).toBe(2));
+
+    // Tab B takes in edit 1 and saves its own change on top of it.
+    await vi.waitFor(() =>
+      expect(notesIn(base.tabB.committedProject, clipId)).toBe(
+        notesIn(project, clipId) + 1,
+      ),
+    );
+    base.tabB.dispatch(tempo(140));
+    await base.tabB.autosave.flush();
+    expect(base.tabB.autosave.status.revision).toBe(start + 2);
+
+    // Edit 2's write at start + 1 is refused; only edit 2 is replayed.
+    gate.release(1);
+    await writing;
+    await vi.waitFor(() => expect(tabA.committedProject.song.tempo).toBe(140));
+    const saved = await tabA.autosave.flush();
+    expect(saved.state).toBe("saved");
+    expect(notices).toEqual([]);
+    expect(tabA.history.entries).toHaveLength(2);
+    expect(transport.named("unsaved_edits_replayed")[0]?.params).toMatchObject({
+      replayed_count: 1,
+      dropped_count: 0,
+    });
+
+    const reloaded = await stored(repository, project);
+    expect(reloaded.song.tempo).toBe(140);
+    expect(reloaded.song.tracks[0]?.mixer.volume).toBe(-12);
+    expect(notesIn(reloaded, clipId)).toBe(notesIn(project, clipId) + 1);
+  });
+
+  it("tries the load again when it fails, and then takes the other tab's change in", async () => {
+    const base = await setUp();
+    const { repository, project, tempo, volume } = base;
+    const scheduler = createManualScheduler();
+    let failLoads = 1;
+    const flaky: ProjectRepository = Object.create(repository);
+    flaky.loadProject = async (...args) => {
+      if (failLoads > 0) {
+        failLoads -= 1;
+        return { ok: false, reason: "unavailable", message: "offline" };
+      }
+      return repository.loadProject(...args);
+    };
+    const tabA = openTab(flaky, project, { scheduler });
+
+    tabA.dispatch(volume(-12));
+    base.tabB.dispatch(tempo(140));
+    await base.tabB.autosave.flush();
+    await vi.waitFor(() => expect(failLoads).toBe(0));
+    await settle();
+    expect(tabA.committedProject.song.tempo).toBe(project.song.tempo);
+
+    scheduler.runAll();
+    await vi.waitFor(() => expect(tabA.committedProject.song.tempo).toBe(140));
+    const saved = await tabA.autosave.flush();
+    expect(saved.state).toBe("saved");
+    const reloaded = await stored(repository, project);
+    expect(reloaded.song.tempo).toBe(140);
+    expect(reloaded.song.tracks[0]?.mixer.volume).toBe(-12);
+  });
+
   it("replays a queued edit on top of the other tab's change and ends on Saved", async () => {
     const { repository, project, tabA, tabB, transport, notices, tempo, volume } =
       await setUp();

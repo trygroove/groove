@@ -22,9 +22,19 @@ describe("Toast (GRV-88)", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Something changed.");
   });
 
-  it("puts nothing on the page while no toast is showing", () => {
+  it("keeps an empty status region on the page while no toast is showing", () => {
     renderToast(null);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
+  });
+
+  it("shows a toast in the region that was already there", () => {
+    const { setToast } = renderToast(null);
+    const region = screen.getByRole("status");
+    setToast({ message: "Something changed." });
+    flush();
+    expect(screen.getByRole("status")).toBe(region);
+    expect(region).toHaveTextContent("Something changed.");
   });
 
   it("closes itself after a few seconds", () => {
@@ -35,14 +45,14 @@ describe("Toast (GRV-88)", () => {
     vi.advanceTimersByTime(1);
     flush();
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
 
   it("closes when dismissed", () => {
     const { onClose } = renderToast({ message: "Something changed." });
     clickAndFlush(screen.getByRole("button", { name: "Dismiss" }));
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
 
   it("shows one at a time: a new toast replaces the old and restarts the timer", () => {

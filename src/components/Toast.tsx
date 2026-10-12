@@ -25,21 +25,24 @@ export interface ToastProps {
 }
 
 /**
- * Each toast is an `<output>`, whose implicit role is `status`, so a screen
- * reader announces it. Nothing is on the page while no toast is showing, so
- * an editor with no notice has no empty status region in it.
+ * The toasts go in one `<output>`, whose implicit role is `status`, that is
+ * always on the page and empty while no toast shows. A live region present
+ * before its content changes is announced more reliably than one mounted
+ * with its message already in it.
  */
 export function Toast(props: ToastProps) {
   return (
-    <For each={props.toast ? [props.toast] : []}>
-      {(toast) => (
-        <ToastBody
-          message={toast.message}
-          durationMs={props.durationMs ?? TOAST_DURATION_MS}
-          onClose={() => props.onClose()}
-        />
-      )}
-    </For>
+    <output class="toast-region" aria-live="polite">
+      <For each={props.toast ? [props.toast] : []}>
+        {(toast) => (
+          <ToastBody
+            message={toast.message}
+            durationMs={props.durationMs ?? TOAST_DURATION_MS}
+            onClose={() => props.onClose()}
+          />
+        )}
+      </For>
+    </output>
   );
 }
 
@@ -53,7 +56,7 @@ function ToastBody(props: {
     return () => clearTimeout(timer);
   });
   return (
-    <output class="toast" aria-live="polite">
+    <div class="toast">
       <span class="toast-message">{props.message}</span>
       <button
         type="button"
@@ -63,6 +66,6 @@ function ToastBody(props: {
       >
         ×
       </button>
-    </output>
+    </div>
   );
 }

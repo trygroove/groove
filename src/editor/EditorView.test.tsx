@@ -1742,7 +1742,7 @@ describe("EditorView library insert keys", () => {
     await vi.waitFor(() => expect(slot()).toHaveTextContent(first));
     // Staying, an insert shows it went in: the readout lights, and says so.
     expect(slot()).toHaveClass("library-modal-readout-inserted");
-    expect(screen.getByRole("status")).toHaveTextContent(`Inserted ${first}`);
+    expect(within(library).getByRole("status")).toHaveTextContent(`Inserted ${first}`);
     await insertByKey(second);
     await vi.waitFor(() => expect(slot()).toHaveTextContent(second));
     expect(location.get()).toMatch(/\/library$/);
