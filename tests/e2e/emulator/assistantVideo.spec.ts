@@ -83,8 +83,19 @@ test.describe("a tutorial video the assistant recommends", () => {
     const viewport = page.viewportSize();
     const box = await frame.boundingBox();
     expect(box?.width).toBe(viewport?.width);
+    // Over the app's chrome too: the release badge is under the player.
+    const badge = await page.locator(".release-badge").boundingBox();
+    if (!badge) throw new Error("no release badge");
+    const onTop = await page.evaluate(
+      ({ x, y }) =>
+        document.elementFromPoint(x, y)?.closest(".assistant-video-expanded") != null,
+      { x: badge.x + badge.width / 2, y: badge.y + badge.height / 2 },
+    );
+    expect(onTop).toBe(true);
     await page.keyboard.press("Escape");
     await expect(card).not.toHaveClass(/assistant-video-expanded/);
+    // One press puts the video back and nothing else: the panel stays open.
+    await expect(page.getByRole("region", { name: "Assistant" })).toBeVisible();
 
     await card.getByRole("button", { name: "Close video" }).click();
     await expect(card.locator("iframe")).toHaveCount(0);
