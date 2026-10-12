@@ -30,6 +30,7 @@ import {
   getDoc,
   getDocs,
   query,
+  runTransaction,
   setDoc,
   where,
   writeBatch,
@@ -224,6 +225,32 @@ describe("projects: the revision check cannot be bypassed", () => {
       metadata({ revision: 4, modifiedAt: CREATED_AT + 1 }),
     );
     await assertSucceeds(batch.commit());
+  });
+
+  it("refuses a save another save overtook, before its preconditions are checked", async () => {
+    // What `FirestoreProjectRepository.conflictBehindRefusal` relies on: the
+    // stale commit comes back `permission-denied` rather than as contention
+    // the SDK would retry, and the repository reports it as a conflict.
+    await seedProject();
+    const mine = firestoreAs(OWNER);
+    const theirs = firestoreAs(OWNER);
+    let attempts = 0;
+    const stale = runTransaction(mine, async (tx) => {
+      attempts += 1;
+      const read = await tx.get(doc(mine, projectPath));
+      const revision = read.data()?.revision as number;
+      if (attempts === 1) {
+        await runTransaction(theirs, async (other) => {
+          await other.get(doc(theirs, projectPath));
+          other.set(doc(theirs, clipPath), child({ id: CLIP, revision: 4 }));
+          other.set(doc(theirs, projectPath), metadata({ revision: 4 }));
+        });
+      }
+      tx.set(doc(mine, clipPath), child({ id: CLIP, revision: revision + 1 }));
+      tx.set(doc(mine, projectPath), metadata({ revision: revision + 1 }));
+    });
+    await assertFails(stale);
+    expect(attempts).toBe(1);
   });
 
   it("refuses a metadata save that keeps the revision", async () => {

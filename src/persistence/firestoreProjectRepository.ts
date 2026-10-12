@@ -431,7 +431,37 @@ export class FirestoreProjectRepository implements ProjectRepository {
       });
       return { ok: true, ...outcome };
     } catch (error) {
+      if (firestoreErrorCode(error) === "permission-denied") {
+        const conflict = await this.conflictBehindRefusal(projectId, baseRevision);
+        if (conflict) return conflict;
+      }
       return toSaveFailure(error);
+    }
+  }
+
+  /**
+   * The security rules evaluate a commit before Firestore checks the
+   * transaction's read preconditions, and they refuse a save that does not
+   * move the stored revision on by exactly one (GRV-7). So when another tab's
+   * save lands between this transaction's read and its commit, the commit
+   * comes back `permission-denied`, not as the retryable contention error the
+   * SDK would have re-run the transaction for. Reading the revision again
+   * tells the two apart: if it moved, the refusal was the revision check
+   * doing its job, and the caller gets the same conflict a re-run would have
+   * found.
+   */
+  private async conflictBehindRefusal(
+    projectId: ProjectId,
+    baseRevision: number,
+  ): Promise<SaveResult | null> {
+    try {
+      const raw = await this.readDocument(projectDocumentPath(projectId));
+      if (!raw) return null;
+      const decoded = toMetadataResult(projectId, raw);
+      if (!decoded.ok || decoded.value.revision === baseRevision) return null;
+      return revisionConflict(baseRevision, decoded.value.revision);
+    } catch {
+      return null;
     }
   }
 
