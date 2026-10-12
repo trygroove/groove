@@ -67,6 +67,23 @@ describe("firebase.json's security headers", () => {
     expect(directiveSources(csp(), "connect-src")).toContain(origin);
   });
 
+  it("send report-to reports to the same endpoint as report-uri", () => {
+    // The hosting-mode browser suite (`tests/e2e/support/hostingServer.mjs`)
+    // drops `report-to` and `Reporting-Endpoints` so Chromium reports at once
+    // through `report-uri`, which is all that suite proves. This is the only
+    // check on the Reporting API route: the group `report-to` names must be
+    // declared in `Reporting-Endpoints`, at the URL `report-uri` sends to.
+    const [group] = directiveSources(csp(), "report-to");
+    const declared = Object.fromEntries(
+      header("Reporting-Endpoints")
+        .split(/,\s*/)
+        .map((entry) => entry.match(/^([\w-]+)="([^"]+)"$/)?.slice(1) ?? []),
+    );
+    expect(Object.keys(declared)).toEqual([group]);
+    expect(declared[group]).toBe(directiveSources(csp(), "report-uri")[0]);
+    expect(new URL(declared[group]).protocol).toBe("https:");
+  });
+
   it("allow the Firebase services the production project is configured for", () => {
     expect(directiveSources(csp(), "frame-src")).toContain(
       `https://${FIREBASE_PROJECT_ID}.firebaseapp.com`,
