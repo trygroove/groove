@@ -5,8 +5,8 @@
  * the reply arrives as a stream of callable chunks, or that a provider exists
  * at all. A component sends an {@link AssistantTurnRequest} and receives a
  * typed sequence of {@link AssistantStreamEvent}s: `text`, then at most one
- * `proposal`, then at most one `ask`, then exactly one terminal `done` or
- * `error`.
+ * `proposal`, then at most one `ask`, then at most one `videos`, then exactly
+ * one terminal `done` or `error`.
  *
  * Like the rest of `src/assistant`, this is Firebase-free and SDK-free: the
  * transport is injected ({@link AssistantTurnTransport}). The app's is the
@@ -46,6 +46,7 @@ import {
   type AssistantStopReason,
   type AssistantTurnRequest,
 } from "./protocol";
+import { type AssistantVideo, assistantVideoSchema, VIDEO_LIMITS } from "./video";
 
 /** What one turn tells the browser, in order. */
 export type AssistantStreamEvent =
@@ -55,6 +56,8 @@ export type AssistantStreamEvent =
   | { readonly type: "proposal"; readonly proposal: AssistantProposal }
   /** A question for the producer (GRV-42), once the turn is complete. */
   | { readonly type: "ask"; readonly ask: AssistantAsk }
+  /** Tutorial videos the turn recommends (GRV-16), checked by the gateway. */
+  | { readonly type: "videos"; readonly videos: readonly AssistantVideo[] }
   /** The turn failed. Terminal: no `done` follows. */
   | { readonly type: "error"; readonly error: AssistantErrorDetails }
   /** The turn is over. Terminal. */
@@ -122,6 +125,8 @@ const resultSchema = z.looseObject({
   stopReason: z.enum(["end_turn", "max_tokens", "refusal", "tool_use"]),
   proposal: proposalSchema.nullish(),
   ask: z.unknown().nullish(),
+  // Optional, so a gateway from before GRV-16 still answers well-formed.
+  videos: z.array(assistantVideoSchema).max(VIDEO_LIMITS.maxPerTurn).nullish(),
   requestsRemaining: z.number().min(0).nullish(),
 });
 
@@ -266,7 +271,8 @@ export function createAssistantClient(
           if (!turn.success) return malformed();
           const ask = turn.data.ask == null ? null : parseAssistantAsk(turn.data.ask);
           if (turn.data.ask != null && !ask) return malformed();
-          if (!ask && !turn.data.proposal) {
+          const videos = turn.data.videos ?? [];
+          if (!ask && !turn.data.proposal && videos.length === 0) {
             // Cut off, with whatever it proposed or asked dropped.
             if (turn.data.stopReason === "max_tokens") return fail("reply_too_long");
             // Nothing to show at all: say so rather than end on nothing.
@@ -282,6 +288,7 @@ export function createAssistantClient(
             emit({ type: "proposal", proposal: turn.data.proposal as AssistantProposal });
           }
           if (ask) emit({ type: "ask", ask });
+          if (videos.length > 0) emit({ type: "videos", videos });
           emit({
             type: "done",
             stopped: false,

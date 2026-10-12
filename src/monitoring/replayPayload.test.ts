@@ -370,6 +370,15 @@ describe("the OPS-03 content rule against the replay payload (ADR 0002 decision 
       // key, which is a prefixed entity ID (or the song or master) and a
       // parameter key from our own registry. Never a name or a value.
       "controlHref(props.address)",
+      // A tutorial video's player and watch page (GRV-16): built from an
+      // 11-character YouTube video ID the model named and YouTube vouched
+      // for, a public identifier of a public video. Never a string the user
+      // typed, an asset URL or a token. The terms and privacy links are our
+      // own constants.
+      "youtubeEmbedUrl(props.video.videoId)",
+      "youtubeWatchUrl(props.video.videoId)",
+      "YOUTUBE_TERMS_URL",
+      "GOOGLE_PRIVACY_URL",
     ];
     const offenders: string[] = [];
     for (const file of sourceFiles()) {
