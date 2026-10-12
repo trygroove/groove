@@ -26,7 +26,11 @@ import {
   type AssistantRetentionClient,
   answered as isAnswered,
 } from "../../assistant/retentionClient";
-import type { ProposalOutcome, TranscriptIssue } from "../../assistant/transcripts";
+import type {
+  ProposalOutcome,
+  ReplyRating,
+  TranscriptIssue,
+} from "../../assistant/transcripts";
 
 export type RetentionStatus = "idle" | "loading" | "ready" | "failed";
 
@@ -56,6 +60,11 @@ export interface AssistantRetention {
     outcome: ProposalOutcome,
     issues?: readonly TranscriptIssue[],
   ): void;
+  /**
+   * Tells a kept turn how the producer rated its reply, or that the rating
+   * was cleared (GRV-103), if the account keeps any.
+   */
+  reportRating(turnId: string, rating: ReplyRating | null): void;
 }
 
 export interface UseAssistantRetentionOptions {
@@ -160,6 +169,13 @@ export function useAssistantRetention(
       void options
         .client()
         .then((client) => client.outcome(turnId, outcome, issues))
+        .catch(() => {});
+    },
+    reportRating(turnId, rating) {
+      if (state()?.preference?.retain !== true) return;
+      void options
+        .client()
+        .then((client) => client.rate(turnId, rating))
         .catch(() => {});
     },
   };

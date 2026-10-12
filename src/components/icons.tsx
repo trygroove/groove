@@ -126,6 +126,28 @@ export function SparkIcon(props: IconProps) {
   );
 }
 
+/** A good reply (GRV-103): a square-cut thumb up, its cuff to the left. */
+export function ThumbUpIcon(props: IconProps) {
+  return (
+    <Icon size={props.size}>
+      <rect x="2" y="10" width="4" height="11" />
+      <polygon points="8,10 12,2 14.5,2 14.5,8.5 22,8.5 22,13 19,21 8,21" />
+    </Icon>
+  );
+}
+
+/** A bad reply (GRV-103): the thumb up, turned over. */
+export function ThumbDownIcon(props: IconProps) {
+  return (
+    <Icon size={props.size}>
+      <g transform="rotate(180 12 12)">
+        <rect x="2" y="10" width="4" height="11" />
+        <polygon points="8,10 12,2 14.5,2 14.5,8.5 22,8.5 22,13 19,21 8,21" />
+      </g>
+    </Icon>
+  );
+}
+
 /** A panel's settings: three faders at different levels (GRV-8). */
 export function SettingsIcon(props: IconProps) {
   return (

@@ -58,6 +58,8 @@ import type {
   AssistantTurnRequest,
 } from "../../assistant/protocol";
 import { splitRecommendations } from "../../assistant/recommendation";
+import type { SessionHealth } from "../../assistant/sessionHealth";
+import type { ReplyRating } from "../../assistant/transcripts";
 import type { AssistantVideo } from "../../assistant/video";
 import type { Project } from "../../domain/entities";
 import type { SuggestionId } from "../../projection/projectAnalysisProjection";
@@ -81,6 +83,11 @@ export interface TurnOrigin {
   readonly remoteChanges: number;
   /** The ID the transcript files the turn under (GRV-8), when it has one. */
   readonly turnId?: string;
+  /**
+   * Which turn of this session it was, from 1 (GRV-103), when a session
+   * health detector is counting. A turn restored from before a reload has none.
+   */
+  readonly sessionTurn?: number;
 }
 
 /** One thing in the conversation's log. */
@@ -115,6 +122,12 @@ export type ConversationEntry =
       readonly failed?: boolean;
       /** The question the reply ended in (GRV-42), resent with its text. */
       readonly ask?: AssistantAsk;
+      /** The turn's transcript ID (GRV-8), so a rating reaches its record. */
+      readonly turnId?: string;
+      /** Its turn of this session (GRV-103); see {@link TurnOrigin.sessionTurn}. */
+      readonly sessionTurn?: number;
+      /** The producer's thumbs up or down on it (GRV-103). */
+      readonly rating?: ReplyRating;
     }
   /**
    * A change the reply proposes, as the gateway returned it, and the turn
@@ -228,6 +241,11 @@ export interface UseAssistantConversationOptions {
   readonly session?: () => { readonly projectId: string; readonly internal: boolean };
   /** Makes the conversation's and each turn's ID; random by default. */
   readonly newId?: () => string;
+  /**
+   * Hears each message sent and each turn's end (GRV-103), and is reset when
+   * another project's conversation takes this one's place.
+   */
+  readonly health?: SessionHealth;
 }
 
 export interface AssistantConversation {
@@ -265,6 +283,14 @@ export interface AssistantConversation {
   answerAsk(answer: AskAnswer): boolean;
   /** Puts the pending question away unanswered. Nothing is sent. */
   dismissAsk(): void;
+  /**
+   * Sets, or with `null` clears, the rating on reply `replyId` (GRV-103).
+   * Returns the reply as it was, or null when there is no such reply.
+   */
+  rateReply(
+    replyId: string,
+    rating: ReplyRating | null,
+  ): Extract<ConversationEntry, { kind: "reply" }> | null;
 }
 
 /** The most one message may say, as the gateway counts it. */
@@ -370,7 +396,15 @@ export function useAssistantConversation(
     // What Try again resends: the request as it went, library and all.
     let request = asked;
     const replyId = id();
-    append({ kind: "reply", id: replyId, text: "", streaming: true, stopped: false });
+    append({
+      kind: "reply",
+      id: replyId,
+      text: "",
+      streaming: true,
+      stopped: false,
+      ...(origin.turnId ? { turnId: origin.turnId } : {}),
+      ...(origin.sessionTurn !== undefined ? { sessionTurn: origin.sessionTurn } : {}),
+    });
     setStreaming(true);
     let ended = false;
     let handle: AssistantTurnHandle | null = null;
@@ -397,6 +431,14 @@ export function useAssistantConversation(
       if (event.type === "error" || event.type === "done") {
         ended = true;
         inFlight = null;
+        if (origin.sessionTurn !== undefined) {
+          options.health?.turnEnded(
+            event.type === "error"
+              ? { kind: "error", code: event.error.code }
+              : { kind: "done", stopped: event.stopped, stopReason: event.stopReason },
+            origin.sessionTurn,
+          );
+        }
       }
       switch (event.type) {
         case "text":
@@ -525,6 +567,7 @@ export function useAssistantConversation(
         : {}),
     };
     append({ kind: "message", id: id(), scopeLabel: scope.label, ...message });
+    const sessionTurn = options.health?.messageSent();
     const analytics = options.analytics();
     analytics.log("assistant_message_sent", { scope: scope.catalogScope });
     analytics.logFeatureFirstUse("assistant_message");
@@ -533,6 +576,7 @@ export function useAssistantConversation(
       scope,
       remoteChanges: options.remoteChanges?.() ?? 0,
       ...(turnId ? { turnId } : {}),
+      ...(sessionTurn !== undefined ? { sessionTurn } : {}),
     });
   }
 
@@ -604,6 +648,17 @@ export function useAssistantConversation(
     inFlight?.stop();
   }
 
+  function rateReply(replyId: string, rating: ReplyRating | null) {
+    const before = entries().find((entry) => entry.id === replyId);
+    if (before?.kind !== "reply") return null;
+    update(replyId, (entry) => {
+      if (entry.kind !== "reply") return entry;
+      const { rating: _previous, ...rest } = entry;
+      return rating ? { ...rest, rating } : rest;
+    });
+    return before;
+  }
+
   function canRetry(entry: ConversationEntry): boolean {
     return (
       entry.kind === "error" &&
@@ -653,7 +708,11 @@ export function useAssistantConversation(
         if (!ready) return;
         const switching = restoredKey !== null;
         restoredKey = key;
-        if (switching) inFlight?.stop();
+        if (switching) {
+          inFlight?.stop();
+          // Another project's conversation is a new session.
+          options.health?.reset();
+        }
         const stored = store.load(key);
         if (!stored && !switching) return;
         setEntries(stored?.entries ?? []);
@@ -686,5 +745,6 @@ export function useAssistantConversation(
     pendingAsk,
     answerAsk,
     dismissAsk,
+    rateReply,
   };
 }

@@ -221,6 +221,61 @@
   overflow-wrap: anywhere;
 }
 
+/* A reply's thumbs (GRV-103): out of sight until the reply is under the
+   pointer or holds focus, always there on a touch screen and once rated. The
+   chosen thumb is a white fill, the brightest thing beside it. */
+.assistant-rating {
+  display: flex;
+  gap: 2px;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  opacity: 0;
+}
+
+.assistant-reply:hover .assistant-rating,
+.assistant-reply:focus-within .assistant-rating,
+.assistant-rating-rated {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .assistant-rating {
+    opacity: 1;
+  }
+}
+
+.assistant-rating-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-foreground-muted);
+  cursor: pointer;
+}
+
+.assistant-rating-button:hover {
+  background: var(--color-background-hover);
+  color: var(--color-foreground-bright);
+}
+
+.assistant-rating-button[aria-pressed="true"],
+.assistant-rating-button[aria-pressed="true"]:hover {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.assistant-rating-button:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
 .assistant-stopped {
   color: var(--color-foreground-muted);
   font-style: italic;

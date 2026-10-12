@@ -132,6 +132,17 @@ export const BUCKET_SCALES = {
     overflow: "60s_plus",
   },
 
+  /** Which turn of an assistant conversation something happened on, from 1. */
+  turn_index: {
+    unit: "items",
+    boundaries: [
+      { label: "1", below: 2 },
+      { label: "2_3", below: 4 },
+      { label: "4_10", below: 11 },
+    ],
+    overflow: "10_plus",
+  },
+
   /** Scheduled audio events dropped or late in one sampled underrun report. */
   dropped_events: {
     unit: "items",
