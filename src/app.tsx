@@ -49,6 +49,20 @@ function SurfaceTracker(props: { telemetry: Accessor<Telemetry | null> }) {
   return null;
 }
 
+/**
+ * The last resort, for an error nothing inside the app caught: the router
+ * itself, or the badge and disclosure that sit outside the shell's boundary.
+ *
+ * This replaces `@solidjs/vite-plugin`'s default boundary (`errorBoundary:
+ * false` in `vite.config.ts`), which says the same thing in the same place but
+ * through a `style` attribute baked into its template, and a CSP without
+ * 'unsafe-inline' refuses that (GRV-105). The look is `.app-uncaught-error`.
+ */
+function UncaughtErrorFallback(props: { error: unknown }) {
+  console.error(props.error);
+  return <span class="app-uncaught-error">Error | Uncaught Client Exception</span>;
+}
+
 export default function App() {
   // Drop the prerendered landing markup (`src/Document.tsx`) now that the live
   // tree is about to replace it. Synchronous and in the component body rather
@@ -92,30 +106,34 @@ export default function App() {
   });
 
   return (
-    <Router>
-      {(props) => (
-        <>
-          <Title>{APP_TITLE}</Title>
-          <SurfaceTracker telemetry={telemetry} />
-          <Errored
-            fallback={(err, reset) => (
-              <AppErrorFallback error={err()} reset={reset} area="shell" />
-            )}
-          >
-            <Loading fallback={<TapeLoader label="Loading" />}>{props.children}</Loading>
-          </Errored>
-          {/* Outside the Errored/Loading boundary so the deployed revision
+    <Errored fallback={(err) => <UncaughtErrorFallback error={err()} />}>
+      <Router>
+        {(props) => (
+          <>
+            <Title>{APP_TITLE}</Title>
+            <SurfaceTracker telemetry={telemetry} />
+            <Errored
+              fallback={(err, reset) => (
+                <AppErrorFallback error={err()} reset={reset} area="shell" />
+              )}
+            >
+              <Loading fallback={<TapeLoader label="Loading" />}>
+                {props.children}
+              </Loading>
+            </Errored>
+            {/* Outside the shell's Errored/Loading boundary so the deployed revision
 					    stays visible/inspectable even while the app is loading or has
 					    hit an error -- exactly when knowing the build matters most. */}
-          <ReleaseBadge />
-          {/* Also outside the boundary: the PRD OPS-02 opt-out must stay
+            <ReleaseBadge />
+            {/* Also outside the boundary: the PRD OPS-02 opt-out must stay
 					    reachable even on the error screen -- which is why this stands
 					    down for the landing page's own inline copy (`LOOP-001b`, per
 					    DEC-009) only while that copy is actually mounted, rather than
 					    for the whole route. */}
-          <FloatingTelemetryDisclosure />
-        </>
-      )}
-    </Router>
+            <FloatingTelemetryDisclosure />
+          </>
+        )}
+      </Router>
+    </Errored>
   );
 }
