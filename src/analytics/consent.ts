@@ -11,7 +11,7 @@
 // Both are isolated to `CONSENT_DEFAULT` and `src/components/TelemetryDisclosure.tsx`
 // so settling `DEC-009` is a one-line change here plus copy, not a redesign.
 //
-// Three collections, three flags: Google Analytics for product events, Sentry
+// Three collections, three flags: PostHog for product events (ADR 0011), Sentry
 // for error monitoring (ADR 0001), and Sentry Session Replay for understanding
 // how the app is used (ADR 0002). They are separate because `DEC-009` may
 // decide differently about a reliability signal that keeps a release gate
@@ -99,9 +99,21 @@ function parse(raw: string | null): ConsentState {
 export class ConsentStore {
   private readonly listeners = new Set<Listener>();
   private state: ConsentState;
+  private expressed: boolean;
 
   constructor(private readonly storage: Storage | null) {
     this.state = this.read();
+    this.expressed = this.readExpressed();
+  }
+
+  /**
+   * Whether the user has made a choice, rather than running on
+   * `CONSENT_DEFAULT`. Analytics persists its identity in cookies only once
+   * they have (GRV-106); until then the vendor keeps it in memory, so a visitor
+   * who never touched the control leaves no analytics cookie behind.
+   */
+  get preferenceExpressed(): boolean {
+    return this.expressed;
   }
 
   get current(): ConsentState {
@@ -134,6 +146,7 @@ export class ConsentStore {
       return this.state;
     }
     this.state = next;
+    this.expressed = true;
     this.persist(next);
     for (const listener of [...this.listeners]) {
       this.deliver(listener, next);
@@ -190,6 +203,15 @@ export class ConsentStore {
       // Private browsing / disabled storage. Consent is a preference, never a
       // reason for the app to fail to start.
       return CONSENT_DEFAULT;
+    }
+  }
+
+  private readExpressed(): boolean {
+    if (!this.storage) return false;
+    try {
+      return this.storage.getItem(CONSENT_STORAGE_KEY) !== null;
+    } catch {
+      return false;
     }
   }
 

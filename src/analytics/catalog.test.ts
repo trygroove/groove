@@ -224,7 +224,7 @@ describe("parameter declarations", () => {
       if (spec.kind !== "count") continue;
       expect(spec.max, `${event}.${param}`).toBeGreaterThan(0);
       // Bucketed cardinality: an unbounded count is a re-identification risk
-      // and a GA4 cardinality problem.
+      // and an analytics cardinality problem.
       expect(spec.max, `${event}.${param}`).toBeLessThanOrEqual(1000);
     }
   });

@@ -3,6 +3,12 @@ import { Analytics, analytics } from "./analytics/analytics";
 import type { Surface } from "./analytics/catalog";
 import { ConsentStore } from "./analytics/consent";
 import {
+  createPostHogLoader,
+  type PostHogClient,
+  type PostHogLoader,
+  type PostHogPersistence,
+} from "./analytics/posthogTransport";
+import {
   createFailingTransport,
   createRecordingTransport,
   noopTransport,
@@ -17,6 +23,7 @@ import { InMemoryProjectRepository } from "./persistence/inMemoryProjectReposito
 import { createManualScheduler } from "./shared/scheduler";
 import {
   afterFirstPaint,
+  createRouteTracker,
   initTelemetry,
   type StartErrorSink,
   surfaceForPath,
@@ -73,6 +80,43 @@ describe("surfaceForPath", () => {
     expect(surfaceForPath("/projects")).toBe("dashboard");
     expect(surfaceForPath("/projects/")).toBe("dashboard");
     expect(surfaceForPath("/projects/prj_abc")).toBe("editor");
+  });
+});
+
+describe("createRouteTracker: the router's page views (GRV-106)", () => {
+  function setup() {
+    const boundary = { setSurface: vi.fn(), pageview: vi.fn() };
+    const telemetry = { setSurface: vi.fn() };
+    return { boundary, telemetry, track: createRouteTracker(boundary) };
+  }
+
+  it("sends nothing before telemetry resolves, then one view for the entry path", () => {
+    const { boundary, telemetry, track } = setup();
+
+    track("/projects", null);
+    expect(boundary.setSurface).toHaveBeenCalledWith("dashboard");
+    expect(boundary.pageview).not.toHaveBeenCalled();
+
+    track("/projects", telemetry);
+    expect(telemetry.setSurface).toHaveBeenCalledWith("dashboard");
+    expect(boundary.pageview).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends one view per new pathname and none for a repeat", () => {
+    const { boundary, telemetry, track } = setup();
+
+    track("/", telemetry);
+    track("/projects", telemetry);
+    track("/projects", telemetry);
+    track("/projects/prj_1", telemetry);
+
+    expect(boundary.pageview).toHaveBeenCalledTimes(3);
+    expect(telemetry.setSurface.mock.calls.map(([surface]) => surface)).toEqual([
+      "landing",
+      "dashboard",
+      "dashboard",
+      "editor",
+    ]);
   });
 });
 
@@ -590,36 +634,232 @@ describe("re-granting consent resumes collection (PRD OPS-02)", () => {
 });
 
 describe("the vendor analytics SDK follows consent (PRD OPS-02)", () => {
-  // Dropping the custom-event transport leaves GA4 automatic collection —
-  // page_view, session_start, first_visit, user_engagement and the _ga
-  // cookies — running. Consent has to reach the SDK itself, or the disclosure's
-  // "turning this off stops collection" is untrue.
+  // Dropping the custom-event transport does not stop a PostHog client that is
+  // already running: consent has to reach the SDK itself (`opt_out_capturing`),
+  // or the disclosure's "turning this off stops collection" is untrue.
 
   it("never enables collection for a user who has already opted out", () => {
     const consent = new ConsentStore(memoryStorage());
     consent.optOut();
     const { setVendorAnalyticsCollection } = wire("editor", { consent });
 
-    expect(setVendorAnalyticsCollection).toHaveBeenCalledWith(false);
-    expect(setVendorAnalyticsCollection).not.toHaveBeenCalledWith(true);
+    expect(setVendorAnalyticsCollection).toHaveBeenCalledWith(false, expect.anything());
+    expect(setVendorAnalyticsCollection).not.toHaveBeenCalledWith(
+      true,
+      expect.anything(),
+    );
   });
 
   it("disables collection when consent is withdrawn mid-session", () => {
     const { consent, setVendorAnalyticsCollection } = wire("editor");
-    expect(setVendorAnalyticsCollection).toHaveBeenLastCalledWith(true);
+    expect(setVendorAnalyticsCollection).toHaveBeenLastCalledWith(true, "memory");
 
     consent.optOut();
 
-    expect(setVendorAnalyticsCollection).toHaveBeenLastCalledWith(false);
+    expect(setVendorAnalyticsCollection).toHaveBeenLastCalledWith(
+      false,
+      expect.anything(),
+    );
   });
 
-  it("re-enables collection when the user opts back in", () => {
+  it("re-enables collection, with cookie persistence, when the user opts back in", () => {
     const { consent, setVendorAnalyticsCollection } = wire("editor");
 
     consent.optOut();
     consent.optIn();
 
-    expect(setVendorAnalyticsCollection).toHaveBeenLastCalledWith(true);
+    expect(setVendorAnalyticsCollection).toHaveBeenLastCalledWith(
+      true,
+      "localStorage+cookie",
+    );
+  });
+});
+
+describe("the PostHog SDK loads lazily, and never on the landing page (GRV-106)", () => {
+  function fakeLoader() {
+    return {
+      load: vi.fn(async (_persistence: PostHogPersistence) => null),
+      setCollection: vi.fn(),
+    } satisfies PostHogLoader;
+  }
+
+  function setup(surface: Surface, consent = new ConsentStore(memoryStorage())) {
+    const paint = deferredPaint();
+    const postHogLoader = fakeLoader();
+    const telemetry = initTelemetry({
+      surface,
+      consent,
+      target: fakeTarget(),
+      afterPaint: paint.schedule,
+      startErrorSink: async () => {},
+      postHogLoader,
+    });
+    return { paint, postHogLoader, telemetry, consent };
+  }
+
+  it("does not load it on the landing page, however long the page stays", async () => {
+    const { paint, postHogLoader } = setup("landing");
+    analytics.log("app_opened");
+    paint.flush();
+    await tick();
+    expect(postHogLoader.load).not.toHaveBeenCalled();
+  });
+
+  it("loads it only after first paint on an app surface", async () => {
+    const { paint, postHogLoader } = setup("editor");
+    await tick();
+    expect(postHogLoader.load).not.toHaveBeenCalled();
+
+    paint.flush();
+    await tick();
+    expect(postHogLoader.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads it once the session navigates off the landing page", async () => {
+    const { paint, postHogLoader, telemetry } = setup("landing");
+    paint.flush();
+    telemetry.setSurface("dashboard");
+    paint.flush();
+    await tick();
+    expect(postHogLoader.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps identity in memory until the user has chosen", async () => {
+    const { paint, postHogLoader } = setup("editor");
+    paint.flush();
+    await tick();
+    expect(postHogLoader.load).toHaveBeenCalledWith("memory");
+  });
+
+  it("persists it in localStorage and a cookie once the user has granted consent", async () => {
+    const storage = memoryStorage();
+    const chosen = new ConsentStore(storage);
+    chosen.optOut();
+    chosen.optIn();
+    const { paint, postHogLoader } = setup("editor", new ConsentStore(storage));
+    paint.flush();
+    await tick();
+    expect(postHogLoader.load).toHaveBeenCalledWith("localStorage+cookie");
+  });
+
+  it("never loads it for an opted-out session, and opts a running client out", async () => {
+    const consent = new ConsentStore(memoryStorage());
+    consent.optOut();
+    const { paint, postHogLoader } = setup("editor", consent);
+    paint.flush();
+    await tick();
+    expect(postHogLoader.load).not.toHaveBeenCalled();
+    expect(postHogLoader.setCollection).toHaveBeenLastCalledWith(
+      false,
+      "localStorage+cookie",
+    );
+  });
+
+  it("runs on noopTransport when no PostHog key is configured", () => {
+    const transportBefore = createRecordingTransport();
+    analytics.setTransport(transportBefore);
+    initTelemetry({
+      surface: "editor",
+      consent: new ConsentStore(memoryStorage()),
+      target: fakeTarget(),
+      afterPaint: () => {},
+      startErrorSink: async () => {},
+      postHogLoader: null,
+    });
+    analytics.log("app_opened");
+    // The recording transport was replaced, and nothing else received it.
+    expect(transportBefore.named("app_opened")).toHaveLength(0);
+  });
+});
+
+describe("withdrawing consent before the SDK loads (GRV-106)", () => {
+  // The transport is made on the landing page, where its SDK load waits for an
+  // app page. An opt-out there must cancel that load and drop what it queued:
+  // otherwise the load runs once the visitor reaches the dashboard, with cookie
+  // persistence, and sends the page view queued before the opt-out.
+
+  function recordingClient() {
+    const calls: { method: string; args: unknown[] }[] = [];
+    const record =
+      (method: string) =>
+      (...args: unknown[]) => {
+        calls.push({ method, args });
+      };
+    const client: PostHogClient = {
+      capture: record("capture"),
+      identify: record("identify"),
+      reset: record("reset"),
+      setPersonProperties: record("setPersonProperties"),
+      register: record("register"),
+      set_config: record("set_config"),
+      opt_out_capturing: record("opt_out_capturing"),
+      opt_in_capturing: record("opt_in_capturing"),
+      has_opted_out_capturing: () => false,
+    };
+    return { client, calls };
+  }
+
+  function setup() {
+    const { client, calls } = recordingClient();
+    const init = vi.fn((_key: string, _config: unknown) => client);
+    const consent = new ConsentStore(memoryStorage());
+    const paint = deferredPaint();
+    const telemetry = initTelemetry({
+      surface: "landing",
+      consent,
+      target: fakeTarget(),
+      afterPaint: paint.schedule,
+      startErrorSink: async () => {},
+      postHogLoader: createPostHogLoader({
+        settings: { key: "phc_test", host: "https://eu.i.posthog.com" },
+        importSdk: async () => ({ init }),
+      }),
+    });
+    return { calls, init, consent, paint, telemetry };
+  }
+
+  function captured(calls: { method: string; args: unknown[] }[]) {
+    return calls.filter((call) => call.method === "capture").map((call) => call.args[0]);
+  }
+
+  it("never loads the SDK or sends what was queued before the opt-out", async () => {
+    const { calls, init, consent, paint, telemetry } = setup();
+
+    analytics.pageview();
+    consent.optOut();
+    telemetry.setSurface("dashboard");
+    paint.flush();
+    await tick();
+
+    expect(init).not.toHaveBeenCalled();
+    expect(captured(calls)).toEqual([]);
+  });
+
+  it("does not flush the old queue when consent is toggled off and on again", async () => {
+    const { calls, init, consent, paint, telemetry } = setup();
+
+    analytics.pageview();
+    consent.optOut();
+    consent.optIn();
+    telemetry.setSurface("dashboard");
+    paint.flush();
+    await tick();
+
+    expect(init).toHaveBeenCalledTimes(1);
+    // Only what the dashboard sent after the re-grant: its `app_opened`.
+    expect(captured(calls)).toEqual(["app_opened"]);
+  });
+
+  it("keeps the queue when a different consent flag changes", async () => {
+    const { calls, consent, paint, telemetry } = setup();
+
+    analytics.pageview();
+    consent.set({ sessionReplay: false });
+    telemetry.setSurface("dashboard");
+    paint.flush();
+    await tick();
+
+    expect(captured(calls)).toEqual(["$pageview", "app_opened"]);
   });
 });
 
@@ -632,7 +872,7 @@ describe("fail-open wiring (PRD OPS-02/OPS-03)", () => {
         target: fakeTarget(),
         afterPaint: () => {},
         createAnalyticsTransport: () => {
-          throw new Error("firebase/analytics blocked");
+          throw new Error("posthog-js blocked");
         },
         setVendorAnalyticsCollection: () => {},
       }),

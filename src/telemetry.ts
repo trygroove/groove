@@ -16,9 +16,11 @@
 // - It is **not loaded at all on the marketing landing page** (ADR 0001,
 //   `LOOP-001b`), which has no editing state to protect and the strictest
 //   first-impression budget.
-// - Analytics *is* wired on every surface including the landing page, because
-//   `landing_cta_click` is measured there. Its transport is Firebase's, which
-//   the app already loads.
+// - The PostHog SDK follows the same rules (ADR 0011, GRV-106): its own
+//   chunk, loaded after first paint and never on the landing page. Analytics
+//   is still *wired* there, because `landing_cta_click` is measured there:
+//   the transport queues it, and it is sent once the visitor reaches a
+//   surface that loads the SDK (sign-in is a popup, so the queue survives it).
 //
 // ## Consent governs collection, on every path
 //
@@ -26,26 +28,31 @@
 // collection could begin or resume, because all three of these happen after
 // `initTelemetry` returns:
 //
-// - **The vendor SDK.** Google Analytics collects `page_view`, `session_start`,
-//   `first_visit`, and `user_engagement` automatically the moment gtag is
-//   bootstrapped, regardless of which transport this module holds. So the
-//   opt-out reaches the SDK itself (`setVendorAnalyticsCollection`), and a
-//   declined session never initializes it at all — see `src/firebaseConfig.ts`.
+// - **The vendor SDK.** A declined session never loads PostHog at all, and
+//   withdrawing consent at runtime calls its `opt_out_capturing()`
+//   (`setVendorAnalyticsCollection`). Withdrawn before the SDK has loaded (on
+//   the landing page, where it waits), the transport is disposed: its queue is
+//   dropped and its load never runs. Until the user has made a choice, the
+//   SDK keeps its identity in memory; once they have granted it, in
+//   `localStorage` and a cookie.
 // - **The surface.** Navigation off the landing page is client-side, so
 //   `surfaceForPath(window.location.pathname)` at mount is not the surface the
-//   session ends up on. Monitoring and `app_opened` are driven by `setSurface`,
-//   which the router calls on every navigation.
+//   session ends up on. Monitoring, the analytics SDK and `app_opened` are
+//   driven by `setSurface`, which the router calls on every navigation.
 // - **The direction of the toggle.** Withdrawal tears collection down and a
 //   later grant rebuilds it. A one-way switch leaves a user who changes their
 //   mind uncollected with the checkbox showing "on".
 
-import { analytics } from "./analytics/analytics";
+import { type Analytics, analytics } from "./analytics/analytics";
 import type { Surface } from "./analytics/catalog";
 import { type ConsentStore, consentStore } from "./analytics/consent";
 import {
-  createFirebaseAnalyticsTransport,
-  setFirebaseAnalyticsCollectionEnabled,
-} from "./analytics/firebaseTransport";
+  createPostHogLoader,
+  createPostHogTransport,
+  type PostHogLoader,
+  type PostHogPersistence,
+  postHogSettings,
+} from "./analytics/posthogTransport";
 import { type AnalyticsTransport, noopTransport } from "./analytics/transport";
 import { type ErrorReporter, errorReporter } from "./monitoring/errorReporting";
 import { installGlobalErrorHandlers } from "./monitoring/globalHandlers";
@@ -57,10 +64,20 @@ export interface InitTelemetryOptions {
   /** Overridden in tests so no test loads a vendor SDK. */
   createAnalyticsTransport?: () => AnalyticsTransport;
   /**
-   * Switches the vendor analytics SDK's own automatic collection on and off.
-   * Overridden in tests so no test bootstraps gtag.
+   * The PostHog client's owner. Defaults to one built from `VITE_POSTHOG_KEY`,
+   * or none without a key, which leaves analytics on `noopTransport`. Tests
+   * pass a fake to observe when the SDK would load.
    */
-  setVendorAnalyticsCollection?: (enabled: boolean) => void;
+  postHogLoader?: PostHogLoader | null;
+  /**
+   * Applies a consent change to the vendor analytics SDK, if it is running:
+   * `opt_out_capturing()` when withdrawn, and the persistence to use when
+   * granted. Overridden in tests so no test loads PostHog.
+   */
+  setVendorAnalyticsCollection?: (
+    enabled: boolean,
+    persistence: PostHogPersistence,
+  ) => void;
   /**
    * Starts the error sink in place of the real dynamic import. May resolve to
    * a stopper, which lets a test observe that a sink started during a consent
@@ -134,10 +151,46 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
   const consent = options.consent ?? consentStore;
   const reporter = options.reporter ?? errorReporter;
   const afterPaint = options.afterPaint ?? afterFirstPaint;
+
+  /** Memory until the user has chosen; cookies once they have granted it. */
+  const persistence = (): PostHogPersistence =>
+    consent.preferenceExpressed ? "localStorage+cookie" : "memory";
+
+  const postHog =
+    options.postHogLoader !== undefined ? options.postHogLoader : defaultPostHogLoader();
+
+  // The analytics SDK waits for this: a non-landing surface, painted. It is a
+  // gate rather than a call so the transport can be created (and queue) from
+  // the first line, on the landing page included.
+  let openAnalyticsGate: () => void = () => {};
+  const analyticsGate = new Promise<void>((resolve) => {
+    let opened = false;
+    openAnalyticsGate = () => {
+      if (opened || !postHog) return;
+      opened = true;
+      afterPaint(resolve);
+    };
+  });
   const createTransport =
-    options.createAnalyticsTransport ?? createFirebaseAnalyticsTransport;
+    options.createAnalyticsTransport ??
+    (() =>
+      postHog
+        ? createPostHogTransport({
+            // Consent is read again when the gate opens, not only when the
+            // transport was made: an opt-out on the landing page disposes this
+            // transport (aborting the signal) long before the SDK would load.
+            load: (signal) =>
+              analyticsGate.then(() =>
+                signal.aborted || !consent.analyticsAllowed
+                  ? null
+                  : postHog.load(persistence()),
+              ),
+          })
+        : noopTransport);
   const setVendorCollection =
-    options.setVendorAnalyticsCollection ?? setFirebaseAnalyticsCollectionEnabled;
+    options.setVendorAnalyticsCollection ??
+    ((enabled: boolean, mode: PostHogPersistence) =>
+      postHog?.setCollection(enabled, mode));
 
   analytics.refreshInternalTraffic();
 
@@ -214,17 +267,21 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     // `app_opened` is not its event — `landing_cta_click` is.
     if (surface === "landing") return;
     monitoredSurfaceReached = true;
+    openAnalyticsGate();
     if (!appOpenedLogged) {
       // PRD `OPS-02`: `app_opened` fires when "the editor or dashboard shell
       // becomes interactive". That is reaching a non-landing surface, whether
       // the session deep-linked into it or was client-navigated there. Once
-      // per app load rather than per navigation: GA4 automatic collection
-      // already counts sessions and page views.
+      // per app load rather than per navigation: page views are counted by
+      // the router's `pageview()`, and PostHog derives sessions itself.
       appOpenedLogged = true;
       analytics.log("app_opened");
     }
     startMonitoringIfAllowed();
   };
+
+  /** Whether the vendor transport is the one attached to the boundary. */
+  let analyticsWired = false;
 
   // Delivered synchronously on subscribe, which is what wires the initial
   // state, and again on every change. Symmetric in both directions: a grant
@@ -252,20 +309,29 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     }
 
     if (state.productAnalytics) {
-      setVendorCollection(true);
-      // The transport is swapped in synchronously; it buffers internally until
-      // the vendor SDK resolves, so `app_opened` is not lost to lazy loading.
-      try {
-        analytics.setTransport(createTransport());
-      } catch {
-        // Leaves the previous transport in place. Analytics fails open.
+      setVendorCollection(true, persistence());
+      // Only a change *to* allowed builds a transport: another flag changing
+      // (replay alone, say) must not replace one whose queue is still waiting
+      // for the SDK, because replacing it drops that queue.
+      if (!analyticsWired) {
+        // The transport is swapped in synchronously; it buffers internally
+        // until the vendor SDK resolves, so `app_opened` is not lost to lazy
+        // loading.
+        try {
+          analytics.setTransport(createTransport());
+          analyticsWired = true;
+        } catch {
+          // Leaves the previous transport in place. Analytics fails open.
+        }
       }
     } else {
       // The boundary already refuses to send while consent is withdrawn;
-      // dropping the transport as well means nothing is buffered either, and
-      // disabling the SDK stops the automatic collection no transport controls.
+      // replacing the transport disposes it as well, which drops what it had
+      // buffered and cancels its pending SDK load, and opting the SDK out
+      // stops a client that is already running.
+      analyticsWired = false;
       analytics.setTransport(noopTransport);
-      setVendorCollection(false);
+      setVendorCollection(false, persistence());
     }
   });
 
@@ -284,6 +350,11 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
       if (running) await running.stop();
     },
   };
+}
+
+function defaultPostHogLoader(): PostHogLoader | null {
+  const settings = postHogSettings();
+  return settings ? createPostHogLoader({ settings }) : null;
 }
 
 /**
@@ -359,8 +430,8 @@ async function startMonitoring(
     };
   } catch {
     // A blocked or failed SDK load is expected for some sessions (ADR 0001:
-    // "Ad and tracker blockers block sentry.io"). Errors still reach the GA4
-    // `exception` counter, and the resulting undercount is documented.
+    // "Ad and tracker blockers block sentry.io"). Errors still reach the
+    // analytics `exception` counter, and the resulting undercount is documented.
     recordMonitoringStatus("load-failed");
     return inert;
   }
@@ -429,6 +500,35 @@ export function afterFirstPaint(task: () => void): void {
   // the tab may never be foregrounded, and monitoring that only starts if the
   // user happens to look at the page is not monitoring.
   whenIdle();
+}
+
+/**
+ * What the router does on each location: hands the surface to telemetry, and
+ * sends one page view per new pathname (the vendor's own pageview capture is
+ * off, GRV-106). `SurfaceTracker` in `src/app.tsx` calls it from an effect.
+ *
+ * Until `initTelemetry` has run there is no telemetry and no transport, so the
+ * surface goes to the analytics boundary directly and no page view is sent;
+ * the call that follows with telemetry sends the entry page's view then, so
+ * it is not lost to mount order. A repeat of the same pathname (a query or
+ * hash change, or the effect re-running) sends nothing.
+ */
+export function createRouteTracker(
+  boundary: Pick<Analytics, "setSurface" | "pageview"> = analytics,
+): (pathname: string, telemetry: Pick<Telemetry, "setSurface"> | null) => void {
+  /** The path the last page view was sent for, so each navigation counts once. */
+  let pageviewSentFor: string | null = null;
+  return (pathname, telemetry) => {
+    const surface = surfaceForPath(pathname);
+    if (!telemetry) {
+      boundary.setSurface(surface);
+      return;
+    }
+    telemetry.setSurface(surface);
+    if (pathname === pageviewSentFor) return;
+    pageviewSentFor = pathname;
+    boundary.pageview();
+  };
 }
 
 /** Maps a pathname onto the surface it belongs to. */

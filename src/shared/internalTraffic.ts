@@ -4,10 +4,10 @@
 // non-identifying `internal` user property.
 //
 // This module owns *detection and persistence* of the flag. `src/analytics`
-// reads `isInternalTraffic()` to set the GA4 `internal` user property and to
-// stamp every event with GA4's `traffic_type: internal`, which is what the
-// property's Internal Traffic data filter excludes; nothing here talks to an
-// analytics SDK.
+// reads `isInternalTraffic()` to set the `internal` person property and to
+// stamp every event with an `internal` event property, which is what the
+// PostHog project's internal-traffic filter excludes (GRV-106); nothing here
+// talks to an analytics SDK.
 //
 // Two things mark a browser as internal:
 //

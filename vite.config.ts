@@ -141,10 +141,10 @@ export default defineConfig({
   optimizeDeps: {
     include: [
       "firebase/app",
-      "firebase/analytics",
       "firebase/auth",
       "firebase/firestore",
       "@sentry/browser",
+      "posthog-js",
       "tone",
       "nanoid",
       "zod",

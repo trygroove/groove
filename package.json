@@ -29,6 +29,7 @@
     "node-web-audio-api": "^2.1.0",
     "nodemailer": "^10.0.15",
     "ogg-opus-decoder": "^1.7.5",
+    "posthog-js": "1.438.7",
     "since-time-ago": "^1.1.1",
     "solid-icons": "1.2.0",
     "solid-js": "2.0.0-rc.3",

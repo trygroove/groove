@@ -3,14 +3,18 @@ import { useLocation } from "@solidjs/router";
 import { Errored, Loading } from "@solidjs/web";
 import { type Accessor, createEffect, createSignal, onSettled } from "solid-js";
 import { APP_TITLE } from "../site.config.mjs";
-import { analytics } from "./analytics/analytics";
 import AppErrorFallback from "./components/AppErrorFallback";
 import FloatingTelemetryDisclosure from "./components/FloatingTelemetryDisclosure";
 import ReleaseBadge from "./components/ReleaseBadge";
 import TapeLoader from "./components/TapeLoader";
 import { Router } from "./router";
 import { syncInternalTraffic } from "./shared/internalTraffic";
-import { initTelemetry, surfaceForPath, type Telemetry } from "./telemetry";
+import {
+  createRouteTracker,
+  initTelemetry,
+  surfaceForPath,
+  type Telemetry,
+} from "./telemetry";
 import "./app.css";
 
 /**
@@ -24,6 +28,9 @@ import "./app.css";
  * surface to `Telemetry` rather than to `analytics` directly is what makes that
  * one decision instead of three.
  *
+ * It also sends a page view for every pathname the session visits, since the
+ * analytics vendor's own pageview capture is off (`createRouteTracker`).
+ *
  * The compute phase reads both the pathname and the telemetry accessor, so the
  * effect re-runs with the current pathname once `initTelemetry` has finished;
  * until then the surface still reaches the analytics boundary directly and
@@ -33,18 +40,13 @@ import "./app.css";
  */
 function SurfaceTracker(props: { telemetry: Accessor<Telemetry | null> }) {
   const location = useLocation();
+  const track = createRouteTracker();
   createEffect(
     () => ({
-      surface: surfaceForPath(location.pathname),
+      pathname: location.pathname,
       telemetry: props.telemetry(),
     }),
-    ({ surface, telemetry }) => {
-      if (telemetry) {
-        telemetry.setSurface(surface);
-      } else {
-        analytics.setSurface(surface);
-      }
-    },
+    ({ pathname, telemetry }) => track(pathname, telemetry),
   );
   return null;
 }
