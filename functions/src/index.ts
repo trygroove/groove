@@ -75,9 +75,11 @@ import {
 } from "../../src/assistant/config";
 import {
   createEmulatorAssistantProvider,
+  emulatorVideoVerifier,
   usesEmulatorProvider,
 } from "../../src/assistant/emulatorProvider";
 import type { AssistantProvider } from "../../src/assistant/provider";
+import { createOEmbedVideoVerifier, type VideoVerifier } from "../../src/assistant/video";
 import { CLOUD_FUNCTIONS_REGION } from "../../src/shared/cloudFunctions";
 import type { VersionedPack } from "../../src/userData/packVersions";
 import { withdrawRefusedSound } from "../../src/userData/refusedSound";
@@ -366,6 +368,20 @@ function assistantProvider(): AssistantProvider {
 }
 
 /**
+ * How the gateway checks a tutorial video the model recommends (GRV-16, ADR
+ * 0009 decision 5): YouTube's oEmbed endpoint, over plain HTTPS with no key,
+ * from here and never from the browser. In the emulator with the scripted
+ * provider, the scripted video's own check, so the browser suite never
+ * depends on YouTube.
+ */
+function videoVerifier(): VideoVerifier {
+  const apiKey = anthropicApiKey.value() ?? "";
+  return usesEmulatorProvider(process.env, apiKey)
+    ? emulatorVideoVerifier
+    : createOEmbedVideoVerifier(fetch);
+}
+
+/**
  * The assistant's gateway (#69, ADR 0006): one authenticated turn, its reply
  * streamed back as it is written. A callable, so Firebase verifies the
  * caller's ID token before the handler runs; the gateway then refuses a
@@ -382,6 +398,7 @@ export const assistantTurn = onCall(
     provider: assistantProvider(),
     guards: firestoreGuardStores(getFirestore()),
     transcripts: firestoreTranscriptStore(getFirestore()),
+    verifyVideo: videoVerifier(),
   })),
 );
 
