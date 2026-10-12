@@ -427,6 +427,88 @@ describe("EditorSession, an unsaved edit when another tab saves (GRV-88)", () =>
     expect(reloaded.song.tracks[0]?.mixer.volume).toBe(-6);
   });
 
+  it.each([
+    [
+      "commits nothing",
+      (drag: { commit: () => unknown }) => expect(drag.commit()).toBeNull(),
+    ],
+    ["is cancelled", (drag: { cancel: () => void }) => drag.cancel()],
+  ] as const)("takes in a change saved during a gesture that %s", async (_, end) => {
+    const { project, tabA, tabB, notices, tempo } = await setUp();
+    const drag = tabA.beginGesture();
+    tabB.dispatch(tempo(140));
+    await tabB.autosave.flush();
+    await settle();
+    // The change waits for the gesture to end.
+    expect(tabA.committedProject.song.tempo).toBe(project.song.tempo);
+
+    end(drag);
+    await vi.waitFor(() => expect(tabA.committedProject.song.tempo).toBe(140));
+    expect(notices).toEqual([]);
+    expect(tabA.history.entries).toHaveLength(0);
+  });
+
+  it("does not replay a dispatch folded into a gesture once its write has landed", async () => {
+    const {
+      repository,
+      project,
+      tabA,
+      tabB,
+      transport,
+      notices,
+      tempo,
+      volume,
+      note,
+      clipId,
+    } = await setUp();
+    const drag = tabA.beginGesture();
+    drag.apply(volume(-3));
+    // A dispatch during the drag joins it, and its write goes out at once.
+    tabA.dispatch(note());
+    expect((await tabA.autosave.flush()).state).toBe("saved");
+    await vi.waitFor(() =>
+      expect(notesIn(tabB.committedProject, clipId)).toBe(notesIn(project, clipId) + 1),
+    );
+    tabB.dispatch(tempo(140));
+    await tabB.autosave.flush();
+    await settle();
+
+    expect(drag.commit()).not.toBeNull();
+    await vi.waitFor(() => expect(tabA.committedProject.song.tempo).toBe(140));
+    expect(notices).toEqual([]);
+    expect(tabA.committedProject.song.tracks[0]?.mixer.volume).toBe(-3);
+    expect(notesIn(tabA.committedProject, clipId)).toBe(notesIn(project, clipId) + 1);
+    expect(tabA.history.entries).toHaveLength(1);
+    expect(transport.named("unsaved_edits_replayed")[0]?.params).toMatchObject({
+      replayed_count: 1,
+      dropped_count: 0,
+    });
+    expect((await tabA.autosave.flush()).state).toBe("saved");
+
+    const reloaded = await stored(repository, project);
+    expect(reloaded.song.tempo).toBe(140);
+    expect(reloaded.song.tracks[0]?.mixer.volume).toBe(-3);
+    expect(notesIn(reloaded, clipId)).toBe(notesIn(project, clipId) + 1);
+  });
+
+  it("drops a whole gesture, folded dispatch included, when part of it no longer applies", async () => {
+    const { project, tabA, tabB, notices, volume, note, trackId, clipId } = await setUp();
+    const drag = tabA.beginGesture();
+    drag.apply(volume(-3));
+    tabA.dispatch(note());
+    drag.apply(volume(-6));
+    expect(drag.commit()).not.toBeNull();
+    tabB.dispatch(removeTrack(trackId));
+    await tabB.autosave.flush();
+
+    await vi.waitFor(() =>
+      expect(notices).toEqual([{ kind: "edits_discarded", count: 1 }]),
+    );
+    expect(notesIn(tabA.committedProject, clipId)).toBe(-1);
+    expect(tabA.history.entries).toHaveLength(0);
+    expect(project.song.tracks.some((track) => track.id === trackId)).toBe(true);
+  });
+
   it("raises no notice and logs no replay for a plain remote change", async () => {
     const { tabA, tabB, transport, notices, tempo } = await setUp();
     tabB.dispatch(tempo(140));

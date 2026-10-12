@@ -109,13 +109,27 @@ interface UnsavedEdit {
   readonly actor: CommandActor;
   readonly correlationId: string;
   readonly summary: string;
-  /** The history entry an edit made; null for an undo or a redo. */
+  /**
+   * The history entry an edit made; null for an undo or a redo. The parts of
+   * one gesture (its own steps and each dispatch folded into it) share their
+   * entry, and replay as one: if one part no longer applies, none of it does.
+   */
   readonly entry: HistoryEntry | null;
   /**
    * The autosave's `queuedThrough` once this edit's writes were queued: the
    * edit is saved once `savedThrough` reaches it.
    */
   readonly through: number;
+}
+
+/**
+ * One run of an open gesture's commands: its own steps (`through` is null,
+ * since they are written only when it commits), or one dispatch folded into it,
+ * whose writes were queued at once and carry the `queuedThrough` they had then.
+ */
+interface GesturePart {
+  readonly commands: RawCommandInput[];
+  readonly through: number | null;
 }
 
 /** How long a failed load of the saved project waits before it is tried again, at first. */
@@ -201,7 +215,7 @@ export class EditorSession {
   /** This session's committed changes not yet written, oldest first. */
   private unsaved: UnsavedEdit[] = [];
   /** What an open gesture has applied so far, dispatches folded into it included. */
-  private gestureCommands: RawCommandInput[] | null = null;
+  private gestureParts: GesturePart[] | null = null;
   /** The newest revision known to be saved elsewhere. */
   private remoteRevision: number;
   /** True while the saved project is being loaded and taken in. */
@@ -414,8 +428,8 @@ export class EditorSession {
   beginGesture(options: GestureOptions = {}): Gesture {
     const before = this.history.project;
     const gesture = this.history.beginGesture(options);
-    const applied: RawCommandInput[] = [];
-    this.gestureCommands = applied;
+    const parts: GesturePart[] = [];
+    this.gestureParts = parts;
     let firstEditResult: TransactionSuccess | null = null;
     return {
       get active() {
@@ -425,36 +439,22 @@ export class EditorSession {
       // stale (see `onHistoryChange`), like any other local edit.
       apply: (commands) => {
         const result = gesture.apply(commands);
-        if (result.ok) applied.push(...toRaw(result.commands));
+        if (result.ok) addGestureSteps(parts, toRaw(result.commands));
         if (result.ok && !firstEditResult) firstEditResult = result;
         return result;
       },
       commit: (options) => {
         const entry = gesture.commit(options);
-        this.endGesture(applied);
-        if (!entry) return entry;
-        if (firstEditResult) this.logFirstEdit(firstEditResult);
-        this.queueDiff(this.history.project, before);
-        this.recordUnsaved({
-          commands: applied,
-          actor: entry.actor,
-          correlationId: entry.correlationId,
-          summary: entry.summary,
-          entry,
-        });
-        this.emitEdit({
-          kind: "edit",
-          actor: entry.actor,
-          correlationId: entry.correlationId,
-          commands: entry.commands,
-          before,
-        });
+        this.endGesture(parts);
+        if (entry) this.recordGesture(entry, parts, before, firstEditResult);
+        // A change saved elsewhere while the gesture was open waited for it to
+        // end, whether or not it committed anything.
         this.reconcileRemote();
         return entry;
       },
       cancel: () => {
         gesture.cancel();
-        this.endGesture(applied);
+        this.endGesture(parts);
         this.reconcileRemote();
       },
     };
@@ -550,9 +550,13 @@ export class EditorSession {
     if (result.ok) {
       this.logFirstEdit(result);
       this.queueAutosave(result, before);
-      // Folded into an open gesture, the dispatch is replayed with it.
+      // Folded into an open gesture, the dispatch is replayed with it, unless
+      // its own writes, queued now, have landed by the time it commits.
       if (this.history.gestureActive) {
-        this.gestureCommands?.push(...toRaw(result.commands));
+        this.gestureParts?.push({
+          commands: toRaw(result.commands),
+          through: this.autosave.queuedThrough,
+        });
       } else {
         this.recordUnsaved({
           ...this.unsavedOf(result),
@@ -588,9 +592,45 @@ export class EditorSession {
     };
   }
 
-  /** The gesture that `applied` belongs to is over, committed or cancelled. */
-  private endGesture(applied: RawCommandInput[]): void {
-    if (this.gestureCommands === applied) this.gestureCommands = null;
+  /** The gesture that `parts` belongs to is over, committed or cancelled. */
+  private endGesture(parts: GesturePart[]): void {
+    if (this.gestureParts === parts) this.gestureParts = null;
+  }
+
+  /**
+   * A gesture committed `entry`: queue its writes, record what of it is not
+   * yet saved, and report it. A dispatch folded into it whose writes already
+   * landed is saved, so it is not replayed with the rest.
+   */
+  private recordGesture(
+    entry: HistoryEntry,
+    parts: readonly GesturePart[],
+    before: Project,
+    firstEditResult: TransactionSuccess | null,
+  ): void {
+    if (firstEditResult) this.logFirstEdit(firstEditResult);
+    this.queueDiff(this.history.project, before);
+    const queuedThrough = this.autosave.queuedThrough;
+    const savedThrough = this.autosave.savedThrough;
+    for (const part of parts) {
+      const through = part.through ?? queuedThrough;
+      if (through <= savedThrough) continue;
+      this.unsaved.push({
+        commands: part.commands,
+        actor: entry.actor,
+        correlationId: entry.correlationId,
+        summary: entry.summary,
+        entry,
+        through,
+      });
+    }
+    this.emitEdit({
+      kind: "edit",
+      actor: entry.actor,
+      correlationId: entry.correlationId,
+      commands: entry.commands,
+      before,
+    });
   }
 
   /**
@@ -744,26 +784,32 @@ export class EditorSession {
     const unsaved = this.unsaved;
     let project = saved;
     const replayed: UnsavedEdit[] = [];
-    const dropped: UnsavedEdit[] = [];
-    for (const edit of unsaved) {
-      const result = executeTransaction(project, edit.commands, {
-        actor: edit.actor,
-        correlationId: edit.correlationId,
-        summary: edit.summary,
-        clock: this.clock,
-      });
+    const dropped: UnsavedEdit[][] = [];
+    for (const group of groupByEntry(unsaved)) {
+      const [first] = group;
+      if (!first) continue;
+      const result = executeTransaction(
+        project,
+        group.flatMap((edit) => edit.commands),
+        {
+          actor: first.actor,
+          correlationId: first.correlationId,
+          summary: first.summary,
+          clock: this.clock,
+        },
+      );
       if (result.ok) {
         project = result.project;
-        replayed.push(edit);
+        replayed.push(...group);
       } else {
-        dropped.push(edit);
+        dropped.push(group);
       }
     }
     this.endOpenPreview("stale", "remote_change");
     this.autosave.rebase(saved.metadata.revision);
     this.history.adoptProject(project);
     this.history.discardEntries(
-      new Set(dropped.flatMap((edit) => (edit.entry ? [edit.entry] : []))),
+      new Set(dropped.flatMap(([edit]) => (edit?.entry ? [edit.entry] : []))),
     );
     this.remoteAdopted = true;
     if (repaired) this.queueRepair(project, repaired);
@@ -776,7 +822,7 @@ export class EditorSession {
         : [];
     if (unsaved.length > 0) {
       this.analytics.log("unsaved_edits_replayed", {
-        replayed_count: replayed.length,
+        replayed_count: groupByEntry(replayed).length,
         dropped_count: dropped.length,
       });
     }
@@ -980,6 +1026,27 @@ export class EditorSession {
       this.autosave.queueClipDeletion(clipId);
     }
   }
+}
+
+/** Adds a gesture's own steps, joining them to its newest run of steps. */
+function addGestureSteps(parts: GesturePart[], commands: RawCommandInput[]): void {
+  const last = parts.at(-1);
+  if (last && last.through === null) last.commands.push(...commands);
+  else parts.push({ commands, through: null });
+}
+
+/**
+ * Unsaved edits in replay order, with the neighbouring parts of one history
+ * entry (one gesture's steps and the dispatches folded into it) kept together.
+ */
+function groupByEntry(edits: readonly UnsavedEdit[]): UnsavedEdit[][] {
+  const groups: UnsavedEdit[][] = [];
+  for (const edit of edits) {
+    const group = groups.at(-1);
+    if (group && edit.entry && group[0]?.entry === edit.entry) group.push(edit);
+    else groups.push([edit]);
+  }
+  return groups;
 }
 
 function toRaw(commands: readonly CommandEnvelope[]): RawCommandInput[] {
