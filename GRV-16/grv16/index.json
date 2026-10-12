@@ -1,0 +1,22 @@
+{
+  "id": "grv16",
+  "title": "Assistant tutorial videos",
+  "steps": [
+    {
+      "file": "01-a-recommended-video-a-still-card-nothing.png",
+      "caption": "A recommended video: a still card, nothing loaded from YouTube"
+    },
+    {
+      "file": "02-playing-in-the-panel-in-youtube-s-privac.png",
+      "caption": "Playing in the panel, in YouTube's privacy-enhanced player"
+    },
+    {
+      "file": "03-full-screen-over-the-editor-with-close.png",
+      "caption": "Full screen over the editor, with Close"
+    },
+    {
+      "file": "04-a-player-that-did-not-load-contained-in-.png",
+      "caption": "A player that did not load, contained in its card"
+    }
+  ]
+}
