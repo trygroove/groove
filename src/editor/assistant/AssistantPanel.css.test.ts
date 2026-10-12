@@ -19,6 +19,28 @@ function declarationsOf(selector: string): string[] {
   );
 }
 
+describe("assistant question options (GRV-100)", () => {
+  it("stacks the options one per row, each filling the card's width", () => {
+    // A wrapping row sized each chip to its label, so answer 2 came out
+    // narrower than the others. In a column each option stretches to the
+    // list, which is the card's width. jsdom draws no layout, so pin the rules.
+    expect(declarationsOf(".assistant-ask-options")).toEqual(
+      expect.arrayContaining(["display: flex", "flex-direction: column"]),
+    );
+    expect(declarationsOf(".assistant-ask-options")).not.toContain("flex-wrap: wrap");
+    expect(declarationsOf(".assistant-ask-option")).toContain("width: 100%");
+  });
+
+  it("pins the speaker and the Suggested tag to the option's right edge", () => {
+    // After the label they sat at a different x in each option. The text
+    // column takes the free space, so both sit together at the end of the
+    // row and line up down the card.
+    expect(declarationsOf(".assistant-ask-text")).toContain("flex: 1");
+    expect(declarationsOf(".assistant-ask-listen")).toContain("flex: none");
+    expect(declarationsOf(".assistant-ask-suggested")).toContain("flex: none");
+  });
+});
+
 describe("assistant composer type", () => {
   it("sets the composer input to the base size the assistant text inherits", () => {
     // The message and reply paragraphs set no size of their own, so they

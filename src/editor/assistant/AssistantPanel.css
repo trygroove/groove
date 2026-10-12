@@ -765,7 +765,7 @@
 
 .assistant-ask-options {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 4px;
   min-width: 0;
   margin: 0;
@@ -778,6 +778,7 @@
   align-items: flex-start;
   gap: 8px;
   min-height: 30px;
+  width: 100%;
   max-width: 100%;
   padding: 6px 10px 6px 8px;
   border: none;
@@ -826,6 +827,7 @@
 }
 
 .assistant-ask-text {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 1px;
