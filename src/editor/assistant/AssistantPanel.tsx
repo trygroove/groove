@@ -98,7 +98,16 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
     <Show when={mode() !== "closed"}>
       <section
         ref={(element) => props.panel.bindPanel(element)}
-        class={["assistant-panel", { "assistant-panel-under-modal": underModal() }]}
+        class={[
+          "assistant-panel",
+          {
+            "assistant-panel-under-modal": underModal(),
+            // A tutorial video fills the window (GRV-16): the panel, which
+            // holds it, lifts over the app's chrome until it is put back.
+            "assistant-panel-video-expanded":
+              !underModal() && props.panel.collapseVideo() !== undefined,
+          },
+        ]}
         data-mode={props.panel.layout().mode}
         inert={underModal() || undefined}
         style={{
@@ -197,6 +206,7 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
               focusComposer={() => props.panel.focusComposer()}
               settingsOpen={settingsOpen}
               closeSettings={() => setSettingsOpen(false)}
+              holdExpandedVideo={(collapse) => props.panel.holdExpandedVideo(collapse)}
             />
           )}
         </Show>

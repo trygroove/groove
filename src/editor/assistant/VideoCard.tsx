@@ -18,8 +18,10 @@
  *   so here, with Try again and a link to watch on YouTube; the card is also
  *   wrapped in an error boundary by the conversation.
  * - **Full screen** fills the window with the same iframe (only its frame
- *   moves, so the video carries on where it was); Close or Escape
- *   (`view.close_surface`) puts it back.
+ *   moves, so the video carries on where it was); Close or Escape puts it
+ *   back. Escape is the editor's `view.close_surface`, which asks the panel
+ *   for the video it holds (`holdExpandedVideo`) before anything else; the
+ *   panel lifts itself over the app's chrome meanwhile.
  * - **The disclosure** names YouTube and its terms before Play (decision 6).
  *
  * Analytics: `assistant_video_played`, `assistant_video_expanded` and
@@ -27,7 +29,7 @@
  * channel or URL.
  */
 import type { JSX } from "@solidjs/web";
-import { createSignal, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
 import {
   type AssistantVideo,
@@ -35,8 +37,9 @@ import {
   youtubeWatchUrl,
 } from "../../assistant/video";
 import { CloseIcon, PlayIcon } from "../../components/icons";
-import { type ShortcutHandlers, useShortcuts } from "../../shortcuts";
-import { VIDEO_EXPANDED_CLASS } from "./useAssistantPanel";
+
+/** The class the card carries while its player fills the window. */
+export const VIDEO_EXPANDED_CLASS = "assistant-video-expanded";
 
 /** How long the player has to load before the card says it did not. */
 export const VIDEO_LOAD_TIMEOUT_MS = 15_000;
@@ -47,7 +50,7 @@ export const GOOGLE_PRIVACY_URL = "https://policies.google.com/privacy";
 
 /** What the card says when the player did not load. */
 export const VIDEO_FAILED =
-  "This video didn't load. Nothing else is affected: your song and the conversation are as they were.";
+  "Nothing else is affected: your song and the conversation are as they were.";
 
 /**
  * What the iframe may do: run YouTube's own player, go full screen and open
@@ -63,6 +66,11 @@ export interface VideoCardProps {
   readonly analytics?: () => Analytics;
   /** Defaults to {@link VIDEO_LOAD_TIMEOUT_MS}. */
   readonly loadTimeoutMs?: number;
+  /**
+   * Held while the player fills the window, so the editor's Escape can put
+   * it back (`AssistantPanel.holdExpandedVideo`); returns the release.
+   */
+  holdExpanded?(collapse: () => void): () => void;
 }
 
 export default function VideoCard(props: VideoCardProps): JSX.Element {
@@ -120,6 +128,14 @@ export default function VideoCard(props: VideoCardProps): JSX.Element {
     setTimeout(() => expandButton?.focus(), 0);
   }
 
+  // The panel holds the full-screen video while there is one. The flag is the
+  // one reactive read; the hold is a write, so it is the apply half's, and its
+  // release is the cleanup.
+  createEffect(
+    () => expanded(),
+    (isExpanded) => (isExpanded ? props.holdExpanded?.(collapse) : undefined),
+  );
+
   const title = () => props.video.title;
   const channel = () => props.video.channel;
 
@@ -130,7 +146,6 @@ export default function VideoCard(props: VideoCardProps): JSX.Element {
     >
       <div class="assistant-video-stage">
         <Show when={expanded()}>
-          <CloseOnEscape onClose={collapse} />
           <div class="assistant-video-overlay-bar">
             <span class="assistant-video-tag">Recommended by the assistant</span>
             <span class="assistant-video-overlay-title">{title()}</span>
@@ -240,15 +255,4 @@ export default function VideoCard(props: VideoCardProps): JSX.Element {
       </div>
     </section>
   );
-}
-
-/** `view.close_surface` (Escape) while the player fills the window. */
-function CloseOnEscape(props: { onClose(): void }): JSX.Element {
-  useShortcuts({
-    handlers: (): ShortcutHandlers => ({
-      "view.close_surface": { run: () => props.onClose() },
-    }),
-    contexts: () => [],
-  });
-  return null;
 }

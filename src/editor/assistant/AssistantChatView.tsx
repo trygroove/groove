@@ -26,6 +26,11 @@ export interface AssistantChatViewProps {
   readonly settingsOpen?: () => boolean;
   /** Closes the settings, back to the conversation. */
   closeSettings?(): void;
+  /**
+   * Held by a tutorial video while it fills the window (GRV-16), so Escape
+   * puts it back; returns the release (`AssistantPanel.holdExpandedVideo`).
+   */
+  holdExpandedVideo?(collapse: () => void): () => void;
 }
 
 /** The status a streaming reply puts in the panel's header and bar. */
@@ -158,6 +163,7 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
               onRetry={retry}
               asking={conversation().pendingAsk()?.replyId === entry().id}
               chat={props.chat}
+              holdExpandedVideo={props.holdExpandedVideo}
             />
           )}
         </For>
@@ -261,6 +267,7 @@ function Entry(props: {
   /** Whether this reply's question is the one waiting above the composer. */
   readonly asking: boolean;
   readonly chat: AssistantChat;
+  holdExpandedVideo?(collapse: () => void): () => void;
 }): JSX.Element {
   return (
     <Switch>
@@ -376,7 +383,11 @@ function Entry(props: {
               </section>
             }
           >
-            <VideoCard video={entry().video} analytics={props.chat.analytics} />
+            <VideoCard
+              video={entry().video}
+              analytics={props.chat.analytics}
+              holdExpanded={props.holdExpandedVideo}
+            />
           </Errored>
         )}
       </Match>

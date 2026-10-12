@@ -20,7 +20,10 @@ const VIDEO: AssistantVideo = {
   reason: "Shows how resonance and envelope mod make the squelch.",
 };
 
-function setup(loadTimeoutMs = 15_000) {
+function setup(
+  loadTimeoutMs = 15_000,
+  holdExpanded?: (collapse: () => void) => () => void,
+) {
   const transport = createRecordingTransport();
   const analytics = new Analytics({
     transport,
@@ -29,7 +32,12 @@ function setup(loadTimeoutMs = 15_000) {
   });
   analytics.setAccountType("registered");
   const view = render(() => (
-    <VideoCard video={VIDEO} analytics={() => analytics} loadTimeoutMs={loadTimeoutMs} />
+    <VideoCard
+      video={VIDEO}
+      analytics={() => analytics}
+      loadTimeoutMs={loadTimeoutMs}
+      holdExpanded={holdExpanded}
+    />
   ));
   flush();
   const named = (name: string) => transport.named(name);
@@ -136,8 +144,13 @@ describe("a recommended tutorial video (GRV-16, ADR 0009)", () => {
     expect(named("assistant_video_failed")).toHaveLength(0);
   });
 
-  it("fills the window with the same player, and Escape puts it back", async () => {
-    const { view, named } = setup();
+  it("fills the window with the same player, held for the editor's Escape to put back", async () => {
+    let held: (() => void) | undefined;
+    const release = vi.fn();
+    const { view, named } = setup(15_000, (collapse) => {
+      held = collapse;
+      return release;
+    });
     clickAndFlush(screen.getByRole("button", { name: /^Play / }));
     const frame = view.container.querySelector("iframe");
     clickAndFlush(screen.getByRole("button", { name: "Full screen" }));
@@ -149,8 +162,23 @@ describe("a recommended tutorial video (GRV-16, ADR 0009)", () => {
     await settle();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
 
+    // Escape is the editor's (`view.close_surface`), not the card's own: a
+    // key on the window alone does nothing here.
     fireAndFlush(() => fireEvent.keyDown(window, { key: "Escape" }));
+    expect(card).toHaveClass("assistant-video-expanded");
+
+    fireAndFlush(() => held?.());
     expect(card).not.toHaveClass("assistant-video-expanded");
     expect(view.container.querySelector("iframe")).toBe(frame);
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("says once that the video did not load", () => {
+    vi.useFakeTimers();
+    setup(1_000);
+    clickAndFlush(screen.getByRole("button", { name: /^Play / }));
+    vi.advanceTimersByTime(1_000);
+    flush();
+    expect(screen.getByRole("alert").textContent?.match(/didn't load/g)).toHaveLength(1);
   });
 });

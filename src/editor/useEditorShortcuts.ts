@@ -55,6 +55,7 @@ export interface UseEditorShortcutsOptions {
     | "toggle"
     | "resizeBy"
     | "dismissAction"
+    | "collapseVideo"
     | "edgeHasFocus"
     | "composerHasFocus"
     | "askTextHasFocus"
@@ -431,11 +432,15 @@ export function useEditorShortcuts(options: UseEditorShortcutsOptions) {
     // does not leave them: a view key does. With focus in the assistant
     // (#849), Escape is the panel's: it minimises a floating panel and closes
     // a docked one, before the library view under it. With no surface open,
-    // it clears the arrangement's selection (#835).
+    // it clears the arrangement's selection (#835). A tutorial video filling
+    // the window (GRV-16) covers all of it, so it is innermost of everything:
+    // Escape puts it back and does nothing else, wherever focus is.
     "view.close_surface": {
       run: () => {
+        const collapseVideo = assistant.collapseVideo();
         const dismissAssistant = assistant.dismissAction();
-        if (arrangementDragging()) arrangementEditingActions()?.cancelDrag();
+        if (collapseVideo) collapseVideo();
+        else if (arrangementDragging()) arrangementEditingActions()?.cancelDrag();
         else if (guideOpen()) setGuideOpen(false);
         else if (dismissAssistant) dismissAssistant();
         else if (libraryOpen()) {
@@ -452,7 +457,8 @@ export function useEditorShortcuts(options: UseEditorShortcutsOptions) {
       // The Export dialog closes itself on Escape, and nothing beneath it should.
       isEnabled: () =>
         !exportOpen() &&
-        (arrangementDragging() ||
+        (assistant.collapseVideo() !== undefined ||
+          arrangementDragging() ||
           guideOpen() ||
           assistant.dismissAction() !== undefined ||
           libraryOpen() ||

@@ -26,6 +26,14 @@
   z-index: 79;
 }
 
+/* A tutorial video fills the window from inside the panel (GRV-16). The panel
+   is its own stacking context, so the panel itself lifts over the app's
+   chrome (the release badge and the telemetry notice, 1000) while it does.
+   The player stays where it is in the document: moving an iframe reloads it. */
+.assistant-panel.assistant-panel-video-expanded {
+  z-index: 1001;
+}
+
 .assistant-panel:focus {
   outline: none;
 }
@@ -1213,8 +1221,9 @@
   text-decoration: none;
 }
 
-/* Full screen: the stage fills the window, over the editor, with a bar naming
-   the video and its Close. Only the stage's frame moves, so the iframe is the
+/* Full screen: the stage fills the window, over the editor and (with the
+   panel lifted, above) the app's chrome, with a bar naming the video and its
+   Close. Only the stage's frame moves, so the iframe is the
    same one and the video carries on where it was. */
 .assistant-video-expanded .assistant-video-stage {
   position: fixed;
