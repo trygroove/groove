@@ -108,7 +108,7 @@ function postHogUploadConfigured(): boolean {
 //  2. **Uploaded authenticated.** `@posthog/rollup-plugin` injects a chunk ID
 //     into each chunk and its map while the bundle renders (so both vendors'
 //     injections are in the maps both upload), then uploads them with
-//     `posthog-cli` under the personal API key, as release `groove@<sha>`.
+//     `posthog-cli` under the personal API key, as release `groove`, version `<sha>`.
 //     The CLI binary is fetched on first use, in the deploy job only.
 //  3. **Never served.** Its `writeBundle` runs after Sentry's (it is
 //     sequential and listed after it), uploads, and then deletes the maps. If
