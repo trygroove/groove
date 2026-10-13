@@ -62,7 +62,7 @@ yours. Do not start a comment of your own with those words.
 ## Columns
 
 The team's workflow states, in order, are the board's columns: Backlog, Ready,
-In Progress, Blocked, QA, Ready For Review, Approved, Done (completed),
+In Progress, Blocked, Ready For Review, Approved, QA, Done (completed),
 Canceled (canceled) and Duplicate (duplicate). Their names are a contract:
 `.github/scripts/linear.mjs` lists them in `STATES`, and a renamed column
 breaks the poll. The set is per team, which is why Groove has a team of its

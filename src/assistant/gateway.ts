@@ -104,8 +104,8 @@ export interface AssistantCaller {
   /** `firebase.sign_in_provider` from the ID token, e.g. `google.com`. */
   readonly signInProvider: string | null;
   /**
-   * Whether the ID token's address is a team or test account
-   * (`isInternalAccount`), so its transcripts are marked internal.
+   * Whether the ID token carries the `internal` claim (`hasInternalClaim`,
+   * `src/access/claims.ts`), so its transcripts are marked internal.
    */
   readonly internalAccount?: boolean;
 }

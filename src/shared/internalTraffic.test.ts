@@ -1,52 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { QA_ACCOUNTS } from "../access/qaAccounts";
 import { hostileStorage, memoryStorage } from "../testing/storage";
 import {
   INTERNAL_TRAFFIC_STORAGE_KEY,
-  isInternalAccount,
   isInternalTraffic,
   markInternalTraffic,
   parseInternalTrafficParam,
   syncInternalTraffic,
 } from "./internalTraffic";
-
-describe("isInternalAccount", () => {
-  it("counts the product owner as internal", () => {
-    expect(isInternalAccount("bpgodfrey@gmail.com")).toBe(true);
-  });
-
-  it.each(["groovetestuser1@gmail.com", "groovetestuser2@gmail.com"])(
-    "counts the hands-on test account %s as internal",
-    (email) => {
-      expect(isInternalAccount(email)).toBe(true);
-    },
-  );
-
-  it("counts every account in the QA pool as internal", () => {
-    for (const account of QA_ACCOUNTS) {
-      expect(isInternalAccount(account.email)).toBe(true);
-    }
-  });
-
-  it("ignores case and surrounding whitespace, as addresses do", () => {
-    expect(isInternalAccount(" GrooveTestUser1@Gmail.com ")).toBe(true);
-  });
-
-  it.each([
-    "producer@example.com",
-    "groovetestuser1@example.com",
-    "notgroovetestuser1@gmail.com",
-    "someone@qa.trygroove.app.evil.com",
-    "",
-  ])("does not count %j as internal", (email) => {
-    expect(isInternalAccount(email)).toBe(false);
-  });
-
-  it("treats no address (signed out, or a guest) as not internal", () => {
-    expect(isInternalAccount(null)).toBe(false);
-    expect(isInternalAccount(undefined)).toBe(false);
-  });
-});
 
 describe("markInternalTraffic", () => {
   it("persists the flag so a later load reads as internal from the start", () => {

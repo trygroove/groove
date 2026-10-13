@@ -107,6 +107,8 @@
     "allowlist:add": "bun scripts/access/allowlistAdd.ts",
     "allowlist:seed": "bun scripts/access/allowlistSeed.ts",
     "admin:grant": "bun scripts/access/adminGrant.ts",
+    "internal:grant": "bun scripts/access/internalClaim.ts grant",
+    "internal:revoke": "bun scripts/access/internalClaim.ts revoke",
     "qa:accounts": "bun scripts/access/qaAccounts.ts"
   },
   "type": "module",

@@ -29,6 +29,8 @@ function createFakeAuthService() {
       linkWithGoogle: vi.fn(() => Promise.resolve()),
       signOut: vi.fn(() => Promise.resolve()),
       getCurrentUser: vi.fn(() => null),
+      /** The `internal` claim of whoever is signed in; no account has it by default. */
+      isInternal: vi.fn(() => Promise.resolve(false)),
     },
     emit(user: unknown) {
       callback?.(user);
@@ -134,25 +136,25 @@ describe("AuthProvider", () => {
     });
   });
 
-  // The team's and the test accounts' sessions are internal traffic, so they
-  // stay out of the product's measures without anyone typing `?internal=1`.
+  // GRV-113: an account's sessions are internal traffic when its ID token
+  // carries the `internal` claim, so they stay out of the product's measures
+  // without anyone typing `?internal=1`. The address plays no part.
   describe("internal traffic", () => {
-    it.each([
-      "bpgodfrey@gmail.com",
-      "groovetestuser1@gmail.com",
-      "testuser0@qa.trygroove.app",
-    ])("marks the browser internal when %s signs in, and persists it", async (email) => {
+    it("marks the browser internal when a flagged account signs in, and persists it", async () => {
       const { fake, transport, internalTrafficStorage } = await renderAuthProvider();
+      fake.service.isInternal.mockResolvedValue(true);
 
-      fake.emit({ uid: "user_team", email, isAnonymous: false });
+      fake.emit({ uid: "user_team", email: "team@example.com", isAnonymous: false });
+      await settle();
       await settle();
 
+      expect(fake.service.isInternal).toHaveBeenCalledTimes(1);
       expect(transport.userProperties.internal).toBe("true");
       expect(transport.userProperties.account_type).toBe("registered");
       expect(internalTrafficStorage.getItem(INTERNAL_TRAFFIC_STORAGE_KEY)).toBe("true");
     });
 
-    it("leaves a cohort account's session as it was", async () => {
+    it("leaves an unflagged account's session as it was", async () => {
       const { fake, transport, internalTrafficStorage } = await renderAuthProvider();
 
       fake.emit({
@@ -161,21 +163,73 @@ describe("AuthProvider", () => {
         isAnonymous: false,
       });
       await settle();
+      await settle();
 
+      expect(fake.service.isInternal).toHaveBeenCalledTimes(1);
       expect(transport.userProperties.internal).toBe("false");
       expect(internalTrafficStorage.getItem(INTERNAL_TRAFFIC_STORAGE_KEY)).toBeNull();
     });
 
+    it("asks nothing for a visitor who is signed out or a guest", async () => {
+      const { fake } = await renderAuthProvider();
+
+      fake.emit(null);
+      await settle();
+      fake.emit({ uid: "user_guest", isAnonymous: true });
+      await settle();
+
+      expect(fake.service.isInternal).not.toHaveBeenCalled();
+    });
+
     it("keeps the browser marked after the internal account signs out", async () => {
       const { fake, transport, internalTrafficStorage } = await renderAuthProvider();
+      fake.service.isInternal.mockResolvedValue(true);
 
-      fake.emit({ uid: "user_team", email: "bpgodfrey@gmail.com", isAnonymous: false });
+      fake.emit({ uid: "user_team", email: "team@example.com", isAnonymous: false });
+      await settle();
       await settle();
       fake.emit(null);
       await settle();
 
       expect(transport.userProperties.internal).toBe("true");
       expect(internalTrafficStorage.getItem(INTERNAL_TRAFFIC_STORAGE_KEY)).toBe("true");
+    });
+
+    it("drops a claim that arrives after the session has changed", async () => {
+      const { fake, transport, internalTrafficStorage } = await renderAuthProvider();
+      let answer: (internal: boolean) => void = () => {};
+      fake.service.isInternal.mockReturnValueOnce(
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        }),
+      );
+
+      fake.emit({ uid: "user_team", email: "team@example.com", isAnonymous: false });
+      await settle();
+      fake.emit({
+        uid: "user_cohort",
+        email: "producer@example.com",
+        isAnonymous: false,
+      });
+      await settle();
+      answer(true);
+      await settle();
+      await settle();
+
+      expect(transport.userProperties.internal).toBe("false");
+      expect(internalTrafficStorage.getItem(INTERNAL_TRAFFIC_STORAGE_KEY)).toBeNull();
+    });
+
+    it("marks nothing, and throws nothing, when the token cannot be read", async () => {
+      const { fake, transport, internalTrafficStorage } = await renderAuthProvider();
+      fake.service.isInternal.mockRejectedValue(new Error("network"));
+
+      fake.emit({ uid: "user_team", email: "team@example.com", isAnonymous: false });
+      await settle();
+      await settle();
+
+      expect(transport.userProperties.internal).toBe("false");
+      expect(internalTrafficStorage.getItem(INTERNAL_TRAFFIC_STORAGE_KEY)).toBeNull();
     });
   });
 });

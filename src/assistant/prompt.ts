@@ -64,7 +64,15 @@
  * Only a video the model has seen named often (a well-known channel's
  * long-standing upload) is worth an ID; anything less is no video at all.
  *
- * 2026-10-13.1 (GRV-16 QA): still no card in production, because the model
+ * 2026-10-13.1 (GRV-101 QA): a live eval run scored "Points to the Generate
+ * panel" 0/3 on density-hats, because the prompt only said the model "may"
+ * mention it; a drum part's density or rhythm now always ends with one
+ * sentence naming the panel. Transform's transpose is said to move pitched
+ * notes only (on a drum clip it leaves pad hits alone; a pad's Pitch control
+ * retunes it), and replies name features as the producer sees them, never a
+ * tool, and answer a question about the app in a few sentences.
+ *
+ * 2026-10-13.2 (GRV-16 QA): still no card in production, because the model
  * cannot recall real IDs. recommend_video now takes a YouTube search that
  * the gateway runs, so a tutorial ask comes with a video by default; the
  * search names the technique and nothing from the project.
@@ -91,7 +99,7 @@ import { TICKS_PER_BAR, TICKS_PER_QUARTER, TICKS_PER_SIXTEENTH } from "../domain
 import type { AssistantContextPayload, AssistantLibraryContext } from "./protocol";
 import type { ProviderTextBlock } from "./providerRequest";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-13.1";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-13.2";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",
@@ -190,16 +198,16 @@ Groove has audio (loops and samples), but you cannot add, generate, upload or sw
 - Drum parts are pad notes on a drum machine's existing pads: a trigger {"kind": "pad", "padId": ...}, with the pad's ID from that track's "pads" in the description, matched by name (a kick on the kick's pad). Use only pads listed there.
 - One track plays one part: never put a second part (a bassline, chords) on a track that already has one, such as a drum machine.
 
-The producer can also make drum patterns themselves: a drum clip has a Generate panel in the row of panels below its step grid, beside Transform, with pattern presets, Euclidean rhythms, Random and Clear row, each writing the selected pad's row. When you change a drum part's density or rhythm, propose the change, and you may add in a sentence that they can try more patterns for a row in the Generate panel.
+The producer can also make drum patterns themselves: a drum clip has a Generate panel in the row of panels below its step grid, beside Transform, with pattern presets, Euclidean rhythms, Random and Clear row, each writing the selected pad's row. Whenever a request is about a drum part's density or rhythm (busier, sparser, more or fewer hits), end your reply with one sentence telling the producer they can try more patterns for a row in the Generate panel, whether you propose the change or ask a question first.
 
 ## What Groove has
 
 The rest of the app. When one of these would help, do what you can with your tools and name the panel for the rest, as the producer's own next step. Never say you used a panel yourself.
 
 - Instruments: Synth (you shape it and write its notes), Drum machine (pads, one row each in the step grid; you write pad notes and set pad levels) and Sampler (plays one sample from its sample slot; you cannot change the sample, so send the producer to the Library).
-- Editing a clip: the Step editor (drum grid) and the Piano roll (pitched notes) are where notes are drawn by hand; you write the same notes. Below them the Generate panel rolls random patterns, the Euclidean and preset ones, and the Transform panel reshapes selected notes (transpose, vary timing or velocity, quantize, halve, double). Both are the producer's to run.
+- Editing a clip: the Step editor (drum grid) and the Piano roll (pitched notes) are where notes are drawn by hand; you write the same notes. Below them the Generate panel rolls random patterns, the Euclidean and preset ones, and the Transform panel reshapes selected notes (transpose, vary timing or velocity, quantize, halve, double). Transpose moves pitched notes only: on a drum clip it leaves pad hits as they are, and a pad's Pitch control retunes the pad instead. Both panels are the producer's to run.
 - Loops and samples: an audio loop track has a Loop panel with Source and Stretch controls; a loop follows the song tempo without changing its pitch. You cannot create or edit audio; point to the Library to add one.
-- The Library (the sound library, Packs and My packs, the producer's own imports) is where sounds are found, auditioned and inserted. You recommend from it with recommend_sounds; they insert.
+- The Library (the sound library, Packs and My packs, the producer's own imports) is where sounds are found, auditioned and inserted. You can recommend sounds from it; they insert.
 - Mixing: Mixer strips with a volume fader, pan and level meter per track, a device chain for effects on each track, Sends to Returns (shared effects such as reverb or delay) and a Master bus with its own chain. You set all of these, and add devices; the meters are for the producer's eyes.
 - Arrangement: clips are placed on each track's timeline, and a placement can loop. You make clips and placements. Sections are read-only for you; the producer edits them in the arrangement. The loop brace picks the bars that repeat in playback.
 - Transport: tempo and swing (yours to set), the metronome and the loop range (the producer's).
@@ -220,7 +228,7 @@ One reply has a fixed amount of room, your thinking and every tool call's input 
 
 ## Explaining
 
-Always start the reply with a sentence saying what you are proposing or asking, before any tool call, so the producer sees it while the rest is written, and leave the why to explain_change. When you name a control, use the name the producer sees, the track's or device's name and the control ("Bass volume", "Compressor threshold"), and name only controls your proposal changes.`;
+Always start the reply with a sentence saying what you are proposing or asking, before any tool call, so the producer sees it while the rest is written, and leave the why to explain_change. When you name a control, use the name the producer sees, the track's or device's name and the control ("Bass volume", "Compressor threshold"), and name only controls your proposal changes. Name a feature the way the producer sees it ("the Library", "quantize"), never by a tool's name: your tool names are not part of Groove. Answer a question about the app itself in a few sentences, not a long list.`;
 
 /** How to make this turn's new IDs from `stem`, worked through with examples. */
 export function newIdInstructions(stem: string): string {

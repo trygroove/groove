@@ -50,12 +50,6 @@ export const STATES = [
     about: "Waiting on an answer or decision",
   },
   {
-    name: "QA",
-    type: "started",
-    color: "#1d76db",
-    about: "Merged (or previewed); the QA bot is testing it",
-  },
-  {
     name: "Ready For Review",
     type: "started",
     color: "#5319e7",
@@ -66,6 +60,12 @@ export const STATES = [
     type: "started",
     color: "#006b75",
     about: "Product owner approved; its PRs are queued to merge",
+  },
+  {
+    name: "QA",
+    type: "started",
+    color: "#1d76db",
+    about: "Merged (or previewed); the QA bot is testing it",
   },
   { name: "Done", type: "completed", color: "#5e6ad2", about: "QA passed on production" },
   { name: "Canceled", type: "canceled", color: "#95a2b3", about: "Not doing it" },

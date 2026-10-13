@@ -38,7 +38,7 @@ One line per directory. Each file says what it is for in a comment at its top; r
 
 ```
 src/
-├── access/         # Who may sign in during the alpha: allowlist, sign-in gate, admin repository (#854), QA account pool (#1055)
+├── access/         # Who may sign in during the alpha: allowlist, sign-in gate, admin repository (#854)
 ├── analytics/      # The typed event catalog and its transports
 ├── arrangement/    # The arrangement view, its canvas renderer, gestures and clipboard
 ├── assistant/      # The assistant gateway (#69, ADR 0006): protocol, provider boundary, history, telemetry, quota and spend guards; Firebase- and SDK-free
@@ -90,9 +90,9 @@ The board is the team's Linear board: a card's column is its workflow state, and
 | Ready | The product owner, once the spec is agreed. **This starts `/ship`** in Actions, which moves the card on to In Progress within a minute, unless a blocker holds it (see below); `/ship` holding off for a conflicting PR |
 | In Progress | `/ship` starting; a failed QA; the product owner sending it back; a merge-queue failure |
 | Blocked | `/ship` stopping on an unclear issue or a failed run; QA failing twice |
-| QA | The PR that `Completes` the card merging (QA'd on production); a PR labelled `deploy-preview` that `Closes` it opening (QA'd on its preview) |
 | Ready For Review | A PR for the card touching a gated path (labelled `needs-approval`); the QA bot passing a preview |
 | Approved | The product owner, to merge its gated PRs. The poll labels them `status:approved`, `merge.yml` queues them and the merge queue lands them |
+| QA | The PR that `Completes` the card merging (QA'd on production); a PR labelled `deploy-preview` that `Closes` it opening (QA'd on its preview) |
 | Done | The QA bot passing it on production; a PR that `Closes` it merging |
 
 Milestones are project milestones on the Groove project (`M1: …`, `M2: …`). A bug always has one: a new bug with none gets a short Claude run that puts it on the milestone of the area it is in. A feature with no milestone is unscheduled. Milestones can be added, renamed and renumbered freely; nothing relies on their names. An issue labelled `needs-shaping` has open questions (listed in a comment on it) to settle in a shaping session before it can go to Ready; `human-input-required` marks one waiting on the product owner. A PR that changes `firestore.rules` or `storage.rules` gets no preview; like any gated PR, it moves its card to Ready For Review. The column names are a contract (`STATES` in `.github/scripts/linear.mjs`): renaming one breaks the poll.

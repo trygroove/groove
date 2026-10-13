@@ -54,7 +54,7 @@ export function plan(env, { root = ".", date = new Date() } = {}) {
     name: "issues",
   });
   // Each agent gets its own QA account, `testuser<slot>` (#1055): slots 1 to
-  // MAX_AGENTS, which is why the pool (`src/access/qaAccounts.ts`) has ten
+  // MAX_AGENTS, which is why the pool (`scripts/access/qaPool.ts`) has ten
   // sweep accounts. Separate accounts keep agents out of each other's
   // projects, so each one's cleanup deletes only its own.
   const flows = pickFlows({
