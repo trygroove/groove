@@ -408,6 +408,13 @@ jobs:
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # GRV-120 (ADR 0011 decision 3): the same source maps, uploaded to
+          # PostHog error tracking by vite.config.ts's `postHogBuildPlugins`
+          # after Sentry's upload, then deleted. Optional like the Sentry
+          # values: with the key or project ID unset the upload is inactive.
+          POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
+          POSTHOG_PROJECT_ID: ${{ vars.POSTHOG_PROJECT_ID }}
+          POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
 
       # FND-001c (PRD OPS-03): the second half of release registration. The
       # build step above created the release and attached its source maps;
