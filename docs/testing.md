@@ -541,6 +541,9 @@ Required GitHub Actions configuration, all of it scoped to the **`prod` environm
 | `SENTRY_ORG` | Environment **variable** | Sentry organization slug. Not sensitive. |
 | `SENTRY_PROJECT` | Environment **variable** | Sentry project slug. Not sensitive. |
 | `SENTRY_AUTH_TOKEN` | Environment **secret** | Creates releases and uploads source maps (`project:releases`, `org:read`). This is the one genuinely secret Sentry value — it can rewrite what your error data says. **CI only**: it never belongs in a developer `.env`, and `verify:bundle` fails the build if it ever appears in the output. |
+| `POSTHOG_PERSONAL_API_KEY` | Environment **secret** | Uploads source maps to PostHog error tracking (GRV-120, ADR 0011 decision 3): a personal API key (`phx_…`) with error-tracking write access, scoped to the one project. Not the public project key. **CI only**, and `verify:bundle` fails the build if a `phx_` key appears in the output. |
+| `POSTHOG_PROJECT_ID` | Environment **variable** | The PostHog project's numeric ID, for the upload. With it or the key unset the upload is inactive and PostHog's stack traces stay minified. |
+| `POSTHOG_HOST` | Environment **variable** (optional) | The PostHog API host for the upload: `https://eu.posthog.com` when unset, `https://us.posthog.com` for a US project. |
 
 ### Per-PR preview deploys
 
@@ -655,6 +658,8 @@ Three separate mechanisms, one per clause of the acceptance criterion:
 1. **Produced** — `vite.config.ts` sets `build.sourcemap: "hidden"`, so a map is emitted for every chunk with no `//# sourceMappingURL=` comment pointing at it.
 2. **Uploaded over an authenticated channel** — `@sentry/vite-plugin` runs during the `deploy` job's `predeploy` build (the only moment the deployed artifacts and their maps both exist), authenticating with the CI-only `SENTRY_AUTH_TOKEN`. It also registers the release under the deployed commit SHA and injects **debug IDs** into both chunk and map, so Sentry matches them by ID rather than by URL.
 3. **Never served publicly from Hosting** — the plugin deletes the maps after upload, and `firebase.json`'s `hosting.ignore` refuses to upload `**/*.map` regardless. The second is the guarantee that does not depend on the first having run: a local build, or a build with no Sentry credentials, still cannot publish a map.
+
+PostHog gets the same maps (GRV-120, ADR 0011 decision 3), by the same three means. `@posthog/rollup-plugin` injects a **chunk ID** into each chunk and its map as the bundle renders, beside Sentry's debug ID, and, listed after Sentry's plugin, uploads them with `posthog-cli` once Sentry's upload has finished, under release `groove` version `<sha>`; then it deletes the maps. With PostHog configured, Sentry's plugin leaves the deleting to it. A failed PostHog upload warns rather than failing the deploy, and the maps are deleted anyway. The CLI binary is downloaded on first use, so only the deploy job fetches it. To check an upload, read the `deploy` job log for `posthog-cli`'s upload lines, or open *Error tracking → Symbol sets* in PostHog.
 
 After the deploy succeeds, a separate step marks the release deployed (`sentry-cli releases deploys … new --env alpha`), so Sentry's "first seen in" and regression detection line up with real deploys rather than with build times.
 
