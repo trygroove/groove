@@ -28,7 +28,7 @@ export const DEFAULT_ISSUES = 15;
  * tracker or burns a week of agent budget.
  *
  * Each agent signs in as its own QA account, and the pool has one per agent up
- * to this ceiling (`MAX_QA_SLOT` in `src/access/qaAccounts.ts`, #1055): raising
+ * to this ceiling (`MAX_QA_SLOT` in `scripts/access/qaPool.ts`, #1055): raising
  * it means adding accounts there and running `bun run qa:accounts` first.
  */
 export const MAX_AGENTS = 10;
