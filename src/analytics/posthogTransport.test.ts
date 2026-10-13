@@ -1,5 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
+import {
+  BLOCK_MEDIA_SELECTOR,
+  isSessionSampled,
+  MASK_CONTENT,
+  maskReplayAttribute,
+  maskReplayNetworkRequest,
+  maskReplayText,
+  REPLAY_SESSION_SAMPLE_RATE,
+} from "../monitoring/replayPrivacy";
+import { scrubPostHogEvent } from "../monitoring/scrub";
 import { createManualClock } from "../shared/clock";
+import { createRouteTracker } from "../telemetry";
 import { memoryStorage } from "../testing/storage";
 import { Analytics } from "./analytics";
 import { ConsentStore } from "./consent";
@@ -8,6 +19,7 @@ import {
   createPostHogTransport,
   INTERNAL_EVENT_PROPERTY,
   POSTHOG_DEFAULT_HOST,
+  POSTHOG_SESSION_RECORDING,
   type PostHogClient,
   type PostHogSdk,
   postHogInitOptions,
@@ -23,6 +35,8 @@ import {
 function fakeClient(): PostHogClient & {
   calls: { method: string; args: unknown[] }[];
   optedOut: boolean;
+  sessionId: string;
+  sessionListeners: ((sessionId: string) => void)[];
 } {
   const calls: { method: string; args: unknown[] }[] = [];
   const record =
@@ -50,9 +64,27 @@ function fakeClient(): PostHogClient & {
     has_opted_out_capturing() {
       return client.optedOut;
     },
+    captureException: record("captureException"),
+    sessionId: "session-1",
+    get_session_id() {
+      return client.sessionId;
+    },
+    sessionListeners: [] as ((sessionId: string) => void)[],
+    onSessionId(listener: (sessionId: string) => void) {
+      client.sessionListeners.push(listener);
+      return () => {};
+    },
+    startSessionRecording: record("startSessionRecording"),
+    stopSessionRecording: record("stopSessionRecording"),
   };
   return client;
 }
+
+/** Extensions the loader imports beside the SDK, stood in for. */
+const noExtensions = {
+  importRecorder: async () => {},
+  importWebVitals: async () => {},
+};
 
 /** A client whose every method throws, as a blocked or broken SDK might. */
 function throwingClient(): PostHogClient {
@@ -69,6 +101,11 @@ function throwingClient(): PostHogClient {
     opt_in_capturing: fail,
     has_opted_out_capturing: fail,
     set_config: fail,
+    captureException: fail,
+    get_session_id: fail,
+    onSessionId: fail,
+    startSessionRecording: fail,
+    stopSessionRecording: fail,
   };
 }
 
@@ -105,20 +142,77 @@ describe("postHogSettings", () => {
 });
 
 describe("init options", () => {
-  it("turns off everything PostHog would collect by itself", () => {
+  it("turns off everything PostHog would collect by itself, bar what GRV-120 turned on", () => {
     const options = postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory");
     expect(options).toMatchObject({
       api_host: POSTHOG_DEFAULT_HOST,
       autocapture: false,
       capture_pageview: false,
-      capture_pageleave: false,
-      disable_session_recording: true,
-      capture_exceptions: false,
-      capture_performance: false,
+      rageclick: false,
+      capture_dead_clicks: false,
+      capture_heatmaps: false,
       disable_surveys: true,
-      advanced_disable_flags: true,
+      disable_product_tours: true,
+      disable_conversations: true,
+      disable_web_experiments: true,
+      advanced_disable_feature_flags: true,
+      advanced_disable_feature_flags_on_first_load: true,
       disable_external_dependency_loading: true,
     });
+  });
+
+  it("reads the project's remote config, which is what lets replay start", () => {
+    // `advanced_disable_flags` would skip the config request along with the
+    // flags, and the recorder never starts without the project's config.
+    expect(postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory")).not.toHaveProperty(
+      "advanced_disable_flags",
+    );
+  });
+
+  it("sends a $pageleave, so time on page, scroll depth and bounce rate work", () => {
+    expect(postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory").capture_pageleave).toBe(
+      true,
+    );
+  });
+
+  it("captures web vitals and network timing, with the small web-vitals build", () => {
+    expect(
+      postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory").capture_performance,
+    ).toEqual({
+      web_vitals: true,
+      network_timing: true,
+      web_vitals_attribution: false,
+    });
+  });
+
+  it("keeps exception autocapture off, so every report goes through the boundary", () => {
+    expect(postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory").capture_exceptions).toBe(
+      false,
+    );
+  });
+
+  it("scrubs every event on its way out", () => {
+    const options = postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory");
+    const hostile = {
+      uuid: "u",
+      event: "$exception",
+      properties: { $exception_list: [{ type: "Error", value: 'Clip "Chorus Riff"' }] },
+    };
+    const beforeSend = options.before_send as (event: typeof hostile) => unknown;
+    expect(beforeSend(hostile)).toEqual(scrubPostHogEvent(hostile));
+    expect(JSON.stringify(beforeSend(hostile))).not.toContain("Chorus Riff");
+  });
+
+  it("starts with recording disabled; the loader starts it for a sampled session", () => {
+    expect(
+      postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory").disable_session_recording,
+    ).toBe(true);
+  });
+
+  it("never records the console", () => {
+    expect(
+      postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory").enable_recording_console_log,
+    ).toBe(false);
   });
 
   it("keeps identity in memory before consent, and in cookies after", () => {
@@ -129,11 +223,59 @@ describe("init options", () => {
   });
 });
 
+describe("session recording options (ADR 0002, ADR 0003, ADR 0011 decision 2)", () => {
+  const recording = postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory").session_recording;
+
+  it("hands the SDK the one recording configuration this module declares", () => {
+    expect(recording).toBe(POSTHOG_SESSION_RECORDING);
+  });
+
+  it("masks all text and every input, with the component class honoured too", () => {
+    expect(recording).toMatchObject({
+      maskTextSelector: "*",
+      maskTextFn: maskReplayText,
+      maskTextClass: MASK_CONTENT,
+      maskAllInputs: true,
+    });
+  });
+
+  it("masks name-bearing attributes and URL query strings", () => {
+    expect(recording?.maskAttributeFn).toBe(maskReplayAttribute);
+  });
+
+  it("blocks media", () => {
+    expect(recording?.blockSelector).toBe(BLOCK_MEDIA_SELECTOR);
+  });
+
+  it("records canvas, so the arrangement and piano roll are visible (ADR 0003)", () => {
+    expect(recording?.captureCanvas).toMatchObject({ recordCanvas: true });
+  });
+
+  it("records network timing without headers or bodies, and masks every URL", () => {
+    expect(recording).toMatchObject({ recordHeaders: false, recordBody: false });
+    const request = {
+      name: "https://firebasestorage.googleapis.com/v0/b/b/o/users%2Fu1%2Fkick.wav?token=t",
+      requestBody: "body",
+    };
+    expect(recording?.maskCapturedNetworkRequestFn?.(request as never)).toEqual(
+      maskReplayNetworkRequest(request),
+    );
+  });
+
+  it("samples at the replay rate", () => {
+    expect(recording?.sampleRate).toBe(REPLAY_SESSION_SAMPLE_RATE);
+  });
+});
+
 describe("createPostHogLoader", () => {
   it("initializes the SDK once, with the key and the options above", async () => {
     const client = fakeClient();
     const { sdk, init } = fakeSdk(client);
-    const loader = createPostHogLoader({ settings, importSdk: async () => sdk });
+    const loader = createPostHogLoader({
+      settings,
+      ...noExtensions,
+      importSdk: async () => sdk,
+    });
 
     expect(await loader.load("memory")).toBe(client);
     expect(await loader.load("localStorage+cookie")).toBe(client);
@@ -147,13 +289,18 @@ describe("createPostHogLoader", () => {
 
   it("uses cookie persistence when consent has been granted", async () => {
     const { sdk, init } = fakeSdk(fakeClient());
-    const loader = createPostHogLoader({ settings, importSdk: async () => sdk });
+    const loader = createPostHogLoader({
+      settings,
+      ...noExtensions,
+      importSdk: async () => sdk,
+    });
     await loader.load("localStorage+cookie");
     expect(init.mock.calls[0][1]).toMatchObject({ persistence: "localStorage+cookie" });
   });
 
   it("resolves null when the SDK cannot load", async () => {
     const loader = createPostHogLoader({
+      ...noExtensions,
       settings,
       importSdk: async () => {
         throw new Error("blocked by an ad blocker");
@@ -166,7 +313,11 @@ describe("createPostHogLoader", () => {
     const client = fakeClient();
     client.optedOut = true;
     const { sdk } = fakeSdk(client);
-    const loader = createPostHogLoader({ settings, importSdk: async () => sdk });
+    const loader = createPostHogLoader({
+      settings,
+      ...noExtensions,
+      importSdk: async () => sdk,
+    });
     await loader.load("memory");
     expect(client.optedOut).toBe(false);
     expect(client.calls).toContainEqual({
@@ -178,7 +329,11 @@ describe("createPostHogLoader", () => {
   it("calls opt_out_capturing when collection is switched off at runtime", async () => {
     const client = fakeClient();
     const { sdk } = fakeSdk(client);
-    const loader = createPostHogLoader({ settings, importSdk: async () => sdk });
+    const loader = createPostHogLoader({
+      settings,
+      ...noExtensions,
+      importSdk: async () => sdk,
+    });
     await loader.load("memory");
 
     loader.setCollection(false, "memory");
@@ -194,7 +349,11 @@ describe("createPostHogLoader", () => {
 
   it("never loads the SDK just to switch it off", async () => {
     const { sdk, init } = fakeSdk(fakeClient());
-    const loader = createPostHogLoader({ settings, importSdk: async () => sdk });
+    const loader = createPostHogLoader({
+      settings,
+      ...noExtensions,
+      importSdk: async () => sdk,
+    });
     loader.setCollection(false, "memory");
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(init).not.toHaveBeenCalled();
@@ -203,12 +362,187 @@ describe("createPostHogLoader", () => {
   it("never throws out of a consent change on a throwing client", async () => {
     const client = throwingClient();
     const loader = createPostHogLoader({
+      ...noExtensions,
       settings,
       importSdk: async () => ({ init: () => client }),
     });
     await loader.load("memory");
     expect(() => loader.setCollection(false, "memory")).not.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  it("hands its client to whoever waits for it, once loaded", async () => {
+    const client = fakeClient();
+    const { sdk } = fakeSdk(client);
+    const loader = createPostHogLoader({
+      settings,
+      ...noExtensions,
+      importSdk: async () => sdk,
+    });
+    let resolved: unknown = "pending";
+    void loader.client.then((value) => {
+      resolved = value;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(resolved).toBe("pending");
+
+    await loader.load("memory");
+    await settled(() => expect(resolved).toBe(client));
+  });
+
+  it("installs the web-vitals code before the SDK starts, so nothing is fetched", async () => {
+    const order: string[] = [];
+    const client = fakeClient();
+    const loader = createPostHogLoader({
+      settings,
+      importRecorder: async () => {},
+      importWebVitals: async () => void order.push("web-vitals"),
+      importSdk: async () => ({
+        init: () => {
+          order.push("init");
+          return client;
+        },
+      }),
+    });
+    await loader.load("memory");
+    expect(order).toEqual(["web-vitals", "init"]);
+  });
+
+  it("still starts the SDK when the web-vitals code cannot load", async () => {
+    const client = fakeClient();
+    const { sdk } = fakeSdk(client);
+    const loader = createPostHogLoader({
+      settings,
+      importRecorder: async () => {},
+      importWebVitals: async () => {
+        throw new Error("chunk failed");
+      },
+      importSdk: async () => sdk,
+    });
+    expect(await loader.load("memory")).toBe(client);
+  });
+});
+
+/** A session ID in, and one out of, the replay sample. */
+function sessionIds() {
+  const ids = Array.from({ length: 500 }, (_, i) => `session-${i}`);
+  const sampled = ids.find((id) => isSessionSampled(id, REPLAY_SESSION_SAMPLE_RATE));
+  const unsampled = ids.find((id) => !isSessionSampled(id, REPLAY_SESSION_SAMPLE_RATE));
+  if (!sampled || !unsampled)
+    throw new Error("no session IDs on both sides of the sample");
+  return { sampled, unsampled };
+}
+
+describe("session replay through the loader (ADR 0011 decision 2)", () => {
+  function setup(sessionId: string, replayAllowed = { value: true }) {
+    const client = fakeClient();
+    client.sessionId = sessionId;
+    const { sdk } = fakeSdk(client);
+    const importRecorder = vi.fn(async () => {});
+    const loader = createPostHogLoader({
+      settings,
+      importSdk: async () => sdk,
+      importRecorder,
+      importWebVitals: async () => {},
+    });
+    const load = () =>
+      loader.load("memory", { sessionReplayAllowed: () => replayAllowed.value });
+    const methods = () => client.calls.map((call) => call.method);
+    return { client, loader, importRecorder, load, methods, replayAllowed };
+  }
+
+  it("loads the recorder and starts recording for a sampled session", async () => {
+    const { importRecorder, load, methods } = setup(sessionIds().sampled);
+    await load();
+    await settled(() => expect(methods()).toContain("startSessionRecording"));
+    expect(importRecorder).toHaveBeenCalledTimes(1);
+  });
+
+  it("never loads the recorder for a session outside the sample", async () => {
+    const { importRecorder, load, methods } = setup(sessionIds().unsampled);
+    await load();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(importRecorder).not.toHaveBeenCalled();
+    expect(methods()).not.toContain("startSessionRecording");
+  });
+
+  it("records nothing for a session that declined replay", async () => {
+    const { importRecorder, load, methods } = setup(sessionIds().sampled, {
+      value: false,
+    });
+    await load();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(importRecorder).not.toHaveBeenCalled();
+    expect(methods()).not.toContain("startSessionRecording");
+  });
+
+  it("does not start a recording whose consent was withdrawn while the recorder loaded", async () => {
+    const replayAllowed = { value: true };
+    const { importRecorder, load, methods } = setup(sessionIds().sampled, replayAllowed);
+    let finish: () => void = () => {};
+    importRecorder.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await load();
+    replayAllowed.value = false;
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(methods()).not.toContain("startSessionRecording");
+  });
+
+  it("starts recording when a later session lands in the sample", async () => {
+    const { sampled, unsampled } = sessionIds();
+    const { client, importRecorder, load, methods } = setup(unsampled);
+    await load();
+    expect(importRecorder).not.toHaveBeenCalled();
+
+    client.sessionId = sampled;
+    for (const listener of client.sessionListeners) listener(sampled);
+
+    await settled(() => expect(methods()).toContain("startSessionRecording"));
+  });
+
+  it("stops an in-flight recording when replay is withdrawn, and starts no other", async () => {
+    const { sampled } = sessionIds();
+    const { client, loader, load, methods } = setup(sampled);
+    await load();
+    await settled(() => expect(methods()).toContain("startSessionRecording"));
+
+    loader.stopSessionRecording();
+    await settled(() => expect(methods()).toContain("stopSessionRecording"));
+
+    const starts = methods().filter(
+      (method) => method === "startSessionRecording",
+    ).length;
+    for (const listener of client.sessionListeners) listener(sampled);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(methods().filter((method) => method === "startSessionRecording")).toHaveLength(
+      starts,
+    );
+    // Analytics keeps running.
+    expect(methods()).not.toContain("opt_out_capturing");
+  });
+
+  it("keeps a session unrecorded, not broken, when the recorder cannot load", async () => {
+    const { importRecorder, load, methods } = setup(sessionIds().sampled);
+    importRecorder.mockRejectedValue(new Error("chunk failed"));
+    await expect(load()).resolves.not.toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(methods()).not.toContain("startSessionRecording");
+  });
+
+  it("never loads the SDK just to stop a recording", () => {
+    const { sdk, init } = fakeSdk(fakeClient());
+    const loader = createPostHogLoader({
+      settings,
+      ...noExtensions,
+      importSdk: async () => sdk,
+    });
+    loader.stopSessionRecording();
+    expect(init).not.toHaveBeenCalled();
   });
 });
 
@@ -462,5 +796,65 @@ describe("createPostHogTransport", () => {
     analytics.pageview();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(client.calls).toEqual([]);
+  });
+});
+
+describe("$pageview through the real SDK (GRV-120, Web Analytics)", () => {
+  // The real `posthog-js` client with the real init options, and a recorder
+  // appended after the transport's own `before_send` that keeps what would
+  // have been sent and sends nothing.
+  it("carries the SDK's session ID, and fires once per new pathname", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("{}", { status: 200 })) as unknown as typeof fetch;
+    try {
+      const { default: posthog } = await import("posthog-js");
+      const options = postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory");
+      const sent: { event: string; properties: Record<string, unknown> }[] = [];
+      const client = posthog.init("phc_pageview_test", {
+        ...options,
+        before_send: [
+          options.before_send as never,
+          (event) => {
+            if (event) sent.push(event as never);
+            return null;
+          },
+        ],
+      });
+      if (!client) throw new Error("posthog-js did not initialize");
+
+      const consent = new ConsentStore(memoryStorage());
+      const boundary = new Analytics({
+        transport: createPostHogTransport({ load: async () => client }),
+        consent,
+        storage: memoryStorage(),
+      });
+      const track = createRouteTracker(boundary);
+      const telemetry = { setSurface: () => {} };
+      const visit = (path: string) => {
+        history.pushState({}, "", path);
+        track(path, telemetry);
+      };
+
+      visit("/projects");
+      visit("/projects");
+      visit("/projects/prj_abc123");
+
+      await settled(() =>
+        expect(sent.filter((event) => event.event === "$pageview")).toHaveLength(2),
+      );
+      const views = sent.filter((event) => event.event === "$pageview");
+      expect(views.map((view) => view.properties.$pathname)).toEqual([
+        "/projects",
+        "/projects/prj_abc123",
+      ]);
+      for (const view of views) {
+        expect(view.properties.$session_id).toBe(client.get_session_id());
+        expect(view.properties.$session_id).toEqual(expect.any(String));
+      }
+    } finally {
+      globalThis.fetch = realFetch;
+      history.pushState({}, "", "/");
+    }
   });
 });

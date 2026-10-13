@@ -93,7 +93,7 @@ const TelemetryDisclosure: Component<{
         <p>
           Groove records which features are used and reports errors, so we can tell what
           works and fix what breaks. Two processors receive this: PostHog for product
-          events and Sentry for error reports and Session Replay.
+          events, Session Replay and error reports, and Sentry for error reports.
         </p>
         <p>
           Session Replay records a small sample of sessions — which controls you click and
