@@ -25,7 +25,7 @@
 //  3. **Nothing eagerly loaded contains the PostHog SDK either** (ADR 0011,
 //     GRV-123). Unlike Sentry's, the PostHog analytics SDK *does* load on the
 //     landing page, but only through `initTelemetry()`'s dynamic `import()`
-//     once the browser is idle after first paint, and only the analytics
+//     once the page has loaded and settled, and only the analytics
 //     client: replay, web vitals and error monitoring still wait for an app
 //     surface. Its size is product analytics, not this budget's monitoring
 //     cost, so it is kept out of the eager set without a ceiling of its own.

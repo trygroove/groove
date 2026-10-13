@@ -21,6 +21,9 @@
 //   shell or the entry chunk. Unlike Sentry it **does** load on the landing
 //   page (GRV-123), so a visitor who reads `/` and leaves is counted: its
 //   `$pageview`, `landing_cta_click` and `$pageleave` are sent from there.
+//   On `/` it waits longer, until the page has loaded and settled
+//   (`afterLandingSettled`), so it costs the landing page's LCP and TBT
+//   nothing.
 //   On `/` it is analytics only. Replay, web vitals, network timing and the
 //   PostHog error sink start only once the session reaches an app surface
 //   (`PostHogLoader.startAppCollection`, and the sinks with Sentry's).
@@ -112,6 +115,11 @@ export interface InitTelemetryOptions {
   startErrorSink?: StartErrorSink;
   /** Schedules work for after first paint. */
   afterPaint?: (task: () => void) => void;
+  /**
+   * Schedules the analytics SDK's load on the landing page: later than
+   * `afterPaint`, once the page has loaded and settled (GRV-123).
+   */
+  afterLandingSettled?: (task: () => void) => void;
   reporter?: ErrorReporter;
   consent?: ConsentStore;
   target?: Pick<Window, "addEventListener" | "removeEventListener">;
@@ -175,13 +183,23 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
   const postHog =
     options.postHogLoader !== undefined ? options.postHogLoader : defaultPostHogLoader();
 
-  // The analytics SDK waits for this: first paint and an idle main thread, on
-  // every surface, the landing page included (GRV-123). It is a gate rather
-  // than a call so the transport can be created (and queue) from the first
-  // line, and so a transport rebuilt after a re-grant waits on the same one.
+  // The analytics SDK waits for this gate. On an app surface it opens after
+  // first paint and an idle main thread. On the landing page (GRV-123) it
+  // opens later still, once the page has loaded and settled
+  // (`afterLandingSettled`), so parsing the SDK lands outside the window that
+  // decides `/`'s LCP and TBT; if the visitor moves on into the app before
+  // then, reaching the app surface opens it on the app's timing instead. It
+  // is a gate rather than a call so the transport can be created (and queue)
+  // from the first line, and so a transport rebuilt after a re-grant waits on
+  // the same one.
+  let openAnalyticsGate: () => void = () => {};
   const analyticsGate = new Promise<void>((resolve) => {
-    if (postHog) afterPaint(resolve);
+    openAnalyticsGate = resolve;
   });
+  let analyticsGateScheduledForApp = false;
+  if (postHog && options.surface === "landing") {
+    (options.afterLandingSettled ?? afterLandingSettled)(openAnalyticsGate);
+  }
   const createTransport =
     options.createAnalyticsTransport ??
     (() =>
@@ -306,6 +324,10 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     // SDK loads there too, but collects analytics only (GRV-123).
     if (surface === "landing") return;
     monitoredSurfaceReached = true;
+    if (postHog && !analyticsGateScheduledForApp) {
+      analyticsGateScheduledForApp = true;
+      afterPaint(openAnalyticsGate);
+    }
     try {
       postHog?.startAppCollection();
     } catch {
@@ -533,6 +555,36 @@ export function afterFirstPaint(task: () => void): void {
   // the tab may never be foregrounded, and monitoring that only starts if the
   // user happens to look at the page is not monitoring.
   whenIdle();
+}
+
+/**
+ * How long the landing page waits after its `load` event before it loads the
+ * analytics SDK (GRV-123). Long enough that the SDK's download and parse fall
+ * outside the window lab tools measure `/`'s LCP and TBT in; short enough
+ * that most visits, bounces included, still last until it loads.
+ */
+export const LANDING_ANALYTICS_DELAY_MS = 3_000;
+
+/**
+ * Runs a task once the landing page has loaded and settled: after the window
+ * `load` event, then `LANDING_ANALYTICS_DELAY_MS`, then `afterFirstPaint`'s
+ * frame and idle wait. Nothing the page needs to render or respond is still
+ * in flight by then, so the analytics SDK competes with none of it.
+ */
+export function afterLandingSettled(
+  task: () => void,
+  delayMs: number = LANDING_ANALYTICS_DELAY_MS,
+): void {
+  const settle = () => setTimeout(() => afterFirstPaint(task), delayMs);
+  try {
+    if (typeof document === "undefined" || document.readyState === "complete") {
+      settle();
+      return;
+    }
+    window.addEventListener("load", settle, { once: true });
+  } catch {
+    settle();
+  }
 }
 
 /**

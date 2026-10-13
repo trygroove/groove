@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Analytics, analytics } from "./analytics/analytics";
 import type { Surface } from "./analytics/catalog";
 import { ConsentStore } from "./analytics/consent";
@@ -28,8 +28,10 @@ import { InMemoryProjectRepository } from "./persistence/inMemoryProjectReposito
 import { createManualScheduler } from "./shared/scheduler";
 import {
   afterFirstPaint,
+  afterLandingSettled,
   createRouteTracker,
   initTelemetry,
+  LANDING_ANALYTICS_DELAY_MS,
   type StartErrorSink,
   surfaceForPath,
 } from "./telemetry";
@@ -721,24 +723,51 @@ describe("the PostHog SDK loads lazily, on the landing page too (GRV-106, GRV-12
 
   function setup(surface: Surface, consent = new ConsentStore(memoryStorage())) {
     const paint = deferredPaint();
+    const settle = deferredPaint();
     const postHogLoader = fakeLoader();
     const telemetry = initTelemetry({
       surface,
       consent,
       target: fakeTarget(),
       afterPaint: paint.schedule,
+      afterLandingSettled: settle.schedule,
       startErrorSink: async () => {},
       postHogLoader,
     });
-    return { paint, postHogLoader, telemetry, consent };
+    return { paint, settle, postHogLoader, telemetry, consent };
   }
 
-  it("loads it on the landing page once the browser is idle after first paint", async () => {
-    const { paint, postHogLoader } = setup("landing");
+  it("loads it on the landing page once the page has loaded and settled, not at first paint", async () => {
+    const { paint, settle, postHogLoader } = setup("landing");
+    await tick();
+    // First paint alone is too early on `/`: the SDK's parse would land in
+    // the window that decides the page's LCP and TBT.
+    paint.flush();
     await tick();
     expect(postHogLoader.load).not.toHaveBeenCalled();
 
+    settle.flush();
+    await tick();
+    expect(postHogLoader.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not wait for the landing page to settle on an app surface", async () => {
+    const { paint, settle, postHogLoader } = setup("editor");
+    expect(settle.pending).toBe(0);
     paint.flush();
+    await tick();
+    expect(postHogLoader.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads it on the app's timing when the visitor moves on before / settles", async () => {
+    const { paint, settle, postHogLoader, telemetry } = setup("landing");
+    telemetry.setSurface("dashboard");
+    paint.flush();
+    await tick();
+    expect(postHogLoader.load).toHaveBeenCalledTimes(1);
+
+    // The landing page settling later loads nothing more.
+    settle.flush();
     await tick();
     expect(postHogLoader.load).toHaveBeenCalledTimes(1);
   });
@@ -747,17 +776,20 @@ describe("the PostHog SDK loads lazily, on the landing page too (GRV-106, GRV-12
     const createPostHogErrorSink = vi.fn(() => null);
     const startErrorSink = vi.fn(async () => {});
     const paint = deferredPaint();
+    const settle = deferredPaint();
     const postHogLoader = fakeLoader();
     initTelemetry({
       surface: "landing",
       consent: new ConsentStore(memoryStorage()),
       target: fakeTarget(),
       afterPaint: paint.schedule,
+      afterLandingSettled: settle.schedule,
       startErrorSink,
       createPostHogErrorSink,
       postHogLoader,
     });
     paint.flush();
+    settle.flush();
     paint.flush();
     await tick();
 
@@ -768,8 +800,9 @@ describe("the PostHog SDK loads lazily, on the landing page too (GRV-106, GRV-12
   });
 
   it("starts app collection when the session moves on into the app", async () => {
-    const { paint, postHogLoader, telemetry } = setup("landing");
+    const { paint, settle, postHogLoader, telemetry } = setup("landing");
     paint.flush();
+    settle.flush();
     await tick();
     expect(postHogLoader.startAppCollection).not.toHaveBeenCalled();
 
@@ -790,16 +823,18 @@ describe("the PostHog SDK loads lazily, on the landing page too (GRV-106, GRV-12
   it("never loads it for a landing session that declined", async () => {
     const consent = new ConsentStore(memoryStorage());
     consent.optOut();
-    const { paint, postHogLoader } = setup("landing", consent);
+    const { paint, settle, postHogLoader } = setup("landing", consent);
     paint.flush();
+    settle.flush();
     await tick();
     expect(postHogLoader.load).not.toHaveBeenCalled();
   });
 
-  it("never loads it for a landing session that declines before the browser is idle", async () => {
-    const { consent, paint, postHogLoader } = setup("landing");
+  it("never loads it for a landing session that declines before the page settles", async () => {
+    const { consent, paint, settle, postHogLoader } = setup("landing");
     consent.optOut();
     paint.flush();
+    settle.flush();
     await tick();
     expect(postHogLoader.load).not.toHaveBeenCalled();
   });
@@ -814,9 +849,10 @@ describe("the PostHog SDK loads lazily, on the landing page too (GRV-106, GRV-12
     expect(postHogLoader.load).toHaveBeenCalledTimes(1);
   });
 
-  it("loads it once the session navigates off the landing page", async () => {
-    const { paint, postHogLoader, telemetry } = setup("landing");
+  it("loads it once when the session navigates off a settled landing page", async () => {
+    const { paint, settle, postHogLoader, telemetry } = setup("landing");
     paint.flush();
+    settle.flush();
     telemetry.setSurface("dashboard");
     paint.flush();
     await tick();
@@ -876,7 +912,7 @@ describe("the PostHog SDK loads lazily, on the landing page too (GRV-106, GRV-12
 
 describe("withdrawing consent before the SDK loads (GRV-106)", () => {
   // The transport is made on the landing page, where its SDK load waits for
-  // the browser to go idle after first paint. An opt-out in that window must
+  // the page to load and settle. An opt-out in that window must
   // cancel the load and drop what it queued: otherwise the load runs anyway,
   // with cookie persistence, and sends the page view queued before the opt-out.
 
@@ -915,7 +951,9 @@ describe("withdrawing consent before the SDK loads (GRV-106)", () => {
       surface: "landing",
       consent,
       target: fakeTarget(),
+      // One flush opens both, which is all these tests need of the timing.
       afterPaint: paint.schedule,
+      afterLandingSettled: paint.schedule,
       startErrorSink: async () => {},
       postHogLoader: createPostHogLoader({
         settings: { key: "phc_test", host: "https://eu.i.posthog.com" },
@@ -1140,6 +1178,51 @@ describe("afterFirstPaint", () => {
     } finally {
       rafSpy.mockRestore();
     }
+  });
+});
+
+describe("afterLandingSettled (GRV-123)", () => {
+  function setReadyState(state: DocumentReadyState) {
+    Object.defineProperty(document, "readyState", {
+      configurable: true,
+      get: () => state,
+    });
+  }
+
+  afterEach(() => {
+    // Back to jsdom's own getter on the prototype.
+    delete (document as { readyState?: unknown }).readyState;
+    vi.useRealTimers();
+  });
+
+  it("waits for the window load event, then the delay, then an idle main thread", async () => {
+    vi.useFakeTimers();
+    setReadyState("loading");
+    const task = vi.fn();
+    afterLandingSettled(task);
+
+    await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS * 2);
+    expect(task).not.toHaveBeenCalled();
+
+    setReadyState("complete");
+    window.dispatchEvent(new Event("load"));
+    await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS - 1);
+    expect(task).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(task).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts the delay from now when the page has already loaded", async () => {
+    vi.useFakeTimers();
+    setReadyState("complete");
+    const task = vi.fn();
+    afterLandingSettled(task);
+
+    await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS - 1);
+    expect(task).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(task).toHaveBeenCalledTimes(1);
   });
 });
 

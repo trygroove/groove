@@ -507,6 +507,25 @@ describe("analytics only on the landing page (GRV-123)", () => {
     });
   });
 
+  it("turns network timing on before the recording starts, without waiting for web vitals", async () => {
+    // The recorder reads `network_timing` when it starts; a reconfiguration
+    // after that leaves the recording without it.
+    const { loader, load, methods, importWebVitals, startIfEnabled } = setup();
+    importWebVitals.mockImplementation(() => new Promise(() => {}));
+    await load();
+
+    loader.startAppCollection();
+
+    await settled(() => expect(methods()).toContain("startSessionRecording"));
+    const order = methods();
+    expect(order.indexOf("set_config")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("set_config")).toBeLessThan(
+      order.indexOf("startSessionRecording"),
+    );
+    // Only the extension's start waits for its code.
+    expect(startIfEnabled).not.toHaveBeenCalled();
+  });
+
   it("starts with the app's options when the app is reached before the SDK loads", async () => {
     const { init, loader, load, methods } = setup();
     loader.startAppCollection();

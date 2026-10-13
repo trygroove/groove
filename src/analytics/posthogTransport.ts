@@ -1,9 +1,10 @@
 // The PostHog transport (PRD `OPS-02`, ADR 0011, GRV-106 and GRV-120).
 //
 // The only module that imports `posthog-js`, and only dynamically: the SDK is
-// its own chunk, loaded when the browser is idle after first paint, and never
-// in the prerendered landing shell or the entry chunk (`src/telemetry.ts`
-// decides when). Like `sentrySink.ts` in monitoring, it is
+// its own chunk, loaded when the browser is idle after first paint (on the
+// landing page, once the page has loaded and settled), and never in the
+// prerendered landing shell or the entry chunk (`src/telemetry.ts` decides
+// when). Like `sentrySink.ts` in monitoring, it is
 // deliberately not re-exported from this directory's barrel: the boundary in
 // `analytics.ts` is what application code uses, and swapping vendors must not
 // mean touching call sites. `src/monitoring/boundaries.test.ts` enforces both.
@@ -375,18 +376,25 @@ export function createPostHogLoader(options: PostHogLoaderOptions): PostHogLoade
 
   /**
    * Turns on what an app surface collects, once per client. A client that
-   * started on the landing page is reconfigured. Either way the extension is
-   * started again once the web-vitals code is installed, so it finds that code
-   * rather than fetching it; starting it is a no-op once it is running.
+   * started on the landing page is reconfigured at once, before replay can
+   * start: the recorder reads `capture_performance.network_timing` when it
+   * starts, so a later reconfiguration would leave the recording without
+   * network timing. The web-vitals extension is started again once its code
+   * is installed, so it finds that code rather than fetching it; starting it
+   * is a no-op once it is running.
    */
   const startAppCollectionOn = (instance: PostHogClient, startedAs: PostHogScope) => {
     if (appStartedOn === instance) return;
     appStartedOn = instance;
+    if (startedAs === "landing") {
+      try {
+        instance.set_config({ capture_performance: { ...POSTHOG_APP_PERFORMANCE } });
+      } catch {
+        // Performance capture failing to start never costs analytics.
+      }
+    }
     void importWebVitalsOnce().then(() => {
       try {
-        if (startedAs === "landing") {
-          instance.set_config({ capture_performance: { ...POSTHOG_APP_PERFORMANCE } });
-        }
         instance.webVitalsAutocapture?.startIfEnabled();
       } catch {
         // Performance capture failing to start never costs analytics.

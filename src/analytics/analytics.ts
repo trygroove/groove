@@ -334,8 +334,8 @@ function safeIsInternal(): boolean {
  * The app-wide analytics boundary.
  *
  * Starts with the no-op transport; `initTelemetry()` swaps in the PostHog
- * transport, which loads its SDK once the browser is idle after first paint, on
- * the landing page included (GRV-123). Tests construct their own `Analytics`
+ * transport, which loads its SDK once the browser is idle after first paint,
+ * and on the landing page once that has loaded and settled (GRV-123). Tests construct their own `Analytics`
  * with a recording transport rather than reaching for this.
  */
 export const analytics = new Analytics();
