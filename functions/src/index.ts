@@ -73,14 +73,15 @@ import { gateSignIn, type SignInGateStore } from "../../src/access/signInGate";
 import {
   ASSISTANT_API_KEY_SECRET,
   ASSISTANT_CALL_LIMITS,
+  ASSISTANT_YOUTUBE_KEY_SECRET,
 } from "../../src/assistant/config";
 import {
   createEmulatorAssistantProvider,
-  emulatorVideoVerifier,
+  emulatorVideoFinder,
   usesEmulatorProvider,
 } from "../../src/assistant/emulatorProvider";
 import type { AssistantProvider } from "../../src/assistant/provider";
-import { createOEmbedVideoVerifier, type VideoVerifier } from "../../src/assistant/video";
+import { createYouTubeVideoFinder, type VideoFinder } from "../../src/assistant/video";
 import { CLOUD_FUNCTIONS_REGION } from "../../src/shared/cloudFunctions";
 import type { VersionedPack } from "../../src/userData/packVersions";
 import { withdrawRefusedSound } from "../../src/userData/refusedSound";
@@ -335,6 +336,9 @@ export const revokeAccess = onCall(
 /** The provider's API key, readable by `assistantTurn` and nothing else. */
 const anthropicApiKey = defineSecret(ASSISTANT_API_KEY_SECRET);
 
+/** The YouTube Data API key, readable by `assistantTurn` and nothing else. */
+const youtubeApiKey = defineSecret(ASSISTANT_YOUTUBE_KEY_SECRET);
+
 /**
  * `[flaky]`'s memory, shared by every worker process the emulator runs: the
  * first to claim a message's marker file is the first time. A retry often
@@ -370,17 +374,19 @@ function assistantProvider(): AssistantProvider {
 }
 
 /**
- * How the gateway checks a tutorial video the model recommends (GRV-16, ADR
- * 0009 decision 5): YouTube's oEmbed endpoint, over plain HTTPS with no key,
- * from here and never from the browser. In the emulator with the scripted
- * provider, the scripted video's own check, so the browser suite never
- * depends on YouTube.
+ * How the gateway finds a tutorial video the model recommends (GRV-16, ADR
+ * 0009 decision 5): a YouTube Data API search for the model's words, its
+ * result checked with YouTube's oEmbed endpoint, both from here and never
+ * from the browser. In the emulator with the scripted provider, the scripted
+ * video's own search, so the browser suite never depends on YouTube. With no
+ * YouTube key the model is offered no video at all.
  */
-function videoVerifier(): VideoVerifier {
-  const apiKey = anthropicApiKey.value() ?? "";
-  return usesEmulatorProvider(process.env, apiKey)
-    ? emulatorVideoVerifier
-    : createOEmbedVideoVerifier(fetch);
+function videoFinder(): VideoFinder | undefined {
+  if (usesEmulatorProvider(process.env, anthropicApiKey.value() ?? "")) {
+    return emulatorVideoFinder;
+  }
+  const apiKey = (youtubeApiKey.value() ?? "").trim();
+  return apiKey ? createYouTubeVideoFinder({ fetcher: fetch, apiKey }) : undefined;
 }
 
 /**
@@ -393,14 +399,14 @@ function videoVerifier(): VideoVerifier {
  */
 export const assistantTurn = onCall(
   {
-    secrets: [anthropicApiKey],
+    secrets: [anthropicApiKey, youtubeApiKey],
     timeoutSeconds: ASSISTANT_CALL_LIMITS.functionTimeoutSeconds,
   },
   createAssistantHandler(() => ({
     provider: assistantProvider(),
     guards: firestoreGuardStores(getFirestore()),
     transcripts: firestoreTranscriptStore(getFirestore()),
-    verifyVideo: videoVerifier(),
+    findVideo: videoFinder(),
   })),
 );
 

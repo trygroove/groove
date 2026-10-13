@@ -4,10 +4,13 @@ import {
   assistantVideoSchema,
   checkVideoCalls,
   createOEmbedVideoVerifier,
+  createYouTubeVideoFinder,
   droppedVideoNote,
   RECOMMEND_VIDEO_TOOL,
   VIDEO_LIMITS,
+  type VideoFinder,
   videoRecommendationTool,
+  YOUTUBE_SEARCH_URL,
   youtubeEmbedUrl,
 } from "./video";
 
@@ -80,45 +83,165 @@ describe("the oEmbed video check (ADR 0009 decision 5)", () => {
   });
 });
 
-describe("checkVideoCalls", () => {
-  const call = (videoId: string, name = RECOMMEND_VIDEO_TOOL) => ({
-    id: `t-${videoId}`,
-    name,
-    input: { videoId, reason: "Why." },
+describe("the YouTube search finder (GRV-16)", () => {
+  const KEY = "yt-key";
+  const facts = { title: "Sidechain Compression Explained", channel: "Underdog" };
+
+  /** A fetch that answers the search with `ids`, and oEmbed per `oEmbed`. */
+  function youtube(
+    ids: readonly string[],
+    oEmbed: (id: string) => Response = () =>
+      new Response(JSON.stringify({ title: facts.title, author_name: facts.channel })),
+    searchStatus = 200,
+  ): typeof fetch {
+    return vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.origin + url.pathname === YOUTUBE_SEARCH_URL) {
+        return new Response(
+          JSON.stringify({
+            items: ids.map((videoId) => ({ id: { kind: "youtube#video", videoId } })),
+          }),
+          { status: searchStatus },
+        );
+      }
+      const watch = new URL(url.searchParams.get("url") ?? "");
+      return oEmbed(watch.searchParams.get("v") ?? "");
+    });
+  }
+
+  it("searches for embeddable videos with strict SafeSearch, and shows the first oEmbed vouches for", async () => {
+    const fetcher = youtube([ID, "bbbbbbbbbbb"]);
+    const found = await createYouTubeVideoFinder({ fetcher, apiKey: KEY })(
+      "sidechain compression tutorial",
+      signal(),
+    );
+    expect(found).toEqual({ videoId: ID, ...facts });
+    const [search] = vi.mocked(fetcher).mock.calls[0] ?? [];
+    const params = new URL(String(search)).searchParams;
+    expect(Object.fromEntries(params)).toMatchObject({
+      q: "sidechain compression tutorial",
+      type: "video",
+      videoEmbeddable: "true",
+      safeSearch: "strict",
+      key: KEY,
+    });
+    // One search and one check: the second result is never asked about.
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
-  const verify = async (videoId: string) => ({ title: `T ${videoId}`, channel: "C" });
+
+  it("skips a result oEmbed refuses and shows the next", async () => {
+    const fetcher = youtube(["aaaaaaaaaaa", ID], (id) =>
+      id === ID
+        ? new Response(JSON.stringify({ title: facts.title, author_name: facts.channel }))
+        : new Response("Unauthorized", { status: 401 }),
+    );
+    const found = await createYouTubeVideoFinder({ fetcher, apiKey: KEY })("q", signal());
+    expect(found).toMatchObject({ videoId: ID });
+  });
+
+  it("finds nothing when the search is empty or every result is refused", async () => {
+    expect(
+      await createYouTubeVideoFinder({ fetcher: youtube([]), apiKey: KEY })(
+        "q",
+        signal(),
+      ),
+    ).toBe("missing");
+    const refused = youtube([ID], () => new Response("Not Found", { status: 404 }));
+    expect(
+      await createYouTubeVideoFinder({ fetcher: refused, apiKey: KEY })("q", signal()),
+    ).toBe("missing");
+  });
+
+  it("counts a search it could not make apart from one that found nothing", async () => {
+    // 403 is what a used-up daily quota answers.
+    const quota = youtube([ID], undefined, 403);
+    expect(
+      await createYouTubeVideoFinder({ fetcher: quota, apiKey: KEY })("q", signal()),
+    ).toBe("unchecked");
+    const down = createYouTubeVideoFinder({
+      fetcher: async () => {
+        throw new TypeError("fetch failed");
+      },
+      apiKey: KEY,
+    });
+    expect(await down("q", signal())).toBe("unchecked");
+    const oEmbedDown = youtube([ID], () => new Response("", { status: 503 }));
+    expect(
+      await createYouTubeVideoFinder({ fetcher: oEmbedDown, apiKey: KEY })("q", signal()),
+    ).toBe("unchecked");
+  });
+
+  it("ignores a result that is not a video ID", async () => {
+    const fetcher = youtube(["../../evil", ID]);
+    const found = await createYouTubeVideoFinder({ fetcher, apiKey: KEY })("q", signal());
+    expect(found).toMatchObject({ videoId: ID });
+  });
+
+  it("gives up on a search that takes too long", async () => {
+    const hang: typeof fetch = (_, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+    const find = createYouTubeVideoFinder({ fetcher: hang, apiKey: KEY, timeoutMs: 10 });
+    expect(await find("q", signal())).toBe("unchecked");
+  });
+});
+
+describe("checkVideoCalls", () => {
+  const call = (query: string, name = RECOMMEND_VIDEO_TOOL) => ({
+    id: `t-${query}`,
+    name,
+    input: { query, reason: "Why." },
+  });
+  const idFor = (query: string) => query.slice(0, 1).repeat(11);
+  const find: VideoFinder = async (query) => ({
+    videoId: idFor(query),
+    title: `T ${query}`,
+    channel: "C",
+  });
 
   it("keeps at most two videos per turn, without repeats, in the model's order", async () => {
-    const ids = ["aaaaaaaaaaa", "aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc"];
+    const queries = ["acid", "Acid", "bass", "chords"];
     const checked = await checkVideoCalls(
-      ids.map((id) => call(id)),
-      verify,
+      queries.map((query) => call(query)),
+      find,
       signal(),
     );
     expect(checked.videos.map((video) => video.videoId)).toEqual([
-      "aaaaaaaaaaa",
-      "bbbbbbbbbbb",
+      idFor("acid"),
+      idFor("bass"),
     ]);
-    expect(checked.dropped).toBe(2);
+    // The repeat is not a drop; the third search is.
+    expect(checked.dropped).toBe(1);
     for (const video of checked.videos) {
       expect(assistantVideoSchema.safeParse(video).success).toBe(true);
     }
   });
 
+  it("shows a video two searches both found once, and drops neither", async () => {
+    const checked = await checkVideoCalls(
+      [call("acid one"), call("acid two")],
+      find,
+      signal(),
+    );
+    expect(checked.videos).toHaveLength(1);
+    expect(checked.dropped).toBe(0);
+  });
+
   it("ignores every other tool's calls", async () => {
     const checked = await checkVideoCalls(
-      [call("aaaaaaaaaaa", "recommend_sounds")],
-      verify,
+      [call("acid", "recommend_sounds")],
+      find,
       signal(),
     );
     expect(checked).toEqual({ videos: [], dropped: 0, unchecked: 0 });
   });
 
-  it("counts the videos it could not check apart from the ones YouTube refused", async () => {
+  it("counts the searches it could not make apart from the ones that found nothing", async () => {
     const checked = await checkVideoCalls(
-      [call("aaaaaaaaaaa"), call("bbbbbbbbbbb")],
-      async (videoId) => {
-        if (videoId === "aaaaaaaaaaa") return "missing";
+      [call("acid"), call("bass")],
+      async (query) => {
+        if (query === "acid") return "missing";
         throw new Error("unreachable");
       },
       signal(),
@@ -164,7 +287,9 @@ describe("the recommend_video tool", () => {
     expect(tool.name).toMatch(/^[a-zA-Z0-9_-]{1,64}$/);
     expect(tool.input_schema.type).toBe("object");
     expect(assistantTools().map((entry) => entry.name)).not.toContain(tool.name);
-    expect(JSON.stringify(tool.input_schema)).toContain("videoId");
+    // The model names a search, never an ID it might have made up.
+    const properties = tool.input_schema.properties as Record<string, unknown>;
+    expect(Object.keys(properties).sort()).toEqual(["query", "reason"]);
   });
 });
 

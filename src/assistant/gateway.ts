@@ -38,10 +38,10 @@
  * a malformed reply. A turn that carries the published library is offered
  * `recommend_sounds` as well (GRV-23); its calls come back among the
  * proposal's, and the browser takes them out and checks their IDs against the
- * library it sent. A turn whose gateway can check a video with YouTube is
- * offered `recommend_video` too (GRV-16, ADR 0009): its calls are taken out
- * of the proposal, checked here, and returned as the turn's `videos`, with
- * every one YouTube does not vouch for dropped.
+ * library it sent. A turn whose gateway can search YouTube is offered
+ * `recommend_video` too (GRV-16, ADR 0009): its calls are taken out of the
+ * proposal, searched for here, and returned as the turn's `videos`, with
+ * every search that finds nothing YouTube vouches for dropped.
  */
 import { type AssistantAsk, askProducerTool, isAskCall, parseAskCall } from "./ask";
 import {
@@ -94,7 +94,7 @@ import {
   droppedVideoNote,
   isVideoCall,
   NO_VIDEOS,
-  type VideoVerifier,
+  type VideoFinder,
   videoRecommendationTool,
 } from "./video";
 
@@ -137,11 +137,12 @@ export interface AssistantGatewayDeps {
   /** Hears how keeping each completed turn went: a code, never the content. */
   readonly onTranscript?: (write: TranscriptWrite) => void;
   /**
-   * Checks a video the model recommends is real and embeddable (GRV-16, ADR
-   * 0009 decision 5), from the server. Without one the model is not offered
-   * `recommend_video`, and any call it makes anyway is dropped.
+   * Searches YouTube for a video the model recommends and checks it is real
+   * and embeddable (GRV-16, ADR 0009 decision 5), from the server. Without
+   * one the model is not offered `recommend_video`, and any call it makes
+   * anyway is dropped.
    */
-  readonly verifyVideo?: VideoVerifier;
+  readonly findVideo?: VideoFinder;
 }
 
 export interface AssistantTurnOptions {
@@ -233,7 +234,7 @@ async function prepare(
 ): Promise<PreparedTurn> {
   const system = buildSystemBlocks(turn.context, turn.library, idStem);
   // A turn that carries the library may also recommend from it (GRV-23), and
-  // one whose videos can be checked may recommend a tutorial (GRV-16).
+  // one that can search YouTube may recommend a tutorial (GRV-16).
   const tools = [
     ...providerTools([...assistantTools(), EXPLAIN_TOOL, askProducerTool()]),
     ...(turn.library ? [recommendationTool()] : []),
@@ -581,7 +582,7 @@ export async function runAssistantTurn(
       uid,
       turn,
       (deps.idStem ?? createIdStem)(),
-      deps.verifyVideo !== undefined,
+      deps.findVideo !== undefined,
     );
     history = prepared.history;
 
@@ -619,11 +620,11 @@ export async function runAssistantTurn(
           throw new AssistantGatewayError("reply_too_long", TOO_LONG_MESSAGE);
         }
         const ask = askOf(outcome.toolCalls);
-        // Every video YouTube does not vouch for is dropped, never shown
-        // unchecked (ADR 0009 decision 5).
+        // Every search that turns up no video YouTube vouches for is
+        // dropped, never shown unchecked (ADR 0009 decision 5).
         checked = await checkVideoCalls(
           outcome.toolCalls,
-          deps.verifyVideo,
+          deps.findVideo,
           options.signal,
         );
         if (options.signal.aborted) {
