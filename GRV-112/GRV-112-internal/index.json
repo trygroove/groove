@@ -1,0 +1,10 @@
+{
+  "id": "GRV-112-internal",
+  "title": "Internal account",
+  "steps": [
+    {
+      "file": "01-an-internal-account-no-allowance-just-wh.png",
+      "caption": "An internal account: no allowance, just what it stores"
+    }
+  ]
+}

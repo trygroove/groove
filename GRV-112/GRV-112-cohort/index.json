@@ -1,0 +1,10 @@
+{
+  "id": "GRV-112-cohort",
+  "title": "Ordinary account",
+  "steps": [
+    {
+      "file": "01-an-ordinary-account-usage-is-measured-ag.png",
+      "caption": "An ordinary account: usage is measured against its 1 GB"
+    }
+  ]
+}
