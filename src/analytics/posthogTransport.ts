@@ -1,8 +1,10 @@
 // The PostHog transport (PRD `OPS-02`, ADR 0011, GRV-106 and GRV-120).
 //
 // The only module that imports `posthog-js`, and only dynamically: the SDK is
-// its own chunk, loaded after first paint and never on the static landing page
-// (`src/telemetry.ts` decides when). Like `sentrySink.ts` in monitoring, it is
+// its own chunk, loaded when the browser is idle after first paint (on the
+// landing page, once the page has loaded and settled), and never in the
+// prerendered landing shell or the entry chunk (`src/telemetry.ts` decides
+// when). Like `sentrySink.ts` in monitoring, it is
 // deliberately not re-exported from this directory's barrel: the boundary in
 // `analytics.ts` is what application code uses, and swapping vendors must not
 // mean touching call sites. `src/monitoring/boundaries.test.ts` enforces both.
@@ -24,6 +26,11 @@
 //   autocapture stays off, and `before_send` scrubs every exception event.
 // - **Web vitals and network timing** (`capture_performance`), with the
 //   web-vitals code bundled too.
+//
+// On the landing page (GRV-123) the client is analytics only: catalog events,
+// `$pageview` and `$pageleave`. Replay, web vitals and network timing start
+// when the session reaches an app surface (`PostHogLoader.startAppCollection`),
+// and the PostHog error sink is attached only there, beside Sentry's.
 //
 // Nothing is fetched from PostHog's CDN at runtime: `disable_external_
 // dependency_loading` is on, and the two extensions the SDK would fetch are
@@ -61,6 +68,27 @@ export const INTERNAL_EVENT_PROPERTY = USER_PROPERTIES.internal;
 export type PostHogPersistence = "memory" | "localStorage+cookie";
 
 /**
+ * What the client collects: `"landing"` is analytics only (GRV-123), `"app"`
+ * adds web vitals and network timing (and lets the loader start replay).
+ */
+export type PostHogScope = "landing" | "app";
+
+/** Web vitals and network timing, on an app surface only (GRV-120, GRV-123). */
+export const POSTHOG_APP_PERFORMANCE = {
+  web_vitals: true,
+  network_timing: true,
+  // Attribution names the elements behind a slow paint or interaction, and
+  // needs its own, larger web-vitals build.
+  web_vitals_attribution: false,
+} as const satisfies PostHogConfig["capture_performance"];
+
+/** The landing page's: neither, whatever the project's remote config says. */
+export const POSTHOG_LANDING_PERFORMANCE = {
+  web_vitals: false,
+  network_timing: false,
+} as const satisfies PostHogConfig["capture_performance"];
+
+/**
  * The slice of `posthog-js` this module calls, which is what a test fake
  * implements. The real `PostHog` instance satisfies it structurally.
  */
@@ -74,16 +102,31 @@ export interface PostHogClient {
   reset(): void;
   setPersonProperties(properties: Record<string, unknown>): void;
   register(properties: Record<string, unknown>): unknown;
+  /**
+   * Read and written only to carry a visit's entry into a session the SDK
+   * started after the visitor had moved on (`adoptEntry`). Optional so a test
+   * fake may leave them out; the real SDK has both.
+   */
+  register_once?(properties: Record<string, unknown>): unknown;
+  get_property?(name: string): unknown;
   opt_out_capturing(): void;
   opt_in_capturing(options?: { captureEventName?: string | null | false }): void;
   has_opted_out_capturing(): boolean;
-  set_config(config: { persistence?: PostHogPersistence }): void;
+  set_config(config: {
+    persistence?: PostHogPersistence;
+    capture_performance?: PostHogConfig["capture_performance"];
+  }): void;
   /** Reports one error (`src/monitoring/posthogSink.ts`). */
   captureException(error: unknown, properties?: Record<string, unknown>): unknown;
   get_session_id(): string;
   onSessionId(callback: (sessionId: string) => void): () => void;
   startSessionRecording(): void;
   stopSessionRecording(): void;
+  /**
+   * The SDK's web-vitals extension, started again once an app surface turns
+   * web vitals on (GRV-123). Absent where the SDK did not build it.
+   */
+  webVitalsAutocapture?: { startIfEnabled(): void };
 }
 
 /** What `import("posthog-js")` hands back: the default instance's `init`. */
@@ -168,11 +211,17 @@ export const POSTHOG_SESSION_RECORDING: NonNullable<PostHogConfig["session_recor
  * the only source of product events (PRD `OPS-02`).
  *
  * Session recording starts disabled. The loader starts it for a sampled
- * session whose replay consent allows it, once the recorder is loaded.
+ * session whose replay consent allows it, once the recorder is loaded and the
+ * session is on an app surface.
+ *
+ * `scope` is where the SDK starts: on the landing page it starts with web
+ * vitals and network timing off (GRV-123), and the loader turns them on when
+ * the session reaches an app surface.
  */
 export function postHogInitOptions(
   host: string,
   persistence: PostHogPersistence,
+  scope: PostHogScope = "app",
 ): Partial<PostHogConfig> {
   return {
     api_host: host,
@@ -192,13 +241,10 @@ export function postHogInitOptions(
     // Our global handlers catch everything and report through the boundary;
     // autocapture would bypass its scrubbing.
     capture_exceptions: false,
-    capture_performance: {
-      web_vitals: true,
-      network_timing: true,
-      // Attribution names the elements behind a slow paint or interaction,
-      // and needs its own, larger web-vitals build.
-      web_vitals_attribution: false,
-    },
+    capture_performance:
+      scope === "app"
+        ? { ...POSTHOG_APP_PERFORMANCE }
+        : { ...POSTHOG_LANDING_PERFORMANCE },
     before_send: scrubPostHogEvent,
     disable_surveys: true,
     disable_product_tours: true,
@@ -222,10 +268,13 @@ export interface PostHogLoaderOptions {
   /**
    * Installs the session recorder for the SDK to find. Defaults to the
    * bundled `posthog-js/dist/posthog-recorder`, its own chunk, which only a
-   * sampled session loads.
+   * sampled session on an app surface loads.
    */
   importRecorder?: () => Promise<unknown>;
-  /** Installs the web-vitals callbacks, likewise bundled rather than fetched. */
+  /**
+   * Installs the web-vitals callbacks, likewise bundled rather than fetched.
+   * Loaded only once the session is on an app surface.
+   */
   importWebVitals?: () => Promise<unknown>;
 }
 
@@ -263,6 +312,13 @@ export interface PostHogLoader {
    * keeps running.
    */
   stopSessionRecording(): void;
+  /**
+   * The session has reached an app surface (GRV-123): web vitals, network
+   * timing and, for a sampled session whose consent allows it, replay may
+   * start. Before `load`, it makes the SDK start with them; after, it turns
+   * them on in the running client. Idempotent, and never loads the SDK.
+   */
+  startAppCollection(): void;
 }
 
 async function importPostHog(): Promise<PostHogSdk> {
@@ -290,6 +346,18 @@ export function createPostHogLoader(options: PostHogLoaderOptions): PostHogLoade
   /** Replay withdrawn this page load: nothing may start a recording again. */
   let replayStopped = false;
   let recorder: Promise<unknown> | null = null;
+  let webVitals: Promise<unknown> | null = null;
+  /** An app surface has been reached this page load. */
+  let appCollection = false;
+  /** What `load` was told about replay, kept for an app surface reached later. */
+  let replayOptions: PostHogLoadOptions | undefined;
+  /** The client app collection has been started on, so it starts once. */
+  let appStartedOn: PostHogClient | null = null;
+
+  const importWebVitalsOnce = () => {
+    webVitals ??= loadWebVitals().catch(() => undefined);
+    return webVitals;
+  };
 
   /**
    * Starts the recording for the current session if it is in the sample and
@@ -313,15 +381,58 @@ export function createPostHogLoader(options: PostHogLoaderOptions): PostHogLoade
     );
   };
 
+  /**
+   * Turns on what an app surface collects, once per client. A client that
+   * started on the landing page is reconfigured at once, before replay can
+   * start: the recorder reads `capture_performance.network_timing` when it
+   * starts, so a later reconfiguration would leave the recording without
+   * network timing. The web-vitals extension is started again once its code
+   * is installed, so it finds that code rather than fetching it; starting it
+   * is a no-op once it is running.
+   */
+  const startAppCollectionOn = (instance: PostHogClient, startedAs: PostHogScope) => {
+    if (appStartedOn === instance) return;
+    appStartedOn = instance;
+    if (startedAs === "landing") {
+      try {
+        instance.set_config({ capture_performance: { ...POSTHOG_APP_PERFORMANCE } });
+      } catch {
+        // Performance capture failing to start never costs analytics.
+      }
+    }
+    void importWebVitalsOnce().then(() => {
+      try {
+        instance.webVitalsAutocapture?.startIfEnabled();
+      } catch {
+        // Performance capture failing to start never costs analytics.
+      }
+    });
+    const replay = replayOptions;
+    if (!replay) return;
+    try {
+      startReplayIfSampled(instance, replay);
+      instance.onSessionId(() => startReplayIfSampled(instance, replay));
+    } catch {
+      // Replay failing to start never costs the analytics client.
+    }
+  };
+
   return {
     client: loaded,
     load(persistence, loadOptions) {
-      client ??= Promise.all([importSdk(), loadWebVitals().catch(() => undefined)])
+      replayOptions ??= loadOptions;
+      // The web-vitals code is only needed on an app surface; on the landing
+      // page it is not fetched until the session moves on.
+      client ??= Promise.all([
+        importSdk(),
+        appCollection ? importWebVitalsOnce() : undefined,
+      ])
         .then(([sdk]) => {
+          const scope: PostHogScope = appCollection ? "app" : "landing";
           const instance =
             sdk.init(
               options.settings.key,
-              postHogInitOptions(options.settings.host, persistence),
+              postHogInitOptions(options.settings.host, persistence, scope),
             ) ?? null;
           // PostHog remembers a runtime opt-out in its own storage. Consent is
           // this app's to decide (`src/analytics/consent.ts`), and a session
@@ -329,14 +440,7 @@ export function createPostHogLoader(options: PostHogLoaderOptions): PostHogLoade
           if (instance?.has_opted_out_capturing()) {
             instance.opt_in_capturing({ captureEventName: false });
           }
-          if (instance && loadOptions) {
-            try {
-              startReplayIfSampled(instance, loadOptions);
-              instance.onSessionId(() => startReplayIfSampled(instance, loadOptions));
-            } catch {
-              // Replay failing to start never costs the analytics client.
-            }
-          }
+          if (instance && appCollection) startAppCollectionOn(instance, scope);
           return instance;
         })
         .catch(() => null);
@@ -371,6 +475,15 @@ export function createPostHogLoader(options: PostHogLoaderOptions): PostHogLoade
           // A recording we cannot stop must not become an exception on the
           // consent path; opting out of capture is the backstop.
         }
+      });
+    },
+    startAppCollection() {
+      appCollection = true;
+      if (!client) return;
+      // A client initialized before this call started on the landing page;
+      // one still initializing reads `appCollection` when it does.
+      void client.then((instance) => {
+        if (instance) startAppCollectionOn(instance, "landing");
       });
     },
   };
@@ -419,6 +532,8 @@ export function createPostHogTransport(
   let unavailable = false;
   let queuedEvents = 0;
   const queue: { operation: Operation; queuedAt: number }[] = [];
+  /** Where this visit was when the transport was made: its entry, usually. */
+  const entry = currentEntry();
   /**
    * Whether the client is identified, in call order. PostHog runs with
    * `person_profiles: "identified_only"`, so person properties wait for an
@@ -456,6 +571,7 @@ export function createPostHogTransport(
         return;
       }
       client = resolved;
+      adoptEntry(resolved, entry);
       for (const { operation, queuedAt } of queue.splice(0, queue.length)) {
         run(resolved, operation, queuedAt);
       }
@@ -524,16 +640,123 @@ export function createPostHogTransport(
   };
 }
 
-/** The page-view properties PostHog would read itself, taken now. */
+/**
+ * The query parameters PostHog reads as campaign attribution: posthog-js
+ * 1.438's `CAMPAIGN_PARAMS` (`@posthog/browser-common` `event-utils`), the
+ * UTM tags and the ad platforms' click IDs.
+ */
+export const CAMPAIGN_PARAMS = [
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_content",
+  "utm_term",
+  "gad_source",
+  "mc_cid",
+  "gclid",
+  "gclsrc",
+  "dclid",
+  "gbraid",
+  "wbraid",
+  "fbclid",
+  "msclkid",
+  "twclid",
+  "li_fat_id",
+  "igshid",
+  "ttclid",
+  "rdt_cid",
+  "epik",
+  "qclid",
+  "sccid",
+  "oppref",
+  "irclid",
+  "_kx",
+] as const;
+
+/**
+ * The page-view properties PostHog would read itself, taken now: the URL, and
+ * the campaign parameters in it (GRV-123). The SDK reads campaign parameters
+ * from the document's URL when an event is sent, not from `$current_url`, so
+ * a landing view queued on `/?utm_source=…` and sent once the visitor is in
+ * the app would otherwise lose its campaign. Explicit event properties win
+ * over the SDK's own.
+ */
 function currentLocation(): Record<string, string> {
   try {
     if (typeof location === "undefined") return {};
-    return {
+    const properties: Record<string, string> = {
       $current_url: location.href,
       $host: location.host,
       $pathname: location.pathname,
     };
+    const query = new URLSearchParams(location.search);
+    for (const name of CAMPAIGN_PARAMS) {
+      const value = query.get(name);
+      if (value) properties[name] = value;
+    }
+    return properties;
   } catch {
     return {};
+  }
+}
+
+/** A visit's entry, as PostHog keeps it: referrer `r` and URL `u`. */
+interface EntryInfo {
+  r: string;
+  u: string;
+}
+
+/** The longest URL or referrer PostHog keeps in its session and person info. */
+const ENTRY_INFO_MAX_LENGTH = 1000;
+
+/** The persistence key holding the session's entry (posthog-js `CLIENT_SESSION_PROPS`). */
+const SESSION_ENTRY_KEY = "$client_session_props";
+/** The persistence key holding the person's first entry (`INITIAL_PERSON_INFO`). */
+const INITIAL_ENTRY_KEY = "$initial_person_info";
+
+function currentEntry(): EntryInfo | null {
+  try {
+    if (typeof location === "undefined") return null;
+    const referrer = typeof document === "undefined" ? "" : document.referrer;
+    return {
+      r: (referrer || "$direct").slice(0, ENTRY_INFO_MAX_LENGTH),
+      u: location.href.slice(0, ENTRY_INFO_MAX_LENGTH),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Gives the SDK the visit's real entry when it loaded after the visitor had
+ * moved on (GRV-123: a landing visitor who clicks into the app before the
+ * landing page's deferred load). PostHog takes a session's entry URL, and a
+ * new person's first URL, from wherever the page is when it starts the
+ * session, so without this the session would enter on `/projects` and lose
+ * the landing page's URL and campaign (`$session_entry_url`,
+ * `$session_entry_utm_*`, `$initial_*`).
+ *
+ * Only a session the SDK has just started at the current URL is rewritten:
+ * one carried over from an earlier page load already has its own entry. The
+ * referrer is the SDK's own, which a client-side navigation does not change.
+ */
+function adoptEntry(client: PostHogClient, entry: EntryInfo | null): void {
+  try {
+    const here = currentEntry();
+    if (!entry || !here || entry.u === here.u) return;
+    if (!client.get_property || !client.register_once) return;
+    const sessionId = client.get_session_id();
+    const stored = client.get_property(SESSION_ENTRY_KEY) as
+      | { sessionId?: unknown; props?: { r?: unknown; u?: unknown } }
+      | undefined;
+    if (stored?.sessionId !== sessionId || stored.props?.u !== here.u) return;
+    client.register({
+      [SESSION_ENTRY_KEY]: { ...stored, props: { ...stored.props, u: entry.u } },
+    });
+    client.register_once({
+      [INITIAL_ENTRY_KEY]: { r: stored.props.r ?? entry.r, u: entry.u },
+    });
+  } catch {
+    // Attribution is best effort; it never costs the events themselves.
   }
 }

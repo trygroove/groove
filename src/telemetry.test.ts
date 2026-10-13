@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Analytics, analytics } from "./analytics/analytics";
 import type { Surface } from "./analytics/catalog";
 import { ConsentStore } from "./analytics/consent";
@@ -28,8 +28,10 @@ import { InMemoryProjectRepository } from "./persistence/inMemoryProjectReposito
 import { createManualScheduler } from "./shared/scheduler";
 import {
   afterFirstPaint,
+  afterLandingSettled,
   createRouteTracker,
   initTelemetry,
+  LANDING_ANALYTICS_DELAY_MS,
   type StartErrorSink,
   surfaceForPath,
 } from "./telemetry";
@@ -57,7 +59,14 @@ function fakeTarget() {
 function deferredPaint() {
   const tasks: (() => void)[] = [];
   return {
-    schedule: (task: () => void) => void tasks.push(task),
+    /** Queues a task; the canceller it returns takes it back out. */
+    schedule: (task: () => void) => {
+      tasks.push(task);
+      return () => {
+        const index = tasks.indexOf(task);
+        if (index !== -1) tasks.splice(index, 1);
+      };
+    },
     get pending() {
       return tasks.length;
     },
@@ -337,6 +346,7 @@ describe("Session Replay consent (ADR 0002 decision 4, ADR 0011 decision 2)", ()
       client: new Promise<PostHogClient | null>(() => {}),
       setCollection: vi.fn(),
       stopSessionRecording: vi.fn(),
+      startAppCollection: vi.fn(),
     } satisfies PostHogLoader;
     return { loader, loads };
   }
@@ -705,7 +715,7 @@ describe("the vendor analytics SDK follows consent (PRD OPS-02)", () => {
   });
 });
 
-describe("the PostHog SDK loads lazily, and never on the landing page (GRV-106)", () => {
+describe("the PostHog SDK loads lazily, on the landing page too (GRV-106, GRV-123)", () => {
   function fakeLoader() {
     return {
       load: vi.fn(
@@ -714,27 +724,134 @@ describe("the PostHog SDK loads lazily, and never on the landing page (GRV-106)"
       client: new Promise<PostHogClient | null>(() => {}),
       setCollection: vi.fn(),
       stopSessionRecording: vi.fn(),
+      startAppCollection: vi.fn(),
     } satisfies PostHogLoader;
   }
 
   function setup(surface: Surface, consent = new ConsentStore(memoryStorage())) {
     const paint = deferredPaint();
+    const settle = deferredPaint();
     const postHogLoader = fakeLoader();
     const telemetry = initTelemetry({
       surface,
       consent,
       target: fakeTarget(),
       afterPaint: paint.schedule,
+      afterLandingSettled: settle.schedule,
       startErrorSink: async () => {},
       postHogLoader,
     });
-    return { paint, postHogLoader, telemetry, consent };
+    return { paint, settle, postHogLoader, telemetry, consent };
   }
 
-  it("does not load it on the landing page, however long the page stays", async () => {
-    const { paint, postHogLoader } = setup("landing");
-    analytics.log("app_opened");
+  it("loads it on the landing page once the page has loaded and settled, not at first paint", async () => {
+    const { paint, settle, postHogLoader } = setup("landing");
+    await tick();
+    // First paint alone is too early on `/`: the SDK's parse would land in
+    // the window that decides the page's LCP and TBT.
     paint.flush();
+    await tick();
+    expect(postHogLoader.load).not.toHaveBeenCalled();
+
+    settle.flush();
+    await tick();
+    expect(postHogLoader.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels the landing page's wait when disposed, so the SDK never loads", async () => {
+    const { settle, postHogLoader, telemetry } = setup("landing");
+    expect(settle.pending).toBe(1);
+    await telemetry.dispose();
+    expect(settle.pending).toBe(0);
+    settle.flush();
+    await tick();
+    expect(postHogLoader.load).not.toHaveBeenCalled();
+  });
+
+  it("does not wait for the landing page to settle on an app surface", async () => {
+    const { paint, settle, postHogLoader } = setup("editor");
+    expect(settle.pending).toBe(0);
+    paint.flush();
+    await tick();
+    expect(postHogLoader.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads it on the app's timing when the visitor moves on before / settles", async () => {
+    const { paint, settle, postHogLoader, telemetry } = setup("landing");
+    telemetry.setSurface("dashboard");
+    paint.flush();
+    await tick();
+    expect(postHogLoader.load).toHaveBeenCalledTimes(1);
+
+    // The landing page settling later loads nothing more.
+    settle.flush();
+    await tick();
+    expect(postHogLoader.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("collects analytics only on the landing page: no replay, vitals or error sink", async () => {
+    const createPostHogErrorSink = vi.fn(() => null);
+    const startErrorSink = vi.fn(async () => {});
+    const paint = deferredPaint();
+    const settle = deferredPaint();
+    const postHogLoader = fakeLoader();
+    initTelemetry({
+      surface: "landing",
+      consent: new ConsentStore(memoryStorage()),
+      target: fakeTarget(),
+      afterPaint: paint.schedule,
+      afterLandingSettled: settle.schedule,
+      startErrorSink,
+      createPostHogErrorSink,
+      postHogLoader,
+    });
+    paint.flush();
+    settle.flush();
+    paint.flush();
+    await tick();
+
+    expect(postHogLoader.load).toHaveBeenCalledTimes(1);
+    expect(postHogLoader.startAppCollection).not.toHaveBeenCalled();
+    expect(startErrorSink).not.toHaveBeenCalled();
+    expect(createPostHogErrorSink).not.toHaveBeenCalled();
+  });
+
+  it("starts app collection when the session moves on into the app", async () => {
+    const { paint, settle, postHogLoader, telemetry } = setup("landing");
+    paint.flush();
+    settle.flush();
+    await tick();
+    expect(postHogLoader.startAppCollection).not.toHaveBeenCalled();
+
+    telemetry.setSurface("dashboard");
+    expect(postHogLoader.startAppCollection).toHaveBeenCalled();
+    // The SDK the landing page loaded is the one the app keeps.
+    paint.flush();
+    await tick();
+    expect(postHogLoader.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts app collection before the SDK loads on an app surface", () => {
+    const { postHogLoader } = setup("editor");
+    expect(postHogLoader.startAppCollection).toHaveBeenCalled();
+    expect(postHogLoader.load).not.toHaveBeenCalled();
+  });
+
+  it("never loads it for a landing session that declined", async () => {
+    const consent = new ConsentStore(memoryStorage());
+    consent.optOut();
+    const { paint, settle, postHogLoader } = setup("landing", consent);
+    paint.flush();
+    settle.flush();
+    await tick();
+    expect(postHogLoader.load).not.toHaveBeenCalled();
+  });
+
+  it("never loads it for a landing session that declines before the page settles", async () => {
+    const { consent, paint, settle, postHogLoader } = setup("landing");
+    consent.optOut();
+    paint.flush();
+    settle.flush();
     await tick();
     expect(postHogLoader.load).not.toHaveBeenCalled();
   });
@@ -749,9 +866,10 @@ describe("the PostHog SDK loads lazily, and never on the landing page (GRV-106)"
     expect(postHogLoader.load).toHaveBeenCalledTimes(1);
   });
 
-  it("loads it once the session navigates off the landing page", async () => {
-    const { paint, postHogLoader, telemetry } = setup("landing");
+  it("loads it once when the session navigates off a settled landing page", async () => {
+    const { paint, settle, postHogLoader, telemetry } = setup("landing");
     paint.flush();
+    settle.flush();
     telemetry.setSurface("dashboard");
     paint.flush();
     await tick();
@@ -810,10 +928,10 @@ describe("the PostHog SDK loads lazily, and never on the landing page (GRV-106)"
 });
 
 describe("withdrawing consent before the SDK loads (GRV-106)", () => {
-  // The transport is made on the landing page, where its SDK load waits for an
-  // app page. An opt-out there must cancel that load and drop what it queued:
-  // otherwise the load runs once the visitor reaches the dashboard, with cookie
-  // persistence, and sends the page view queued before the opt-out.
+  // The transport is made on the landing page, where its SDK load waits for
+  // the page to load and settle. An opt-out in that window must
+  // cancel the load and drop what it queued: otherwise the load runs anyway,
+  // with cookie persistence, and sends the page view queued before the opt-out.
 
   function recordingClient() {
     const calls: { method: string; args: unknown[] }[] = [];
@@ -850,7 +968,9 @@ describe("withdrawing consent before the SDK loads (GRV-106)", () => {
       surface: "landing",
       consent,
       target: fakeTarget(),
+      // One flush opens both, which is all these tests need of the timing.
       afterPaint: paint.schedule,
+      afterLandingSettled: paint.schedule,
       startErrorSink: async () => {},
       postHogLoader: createPostHogLoader({
         settings: { key: "phc_test", host: "https://eu.i.posthog.com" },
@@ -892,6 +1012,54 @@ describe("withdrawing consent before the SDK loads (GRV-106)", () => {
     expect(init).toHaveBeenCalledTimes(1);
     // Only what the dashboard sent after the re-grant: its `app_opened`.
     expect(captured(calls)).toEqual(["app_opened"]);
+  });
+
+  it("sends a landing-only visit's page view and CTA click without leaving / (GRV-123)", async () => {
+    const { calls, init, paint } = setup();
+
+    analytics.pageview();
+    analytics.log("landing_cta_click", { cta_id: "request_access", placement: "hero" });
+    paint.flush();
+    await tick();
+
+    expect(init).toHaveBeenCalledTimes(1);
+    expect(captured(calls)).toEqual(["$pageview", "landing_cta_click"]);
+    // Analytics only: the landing client starts with performance capture off
+    // and no recording.
+    expect(init.mock.calls[0][1]).toMatchObject({
+      capture_performance: { web_vitals: false, network_timing: false },
+      capture_pageleave: true,
+    });
+    expect(calls.map((call) => call.method)).not.toContain("startSessionRecording");
+    expect(calls.map((call) => call.method)).not.toContain("captureException");
+  });
+
+  it("does not send the landing page view again when the visitor moves on", async () => {
+    const { calls, paint, telemetry } = setup();
+    const track = createRouteTracker();
+
+    const visit = (url: string) => {
+      history.pushState({}, "", url);
+      track(location.pathname, telemetry);
+    };
+    try {
+      visit("/?utm_source=newsletter");
+      paint.flush();
+      await tick();
+      visit("/");
+      visit("/projects");
+      await tick();
+    } finally {
+      history.pushState({}, "", "/");
+    }
+
+    const views = calls
+      .filter((call) => call.method === "capture" && call.args[0] === "$pageview")
+      .map((call) => call.args[1] as Record<string, string>);
+    expect(views.map((view) => view.$pathname)).toEqual(["/", "/projects"]);
+    // The landing view keeps the campaign it arrived with.
+    expect(views[0].$current_url).toContain("utm_source=newsletter");
+    expect(views[0].utm_source).toBe("newsletter");
   });
 
   it("keeps the queue when a different consent flag changes", async () => {
@@ -1027,6 +1195,100 @@ describe("afterFirstPaint", () => {
       await vi.waitFor(() => expect(task).toHaveBeenCalled());
     } finally {
       rafSpy.mockRestore();
+    }
+  });
+});
+
+describe("afterLandingSettled (GRV-123)", () => {
+  function setReadyState(state: DocumentReadyState) {
+    Object.defineProperty(document, "readyState", {
+      configurable: true,
+      get: () => state,
+    });
+  }
+
+  afterEach(() => {
+    // Back to jsdom's own getter on the prototype.
+    delete (document as { readyState?: unknown }).readyState;
+    vi.useRealTimers();
+  });
+
+  it("waits for the window load event, then the delay, then an idle main thread", async () => {
+    vi.useFakeTimers();
+    setReadyState("loading");
+    const task = vi.fn();
+    afterLandingSettled(task);
+
+    await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS * 2);
+    expect(task).not.toHaveBeenCalled();
+
+    setReadyState("complete");
+    window.dispatchEvent(new Event("load"));
+    await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS - 1);
+    expect(task).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(task).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts the delay from now when the page has already loaded", async () => {
+    vi.useFakeTimers();
+    setReadyState("complete");
+    const task = vi.fn();
+    afterLandingSettled(task);
+
+    await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS - 1);
+    expect(task).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(task).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes its load listener when cancelled before the page has loaded", async () => {
+    vi.useFakeTimers();
+    setReadyState("loading");
+    const remove = vi.spyOn(window, "removeEventListener");
+    const task = vi.fn();
+    const cancel = afterLandingSettled(task);
+    cancel();
+    expect(remove).toHaveBeenCalledWith("load", expect.any(Function));
+    remove.mockRestore();
+
+    setReadyState("complete");
+    window.dispatchEvent(new Event("load"));
+    await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS * 2);
+    expect(task).not.toHaveBeenCalled();
+  });
+
+  it("clears its delay when cancelled after the page has loaded", async () => {
+    vi.useFakeTimers();
+    setReadyState("complete");
+    const task = vi.fn();
+    const cancel = afterLandingSettled(task);
+    await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS - 1);
+    cancel();
+    await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS * 2);
+    expect(task).not.toHaveBeenCalled();
+  });
+
+  it("does not run a task already waiting on an idle main thread once cancelled", async () => {
+    vi.useFakeTimers();
+    setReadyState("complete");
+    // Hold the frame and idle callbacks, so the task is provably waiting on
+    // them when the cancel comes.
+    const held: (() => void)[] = [];
+    const hold = (callback: () => void) => held.push(callback);
+    vi.stubGlobal("requestAnimationFrame", hold);
+    vi.stubGlobal("requestIdleCallback", hold);
+    try {
+      const task = vi.fn();
+      const cancel = afterLandingSettled(task);
+      await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS);
+      expect(held.length).toBeGreaterThan(0);
+      cancel();
+      for (const callback of held.splice(0)) callback();
+      expect(task).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 });
