@@ -7,6 +7,8 @@ import {
   type ScrubbableEvent,
   scrubBreadcrumb,
   scrubFramePath,
+  scrubNetworkUrl,
+  scrubPostHogEvent,
   scrubRoute,
   scrubSelector,
   scrubSentryEvent,
@@ -440,5 +442,178 @@ describe("scrubSentryEvent", () => {
       type: "solid_groove_boundary",
       handled: false,
     });
+  });
+});
+
+describe("scrubPostHogEvent (ADR 0011 decision 3, GRV-120)", () => {
+  /**
+   * The `$exception` event PostHog builds from a hostile error: every
+   * forbidden shape, in every field the SDK fills or could fill.
+   */
+  function hostileException() {
+    return {
+      uuid: "0199-event",
+      event: "$exception",
+      properties: {
+        $exception_level: "error",
+        area: "persistence",
+        error_code: "unavailable",
+        $current_url: "https://app.example.com/projects/prj_abc123",
+        $exception_list: [
+          {
+            type: "TypeError",
+            value: `Clip '${FORBIDDEN.clipName}' missing from ${FORBIDDEN.assetUrl}`,
+            mechanism: {
+              type: "generic",
+              handled: true,
+              synthetic: false,
+              exception_id: 0,
+              data: { project: FORBIDDEN.projectName },
+            },
+            module: FORBIDDEN.assetName,
+            stacktrace: {
+              type: "raw",
+              frames: [
+                {
+                  platform: "web:javascript",
+                  filename: "https://app.example.com/assets/editor-a1b2.js?token=abc",
+                  abs_path: "https://app.example.com/assets/editor-a1b2.js?token=abc",
+                  function: "saveClip",
+                  lineno: 42,
+                  colno: 7,
+                  in_app: true,
+                  chunk_id: "chunk-1",
+                  context_line: `const name = "${FORBIDDEN.sectionName}";`,
+                  vars: { clipName: FORBIDDEN.clipName, asset: FORBIDDEN.assetName },
+                },
+              ],
+            },
+          },
+          {
+            type: "Error",
+            value: `caused by "${FORBIDDEN.trackName}" and ${FORBIDDEN.token}`,
+          },
+        ],
+        $exception_steps: [{ $message: `opened ${FORBIDDEN.projectName}` }],
+        $exception_message: FORBIDDEN.assistantText,
+        $exception_source: FORBIDDEN.searchTerm,
+      },
+    };
+  }
+
+  it("removes every forbidden value from the whole exception event", () => {
+    expectScrubbed(JSON.stringify(scrubPostHogEvent(hostileException())));
+  });
+
+  it("keeps what symbolication and grouping need", () => {
+    const scrubbed = scrubPostHogEvent(hostileException());
+    const [first] = scrubbed?.properties.$exception_list as {
+      type: string;
+      mechanism: Record<string, unknown>;
+      stacktrace: { type: string; frames: Record<string, unknown>[] };
+    }[];
+    expect(first.type).toBe("TypeError");
+    expect(first.mechanism).toEqual({
+      type: "generic",
+      handled: true,
+      synthetic: false,
+      exception_id: 0,
+    });
+    expect(first.stacktrace).toEqual({
+      type: "raw",
+      frames: [
+        {
+          platform: "web:javascript",
+          filename: "https://app.example.com/assets/editor-a1b2.js",
+          abs_path: "https://app.example.com/assets/editor-a1b2.js",
+          function: "saveClip",
+          lineno: 42,
+          colno: 7,
+          in_app: true,
+          chunk_id: "chunk-1",
+        },
+      ],
+    });
+  });
+
+  it("keeps the classification the sink sends", () => {
+    const scrubbed = scrubPostHogEvent(hostileException());
+    expect(scrubbed?.properties).toMatchObject({
+      $exception_level: "error",
+      area: "persistence",
+      error_code: "unavailable",
+    });
+  });
+
+  it("passes every other event through untouched", () => {
+    const pageview = { event: "$pageview", properties: { $pathname: "/projects" } };
+    expect(scrubPostHogEvent(pageview)).toBe(pageview);
+    expect(scrubPostHogEvent(null)).toBeNull();
+  });
+
+  it("handles an exception event with no list", () => {
+    expect(scrubPostHogEvent({ event: "$exception", properties: {} })).toEqual({
+      event: "$exception",
+      properties: { $exception_list: [] },
+    });
+  });
+});
+
+describe("scrubNetworkUrl (GRV-120)", () => {
+  it("drops the query string and fragment, where tokens ride", () => {
+    expect(
+      scrubNetworkUrl(
+        "https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=AIzaSy-secret#x",
+      ),
+    ).toBe("https://identitytoolkit.googleapis.com/v1/accounts:lookup");
+    expect(scrubNetworkUrl("https://app.example.com/assets/editor-a1b2.js?v=1")).toBe(
+      "https://app.example.com/assets/editor-a1b2.js",
+    );
+  });
+
+  it("keeps only IDs in a Storage object path", () => {
+    expect(
+      scrubNetworkUrl(
+        "https://firebasestorage.googleapis.com/v0/b/groove.firebasestorage.app/o/users%2FAbCdEfGhIjKlMnOpQrStUvWxYz12%2Fpacks%2Fpak_a1b2c3%2Fast_d4e5f6?alt=media&token=secret",
+      ),
+    ).toBe(
+      "https://firebasestorage.googleapis.com/v0/b/:param/o/:param/AbCdEfGhIjKlMnOpQrStUvWxYz12/:param/pak_a1b2c3/ast_d4e5f6",
+    );
+  });
+
+  it("never keeps a name in a Storage or Firestore path", () => {
+    const urls = [
+      `https://firebasestorage.googleapis.com/v0/b/b/o/library%2F${encodeURIComponent(FORBIDDEN.assetName)}?alt=media`,
+      `https://storage.googleapis.com/solid-groove/users/u1/${encodeURIComponent(FORBIDDEN.trackName)}.wav`,
+      `https://firestore.googleapis.com/v1/projects/p/databases/(default)/documents/${encodeURIComponent(FORBIDDEN.projectName)}`,
+    ];
+    expectScrubbed(JSON.stringify(urls.map(scrubNetworkUrl)));
+  });
+
+  it("keeps a Firestore path's structure and IDs", () => {
+    expect(
+      scrubNetworkUrl(
+        "https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fp&gsessionid=abc",
+      ),
+    ).toBe(
+      "https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel",
+    );
+    expect(
+      scrubNetworkUrl(
+        "https://firestore.googleapis.com/v1/projects/groove/databases/(default)/documents/projects/prj_abc123/clips/clp_def456",
+      ),
+    ).toBe(
+      "https://firestore.googleapis.com/v1/projects/:param/databases/(default)/documents/projects/prj_abc123/:param/clp_def456",
+    );
+  });
+
+  it("keeps only the scheme of a data or blob URL", () => {
+    expect(scrubNetworkUrl("data:audio/wav;base64,UklGRiQ")).toBe("data:");
+    expect(scrubNetworkUrl("blob:https://app/abc-123")).toBe("blob:");
+  });
+
+  it("returns nothing for what it cannot read", () => {
+    expect(scrubNetworkUrl("/relative/path")).toBeUndefined();
+    expect(scrubNetworkUrl(42)).toBeUndefined();
   });
 });

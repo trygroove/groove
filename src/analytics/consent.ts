@@ -11,9 +11,11 @@
 // Both are isolated to `CONSENT_DEFAULT` and `src/components/TelemetryDisclosure.tsx`
 // so settling `DEC-009` is a one-line change here plus copy, not a redesign.
 //
-// Three collections, three flags: PostHog for product events (ADR 0011), Sentry
-// for error monitoring (ADR 0001), and Sentry Session Replay for understanding
-// how the app is used (ADR 0002). They are separate because `DEC-009` may
+// Three collections, three flags: PostHog for product events (ADR 0011), error
+// monitoring (Sentry, ADR 0001, and PostHog beside it while it is evaluated),
+// and PostHog Session Replay for understanding how the app is used (ADR 0002,
+// moved to PostHog by ADR 0011 decision 2). Replay rides the analytics client,
+// so it needs analytics allowed as well as its own flag. They are separate because `DEC-009` may
 // decide differently about a reliability signal that keeps a release gate
 // honest, about product analytics, and about a sampled recording of an
 // interaction — which is more sensitive per record than a counter. The alpha's
@@ -22,15 +24,15 @@
 export interface ConsentState {
   /** PRD `OPS-02` product-analytics events. */
   readonly productAnalytics: boolean;
-  /** PRD `OPS-03` error and crash reports (Sentry, per ADR 0001). */
+  /** PRD `OPS-03` error and crash reports (Sentry and PostHog, ADR 0011 decision 3). */
   readonly errorMonitoring: boolean;
   /**
-   * Sentry Session Replay (ADR 0002 decision 4).
+   * PostHog Session Replay (ADR 0002 decision 4, ADR 0011 decision 2).
    *
-   * Declining is honoured *at the source*: the replay integration is never
-   * constructed, so nothing is captured in the first place rather than being
-   * captured and dropped before send. Withdrawing mid-session stops the
-   * in-flight recording.
+   * Declining is honoured *at the source*: the recorder is never loaded and
+   * recording never started, so nothing is captured in the first place rather
+   * than being captured and dropped before send. Withdrawing mid-session stops
+   * the in-flight recording.
    */
   readonly sessionReplay: boolean;
 }
@@ -133,8 +135,8 @@ export class ConsentStore {
   /**
    * Whether Session Replay may capture (ADR 0002 decision 4).
    *
-   * Consulted before the integration is constructed, not before a recording is
-   * sent — declining means nothing is recorded at all.
+   * Consulted before a recording starts, not before it is sent — declining
+   * means nothing is recorded at all.
    */
   get sessionReplayAllowed(): boolean {
     return this.state.sessionReplay;

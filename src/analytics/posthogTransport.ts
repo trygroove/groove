@@ -1,4 +1,4 @@
-// The PostHog transport (PRD `OPS-02`, ADR 0011 decision 1, GRV-106).
+// The PostHog transport (PRD `OPS-02`, ADR 0011, GRV-106 and GRV-120).
 //
 // The only module that imports `posthog-js`, and only dynamically: the SDK is
 // its own chunk, loaded after first paint and never on the static landing page
@@ -7,14 +7,42 @@
 // `analytics.ts` is what application code uses, and swapping vendors must not
 // mean touching call sites. `src/monitoring/boundaries.test.ts` enforces both.
 //
-// PostHog is used for product events only. Everything else the SDK can do on
-// its own — autocapture, its own pageviews, session recording, exception
-// capture, performance, surveys, feature flags, loading extra scripts — is off
-// in `postHogInitOptions`, so the only events it sends are the catalog's and
-// the `$pageview` the router asks for. Replay, errors and flags are other
-// cards' decisions (ADR 0011).
+// What the client collects, all set in `postHogInitOptions`:
+//
+// - **Product events**: the catalog's, plus the `$pageview` the router asks
+//   for and the `$pageleave` the SDK sends with it (time on page, scroll
+//   depth, bounce rate). Autocapture, heatmaps, surveys, feature flags and the
+//   rest stay off.
+// - **Session replay** (ADR 0011 decision 2), for a sampled session whose
+//   consent allows it, under every ADR 0002/0003 condition: text, inputs and
+//   name-bearing attributes masked, media blocked, canvas captured, no console
+//   logs, network timing without headers or bodies, and URLs without their
+//   query strings. The rules live in `src/monitoring/replayPrivacy.ts`. The
+//   recorder is bundled, not fetched, and loaded only for a sampled session.
+// - **Exceptions**, but only those the reporting boundary hands
+//   `src/monitoring/posthogSink.ts` (ADR 0011 decision 3). PostHog's own
+//   autocapture stays off, and `before_send` scrubs every exception event.
+// - **Web vitals and network timing** (`capture_performance`), with the
+//   web-vitals code bundled too.
+//
+// Nothing is fetched from PostHog's CDN at runtime: `disable_external_
+// dependency_loading` is on, and the two extensions the SDK would fetch are
+// imported from `posthog-js/dist` instead. The one request besides ingestion
+// is the project's remote config, which is what tells the recorder the
+// project records sessions.
 
 import type { PostHogConfig } from "posthog-js";
+import {
+  BLOCK_MEDIA_SELECTOR,
+  isSessionSampled,
+  MASK_ALL_TEXT_SELECTOR,
+  MASK_CONTENT,
+  maskReplayAttribute,
+  maskReplayNetworkRequest,
+  maskReplayText,
+  REPLAY_SESSION_SAMPLE_RATE,
+} from "../monitoring/replayPrivacy";
+import { scrubPostHogEvent } from "../monitoring/scrub";
 import { type Clock, systemClock } from "../shared/clock";
 import { type AnalyticsParamValue, USER_PROPERTIES } from "./catalog";
 import type { AnalyticsTransport } from "./transport";
@@ -50,6 +78,12 @@ export interface PostHogClient {
   opt_in_capturing(options?: { captureEventName?: string | null | false }): void;
   has_opted_out_capturing(): boolean;
   set_config(config: { persistence?: PostHogPersistence }): void;
+  /** Reports one error (`src/monitoring/posthogSink.ts`). */
+  captureException(error: unknown, properties?: Record<string, unknown>): unknown;
+  get_session_id(): string;
+  onSessionId(callback: (sessionId: string) => void): () => void;
+  startSessionRecording(): void;
+  stopSessionRecording(): void;
 }
 
 /** What `import("posthog-js")` hands back: the default instance's `init`. */
@@ -89,9 +123,52 @@ function nonEmpty(value: unknown): string | undefined {
 }
 
 /**
- * The SDK's init options. Everything PostHog would collect by itself is off:
- * the catalog is the only source of events (PRD `OPS-02`), pageviews come from
- * the router, and replay and exceptions are not this card's (ADR 0011).
+ * The recorder's options (ADR 0002 decision 2, ADR 0003 decision 1, ADR 0011
+ * decision 2). Exported so the tests assert against the value the SDK is
+ * handed, and so `replayPayload.test.ts` can run PostHog's recorder with it.
+ *
+ * Set here rather than in the PostHog project: a client-side value wins over
+ * the project's for every one of them, so a project setting cannot unmask
+ * text, turn on header or body capture, or turn canvas capture off.
+ */
+export const POSTHOG_SESSION_RECORDING: NonNullable<PostHogConfig["session_recording"]> =
+  {
+    /** Every text node masked; `maskReplayText` lets only the named unmasks through. */
+    maskTextSelector: MASK_ALL_TEXT_SELECTOR,
+    maskTextFn: maskReplayText,
+    /** The class a component marks its own user-authored text with. */
+    maskTextClass: MASK_CONTENT,
+    /** Typed text is user content by definition. */
+    maskAllInputs: true,
+    /** Names reach the DOM as attributes too; URL attributes lose their query. */
+    maskAttributeFn: maskReplayAttribute,
+    /** Images, video and audio are recorded as empty boxes. */
+    blockSelector: BLOCK_MEDIA_SELECTOR,
+    /**
+     * ADR 0003 decision 1: the arrangement and piano roll are canvases, and a
+     * replay without them is a grey box. What they draw is recorded as drawn,
+     * which the disclosure says.
+     */
+    captureCanvas: { recordCanvas: true, canvasFps: 4, canvasQuality: "0.4" },
+    /** Network timing records method, status and timing only. */
+    recordHeaders: false,
+    recordBody: false,
+    maskCapturedNetworkRequestFn: (request) => maskReplayNetworkRequest(request),
+    /**
+     * PostHog's own sampling, at the rate the recorder was loaded for:
+     * `isSessionSampled` makes the same decision first, so only a session this
+     * would record loads the recorder at all.
+     */
+    sampleRate: REPLAY_SESSION_SAMPLE_RATE,
+  };
+
+/**
+ * The SDK's init options. Everything PostHog would collect by itself is off
+ * except what GRV-120 turned on (the file banner lists it); the catalog is
+ * the only source of product events (PRD `OPS-02`).
+ *
+ * Session recording starts disabled. The loader starts it for a sampled
+ * session whose replay consent allows it, once the recorder is loaded.
  */
 export function postHogInitOptions(
   host: string,
@@ -102,20 +179,37 @@ export function postHogInitOptions(
     persistence,
     autocapture: false,
     capture_pageview: false,
-    capture_pageleave: false,
+    // Time on page, scroll depth and bounce rate in Web Analytics. The SDK
+    // pairs each `$pageleave` with the router's last `$pageview`.
+    capture_pageleave: true,
     rageclick: false,
     capture_dead_clicks: false,
     capture_heatmaps: false,
     disable_session_recording: true,
+    session_recording: POSTHOG_SESSION_RECORDING,
+    // Console arguments routinely carry project state in a music application.
+    enable_recording_console_log: false,
+    // Our global handlers catch everything and report through the boundary;
+    // autocapture would bypass its scrubbing.
     capture_exceptions: false,
-    capture_performance: false,
+    capture_performance: {
+      web_vitals: true,
+      network_timing: true,
+      // Attribution names the elements behind a slow paint or interaction,
+      // and needs its own, larger web-vitals build.
+      web_vitals_attribution: false,
+    },
+    before_send: scrubPostHogEvent,
     disable_surveys: true,
     disable_product_tours: true,
     disable_conversations: true,
     disable_web_experiments: true,
-    advanced_disable_flags: true,
-    // Nothing is fetched from PostHog's CDN at runtime: the bundled SDK is
-    // the whole of it.
+    // Feature flags stay off, but the project's remote config is still read:
+    // it is what tells the recorder the project records sessions.
+    advanced_disable_feature_flags: true,
+    advanced_disable_feature_flags_on_first_load: true,
+    // Nothing is fetched from PostHog's CDN at runtime: the bundled SDK and
+    // the extensions imported beside it are the whole of it.
     disable_external_dependency_loading: true,
     person_profiles: "identified_only",
   };
@@ -125,6 +219,20 @@ export interface PostHogLoaderOptions {
   settings: PostHogSettings;
   /** Replaced in tests with a fake; defaults to the real dynamic import. */
   importSdk?: () => Promise<PostHogSdk>;
+  /**
+   * Installs the session recorder for the SDK to find. Defaults to the
+   * bundled `posthog-js/dist/posthog-recorder`, its own chunk, which only a
+   * sampled session loads.
+   */
+  importRecorder?: () => Promise<unknown>;
+  /** Installs the web-vitals callbacks, likewise bundled rather than fetched. */
+  importWebVitals?: () => Promise<unknown>;
+}
+
+/** What `load` needs to decide about replay, read when it decides. */
+export interface PostHogLoadOptions {
+  /** Whether replay consent allows recording now. */
+  sessionReplayAllowed: () => boolean;
 }
 
 /**
@@ -134,13 +242,27 @@ export interface PostHogLoaderOptions {
  */
 export interface PostHogLoader {
   /** Initializes the SDK (once) and resolves the client, or `null` on failure. */
-  load(persistence: PostHogPersistence): Promise<PostHogClient | null>;
+  load(
+    persistence: PostHogPersistence,
+    options?: PostHogLoadOptions,
+  ): Promise<PostHogClient | null>;
+  /**
+   * The client once `load` has resolved it: what the PostHog error sink
+   * sends through. Stays pending for a session that never loads the SDK.
+   */
+  readonly client: Promise<PostHogClient | null>;
   /**
    * Applies a consent change to a client that is already running. Never loads
    * the SDK: turning collection off for a client that never started has
    * nothing to switch off.
    */
   setCollection(enabled: boolean, persistence: PostHogPersistence): void;
+  /**
+   * Stops an in-flight recording when replay consent is withdrawn (ADR 0002
+   * decision 4), and keeps this page load from starting another. Analytics
+   * keeps running.
+   */
+  stopSessionRecording(): void;
 }
 
 async function importPostHog(): Promise<PostHogSdk> {
@@ -148,14 +270,54 @@ async function importPostHog(): Promise<PostHogSdk> {
   return module.default as unknown as PostHogSdk;
 }
 
+async function importRecorder(): Promise<unknown> {
+  return import("posthog-js/dist/posthog-recorder");
+}
+
+async function importWebVitals(): Promise<unknown> {
+  return import("posthog-js/dist/web-vitals");
+}
+
 export function createPostHogLoader(options: PostHogLoaderOptions): PostHogLoader {
   let client: Promise<PostHogClient | null> | null = null;
+  let resolveClient: (client: PostHogClient | null) => void = () => {};
+  const loaded = new Promise<PostHogClient | null>((resolve) => {
+    resolveClient = resolve;
+  });
   const importSdk = options.importSdk ?? importPostHog;
+  const loadRecorder = options.importRecorder ?? importRecorder;
+  const loadWebVitals = options.importWebVitals ?? importWebVitals;
+  /** Replay withdrawn this page load: nothing may start a recording again. */
+  let replayStopped = false;
+  let recorder: Promise<unknown> | null = null;
+
+  /**
+   * Starts the recording for the current session if it is in the sample and
+   * consent allows it. Run at load and again on every new session, since the
+   * SDK samples per session and a long page can see several.
+   */
+  const startReplayIfSampled = (instance: PostHogClient, replay: PostHogLoadOptions) => {
+    if (replayStopped || !replay.sessionReplayAllowed()) return;
+    if (!isSessionSampled(instance.get_session_id(), REPLAY_SESSION_SAMPLE_RATE)) return;
+    recorder ??= loadRecorder();
+    recorder.then(
+      () => {
+        if (replayStopped || !replay.sessionReplayAllowed()) return;
+        instance.startSessionRecording();
+      },
+      () => {
+        // A recorder chunk that cannot load leaves the session unrecorded,
+        // which is the fail-open outcome (PRD `OPS-02`).
+        recorder = null;
+      },
+    );
+  };
 
   return {
-    load(persistence) {
-      client ??= importSdk()
-        .then((sdk) => {
+    client: loaded,
+    load(persistence, loadOptions) {
+      client ??= Promise.all([importSdk(), loadWebVitals().catch(() => undefined)])
+        .then(([sdk]) => {
           const instance =
             sdk.init(
               options.settings.key,
@@ -167,9 +329,18 @@ export function createPostHogLoader(options: PostHogLoaderOptions): PostHogLoade
           if (instance?.has_opted_out_capturing()) {
             instance.opt_in_capturing({ captureEventName: false });
           }
+          if (instance && loadOptions) {
+            try {
+              startReplayIfSampled(instance, loadOptions);
+              instance.onSessionId(() => startReplayIfSampled(instance, loadOptions));
+            } catch {
+              // Replay failing to start never costs the analytics client.
+            }
+          }
           return instance;
         })
         .catch(() => null);
+      void client.then(resolveClient);
       return client;
     },
     setCollection(enabled, persistence) {
@@ -187,6 +358,18 @@ export function createPostHogLoader(options: PostHogLoaderOptions): PostHogLoade
           if (persistence !== "memory") instance.set_config({ persistence });
         } catch {
           // A failing SDK never surfaces (PRD `OPS-02` fail-open).
+        }
+      });
+    },
+    stopSessionRecording() {
+      replayStopped = true;
+      if (!client) return;
+      void client.then((instance) => {
+        try {
+          instance?.stopSessionRecording();
+        } catch {
+          // A recording we cannot stop must not become an exception on the
+          // consent path; opting out of capture is the backstop.
         }
       });
     },

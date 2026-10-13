@@ -1,20 +1,14 @@
 // The Sentry SDK is never loaded here. Every test injects a fake module
 // through `SentrySinkOptions.load`, which is what lets this file assert the
-// ADR 0001, ADR 0002, and ADR 0003 configuration decisions — `sendDefaultPii`
-// off, console breadcrumbs disabled rather than filtered, Session Replay
-// present with text masking on, attributes masked, media blocked, canvas
-// recording on, and error-triggered replay at 0 — as facts about the options
-// object rather than as comments nobody checks.
+// ADR 0001 and ADR 0011 configuration decisions — `sendDefaultPii` off,
+// console breadcrumbs disabled rather than filtered, and no Session Replay at
+// all, since replay moved to PostHog — as facts about the options object
+// rather than as comments nobody checks.
 
 import { describe, expect, it, vi } from "vitest";
 import { UNKNOWN_BROWSER } from "./browserInfo";
 import type { ErrorReport } from "./errorReporting";
-import { MASK_ATTRIBUTES, MASK_CONTENT } from "./replayPrivacy";
-import {
-  REPLAY_CANVAS_INTEGRATION,
-  REPLAY_SESSION_SAMPLE_RATE,
-  SentrySink,
-} from "./sentrySink";
+import { SentrySink } from "./sentrySink";
 
 type InitOptions = Record<string, unknown>;
 
@@ -22,7 +16,6 @@ function fakeSentry() {
   const inits: InitOptions[] = [];
   const captures: { error: unknown; context: Record<string, unknown> }[] = [];
   const close = vi.fn(async () => true);
-  const stopReplay = vi.fn(async () => {});
   const integration = (name: string) => (options?: unknown) => ({
     name,
     options,
@@ -33,7 +26,6 @@ function fakeSentry() {
       captureException: (error: unknown, context: Record<string, unknown>) =>
         void captures.push({ error, context }),
       getClient: () => ({ close }),
-      getReplay: () => ({ stop: stopReplay }),
       browserSessionIntegration: integration("BrowserSession"),
       dedupeIntegration: integration("Dedupe"),
       breadcrumbsIntegration: integration("Breadcrumbs"),
@@ -43,7 +35,6 @@ function fakeSentry() {
     inits,
     captures,
     close,
-    stopReplay,
   };
 }
 
@@ -75,16 +66,13 @@ function report(overrides: Partial<ErrorReport> = {}): ErrorReport {
 
 async function started({
   dsn = "https://examplePublicKey@o0.ingest.invalid/0",
-  sessionReplay = true,
 }: {
   dsn?: string;
-  sessionReplay?: boolean;
 } = {}) {
   const sentry = fakeSentry();
   const sink = new SentrySink({
     dsn,
     release: "abc123def456",
-    sessionReplay,
     load: async () => sentry.module as never,
   });
   const ok = await sink.start();
@@ -114,7 +102,7 @@ describe("privacy configuration (ADR 0001)", () => {
       integrations(options)
         .map((i) => i.name)
         .sort(),
-    ).toEqual(["Breadcrumbs", "BrowserSession", "Dedupe", "Replay", "ReplayCanvas"]);
+    ).toEqual(["Breadcrumbs", "BrowserSession", "Dedupe"]);
   });
 
   it("enables the session integration Release Health needs", async () => {
@@ -151,155 +139,20 @@ describe("privacy configuration (ADR 0001)", () => {
   });
 });
 
-describe("Session Replay configuration (ADR 0002)", () => {
-  /** The replay integration's own options, or undefined when it is absent. */
-  async function replay(sessionReplay: boolean) {
-    const { options } = await started({ sessionReplay });
-    return integrations(options).find((i) => i.name === "Replay")?.options;
-  }
-
-  it("masks all text at capture, so characters never enter the payload", async () => {
-    // Decision 2. Masking happens in the browser before serialization, which
-    // is the whole reason ADR 0001's prohibition could be lifted at all.
-    expect(await replay(true)).toMatchObject({ maskAllText: true });
-  });
-
-  it("masks every input, because typed text is user content by definition", async () => {
-    expect(await replay(true)).toMatchObject({ maskAllInputs: true });
-  });
-
-  it("blocks all media", async () => {
-    expect(await replay(true)).toMatchObject({ blockAllMedia: true });
-  });
-
-  it("honours the classes a content surface marks itself with", async () => {
-    // The second safeguard of decision 2: the global default *and* the
-    // component's own markup. `replayPrivacy.test.ts` checks the markup end;
-    // this checks the SDK is actually told to look for it.
-    expect(await replay(true)).toMatchObject({
-      mask: [`.${MASK_CONTENT}`],
-    });
-  });
-
-  it("masks the attributes names reach the DOM through, not just text nodes", async () => {
-    // Class marking covers text nodes and input values. An `aria-label` with a
-    // track name in it is neither, and the SDK *replaces* its default
-    // attribute list rather than extending it — so this asserts the whole
-    // list, not just that `aria-label` is somewhere in it.
-    expect(await replay(true)).toMatchObject({
-      maskAttributes: [...MASK_ATTRIBUTES],
-    });
-  });
-
-  it("records canvas, so the arrangement and piano roll are actually visible", async () => {
-    // ADR 0003 decision 1, reversing ADR 0002. Canvas is a *separate*
-    // integration in the SDK, so "on" is its presence in the integration list
-    // rather than a flag on the replay options. With it absent, replay showed
-    // a pointer moving over a grey page — useless for the surfaces that are
-    // the whole reason replay is enabled.
-    const { options } = await started({ sessionReplay: true });
-    expect(integrations(options).map((i) => i.name)).toContain("ReplayCanvas");
-  });
-
-  it("does not record canvas when replay itself is off", async () => {
-    // The canvas integration is inert without replay, but constructing it
-    // anyway would mean an opted-out user carries replay machinery.
-    const { options } = await started({ sessionReplay: false });
-    expect(integrations(options).map((i) => i.name)).not.toContain("ReplayCanvas");
-    expect(JSON.stringify(options)).not.toContain(REPLAY_CANVAS_INTEGRATION);
-  });
-
-  it("samples sessions low and never records on error", async () => {
-    // Decision 6. Error-triggered replay is the debugging use ADR 0001
-    // weighed and rejected; ADR 0002 buys usage understanding, not that.
-    const { options } = await started({ sessionReplay: true });
-    expect(options.replaysSessionSampleRate).toBe(REPLAY_SESSION_SAMPLE_RATE);
-    expect(REPLAY_SESSION_SAMPLE_RATE).toBeLessThanOrEqual(0.1);
-    expect(options.replaysOnErrorSampleRate).toBe(0);
-  });
-
-  it("does not unmask anything", async () => {
-    // Decision 2 permits unmasking only stable, non-user-authored chrome by an
-    // explicit named selector. Until a surface proves unreadable there is
-    // nothing to name, and the absence is the safe state.
-    const options = await replay(true);
-    expect(options).not.toHaveProperty("unmask");
-    expect(options).not.toHaveProperty("unblock");
-  });
-});
-
-describe("declining replay stops it at the source (ADR 0002 decision 4)", () => {
-  it("constructs no replay integration at all for a declined session", async () => {
-    // Not a send filter: nothing is captured in the first place. This is the
-    // property that makes the disclosure's promise true rather than aspirational.
-    const { options } = await started({ sessionReplay: false });
+describe("no Session Replay (ADR 0011 decision 2, GRV-120)", () => {
+  // Replay moved to PostHog, so only one vendor ever records. Sentry builds no
+  // replay integration and samples nothing, so neither guard is load-bearing
+  // on its own.
+  it("constructs no replay integration", async () => {
+    const { options } = await started();
     expect(integrations(options).map((i) => i.name)).not.toContain("Replay");
-    expect(JSON.stringify(options)).not.toContain("Replay");
+    expect(integrations(options).map((i) => i.name)).not.toContain("ReplayCanvas");
   });
 
-  it("samples no sessions either, so neither guard is load-bearing alone", async () => {
-    const { options } = await started({ sessionReplay: false });
+  it("samples no sessions and never records on error", async () => {
+    const { options } = await started();
     expect(options.replaysSessionSampleRate).toBe(0);
     expect(options.replaysOnErrorSampleRate).toBe(0);
-  });
-
-  it("defaults to declined when the caller has not consulted consent", async () => {
-    // A caller that forgets to pass consent gets the safe outcome, not the
-    // recording one.
-    const sentry = fakeSentry();
-    const sink = new SentrySink({
-      dsn: "https://k@o0.ingest.invalid/0",
-      load: async () => sentry.module as never,
-    });
-    await sink.start();
-    expect(integrations(sentry.inits[0]).map((i) => i.name)).not.toContain("Replay");
-  });
-
-  it("stops an in-flight recording when consent is withdrawn mid-session", async () => {
-    const { sentry, sink } = await started({ sessionReplay: true });
-    await sink.stopReplay();
-    expect(sentry.stopReplay).toHaveBeenCalledTimes(1);
-  });
-
-  it("stops the recording before closing the client, not as a side effect of it", async () => {
-    // A sampled-in recording buffers in the page; leaving it to the client
-    // teardown is what "merely dropping it before send" would look like.
-    const { sentry, sink } = await started({ sessionReplay: true });
-    await sink.stop();
-    expect(sentry.stopReplay).toHaveBeenCalled();
-    expect(sentry.close).toHaveBeenCalled();
-  });
-
-  it("is idempotent, so a repeated withdrawal is harmless", async () => {
-    const { sentry, sink } = await started({ sessionReplay: true });
-    await sink.stopReplay();
-    await sink.stopReplay();
-    await sink.stop();
-    expect(sentry.stopReplay).toHaveBeenCalledTimes(1);
-  });
-
-  it("does nothing when replay was never enabled", async () => {
-    const { sentry, sink } = await started({ sessionReplay: false });
-    await sink.stopReplay();
-    expect(sentry.stopReplay).not.toHaveBeenCalled();
-  });
-
-  it("survives an SDK that cannot stop the recording", async () => {
-    // Consent withdrawal must not throw. The client close is the backstop.
-    const sentry = fakeSentry();
-    const sink = new SentrySink({
-      dsn: "https://k@o0.ingest.invalid/0",
-      sessionReplay: true,
-      load: async () =>
-        ({
-          ...sentry.module,
-          getReplay: () => {
-            throw new Error("replay unavailable");
-          },
-        }) as never,
-    });
-    await sink.start();
-    await expect(sink.stopReplay()).resolves.toBeUndefined();
   });
 });
 

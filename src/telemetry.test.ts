@@ -6,6 +6,7 @@ import {
   createPostHogLoader,
   type PostHogClient,
   type PostHogLoader,
+  type PostHogLoadOptions,
   type PostHogPersistence,
 } from "./analytics/posthogTransport";
 import {
@@ -17,7 +18,11 @@ import {
 import { updateTrack } from "./commands";
 import { createCommandHistory } from "./commands/history";
 import { createCommandTestProject } from "./commands/testProjects";
-import { ErrorReporter, type ErrorSink } from "./monitoring/errorReporting";
+import {
+  type ErrorReport,
+  ErrorReporter,
+  type ErrorSink,
+} from "./monitoring/errorReporting";
 import { ProjectAutosave } from "./persistence/autosave";
 import { InMemoryProjectRepository } from "./persistence/inMemoryProjectRepository";
 import { createManualScheduler } from "./shared/scheduler";
@@ -318,175 +323,200 @@ describe("consent (PRD OPS-02 opt-out)", () => {
 // Session Replay consent, honoured at the source (ADR 0002 decision 4)
 // ---------------------------------------------------------------------------
 
-describe("Session Replay consent (ADR 0002 decision 4)", () => {
-  /**
-   * A sink whose replay stop is observable *separately* from its teardown.
-   *
-   * That separation is the whole point: withdrawing replay alone must end the
-   * recording without stopping error monitoring, so a test that could only see
-   * one combined stopper could not tell the required behaviour from the wrong
-   * one.
-   */
-  function replayableSink() {
-    const stopReplay = vi.fn(async () => {});
-    const stop = vi.fn(async () => {});
-    const built: { sessionReplay: boolean }[] = [];
-    const startErrorSink: StartErrorSink = async (_release, options) => {
-      built.push(options);
-      return { stop, stopReplay };
-    };
-    return { startErrorSink, built, stopReplay, stop };
+describe("Session Replay consent (ADR 0002 decision 4, ADR 0011 decision 2)", () => {
+  /** A PostHog loader whose load options and replay stop are observable. */
+  function replayLoader() {
+    const loads: PostHogLoadOptions[] = [];
+    const loader = {
+      load: vi.fn(
+        async (_persistence: PostHogPersistence, options?: PostHogLoadOptions) => {
+          if (options) loads.push(options);
+          return null;
+        },
+      ),
+      client: new Promise<PostHogClient | null>(() => {}),
+      setCollection: vi.fn(),
+      stopSessionRecording: vi.fn(),
+    } satisfies PostHogLoader;
+    return { loader, loads };
   }
 
-  function start(consent: ConsentStore, startErrorSink: StartErrorSink) {
+  function start(consent: ConsentStore) {
+    const paint = deferredPaint();
+    const { loader, loads } = replayLoader();
+    const stop = vi.fn(async () => {});
+    const telemetry = initTelemetry({
+      surface: "editor",
+      consent,
+      target: fakeTarget(),
+      afterPaint: paint.schedule,
+      startErrorSink: async () => stop,
+      postHogLoader: loader,
+      createPostHogErrorSink: () => null,
+    });
+    paint.flush();
+    return { paint, telemetry, loader, loads, stop };
+  }
+
+  it("lets the analytics client record only while replay consent allows it", async () => {
+    // The loader reads the flag when it decides, not when it was scheduled:
+    // the disclosure is reachable throughout the wait for first paint.
+    const consent = new ConsentStore(memoryStorage());
+    const { loads } = start(consent);
+    await tick();
+
+    expect(loads).toHaveLength(1);
+    expect(loads[0].sessionReplayAllowed()).toBe(true);
+    consent.set({ sessionReplay: false });
+    expect(loads[0].sessionReplayAllowed()).toBe(false);
+  });
+
+  it("stops the in-flight recording when replay is withdrawn mid-session", async () => {
+    // "Opting out mid-session stops an in-flight recording rather than merely
+    // dropping it before send."
+    const consent = new ConsentStore(memoryStorage());
+    const { loader } = start(consent);
+    await tick();
+    expect(loader.stopSessionRecording).not.toHaveBeenCalled();
+
+    consent.set({ sessionReplay: false });
+
+    expect(loader.stopSessionRecording).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps analytics and error monitoring running when only replay is withdrawn", async () => {
+    const consent = new ConsentStore(memoryStorage());
+    const { loader, stop, telemetry } = start(consent);
+    await tick();
+
+    consent.set({ sessionReplay: false });
+    await tick();
+
+    expect(loader.setCollection).not.toHaveBeenCalledWith(false, expect.anything());
+    expect(stop).not.toHaveBeenCalled();
+    // And the sink is still the disposer's to stop, so nothing has leaked.
+    await telemetry.dispose();
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("tells the loader for a session that declined replay before anything loaded", () => {
+    // Honoured at the source as well: the loader will not start a recording
+    // for this page load at all.
+    const consent = new ConsentStore(memoryStorage());
+    consent.set({ sessionReplay: false });
+    const { loader } = start(consent);
+    expect(loader.stopSessionRecording).toHaveBeenCalled();
+  });
+
+  it("withdrawing everything stops the recording, analytics and the sinks", async () => {
+    const consent = new ConsentStore(memoryStorage());
+    const { loader, stop } = start(consent);
+    await tick();
+
+    consent.optOut();
+
+    expect(loader.stopSessionRecording).toHaveBeenCalledTimes(1);
+    expect(loader.setCollection).toHaveBeenLastCalledWith(false, expect.anything());
+    await vi.waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("errors go to Sentry and PostHog (ADR 0011 decision 3)", () => {
+  function recordingSink() {
+    const reports: ErrorReport[] = [];
+    const sink = {
+      capture: (report: ErrorReport) => void reports.push(report),
+      stop: vi.fn(),
+    };
+    return { sink, reports };
+  }
+
+  function setup(consent = new ConsentStore(memoryStorage())) {
+    const reporter = new ErrorReporter({
+      consent,
+      analytics: new Analytics({
+        transport: createRecordingTransport(),
+        consent,
+        storage: memoryStorage(),
+      }),
+    });
+    const postHog = recordingSink();
+    const sentryStop = vi.fn(async () => {});
+    const paint = deferredPaint();
+    const telemetry = initTelemetry({
+      surface: "editor",
+      consent,
+      reporter,
+      target: fakeTarget(),
+      afterPaint: paint.schedule,
+      startErrorSink: async () => sentryStop,
+      createAnalyticsTransport: createRecordingTransport,
+      setVendorAnalyticsCollection: () => {},
+      stopSessionReplay: () => {},
+      createPostHogErrorSink: () => postHog.sink,
+    });
+    return { consent, reporter, postHog, sentryStop, paint, telemetry };
+  }
+
+  it("attaches the PostHog sink when monitoring starts, not before", async () => {
+    const { reporter, postHog, paint } = setup();
+    reporter.report(new Error("before"), { area: "shell", fatal: false });
+    expect(postHog.reports).toHaveLength(0);
+
+    paint.flush();
+    await tick();
+    reporter.report(new Error("after"), { area: "shell", fatal: false });
+
+    expect(postHog.reports.map((report) => report.message)).toEqual(["after"]);
+  });
+
+  it("never attaches it for a session that declined error monitoring", async () => {
+    const consent = new ConsentStore(memoryStorage());
+    consent.set({ errorMonitoring: false });
+    const { reporter, postHog, paint } = setup(consent);
+    paint.flush();
+    await tick();
+
+    reporter.report(new Error("boom"), { area: "shell", fatal: false });
+    expect(postHog.reports).toHaveLength(0);
+  });
+
+  it("detaches and stops it, with Sentry's, when error monitoring is withdrawn", async () => {
+    const { consent, reporter, postHog, sentryStop, paint } = setup();
+    paint.flush();
+    await tick();
+
+    consent.set({ errorMonitoring: false });
+    await vi.waitFor(() => expect(sentryStop).toHaveBeenCalledTimes(1));
+    expect(postHog.sink.stop).toHaveBeenCalledTimes(1);
+
+    consent.set({ errorMonitoring: true });
+    reporter.report(new Error("withdrawn"), { area: "shell", fatal: false });
+    expect(postHog.reports.map((report) => report.message)).not.toContain("withdrawn");
+  });
+
+  it("still attaches Sentry's when the PostHog sink cannot be built", async () => {
+    const consent = new ConsentStore(memoryStorage());
+    const sentryStop = vi.fn(async () => {});
     const paint = deferredPaint();
     const telemetry = initTelemetry({
       surface: "editor",
       consent,
       target: fakeTarget(),
       afterPaint: paint.schedule,
-      startErrorSink,
+      startErrorSink: async () => sentryStop,
       createAnalyticsTransport: createRecordingTransport,
       setVendorAnalyticsCollection: () => {},
-    });
-    paint.flush();
-    return { paint, telemetry };
-  }
-
-  it("builds the SDK with replay on when consent allows it", async () => {
-    // The value is passed at *construction*, which is what makes declining a
-    // property of the SDK rather than a filter on what it sends.
-    const consent = new ConsentStore(memoryStorage());
-    const sink = replayableSink();
-    start(consent, sink.startErrorSink);
-    await tick();
-
-    expect(sink.built).toEqual([{ sessionReplay: true }]);
-  });
-
-  it("builds it with replay off for a user who has declined", async () => {
-    const consent = new ConsentStore(memoryStorage());
-    consent.set({ sessionReplay: false });
-    const sink = replayableSink();
-    start(consent, sink.startErrorSink);
-    await tick();
-
-    expect(sink.built).toEqual([{ sessionReplay: false }]);
-  });
-
-  it("reads replay consent when the SDK is built, not when the start is scheduled", async () => {
-    // The window between scheduling and resolution is two animation frames
-    // plus an idle callback, and the disclosure is reachable throughout it.
-    // Reading the flag at schedule time would construct a recording SDK for a
-    // user who declined during that window.
-    const consent = new ConsentStore(memoryStorage());
-    const sink = replayableSink();
-    const paint = deferredPaint();
-    initTelemetry({
-      surface: "editor",
-      consent,
-      target: fakeTarget(),
-      afterPaint: paint.schedule,
-      startErrorSink: sink.startErrorSink,
-      createAnalyticsTransport: createRecordingTransport,
-      setVendorAnalyticsCollection: () => {},
-    });
-    consent.set({ sessionReplay: false });
-    paint.flush();
-    await tick();
-
-    expect(sink.built).toEqual([{ sessionReplay: false }]);
-  });
-
-  it("keeps error monitoring running when replay alone is declined", async () => {
-    // The two consents are separate. Declining replay must not cost the
-    // crash-free session rate.
-    const consent = new ConsentStore(memoryStorage());
-    consent.set({ sessionReplay: false });
-    const sink = replayableSink();
-    start(consent, sink.startErrorSink);
-    await tick();
-
-    expect(sink.built).toHaveLength(1);
-    expect(sink.stop).not.toHaveBeenCalled();
-  });
-
-  it("stops the in-flight recording when replay is withdrawn mid-session", async () => {
-    // "Opting out mid-session stops an in-flight recording rather than merely
-    // dropping it before send." The recording was already sampled in and is
-    // buffering in the page; only telling it to stop ends it.
-    const consent = new ConsentStore(memoryStorage());
-    const sink = replayableSink();
-    start(consent, sink.startErrorSink);
-    await tick();
-    expect(sink.stopReplay).not.toHaveBeenCalled();
-
-    consent.set({ sessionReplay: false });
-
-    await vi.waitFor(() => expect(sink.stopReplay).toHaveBeenCalledTimes(1));
-  });
-
-  it("leaves error monitoring attached when only replay is withdrawn", async () => {
-    const consent = new ConsentStore(memoryStorage());
-    const sink = replayableSink();
-    const { telemetry } = start(consent, sink.startErrorSink);
-    await tick();
-
-    consent.set({ sessionReplay: false });
-    await tick();
-
-    expect(sink.stop).not.toHaveBeenCalled();
-    // And it is still the disposer's to stop, so nothing has leaked.
-    await telemetry.dispose();
-    expect(sink.stop).toHaveBeenCalledTimes(1);
-  });
-
-  it("stops the recording that arrives after the withdrawal it missed", async () => {
-    // Replay declined while the SDK was still resolving: the consent
-    // subscription had no sink to call, so the resolution path has to stop it
-    // itself. Otherwise the session records for the rest of its life.
-    const consent = new ConsentStore(memoryStorage());
-    const sink = replayableSink();
-    const paint = deferredPaint();
-    let finishLoading: () => void = () => {};
-    const loaded = new Promise<void>((resolve) => {
-      finishLoading = resolve;
-    });
-    initTelemetry({
-      surface: "editor",
-      consent,
-      target: fakeTarget(),
-      afterPaint: paint.schedule,
-      startErrorSink: async (release, options) => {
-        await loaded;
-        return sink.startErrorSink(release, options);
+      stopSessionReplay: () => {},
+      createPostHogErrorSink: () => {
+        throw new Error("posthog unavailable");
       },
-      createAnalyticsTransport: createRecordingTransport,
-      setVendorAnalyticsCollection: () => {},
     });
     paint.flush();
-
-    consent.set({ sessionReplay: false });
-    finishLoading();
-
-    await vi.waitFor(() => expect(sink.stopReplay).toHaveBeenCalledTimes(1));
-    // Error monitoring was never withdrawn, so the sink itself stays.
-    expect(sink.stop).not.toHaveBeenCalled();
-  });
-
-  it("withdrawing everything stops the recording and the sink", async () => {
-    // The single user-facing control turns all three off in one action.
-    const consent = new ConsentStore(memoryStorage());
-    const sink = replayableSink();
-    start(consent, sink.startErrorSink);
     await tick();
 
-    consent.optOut();
-
-    await vi.waitFor(() => {
-      expect(sink.stopReplay).toHaveBeenCalledTimes(1);
-      expect(sink.stop).toHaveBeenCalledTimes(1);
-    });
+    await telemetry.dispose();
+    expect(sentryStop).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -678,8 +708,12 @@ describe("the vendor analytics SDK follows consent (PRD OPS-02)", () => {
 describe("the PostHog SDK loads lazily, and never on the landing page (GRV-106)", () => {
   function fakeLoader() {
     return {
-      load: vi.fn(async (_persistence: PostHogPersistence) => null),
+      load: vi.fn(
+        async (_persistence: PostHogPersistence, _options?: PostHogLoadOptions) => null,
+      ),
+      client: new Promise<PostHogClient | null>(() => {}),
       setCollection: vi.fn(),
+      stopSessionRecording: vi.fn(),
     } satisfies PostHogLoader;
   }
 
@@ -728,7 +762,7 @@ describe("the PostHog SDK loads lazily, and never on the landing page (GRV-106)"
     const { paint, postHogLoader } = setup("editor");
     paint.flush();
     await tick();
-    expect(postHogLoader.load).toHaveBeenCalledWith("memory");
+    expect(postHogLoader.load).toHaveBeenCalledWith("memory", expect.anything());
   });
 
   it("persists it in localStorage and a cookie once the user has granted consent", async () => {
@@ -739,7 +773,10 @@ describe("the PostHog SDK loads lazily, and never on the landing page (GRV-106)"
     const { paint, postHogLoader } = setup("editor", new ConsentStore(storage));
     paint.flush();
     await tick();
-    expect(postHogLoader.load).toHaveBeenCalledWith("localStorage+cookie");
+    expect(postHogLoader.load).toHaveBeenCalledWith(
+      "localStorage+cookie",
+      expect.anything(),
+    );
   });
 
   it("never loads it for an opted-out session, and opts a running client out", async () => {
@@ -795,6 +832,11 @@ describe("withdrawing consent before the SDK loads (GRV-106)", () => {
       opt_out_capturing: record("opt_out_capturing"),
       opt_in_capturing: record("opt_in_capturing"),
       has_opted_out_capturing: () => false,
+      captureException: record("captureException"),
+      get_session_id: () => "session",
+      onSessionId: () => () => {},
+      startSessionRecording: record("startSessionRecording"),
+      stopSessionRecording: record("stopSessionRecording"),
     };
     return { client, calls };
   }
@@ -813,6 +855,8 @@ describe("withdrawing consent before the SDK loads (GRV-106)", () => {
       postHogLoader: createPostHogLoader({
         settings: { key: "phc_test", host: "https://eu.i.posthog.com" },
         importSdk: async () => ({ init }),
+        importRecorder: async () => {},
+        importWebVitals: async () => {},
       }),
     });
     return { calls, init, consent, paint, telemetry };

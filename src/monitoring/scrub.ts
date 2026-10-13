@@ -119,6 +119,67 @@ export function scrubFramePath(value: unknown): string | undefined {
 }
 
 /**
+ * Hosts whose request paths name stored documents and objects: Firestore and
+ * the two Cloud Storage endpoints. Their paths are reduced to IDs.
+ */
+const DATA_API_HOSTS = [
+  "firestore.googleapis.com",
+  "firebasestorage.googleapis.com",
+  "storage.googleapis.com",
+];
+
+/** The structural words of the Firestore and Storage REST and channel paths. */
+const DATA_API_SEGMENT =
+  /^(?:v\d+(?:beta\d+)?|b|o|projects|databases|documents|\(default\)|google\.firestore\.v1\.Firestore|Listen|Write|channel)$/;
+
+/** A Firebase UID or a Firestore auto-ID: opaque by construction. */
+const FIREBASE_ID = /^[A-Za-z0-9]{20,28}$/;
+
+/**
+ * Reduces a request URL to what a session replay's network timing may carry
+ * (GRV-120): origin and path, never a query string or fragment, which is where
+ * Firebase Storage download tokens, auth API keys and session identifiers
+ * ride.
+ *
+ * A Firestore or Storage path names documents and objects, so it keeps its
+ * IDs only: each segment (an encoded Storage object path is split too) is kept
+ * if it is one of the APIs' own words or a prefixed or Firebase ID, and
+ * becomes `:param` otherwise. A `data:` or `blob:` URL keeps only its scheme,
+ * since its payload is the rest of it. `undefined` for anything unreadable,
+ * which drops the request.
+ */
+export function scrubNetworkUrl(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+  if (!/^(?:https?|wss?):$/.test(url.protocol)) return url.protocol;
+  if (!DATA_API_HOSTS.includes(url.hostname)) return `${url.origin}${url.pathname}`;
+  const segments = url.pathname
+    .split("/")
+    .filter((segment) => segment.length > 0)
+    .flatMap((segment) => {
+      try {
+        return decodeURIComponent(segment).split("/");
+      } catch {
+        return [segment];
+      }
+    })
+    .filter((segment) => segment.length > 0)
+    .map((segment) =>
+      DATA_API_SEGMENT.test(segment) ||
+      PREFIXED_ID.test(segment) ||
+      FIREBASE_ID.test(segment)
+        ? segment
+        : ":param",
+    );
+  return `${url.origin}/${segments.join("/")}`;
+}
+
+/**
  * Static path segments that appear in Groove's own routes.
  *
  * Kept in step with `src/routes`. A segment missing from here is not a leak,
@@ -405,5 +466,128 @@ function scrubFrame(frame: ScrubbableFrame): ScrubbableFrame {
     // `vars` and the context lines are dropped: local variables at the throw
     // site are the single most likely place for a clip name or a note array
     // to appear in a payload.
+  };
+}
+
+// ---------------------------------------------------------------------------
+// PostHog exception events (ADR 0011 decision 3, GRV-120)
+// ---------------------------------------------------------------------------
+//
+// PostHog builds its `$exception` event from the error object the PostHog
+// sink hands it, exactly as Sentry does, so the raw message and the raw stack
+// are in it. The PostHog transport runs every outgoing event through
+// `scrubPostHogEvent` (its `before_send`), which gives the exception the same
+// treatment `scrubSentryEvent` gives Sentry's: the message redacted, frames
+// reduced to our code's location, and nothing else kept.
+
+export interface ScrubbablePostHogFrame {
+  platform?: string;
+  filename?: string;
+  abs_path?: string;
+  function?: string;
+  module?: string;
+  lineno?: number;
+  colno?: number;
+  in_app?: boolean;
+  /** What PostHog matches an uploaded source map by. */
+  chunk_id?: string;
+  context_line?: string;
+  pre_context?: string[];
+  post_context?: string[];
+  vars?: Record<string, unknown>;
+}
+
+export interface ScrubbablePostHogException {
+  type?: string;
+  value?: string;
+  mechanism?: Record<string, unknown>;
+  module?: string;
+  stacktrace?: { type?: string; frames?: ScrubbablePostHogFrame[] };
+}
+
+export interface ScrubbablePostHogEvent {
+  event?: string;
+  properties?: Record<string, unknown>;
+}
+
+/** The mechanism fields PostHog groups and links causes by. */
+const POSTHOG_MECHANISM_FIELDS = [
+  "type",
+  "handled",
+  "synthetic",
+  "exception_id",
+  "parent_id",
+  "source",
+] as const;
+
+/**
+ * Exception properties PostHog may attach beyond the list itself. Steps are a
+ * breadcrumb trail any code can write a message into; the legacy message and
+ * the source context are free text.
+ */
+const POSTHOG_DROPPED_EXCEPTION_PROPERTIES = [
+  "$exception_steps",
+  "$exception_message",
+  "$exception_source",
+  "$exception_personURL",
+] as const;
+
+/**
+ * `before_send` for the PostHog client: scrubs a `$exception` event and passes
+ * every other event through untouched. Never throws; an exception event it
+ * cannot read is dropped (`null`) rather than sent unscrubbed.
+ */
+export function scrubPostHogEvent<T extends ScrubbablePostHogEvent>(
+  event: T | null,
+): T | null {
+  if (!event || event.event !== "$exception") return event;
+  try {
+    const properties: Record<string, unknown> = { ...event.properties };
+    const list = properties.$exception_list;
+    properties.$exception_list = Array.isArray(list)
+      ? list.map((exception) =>
+          scrubPostHogException(exception as ScrubbablePostHogException),
+        )
+      : [];
+    for (const key of POSTHOG_DROPPED_EXCEPTION_PROPERTIES) delete properties[key];
+    if (typeof properties.$exception_type === "string") {
+      properties.$exception_type = redactText(properties.$exception_type);
+    }
+    return { ...event, properties };
+  } catch {
+    return null;
+  }
+}
+
+function scrubPostHogException(
+  exception: ScrubbablePostHogException,
+): ScrubbablePostHogException {
+  const mechanism = exception.mechanism
+    ? (allowlist(exception.mechanism, POSTHOG_MECHANISM_FIELDS) ?? {})
+    : undefined;
+  return {
+    type: exception.type,
+    value: redactText(exception.value),
+    mechanism,
+    stacktrace: exception.stacktrace
+      ? {
+          type: exception.stacktrace.type ?? "raw",
+          frames: (exception.stacktrace.frames ?? []).map(scrubPostHogFrame),
+        }
+      : undefined,
+  };
+}
+
+function scrubPostHogFrame(frame: ScrubbablePostHogFrame): ScrubbablePostHogFrame {
+  return {
+    platform: frame.platform,
+    filename: scrubFramePath(frame.filename),
+    abs_path: scrubFramePath(frame.abs_path),
+    function: frame.function,
+    lineno: frame.lineno,
+    colno: frame.colno,
+    in_app: frame.in_app,
+    chunk_id: frame.chunk_id,
+    // `module`, `vars` and the context lines are dropped, as for Sentry.
   };
 }
