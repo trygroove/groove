@@ -77,6 +77,27 @@ describe("the assistant's system prompt", () => {
     expect(ASSISTANT_SYSTEM_PROMPT).toContain("Groove has audio (loops and samples)");
   });
 
+  // GRV-101 QA: the live eval scored the Generate pointer 0/3 while it was optional.
+  it("always points a drum density or rhythm request at the Generate panel", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "Whenever a request is about a drum part's density or rhythm",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("you may add in a sentence");
+  });
+
+  // GRV-101 QA: notes.transpose skips pad triggers, so the prompt must not promise it.
+  it("says Transform's transpose leaves pad hits alone", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("Transpose moves pitched notes only");
+  });
+
+  // GRV-101 QA: replies said "recommend_sounds" and "notes_quantize" to the producer.
+  it("keeps tool names out of the producer's words", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("never by a tool's name");
+    const section =
+      ASSISTANT_SYSTEM_PROMPT.split("## What Groove has")[1]?.split("\n## ")[0] ?? "";
+    expect(section).not.toMatch(/\b[a-z]+_[a-z_]+\b/);
+  });
+
   it("lists every device type and every one of its parameters by key", () => {
     for (const device of deviceTypes()) {
       const line = ASSISTANT_SYSTEM_PROMPT.split("\n").find((candidate) =>
