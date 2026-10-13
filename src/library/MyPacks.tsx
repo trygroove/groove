@@ -205,6 +205,8 @@ export default function MyPacks(props: MyPacksProps): JSX.Element {
   const emptySpace = useFileDrop((files) => importInto(null, files, "drop"));
   const usageLine = createMemo(() => {
     const usage = library().usage();
+    // An internal or admin account has no allowance to measure against (GRV-112).
+    if (!Number.isFinite(usage.capBytes)) return `${formatBytes(usage.usedBytes)} used`;
     return `${formatBytes(usage.usedBytes)} of ${formatBytes(usage.capBytes)} used`;
   });
 

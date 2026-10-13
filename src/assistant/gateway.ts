@@ -15,7 +15,8 @@
  * 3. stops if the kill switch is off or today's spend ceiling is reached;
  * 4. builds the per-model provider request with a bounded history;
  * 5. reserves one of the account's requests before **every** provider call,
- *    retries included, and adds what each call cost to the day's spend;
+ *    retries included, and adds what each call cost to the day's spend (an
+ *    internal or admin account skips the ceiling and the quota, GRV-112);
  * 6. calls the provider, streaming the reply's text as it arrives, under a
  *    per-attempt inactivity timeout, retrying a transient failure that has
  *    not streamed anything yet, and abandoning the call if the browser goes away;
@@ -108,6 +109,13 @@ export interface AssistantCaller {
    * `src/access/claims.ts`), so its transcripts are marked internal.
    */
   readonly internalAccount?: boolean;
+  /**
+   * Whether the ID token carries the `internal` or `admin` claim
+   * (`hasUnlimitedClaim`, GRV-112), so the account is held to neither its
+   * request quota nor the day's spend ceiling. Its calls still add to the
+   * day's spend, and the kill switch still stops it.
+   */
+  readonly unlimited?: boolean;
 }
 
 /** The quota and spend figures the gateway enforces. */
@@ -593,13 +601,13 @@ export async function runAssistantTurn(
           "The assistant request was cancelled.",
         );
       }
-      await checkSpend(deps.guards, deps.now(), guardLimits);
-      const requestsRemaining = await reserveCall(
-        deps.guards,
-        uid,
-        deps.now(),
-        guardLimits,
-      );
+      // An unlimited account takes no request from a window and is not
+      // stopped by the ceiling; it always has a full window left.
+      let requestsRemaining = guardLimits.requestsPerWindow;
+      if (!caller.unlimited) {
+        await checkSpend(deps.guards, deps.now(), guardLimits);
+        requestsRemaining = await reserveCall(deps.guards, uid, deps.now(), guardLimits);
+      }
       attempts += 1;
       const attempt = await attemptCall(
         deps,

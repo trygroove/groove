@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { hasInternalClaim, INTERNAL_CLAIM, withInternalClaim } from "./claims";
+import {
+  hasInternalClaim,
+  hasUnlimitedClaim,
+  INTERNAL_CLAIM,
+  withInternalClaim,
+} from "./claims";
 
 describe("hasInternalClaim", () => {
   it("is true only for the claim set to true", () => {
@@ -17,6 +22,26 @@ describe("hasInternalClaim", () => {
     ["a number", { internal: 1 }],
   ])("is false for %s", (_, claims) => {
     expect(hasInternalClaim(claims)).toBe(false);
+  });
+});
+
+describe("hasUnlimitedClaim", () => {
+  it.each([
+    ["an internal account", { internal: true }],
+    ["an admin", { admin: true }],
+    ["both", { internal: true, admin: true }],
+  ])("is true for %s", (_, claims) => {
+    expect(hasUnlimitedClaim(claims)).toBe(true);
+  });
+
+  it.each([
+    ["no claims", undefined],
+    ["null claims", null],
+    ["an ordinary account", { email_verified: true }],
+    ["false claims", { internal: false, admin: false }],
+    ["truthy strings", { internal: "true", admin: "true" }],
+  ])("is false for %s", (_, claims) => {
+    expect(hasUnlimitedClaim(claims)).toBe(false);
   });
 });
 

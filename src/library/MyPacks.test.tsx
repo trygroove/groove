@@ -774,6 +774,23 @@ describe("My packs", () => {
     });
   });
 
+  it("holds an internal or admin account to no allowance (GRV-112)", async () => {
+    const repository = createInMemoryUserLibraryRepository();
+    repository.setUsage("u1", USER_DATA_CAP_BYTES - 32);
+    setUp({ repository, account: { ...REGISTERED, unlimited: true } });
+    const pack = await addNamedPack("Field Recordings");
+    // Its usage is shown, with no allowance beside it and no warning.
+    expect(await screen.findByText(/^\S+ \S+ used$/)).toBeVisible();
+    expect(screen.queryByText(/ of .* used$/)).toBeNull();
+    expect(screen.queryByText(/Your library is \d+% full/)).toBeNull();
+
+    drop(pack, [audioFile("tape-kick.wav", "audio/wav", 64)]);
+
+    await within(files()).findByRole("button", { name: "Audition tape kick" });
+    expect(screen.queryByText(/Your library is full/)).toBeNull();
+    expect(repository.objects.size).toBe(1);
+  });
+
   it("warns before deleting a sound, then deletes it", async () => {
     setUp();
     const pack = await addNamedPack("Field Recordings");

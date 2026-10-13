@@ -244,6 +244,44 @@ describe("createAssistantHandler", () => {
     expect(await keptTurnInternal(claims)).toEqual([false]);
   });
 
+  // GRV-112: the claims, never the address, lift the quota.
+  async function quotaCodes(claims: Record<string, unknown>): Promise<string[]> {
+    const provider = createScriptedAssistantProvider([replyEvents(["ok"])]);
+    const guards = createInMemoryGuardStores();
+    const handle = createAssistantHandler(() => ({
+      provider,
+      guards,
+      log: () => {},
+      guardLimits: { requestsPerWindow: 1, windowMs: 60_000, dailySpendCeilingUsd: 25 },
+    }));
+    const codes: string[] = [];
+    for (let i = 0; i < 2; i += 1) {
+      const request = callable({ uid: "u", provider: "google.com" });
+      Object.assign(request.auth?.token ?? {}, claims);
+      codes.push(
+        await handle(request, streamingResponse().response).then(
+          () => "ok",
+          (error: unknown) => (error instanceof HttpsError ? error.code : "thrown"),
+        ),
+      );
+    }
+    return codes;
+  }
+
+  it.each([
+    ["internal", { internal: true }],
+    ["admin", { admin: true }],
+  ])("does not hold an %s account to the request quota", async (_, claims) => {
+    expect(await quotaCodes(claims)).toEqual(["ok", "ok"]);
+  });
+
+  it.each([
+    ["no claim", { email: "someone@example.com" }],
+    ["claims that are not true", { internal: "true", admin: 1 }],
+  ])("holds an account with %s to the request quota", async (_, claims) => {
+    expect(await quotaCodes(claims)).toEqual(["ok", "resource-exhausted"]);
+  });
+
   it("cancels when the client disconnects", async () => {
     const controller = new AbortController();
     const { handle, logs } = handler([

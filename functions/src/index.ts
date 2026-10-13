@@ -68,6 +68,7 @@ import {
   signInAttemptDocPath,
 } from "../../src/access/allowlist";
 import { alertBlockedSignIn } from "../../src/access/blockedSignInAlert";
+import { hasUnlimitedClaim } from "../../src/access/claims";
 import type { RevokeAccessStore } from "../../src/access/revokeAccess";
 import { gateSignIn, type SignInGateStore } from "../../src/access/signInGate";
 import {
@@ -137,6 +138,19 @@ function firestoreUsage(db: Firestore, tx: Transaction): UsageTransaction {
 
 type Recorder = typeof recordObjectWritten;
 
+/**
+ * Whether the account's custom claims lift its allowance (GRV-112). An
+ * account that no longer exists has none to lift.
+ */
+async function isUnlimited(uid: string): Promise<boolean> {
+  try {
+    return hasUnlimitedClaim((await getAuth().getUser(uid)).customClaims);
+  } catch (error) {
+    if ((error as { code?: unknown }).code === "auth/user-not-found") return false;
+    throw error;
+  }
+}
+
 async function record(event: StorageEvent, recorder: Recorder): Promise<void> {
   const db = getFirestore();
   const generation = String(event.data.generation);
@@ -145,6 +159,7 @@ async function record(event: StorageEvent, recorder: Recorder): Promise<void> {
       firestoreUsage(db, tx),
       { path: event.data.name, generation, size: Number(event.data.size) },
       Date.now(),
+      { isUnlimited },
     ),
   );
   // The object path names the user and the pack, so it is not logged.
