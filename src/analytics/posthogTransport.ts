@@ -102,6 +102,13 @@ export interface PostHogClient {
   reset(): void;
   setPersonProperties(properties: Record<string, unknown>): void;
   register(properties: Record<string, unknown>): unknown;
+  /**
+   * Read and written only to carry a visit's entry into a session the SDK
+   * started after the visitor had moved on (`adoptEntry`). Optional so a test
+   * fake may leave them out; the real SDK has both.
+   */
+  register_once?(properties: Record<string, unknown>): unknown;
+  get_property?(name: string): unknown;
   opt_out_capturing(): void;
   opt_in_capturing(options?: { captureEventName?: string | null | false }): void;
   has_opted_out_capturing(): boolean;
@@ -525,6 +532,8 @@ export function createPostHogTransport(
   let unavailable = false;
   let queuedEvents = 0;
   const queue: { operation: Operation; queuedAt: number }[] = [];
+  /** Where this visit was when the transport was made: its entry, usually. */
+  const entry = currentEntry();
   /**
    * Whether the client is identified, in call order. PostHog runs with
    * `person_profiles: "identified_only"`, so person properties wait for an
@@ -562,6 +571,7 @@ export function createPostHogTransport(
         return;
       }
       client = resolved;
+      adoptEntry(resolved, entry);
       for (const { operation, queuedAt } of queue.splice(0, queue.length)) {
         run(resolved, operation, queuedAt);
       }
@@ -630,16 +640,123 @@ export function createPostHogTransport(
   };
 }
 
-/** The page-view properties PostHog would read itself, taken now. */
+/**
+ * The query parameters PostHog reads as campaign attribution: posthog-js
+ * 1.438's `CAMPAIGN_PARAMS` (`@posthog/browser-common` `event-utils`), the
+ * UTM tags and the ad platforms' click IDs.
+ */
+export const CAMPAIGN_PARAMS = [
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_content",
+  "utm_term",
+  "gad_source",
+  "mc_cid",
+  "gclid",
+  "gclsrc",
+  "dclid",
+  "gbraid",
+  "wbraid",
+  "fbclid",
+  "msclkid",
+  "twclid",
+  "li_fat_id",
+  "igshid",
+  "ttclid",
+  "rdt_cid",
+  "epik",
+  "qclid",
+  "sccid",
+  "oppref",
+  "irclid",
+  "_kx",
+] as const;
+
+/**
+ * The page-view properties PostHog would read itself, taken now: the URL, and
+ * the campaign parameters in it (GRV-123). The SDK reads campaign parameters
+ * from the document's URL when an event is sent, not from `$current_url`, so
+ * a landing view queued on `/?utm_source=…` and sent once the visitor is in
+ * the app would otherwise lose its campaign. Explicit event properties win
+ * over the SDK's own.
+ */
 function currentLocation(): Record<string, string> {
   try {
     if (typeof location === "undefined") return {};
-    return {
+    const properties: Record<string, string> = {
       $current_url: location.href,
       $host: location.host,
       $pathname: location.pathname,
     };
+    const query = new URLSearchParams(location.search);
+    for (const name of CAMPAIGN_PARAMS) {
+      const value = query.get(name);
+      if (value) properties[name] = value;
+    }
+    return properties;
   } catch {
     return {};
+  }
+}
+
+/** A visit's entry, as PostHog keeps it: referrer `r` and URL `u`. */
+interface EntryInfo {
+  r: string;
+  u: string;
+}
+
+/** The longest URL or referrer PostHog keeps in its session and person info. */
+const ENTRY_INFO_MAX_LENGTH = 1000;
+
+/** The persistence key holding the session's entry (posthog-js `CLIENT_SESSION_PROPS`). */
+const SESSION_ENTRY_KEY = "$client_session_props";
+/** The persistence key holding the person's first entry (`INITIAL_PERSON_INFO`). */
+const INITIAL_ENTRY_KEY = "$initial_person_info";
+
+function currentEntry(): EntryInfo | null {
+  try {
+    if (typeof location === "undefined") return null;
+    const referrer = typeof document === "undefined" ? "" : document.referrer;
+    return {
+      r: (referrer || "$direct").slice(0, ENTRY_INFO_MAX_LENGTH),
+      u: location.href.slice(0, ENTRY_INFO_MAX_LENGTH),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Gives the SDK the visit's real entry when it loaded after the visitor had
+ * moved on (GRV-123: a landing visitor who clicks into the app before the
+ * landing page's deferred load). PostHog takes a session's entry URL, and a
+ * new person's first URL, from wherever the page is when it starts the
+ * session, so without this the session would enter on `/projects` and lose
+ * the landing page's URL and campaign (`$session_entry_url`,
+ * `$session_entry_utm_*`, `$initial_*`).
+ *
+ * Only a session the SDK has just started at the current URL is rewritten:
+ * one carried over from an earlier page load already has its own entry. The
+ * referrer is the SDK's own, which a client-side navigation does not change.
+ */
+function adoptEntry(client: PostHogClient, entry: EntryInfo | null): void {
+  try {
+    const here = currentEntry();
+    if (!entry || !here || entry.u === here.u) return;
+    if (!client.get_property || !client.register_once) return;
+    const sessionId = client.get_session_id();
+    const stored = client.get_property(SESSION_ENTRY_KEY) as
+      | { sessionId?: unknown; props?: { r?: unknown; u?: unknown } }
+      | undefined;
+    if (stored?.sessionId !== sessionId || stored.props?.u !== here.u) return;
+    client.register({
+      [SESSION_ENTRY_KEY]: { ...stored, props: { ...stored.props, u: entry.u } },
+    });
+    client.register_once({
+      [INITIAL_ENTRY_KEY]: { r: stored.props.r ?? entry.r, u: entry.u },
+    });
+  } catch {
+    // Attribution is best effort; it never costs the events themselves.
   }
 }

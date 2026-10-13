@@ -865,6 +865,40 @@ describe("createPostHogTransport", () => {
     }
   });
 
+  it("keeps a queued $pageview's campaign, which the SDK would read from the URL it sends on (GRV-123)", async () => {
+    const client = fakeClient();
+    let resolve: (value: PostHogClient) => void = () => {};
+    const transport = createPostHogTransport({
+      load: () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    });
+    history.pushState(
+      null,
+      "",
+      "/?utm_source=newsletter&utm_medium=email&gclid=abc&ref=x",
+    );
+    transport.pageview();
+    history.pushState(null, "", "/projects");
+    try {
+      resolve(client);
+      await settled(() => expect(client.calls).toHaveLength(1));
+      const properties = client.calls[0]?.args[1] as Record<string, string>;
+      expect(properties).toMatchObject({
+        $pathname: "/",
+        utm_source: "newsletter",
+        utm_medium: "email",
+        gclid: "abc",
+      });
+      // Only PostHog's campaign parameters, and only those present.
+      expect(properties).not.toHaveProperty("ref");
+      expect(properties).not.toHaveProperty("utm_campaign");
+    } finally {
+      history.pushState(null, "", "/");
+    }
+  });
+
   it("drops its queue and aborts its load when disposed", async () => {
     const client = fakeClient();
     let resolve: (value: PostHogClient) => void = () => {};
@@ -1028,6 +1062,81 @@ describe("$pageview through the real SDK (GRV-120, Web Analytics)", () => {
         expect(view.properties.$session_id).toBe(client.get_session_id());
         expect(view.properties.$session_id).toEqual(expect.any(String));
       }
+    } finally {
+      globalThis.fetch = realFetch;
+      history.pushState({}, "", "/");
+    }
+  });
+});
+
+describe("a landing visit's attribution through the real SDK (GRV-123)", () => {
+  // A visitor arrives on a UTM-tagged `/` and clicks into the app before the
+  // landing page's deferred load, so the SDK starts on `/projects`. PostHog
+  // reads campaign parameters and the session's entry from the page as it is
+  // then; the landing view must still carry where the visit came in.
+  it("keeps the landing URL's campaign and the session's entry when the SDK starts in the app", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("{}", { status: 200 })) as unknown as typeof fetch;
+    const landing = "/?utm_source=newsletter&utm_campaign=launch";
+    history.pushState({}, "", landing);
+    const landingUrl = location.href;
+    try {
+      const { default: posthog } = await import("posthog-js");
+      const options = postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory", "landing");
+      const sent: { event: string; properties: Record<string, unknown> }[] = [];
+      let openGate: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        openGate = resolve;
+      });
+      const transport = createPostHogTransport({
+        load: () =>
+          gate.then(
+            () =>
+              posthog.init(
+                "phc_entry_test",
+                {
+                  ...options,
+                  before_send: [
+                    options.before_send as never,
+                    (event) => {
+                      if (event) sent.push(event as never);
+                      return null;
+                    },
+                  ],
+                },
+                "entry_test",
+              ) ?? null,
+          ),
+      });
+
+      transport.pageview();
+      transport.logEvent("landing_cta_click", { cta_id: "request_access" });
+      history.pushState({}, "", "/projects");
+      transport.pageview();
+      openGate();
+
+      await settled(() =>
+        expect(sent.filter((event) => event.event === "$pageview")).toHaveLength(2),
+      );
+      const [landingView, appView] = sent.filter((event) => event.event === "$pageview");
+      expect(landingView.properties).toMatchObject({
+        $current_url: landingUrl,
+        $pathname: "/",
+        utm_source: "newsletter",
+        utm_campaign: "launch",
+        $session_entry_url: landingUrl,
+        $session_entry_pathname: "/",
+        $session_entry_utm_source: "newsletter",
+      });
+      // The app's view is on its own URL, in a session that entered on `/`.
+      expect(appView.properties).toMatchObject({
+        $pathname: "/projects",
+        $session_entry_url: landingUrl,
+        $session_entry_utm_campaign: "launch",
+      });
+      const click = sent.find((event) => event.event === "landing_cta_click");
+      expect(click?.properties.$session_entry_utm_source).toBe("newsletter");
     } finally {
       globalThis.fetch = realFetch;
       history.pushState({}, "", "/");

@@ -59,7 +59,14 @@ function fakeTarget() {
 function deferredPaint() {
   const tasks: (() => void)[] = [];
   return {
-    schedule: (task: () => void) => void tasks.push(task),
+    /** Queues a task; the canceller it returns takes it back out. */
+    schedule: (task: () => void) => {
+      tasks.push(task);
+      return () => {
+        const index = tasks.indexOf(task);
+        if (index !== -1) tasks.splice(index, 1);
+      };
+    },
     get pending() {
       return tasks.length;
     },
@@ -751,6 +758,16 @@ describe("the PostHog SDK loads lazily, on the landing page too (GRV-106, GRV-12
     expect(postHogLoader.load).toHaveBeenCalledTimes(1);
   });
 
+  it("cancels the landing page's wait when disposed, so the SDK never loads", async () => {
+    const { settle, postHogLoader, telemetry } = setup("landing");
+    expect(settle.pending).toBe(1);
+    await telemetry.dispose();
+    expect(settle.pending).toBe(0);
+    settle.flush();
+    await tick();
+    expect(postHogLoader.load).not.toHaveBeenCalled();
+  });
+
   it("does not wait for the landing page to settle on an app surface", async () => {
     const { paint, settle, postHogLoader } = setup("editor");
     expect(settle.pending).toBe(0);
@@ -1042,6 +1059,7 @@ describe("withdrawing consent before the SDK loads (GRV-106)", () => {
     expect(views.map((view) => view.$pathname)).toEqual(["/", "/projects"]);
     // The landing view keeps the campaign it arrived with.
     expect(views[0].$current_url).toContain("utm_source=newsletter");
+    expect(views[0].utm_source).toBe("newsletter");
   });
 
   it("keeps the queue when a different consent flag changes", async () => {
@@ -1223,6 +1241,55 @@ describe("afterLandingSettled (GRV-123)", () => {
     expect(task).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(100);
     expect(task).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes its load listener when cancelled before the page has loaded", async () => {
+    vi.useFakeTimers();
+    setReadyState("loading");
+    const remove = vi.spyOn(window, "removeEventListener");
+    const task = vi.fn();
+    const cancel = afterLandingSettled(task);
+    cancel();
+    expect(remove).toHaveBeenCalledWith("load", expect.any(Function));
+    remove.mockRestore();
+
+    setReadyState("complete");
+    window.dispatchEvent(new Event("load"));
+    await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS * 2);
+    expect(task).not.toHaveBeenCalled();
+  });
+
+  it("clears its delay when cancelled after the page has loaded", async () => {
+    vi.useFakeTimers();
+    setReadyState("complete");
+    const task = vi.fn();
+    const cancel = afterLandingSettled(task);
+    await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS - 1);
+    cancel();
+    await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS * 2);
+    expect(task).not.toHaveBeenCalled();
+  });
+
+  it("does not run a task already waiting on an idle main thread once cancelled", async () => {
+    vi.useFakeTimers();
+    setReadyState("complete");
+    // Hold the frame and idle callbacks, so the task is provably waiting on
+    // them when the cancel comes.
+    const held: (() => void)[] = [];
+    const hold = (callback: () => void) => held.push(callback);
+    vi.stubGlobal("requestAnimationFrame", hold);
+    vi.stubGlobal("requestIdleCallback", hold);
+    try {
+      const task = vi.fn();
+      const cancel = afterLandingSettled(task);
+      await vi.advanceTimersByTimeAsync(LANDING_ANALYTICS_DELAY_MS);
+      expect(held.length).toBeGreaterThan(0);
+      cancel();
+      for (const callback of held.splice(0)) callback();
+      expect(task).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

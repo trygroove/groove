@@ -117,9 +117,10 @@ export interface InitTelemetryOptions {
   afterPaint?: (task: () => void) => void;
   /**
    * Schedules the analytics SDK's load on the landing page: later than
-   * `afterPaint`, once the page has loaded and settled (GRV-123).
+   * `afterPaint`, once the page has loaded and settled (GRV-123). Returns a
+   * canceller, which `dispose` calls.
    */
-  afterLandingSettled?: (task: () => void) => void;
+  afterLandingSettled?: (task: () => void) => () => void;
   reporter?: ErrorReporter;
   consent?: ConsentStore;
   target?: Pick<Window, "addEventListener" | "removeEventListener">;
@@ -197,8 +198,11 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     openAnalyticsGate = resolve;
   });
   let analyticsGateScheduledForApp = false;
+  let cancelLandingGate: () => void = () => {};
   if (postHog && options.surface === "landing") {
-    (options.afterLandingSettled ?? afterLandingSettled)(openAnalyticsGate);
+    cancelLandingGate = (options.afterLandingSettled ?? afterLandingSettled)(
+      openAnalyticsGate,
+    );
   }
   const createTransport =
     options.createAnalyticsTransport ??
@@ -412,6 +416,7 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     startMonitoringIfAllowed,
     dispose: async () => {
       disposed = true;
+      cancelLandingGate();
       unsubscribeConsent();
       uninstallHandlers();
       const running = sink;
@@ -570,21 +575,45 @@ export const LANDING_ANALYTICS_DELAY_MS = 3_000;
  * `load` event, then `LANDING_ANALYTICS_DELAY_MS`, then `afterFirstPaint`'s
  * frame and idle wait. Nothing the page needs to render or respond is still
  * in flight by then, so the analytics SDK competes with none of it.
+ *
+ * Returns a canceller: the load listener and the delay are cleared, and a
+ * task already handed to `afterFirstPaint` does not run.
  */
 export function afterLandingSettled(
   task: () => void,
   delayMs: number = LANDING_ANALYTICS_DELAY_MS,
-): void {
-  const settle = () => setTimeout(() => afterFirstPaint(task), delayMs);
+): () => void {
+  let cancelled = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const run = () => {
+    if (!cancelled) task();
+  };
+  const settle = () => {
+    if (cancelled) return;
+    timer = setTimeout(() => afterFirstPaint(run), delayMs);
+  };
+  let listening = false;
   try {
     if (typeof document === "undefined" || document.readyState === "complete") {
       settle();
-      return;
+    } else {
+      window.addEventListener("load", settle, { once: true });
+      listening = true;
     }
-    window.addEventListener("load", settle, { once: true });
   } catch {
     settle();
   }
+  return () => {
+    cancelled = true;
+    if (timer !== undefined) clearTimeout(timer);
+    if (listening) {
+      try {
+        window.removeEventListener("load", settle);
+      } catch {
+        // Nothing left to cancel.
+      }
+    }
+  };
 }
 
 /**
