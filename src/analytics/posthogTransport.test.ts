@@ -18,7 +18,9 @@ import {
   createPostHogLoader,
   createPostHogTransport,
   INTERNAL_EVENT_PROPERTY,
+  POSTHOG_APP_PERFORMANCE,
   POSTHOG_DEFAULT_HOST,
+  POSTHOG_LANDING_PERFORMANCE,
   POSTHOG_SESSION_RECORDING,
   type PostHogClient,
   type PostHogSdk,
@@ -175,6 +177,24 @@ describe("init options", () => {
     );
   });
 
+  it("collects neither on the landing page, whatever the project says (GRV-123)", () => {
+    expect(
+      postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory", "landing").capture_performance,
+    ).toEqual({ web_vitals: false, network_timing: false });
+    // Everything else is the app's: $pageleave, scrubbing, recording disabled.
+    const { capture_performance: _app, ...app } = postHogInitOptions(
+      POSTHOG_DEFAULT_HOST,
+      "memory",
+      "app",
+    );
+    const { capture_performance: _landing, ...landing } = postHogInitOptions(
+      POSTHOG_DEFAULT_HOST,
+      "memory",
+      "landing",
+    );
+    expect(landing).toEqual(app);
+  });
+
   it("captures web vitals and network timing, with the small web-vitals build", () => {
     expect(
       postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory").capture_performance,
@@ -281,9 +301,10 @@ describe("createPostHogLoader", () => {
     expect(await loader.load("localStorage+cookie")).toBe(client);
 
     expect(init).toHaveBeenCalledTimes(1);
+    // Started before any app surface was reached: the landing page's options.
     expect(init).toHaveBeenCalledWith(
       "phc_test",
-      postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory"),
+      postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory", "landing"),
     );
   });
 
@@ -404,8 +425,10 @@ describe("createPostHogLoader", () => {
         },
       }),
     });
+    loader.startAppCollection();
     await loader.load("memory");
-    expect(order).toEqual(["web-vitals", "init"]);
+    expect(order[0]).toBe("web-vitals");
+    expect(order).toContain("init");
   });
 
   it("still starts the SDK when the web-vitals code cannot load", async () => {
@@ -419,7 +442,114 @@ describe("createPostHogLoader", () => {
       },
       importSdk: async () => sdk,
     });
+    loader.startAppCollection();
     expect(await loader.load("memory")).toBe(client);
+  });
+});
+
+describe("analytics only on the landing page (GRV-123)", () => {
+  function setup(sessionId = sessionIds().sampled) {
+    const client = fakeClient();
+    client.sessionId = sessionId;
+    const startIfEnabled = vi.fn();
+    client.webVitalsAutocapture = { startIfEnabled };
+    const { sdk, init } = fakeSdk(client);
+    const importRecorder = vi.fn(async () => {});
+    const importWebVitals = vi.fn(async () => {});
+    const loader = createPostHogLoader({
+      settings,
+      importSdk: async () => sdk,
+      importRecorder,
+      importWebVitals,
+    });
+    const load = () => loader.load("memory", { sessionReplayAllowed: () => true });
+    const methods = () => client.calls.map((call) => call.method);
+    return {
+      client,
+      init,
+      loader,
+      load,
+      methods,
+      importRecorder,
+      importWebVitals,
+      startIfEnabled,
+    };
+  }
+
+  it("starts a landing client with performance capture off and nothing recorded", async () => {
+    const { init, load, methods, importRecorder, importWebVitals } = setup();
+    await load();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(init.mock.calls[0][1]).toMatchObject({
+      capture_performance: POSTHOG_LANDING_PERFORMANCE,
+      capture_pageleave: true,
+      capture_exceptions: false,
+      disable_session_recording: true,
+    });
+    expect(importWebVitals).not.toHaveBeenCalled();
+    expect(importRecorder).not.toHaveBeenCalled();
+    expect(methods()).not.toContain("startSessionRecording");
+  });
+
+  it("turns vitals, network timing and replay on when the session reaches the app", async () => {
+    const { client, loader, load, methods, importWebVitals, startIfEnabled } = setup();
+    await load();
+
+    loader.startAppCollection();
+
+    await settled(() => expect(methods()).toContain("startSessionRecording"));
+    await settled(() => expect(startIfEnabled).toHaveBeenCalled());
+    expect(importWebVitals).toHaveBeenCalledTimes(1);
+    expect(client.calls).toContainEqual({
+      method: "set_config",
+      args: [{ capture_performance: POSTHOG_APP_PERFORMANCE }],
+    });
+  });
+
+  it("starts with the app's options when the app is reached before the SDK loads", async () => {
+    const { init, loader, load, methods } = setup();
+    loader.startAppCollection();
+    await load();
+
+    expect(init.mock.calls[0][1]).toMatchObject({
+      capture_performance: POSTHOG_APP_PERFORMANCE,
+    });
+    await settled(() => expect(methods()).toContain("startSessionRecording"));
+    expect(methods()).not.toContain("set_config");
+  });
+
+  it("starts app collection once, however often it is asked", async () => {
+    const { loader, load, methods, importWebVitals } = setup();
+    await load();
+    loader.startAppCollection();
+    loader.startAppCollection();
+    await settled(() => expect(methods()).toContain("startSessionRecording"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(importWebVitals).toHaveBeenCalledTimes(1);
+    expect(methods().filter((method) => method === "set_config")).toHaveLength(1);
+    expect(methods().filter((method) => method === "startSessionRecording")).toHaveLength(
+      1,
+    );
+  });
+
+  it("never loads the SDK just to start app collection", async () => {
+    const { init, loader } = setup();
+    loader.startAppCollection();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(init).not.toHaveBeenCalled();
+  });
+
+  it("keeps replay off in the app for a session that withdrew it on the landing page", async () => {
+    const { loader, load, methods, importRecorder } = setup();
+    await load();
+    loader.stopSessionRecording();
+    loader.startAppCollection();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(importRecorder).not.toHaveBeenCalled();
+    expect(methods()).not.toContain("startSessionRecording");
   });
 });
 
@@ -445,6 +575,8 @@ describe("session replay through the loader (ADR 0011 decision 2)", () => {
       importRecorder,
       importWebVitals: async () => {},
     });
+    // Replay only ever starts on an app surface (GRV-123).
+    loader.startAppCollection();
     const load = () =>
       loader.load("memory", { sessionReplayAllowed: () => replayAllowed.value });
     const methods = () => client.calls.map((call) => call.method);
@@ -796,6 +928,31 @@ describe("createPostHogTransport", () => {
     analytics.pageview();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(client.calls).toEqual([]);
+  });
+});
+
+describe("the landing client through the real SDK (GRV-123)", () => {
+  it("starts with web vitals off and turns them on when reconfigured for the app", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("{}", { status: 200 })) as unknown as typeof fetch;
+    try {
+      const { default: posthog } = await import("posthog-js");
+      const client = posthog.init(
+        "phc_landing_test",
+        postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory", "landing"),
+        // A named instance, so the default one stays free for the test below.
+        "landing_test",
+      );
+      if (!client?.webVitalsAutocapture) throw new Error("no web-vitals extension");
+      expect(client.webVitalsAutocapture.isEnabled).toBe(false);
+
+      // What the loader does once the session reaches an app surface.
+      client.set_config({ capture_performance: { ...POSTHOG_APP_PERFORMANCE } });
+      expect(client.webVitalsAutocapture.isEnabled).toBe(true);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });
 

@@ -16,11 +16,14 @@
 // - It is **not loaded at all on the marketing landing page** (ADR 0001,
 //   `LOOP-001b`), which has no editing state to protect and the strictest
 //   first-impression budget.
-// - The PostHog SDK follows the same rules (ADR 0011, GRV-106): its own
-//   chunk, loaded after first paint and never on the landing page. Analytics
-//   is still *wired* there, because `landing_cta_click` is measured there:
-//   the transport queues it, and it is sent once the visitor reaches a
-//   surface that loads the SDK (sign-in is a popup, so the queue survives it).
+// - The PostHog SDK is its own chunk too (ADR 0011, GRV-106), loaded when the
+//   browser is idle after first paint, and never part of the prerendered
+//   shell or the entry chunk. Unlike Sentry it **does** load on the landing
+//   page (GRV-123), so a visitor who reads `/` and leaves is counted: its
+//   `$pageview`, `landing_cta_click` and `$pageleave` are sent from there.
+//   On `/` it is analytics only. Replay, web vitals, network timing and the
+//   PostHog error sink start only once the session reaches an app surface
+//   (`PostHogLoader.startAppCollection`, and the sinks with Sentry's).
 //
 // - **Errors go to two sinks** while PostHog's error tracking is evaluated
 //   (ADR 0011 decision 3): Sentry's and PostHog's, attached to the reporting
@@ -38,9 +41,9 @@
 //
 // - **The vendor SDK.** A declined session never loads PostHog at all, and
 //   withdrawing consent at runtime calls its `opt_out_capturing()`
-//   (`setVendorAnalyticsCollection`). Withdrawn before the SDK has loaded (on
-//   the landing page, where it waits), the transport is disposed: its queue is
-//   dropped and its load never runs. Until the user has made a choice, the
+//   (`setVendorAnalyticsCollection`). Withdrawn before the SDK has loaded
+//   (while it waits for the browser to go idle), the transport is disposed:
+//   its queue is dropped and its load never runs. Until the user has made a choice, the
 //   SDK keeps its identity in memory; once they have granted it, in
 //   `localStorage` and a cookie.
 // - **The surface.** Navigation off the landing page is client-side, so
@@ -172,17 +175,12 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
   const postHog =
     options.postHogLoader !== undefined ? options.postHogLoader : defaultPostHogLoader();
 
-  // The analytics SDK waits for this: a non-landing surface, painted. It is a
-  // gate rather than a call so the transport can be created (and queue) from
-  // the first line, on the landing page included.
-  let openAnalyticsGate: () => void = () => {};
+  // The analytics SDK waits for this: first paint and an idle main thread, on
+  // every surface, the landing page included (GRV-123). It is a gate rather
+  // than a call so the transport can be created (and queue) from the first
+  // line, and so a transport rebuilt after a re-grant waits on the same one.
   const analyticsGate = new Promise<void>((resolve) => {
-    let opened = false;
-    openAnalyticsGate = () => {
-      if (opened || !postHog) return;
-      opened = true;
-      afterPaint(resolve);
-    };
+    if (postHog) afterPaint(resolve);
   });
   const createTransport =
     options.createAnalyticsTransport ??
@@ -304,10 +302,15 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     if (disposed) return;
     analytics.setSurface(surface);
     // ADR 0001: the marketing landing page loads no monitoring SDK, and
-    // `app_opened` is not its event — `landing_cta_click` is.
+    // `app_opened` is not its event — `landing_cta_click` is. The analytics
+    // SDK loads there too, but collects analytics only (GRV-123).
     if (surface === "landing") return;
     monitoredSurfaceReached = true;
-    openAnalyticsGate();
+    try {
+      postHog?.startAppCollection();
+    } catch {
+      // Telemetry never throws into navigation.
+    }
     if (!appOpenedLogged) {
       // PRD `OPS-02`: `app_opened` fires when "the editor or dashboard shell
       // becomes interactive". That is reaching a non-landing surface, whether

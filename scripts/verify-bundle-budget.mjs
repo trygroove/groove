@@ -22,6 +22,14 @@
 //     time with the first edit. An SDK upgrade that doubles it should be a
 //     decision, not a surprise, so the measured size is pinned to a budget.
 //
+//  3. **Nothing eagerly loaded contains the PostHog SDK either** (ADR 0011,
+//     GRV-123). Unlike Sentry's, the PostHog analytics SDK *does* load on the
+//     landing page, but only through `initTelemetry()`'s dynamic `import()`
+//     once the browser is idle after first paint, and only the analytics
+//     client: replay, web vitals and error monitoring still wait for an app
+//     surface. Its size is product analytics, not this budget's monitoring
+//     cost, so it is kept out of the eager set without a ceiling of its own.
+//
 // Deliberately *not* a general bundle-size check for the whole app. It answers
 // exactly the `FND-001c` acceptance question about monitoring's bundle cost.
 
@@ -40,6 +48,13 @@ import { brotliCompressSync, constants } from "node:zlib";
  * and its chunk is product analytics, not this budget's monitoring cost.
  */
 const SDK_MARKERS = ["sentry-trace", "sentry_key", "browserSessionIntegration"];
+
+/**
+ * Literal strings the PostHog SDK carries into its minified output: the global
+ * its extensions register on, and its debug storage key. Neither appears in
+ * this repository's own code, which names PostHog freely.
+ */
+const POSTHOG_MARKERS = ["__PosthogExtensions__", "ph_debug"];
 
 /**
  * Brotli ceiling for the lazily-loaded monitoring chunks, combined.
@@ -127,9 +142,13 @@ export function eagerClosure(entries) {
   return seen;
 }
 
-function containsSdk(file) {
+function containsAny(file, markers) {
   const source = readFileSync(file, "utf8");
-  return SDK_MARKERS.some((marker) => source.includes(marker));
+  return markers.some((marker) => source.includes(marker));
+}
+
+function containsSdk(file) {
+  return containsAny(file, SDK_MARKERS);
 }
 
 function main() {
@@ -170,6 +189,23 @@ function main() {
     );
   }
 
+  const withPostHog = allScripts.filter((file) => containsAny(file, POSTHOG_MARKERS));
+  if (withPostHog.length === 0) {
+    failures.push(
+      "no chunk contains the PostHog SDK at all. Either it is no longer bundled, " +
+        `or POSTHOG_MARKERS (${POSTHOG_MARKERS.join(", ")}) no longer match its ` +
+        "minified output and this check has silently stopped working.",
+    );
+  }
+  const eagerWithPostHog = withPostHog.filter((file) => eager.has(file));
+  for (const file of eagerWithPostHog) {
+    failures.push(
+      `the PostHog SDK is in "${posix.normalize(file)}", which is loaded eagerly ` +
+        "from index.html. It must stay behind the dynamic import() in " +
+        "src/analytics/posthogTransport.ts, loaded after first paint (ADR 0011, GRV-123).",
+    );
+  }
+
   const lazyWithSdk = withSdk.filter((file) => !eager.has(file));
   const measured = lazyWithSdk.map((file) => ({
     name: basename(file),
@@ -191,6 +227,9 @@ function main() {
     console.log(`  lazy: ${chunk.name} — ${chunk.bytes} bytes brotli`);
   }
   console.log(`  lazy total: ${total} / ${LAZY_MONITORING_BROTLI_BUDGET} bytes brotli`);
+  console.log(
+    `  PostHog SDK: in ${withPostHog.length} chunk(s), ${eagerWithPostHog.length} of them eager`,
+  );
 
   if (failures.length > 0) {
     console.error("\nverify-bundle-budget: FAILED");
