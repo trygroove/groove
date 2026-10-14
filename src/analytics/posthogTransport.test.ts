@@ -767,6 +767,86 @@ describe("createPostHogTransport", () => {
     );
   });
 
+  it("sends an event at once by beacon while sendAtOnce says so (GRV-123)", async () => {
+    // A landing click that takes the tab to another site must leave before
+    // the navigation, not wait in the batch for the unload to drain it.
+    const client = fakeClient();
+    let landing = true;
+    const transport = createPostHogTransport({
+      load: async () => client,
+      sendAtOnce: () => landing,
+    });
+    await settled(() => expect(client.calls).toEqual([]));
+
+    transport.logEvent("landing_cta_click", {
+      cta_id: "request_invite",
+      surface: "landing",
+    });
+    transport.pageview();
+    landing = false;
+    transport.logEvent("app_opened", { surface: "dashboard" });
+
+    await settled(() =>
+      expect(client.calls.map((call) => [call.args[0], call.args[2]] as const)).toEqual([
+        ["landing_cta_click", { transport: "sendBeacon" }],
+        ["$pageview", { transport: "sendBeacon" }],
+        ["app_opened", undefined],
+      ]),
+    );
+  });
+
+  it("decides on the beacon when an event is logged, and keeps its time", async () => {
+    const client = fakeClient();
+    const clock = createManualClock(1_000);
+    let landing = true;
+    let resolve: (value: PostHogClient) => void = () => {};
+    const transport = createPostHogTransport({
+      clock,
+      sendAtOnce: () => landing,
+      load: () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    });
+
+    transport.logEvent("landing_cta_click", { cta_id: "log_in", surface: "landing" });
+    landing = false;
+    clock.advance(5_000);
+    resolve(client);
+
+    await settled(() =>
+      expect(client.calls).toEqual([
+        {
+          method: "capture",
+          args: [
+            "landing_cta_click",
+            { cta_id: "log_in", surface: "landing" },
+            { timestamp: new Date(1_000), transport: "sendBeacon" },
+          ],
+        },
+      ]),
+    );
+  });
+
+  it("batches as usual when sendAtOnce throws", async () => {
+    const client = fakeClient();
+    const transport = createPostHogTransport({
+      load: async () => client,
+      sendAtOnce: () => {
+        throw new Error("broken");
+      },
+    });
+    await settled(() => expect(client.calls).toEqual([]));
+
+    transport.logEvent("app_opened", { surface: "dashboard" });
+
+    await settled(() =>
+      expect(client.calls).toEqual([
+        { method: "capture", args: ["app_opened", { surface: "dashboard" }] },
+      ]),
+    );
+  });
+
   it("only registers the internal flag for an anonymous visitor (identified_only)", async () => {
     const client = fakeClient();
     const transport = createPostHogTransport({ load: async () => client });

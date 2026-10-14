@@ -28,7 +28,12 @@
 //   web-vitals code bundled too.
 //
 // On the landing page (GRV-123) the client is analytics only: catalog events,
-// `$pageview` and `$pageleave`. Replay, web vitals and network timing start
+// `$pageview` and `$pageleave`. Each event logged there is sent at once by
+// beacon (`sendAtOnce`), not batched, since the visitor may be about to
+// leave. `$pageleave` is the SDK's: it rides the beacon its `pagehide` handler
+// drains the batch with, and the DevTools protocol does not report a beacon
+// sent while the page unloads, so a HAR shows no request for it even when it
+// arrives. Replay, web vitals and network timing start
 // when the session reaches an app surface (`PostHogLoader.startAppCollection`),
 // and the PostHog error sink is attached only there, beside Sentry's.
 //
@@ -96,7 +101,7 @@ export interface PostHogClient {
   capture(
     event: string,
     properties?: Record<string, unknown>,
-    options?: { timestamp?: Date },
+    options?: { timestamp?: Date; transport?: "sendBeacon" },
   ): unknown;
   identify(distinctId: string): void;
   reset(): void;
@@ -508,6 +513,22 @@ export interface PostHogTransportOptions {
   load: (signal: AbortSignal) => Promise<PostHogClient | null>;
   /** Stamps queued events. Defaults to the real clock. */
   clock?: Clock;
+  /**
+   * Whether an event logged now should go at once, by beacon, rather than in
+   * the SDK's batch. True on the landing page (GRV-123), where an event is
+   * often the last thing before the visitor leaves: "Request an invite" takes
+   * the tab to another site. The batch waits up to 3 s and whatever is still in
+   * it is only sent from the SDK's `pagehide` handler, which nothing on the
+   * page can confirm, while a beacon goes out before the navigation starts.
+   * Read when the event is logged, not when it is sent.
+   */
+  sendAtOnce?: () => boolean;
+}
+
+/** The SDK's own options for one capture: when, and how. */
+interface CaptureOptions {
+  timestamp?: Date;
+  transport?: "sendBeacon";
 }
 
 /**
@@ -591,11 +612,24 @@ export function createPostHogTransport(
     queue.push({ operation, queuedAt: clock.now() });
   };
 
-  const capture = (event: string, properties: Record<string, unknown>) =>
+  const sendAtOnce = (): boolean => {
+    try {
+      return options.sendAtOnce?.() ?? false;
+    } catch {
+      return false;
+    }
+  };
+
+  const capture = (event: string, properties: Record<string, unknown>) => {
+    const beacon = sendAtOnce();
     submit((target, queuedAt) => {
-      if (queuedAt === null) target.capture(event, properties);
-      else target.capture(event, properties, { timestamp: new Date(queuedAt) });
+      const captureOptions: CaptureOptions = {};
+      if (queuedAt !== null) captureOptions.timestamp = new Date(queuedAt);
+      if (beacon) captureOptions.transport = "sendBeacon";
+      if (Object.keys(captureOptions).length === 0) target.capture(event, properties);
+      else target.capture(event, properties, captureOptions);
     }, true);
+  };
 
   const sendPersonProperties = () => {
     if (!identified || !personProperties) return;
