@@ -1034,6 +1034,23 @@ describe("withdrawing consent before the SDK loads (GRV-106)", () => {
     expect(calls.map((call) => call.method)).not.toContain("captureException");
   });
 
+  it("sends a landing click by beacon as it happens, and batches again in the app (GRV-123)", async () => {
+    // QA: "Request an invite" takes the tab to another site, and the click
+    // must not wait in the SDK's batch for the unload to drain it.
+    const { calls, paint, telemetry } = setup();
+    paint.flush();
+    await tick();
+
+    analytics.log("landing_cta_click", { cta_id: "request_access", placement: "header" });
+    telemetry.setSurface("dashboard");
+    await tick();
+
+    const options = (name: string) =>
+      calls.find((call) => call.method === "capture" && call.args[0] === name)?.args[2];
+    expect(options("landing_cta_click")).toEqual({ transport: "sendBeacon" });
+    expect(options("app_opened")).toBeUndefined();
+  });
+
   it("does not send the landing page view again when the visitor moves on", async () => {
     const { calls, paint, telemetry } = setup();
     const track = createRouteTracker();

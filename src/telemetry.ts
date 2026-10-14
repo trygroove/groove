@@ -20,7 +20,9 @@
 //   browser is idle after first paint, and never part of the prerendered
 //   shell or the entry chunk. Unlike Sentry it **does** load on the landing
 //   page (GRV-123), so a visitor who reads `/` and leaves is counted: its
-//   `$pageview`, `landing_cta_click` and `$pageleave` are sent from there.
+//   `$pageview`, `landing_cta_click` and `$pageleave` are sent from there,
+//   each event by beacon as it is logged rather than batched, because the
+//   visitor may be about to leave.
 //   On `/` it waits longer, until the page has loaded and settled
 //   (`afterLandingSettled`), so it costs the landing page's LCP and TBT
 //   nothing.
@@ -198,6 +200,8 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     openAnalyticsGate = resolve;
   });
   let analyticsGateScheduledForApp = false;
+  /** The surface showing now: events logged on the landing page go at once. */
+  let currentSurface = options.surface;
   let cancelLandingGate: () => void = () => {};
   if (postHog && options.surface === "landing") {
     cancelLandingGate = (options.afterLandingSettled ?? afterLandingSettled)(
@@ -220,6 +224,10 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
                       sessionReplayAllowed: () => consent.sessionReplayAllowed,
                     }),
               ),
+            // A landing event is often the visitor's last, as when "Request an
+            // invite" takes the tab to another site: it is sent as it is
+            // logged rather than left in the batch for the unload to drain.
+            sendAtOnce: () => currentSurface === "landing",
           })
         : noopTransport);
   const setVendorCollection =
@@ -322,6 +330,7 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     // After `dispose` the wiring is gone; a late navigation must not resurrect
     // `app_opened` or a monitoring start the disposer has no handle on.
     if (disposed) return;
+    currentSurface = surface;
     analytics.setSurface(surface);
     // ADR 0001: the marketing landing page loads no monitoring SDK, and
     // `app_opened` is not its event — `landing_cta_click` is. The analytics
