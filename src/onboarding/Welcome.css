@@ -1,0 +1,164 @@
+/* The welcome (GRV-25), in the Studio style: Cue's conversation on the
+   page's black, unboxed, under a centred header with its name and mark. The
+   messages, replies and question card are the panel's own
+   (AssistantPanel.css); this only lays them out on a page. No blur, no
+   depth, no hue. */
+
+.welcome {
+  box-sizing: border-box;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 20px 32px;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.welcome-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  text-align: center;
+}
+
+.welcome-name {
+  margin: 0;
+  color: var(--color-foreground-bright);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.welcome-tagline {
+  margin: 0;
+  color: var(--color-foreground);
+  font-size: var(--font-size-small);
+}
+
+.welcome-status {
+  min-height: 1em;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.welcome-body {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* The panel's log, but grown to the page rather than scrolled in a box. */
+.welcome .welcome-log {
+  flex: none;
+  overflow: visible;
+  padding: 0;
+}
+
+/* The panel's question card, without the rule that parts it from the log. */
+.welcome .assistant-ask {
+  max-height: none;
+  padding: 12px 0 0;
+}
+
+.welcome-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.welcome-open {
+  height: 36px;
+  padding: 0 20px;
+}
+
+.welcome-skip {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-foreground);
+  font: inherit;
+  font-size: var(--font-size-small);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.welcome-skip:hover:not(:disabled) {
+  color: var(--color-foreground-bright);
+}
+
+.welcome-skip:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* The "saved to memory" card. */
+.memory-card {
+  gap: 10px;
+}
+
+.memory-card-lines {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.memory-card-line {
+  display: grid;
+  grid-template-columns: 9em 1fr;
+  gap: 8px;
+  font-size: var(--font-size-small);
+}
+
+.memory-card-line dt {
+  color: var(--color-foreground-muted);
+}
+
+.memory-card-line dd {
+  margin: 0;
+  color: var(--color-foreground-bright);
+  overflow-wrap: anywhere;
+}
+
+.memory-card-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--color-foreground);
+  font-size: var(--font-size-small);
+  cursor: pointer;
+}
+
+.memory-card-consent input {
+  margin: 2px 0 0;
+  accent-color: var(--color-accent);
+}
+
+.memory-card-consent small {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-tiny);
+}
+
+.memory-card-status {
+  color: var(--color-foreground);
+  font-size: var(--font-size-small);
+}
+
+.memory-card-retry {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-foreground-bright);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

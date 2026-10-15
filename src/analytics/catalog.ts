@@ -82,6 +82,7 @@ import {
   NAVIGATION_FEATURE_KEYS,
   NAVIGATION_SHORTCUT_ACTION_IDS,
 } from "./catalog/navigation";
+import { ONBOARDING_EVENTS, ONBOARDING_FEATURE_KEYS } from "./catalog/onboarding";
 import {
   type AnalyticsEventDefinition,
   type AnalyticsParamValue,
@@ -168,6 +169,7 @@ export const FEATURE_KEYS = [
   ...LIBRARY_FEATURE_KEYS,
   ...EXPORT_FEATURE_KEYS,
   ...ASSISTANT_FEATURE_KEYS,
+  ...ONBOARDING_FEATURE_KEYS,
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -245,6 +247,7 @@ export const ANALYTICS_EVENTS = {
   ...LIBRARY_EVENTS,
   ...EXPORT_EVENTS,
   ...ASSISTANT_EVENTS,
+  ...ONBOARDING_EVENTS,
 
   feature_first_use: {
     phase: 0,

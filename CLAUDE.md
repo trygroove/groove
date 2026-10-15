@@ -54,6 +54,7 @@ src/
 ├── instrument/     # Instrument faceplate parts
 ├── library/        # Read side of the generated factory asset manifest
 ├── monitoring/     # Error reporting, scrubbing and replay privacy
+├── onboarding/     # The welcome with Cue (GRV-25): its five questions, the onboarding gate on the dashboard, the memory card
 ├── persistence/    # Schema-v1 Firestore layout and repository boundary
 ├── projection/     # Read-only projections of a Project for audio, arrangement, summary, assistant
 ├── routes/         # Page modules `router.tsx` points at (not file-based routing)
