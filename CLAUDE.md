@@ -53,6 +53,7 @@ src/
 ├── export/         # Stem export: rendering, batching and archives
 ├── instrument/     # Instrument faceplate parts
 ├── library/        # Read side of the generated factory asset manifest
+├── memory/         # What Cue remembers about the producer (GRV-25): the profile hook, memory proposals and their receipts
 ├── monitoring/     # Error reporting, scrubbing and replay privacy
 ├── onboarding/     # The welcome with Cue (GRV-25): its five questions, the onboarding gate on the dashboard, the memory card
 ├── persistence/    # Schema-v1 Firestore layout and repository boundary

@@ -8,13 +8,20 @@
 
 import {
   EXPERIENCE_LEVELS,
+  MEMORY_FIELDS,
   ONBOARDING_QUESTION_IDS,
   PRODUCER_GOALS,
 } from "../../persistence/profileDocuments";
 import { type AnalyticsEventDefinition, countParam, enumParam } from "./params";
 
 /** Onboarding's `feature_first_use` keys (see `FEATURE_KEYS`). */
-export const ONBOARDING_FEATURE_KEYS = ["onboarding"] as const;
+export const ONBOARDING_FEATURE_KEYS = ["onboarding", "memory"] as const;
+
+/**
+ * What a memory proposal would change, as `memory_note_*`'s `kind`: a note,
+ * or one of memory's six fields. Never its text.
+ */
+export const MEMORY_PROPOSAL_KINDS = ["note", ...MEMORY_FIELDS] as const;
 
 /** How a question was answered: an option picked, words typed, or skipped. */
 export const ONBOARDING_ANSWERS = ["pick", "text", "skipped"] as const;
@@ -94,5 +101,25 @@ export const ONBOARDING_EVENTS = {
       group: enumParam(["learn", "gear"]),
       chip: enumParam([...LEARN_CHIP_IDS, ...GEAR_CHIP_IDS]),
     },
+  },
+
+  // Memory is never written silently: Cue proposes, the producer confirms,
+  // and a confirmed change can be undone. Which kind of change, never what.
+  memory_note_proposed: {
+    phase: 3,
+    owners: ["GRV-25"],
+    params: { kind: enumParam(MEMORY_PROPOSAL_KINDS) },
+  },
+
+  memory_note_confirmed: {
+    phase: 3,
+    owners: ["GRV-25"],
+    params: { kind: enumParam(MEMORY_PROPOSAL_KINDS) },
+  },
+
+  memory_note_undone: {
+    phase: 3,
+    owners: ["GRV-25"],
+    params: { kind: enumParam(MEMORY_PROPOSAL_KINDS) },
   },
 } as const satisfies Record<string, AnalyticsEventDefinition>;

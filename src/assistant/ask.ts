@@ -28,6 +28,7 @@
  */
 import { z } from "zod";
 import { trackTypeSchema } from "../domain/entities";
+import { ONBOARDING_QUESTION_IDS } from "../persistence/profileDocuments";
 import type { AssistantToolCall } from "./protocol";
 
 /** The tool's name, as the model calls it. */
@@ -198,6 +199,12 @@ const askInputShape = {
     .boolean()
     .default(false)
     .describe("Whether the producer may pick more than one option."),
+  memoryQuestion: z
+    .enum(ONBOARDING_QUESTION_IDS)
+    .optional()
+    .describe(
+      'When this is the question memory names in "askLater", its name, so it is not asked again.',
+    ),
 };
 
 function checkAsk(
@@ -336,10 +343,15 @@ function salvageAskInput(input: unknown): unknown {
   const suggested =
     typeof input.suggested === "number" ? from.indexOf(input.suggested) : -1;
   const context = validOrNothing(text(ASK_LIMITS.contextChars), input.context);
+  const memoryQuestion = validOrNothing(
+    z.enum(ONBOARDING_QUESTION_IDS),
+    input.memoryQuestion,
+  );
   return {
     question: input.question,
     options,
     ...(context === undefined ? {} : { context }),
+    ...(memoryQuestion === undefined ? {} : { memoryQuestion }),
     ...(suggested >= 0 ? { suggested } : {}),
     ...(typeof input.multiSelect === "boolean" ? { multiSelect: input.multiSelect } : {}),
   };
@@ -349,13 +361,15 @@ function salvageAskInput(input: unknown): unknown {
 export function parseAssistantAsk(raw: unknown): AssistantAsk | null {
   const parsed = assistantAskSchema.safeParse(raw);
   if (!parsed.success) return null;
-  const { id, question, context, options, suggested, multiSelect } = parsed.data;
+  const { id, question, context, options, suggested, multiSelect, memoryQuestion } =
+    parsed.data;
   return {
     id,
     question,
     options,
     multiSelect,
     ...(context === undefined ? {} : { context }),
+    ...(memoryQuestion === undefined ? {} : { memoryQuestion }),
     ...(suggested === undefined ? {} : { suggested }),
   };
 }

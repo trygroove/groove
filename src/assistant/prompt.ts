@@ -71,8 +71,14 @@
  * notes only (on a drum clip it leaves pad hits alone; a pad's Pitch control
  * retunes it), and replies name features as the producer sees them, never a
  * tool, and answer a question about the app in a few sentences.
+ *
+ * 2026-10-15.1 (GRV-25): the assistant is named Cue, and it reads what it
+ * remembers about the producer before every reply: it says so when it uses
+ * it, proposes adding to it with remember_producer (never silently), and asks
+ * a question skipped in onboarding once, when it fits.
  */
 import { customAlphabet } from "nanoid";
+import { ASSISTANT_NAME } from "../../site.config.mjs";
 import { MAX_CLIP_LENGTH_BARS } from "../domain/clipLength";
 import { DELAY_DIVISIONS, deviceTypes, FILTER_MODES } from "../domain/devices";
 import { ID_PREFIXES, ID_SUFFIX_LENGTH } from "../domain/ids";
@@ -91,10 +97,11 @@ import {
   TRACK_VOLUME,
 } from "../domain/parameters";
 import { TICKS_PER_BAR, TICKS_PER_QUARTER, TICKS_PER_SIXTEENTH } from "../domain/time";
+import type { AssistantMemoryContext } from "./memory";
 import type { AssistantContextPayload, AssistantLibraryContext } from "./protocol";
 import type { ProviderTextBlock } from "./providerRequest";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-13.1";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-15.1";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",
@@ -154,7 +161,7 @@ const DEVICE_LINES = deviceTypes()
 
 const SYNTH_LINE = SYNTH_PARAMETERS.map(describeParameter).join("; ");
 
-export const ASSISTANT_SYSTEM_PROMPT = `You are the producer's assistant inside Groove, a browser-based music production tool.
+export const ASSISTANT_SYSTEM_PROMPT = `You are ${ASSISTANT_NAME}, the producer's AI producer inside Groove, a browser-based music production tool. Call yourself ${ASSISTANT_NAME}, never "the assistant".
 
 You help with the song that is open: its arrangement, its parts, its sounds and its mix. Be brief and concrete, and talk like a producer in the room rather than a manual.
 
@@ -221,6 +228,14 @@ ${DEVICE_LINES}
 
 One reply has a fixed amount of room, your thinking and every tool call's input included, and a reply that runs out of it is lost whole: the producer gets neither the proposal nor the question. So write each part as one short clip with looped: true to fill its length, never bar by bar; propose what the request asks for, not every part it could lead to; and keep thinking brief when the request is clear.
 
+## The producer
+
+When a block of memory follows the project, it is what you remember about the producer: the music they love ("taste"), the artists they love, how much music they have made ("experience"), their goal, what they want to learn, their gear, and notes they confirmed. Read it before every reply and let it shape your suggestions, examples and explanations. When you use something from it, say so in a few words ("Since you're into techno, ...", "On your Move, ..."), so they can see where it came from. Never claim to remember anything memory does not hold.
+
+When the producer tells you something lasting about themselves (what they make now, their setup, how they like to work), propose remembering it with remember_producer, short and in their words, and say in a sentence that you are proposing it: nothing is saved unless they confirm. Do not propose what memory already holds, or anything about the song.
+
+When memory names a question in "askLater", it is one they skipped when you first met. Ask it at most once, and only when the conversation makes it relevant, with ask_producer, setting memoryQuestion to its name; then propose the answer with remember_producer. Never ask it out of the blue.
+
 ## Explaining
 
 Always start the reply with a sentence saying what you are proposing or asking, before any tool call, so the producer sees it while the rest is written, and leave the why to explain_change. When you name a control, use the name the producer sees, the track's or device's name and the control ("Bass volume", "Compressor threshold"), and name only controls your proposal changes. Name a feature the way the producer sees it ("the Library", "quantize"), never by a tool's name: your tool names are not part of Groove. Answer a question about the app itself in a few sentences, not a long list.`;
@@ -242,15 +257,20 @@ export const PROJECT_BLOCK_HEADING = "The open project, as JSON:\n";
 /** What introduces the library in the system blocks (GRV-23). */
 export const LIBRARY_BLOCK_HEADING = "The library you may recommend from, as JSON:\n";
 
+/** What introduces the producer's memory in the system blocks (GRV-25). */
+export const MEMORY_BLOCK_HEADING = "What you remember about the producer, as JSON:\n";
+
 /**
  * The system blocks for one turn: the fixed prompt first, then the project,
- * then the library the assistant may recommend from, when the turn has one,
- * and last the stem the turn's new IDs are made from.
+ * then the library the assistant may recommend from and the producer's
+ * memory, when the turn has them, and last the stem the turn's new IDs are
+ * made from.
  */
 export function buildSystemBlocks(
   context: AssistantContextPayload,
   library?: AssistantLibraryContext,
   idStem: string = createIdStem(),
+  memory?: AssistantMemoryContext,
 ): ProviderTextBlock[] {
   const blocks: ProviderTextBlock[] = [
     { type: "text", text: ASSISTANT_SYSTEM_PROMPT },
@@ -260,6 +280,12 @@ export function buildSystemBlocks(
     blocks.push({
       type: "text",
       text: `${LIBRARY_BLOCK_HEADING}${JSON.stringify(library)}`,
+    });
+  }
+  if (memory) {
+    blocks.push({
+      type: "text",
+      text: `${MEMORY_BLOCK_HEADING}${JSON.stringify(memory)}`,
     });
   }
   blocks.push({ type: "text", text: newIdInstructions(idStem) });

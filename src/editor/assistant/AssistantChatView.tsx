@@ -9,6 +9,7 @@ import {
   RetentionSettings,
 } from "./AssistantRetention";
 import { ERROR_HEADING, ERROR_REASSURANCE, errorMessage } from "./assistantErrorCopy";
+import MemoryProposalCard from "./MemoryProposalCard";
 import ProposalCard from "./ProposalCard";
 import RecommendationCard from "./RecommendationCard";
 import type { AssistantChat } from "./useAssistantChat";
@@ -373,6 +374,11 @@ function Entry(props: {
               }
             />
           )}
+        </Show>
+      </Match>
+      <Match when={props.entry.kind === "memory"}>
+        <Show when={props.chat.memory}>
+          {(memory) => <MemoryProposalCard entryId={props.entry.id} memory={memory()} />}
         </Show>
       </Match>
       <Match when={props.entry.kind === "video" && props.entry}>
