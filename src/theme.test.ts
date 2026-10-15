@@ -85,6 +85,12 @@ function declaredValues(source: string): string[] {
  */
 const SIGNAL_TOKENS = ["--signal-ok", "--signal-clip"];
 
+/**
+ * The other exception (GRV-88): the shared toast's muted dark-red fill. Pinned
+ * the same way, to the one stylesheet that may read it.
+ */
+const TOAST_TOKENS = ["--toast-alert"];
+
 describe("the theme is the only place a colour is written down", () => {
   it("defines the accent, the neutral ramp, and the status colours", () => {
     const tokens = themeTokens();
@@ -106,7 +112,7 @@ describe("the theme is the only place a colour is written down", () => {
     // asserts R === G === B rather than merely "low saturation".
     const coloured: string[] = [];
     for (const [name, value] of themeTokens()) {
-      if (SIGNAL_TOKENS.includes(name)) continue;
+      if (SIGNAL_TOKENS.includes(name) || TOAST_TOKENS.includes(name)) continue;
       const hex = /^#([0-9a-f]{6})$/i.exec(resolveToken(name));
       if (!hex?.[1]) continue;
       const [r, g, b] = [0, 2, 4].map((i) => Number.parseInt(hex[1].slice(i, i + 2), 16));
@@ -122,6 +128,23 @@ describe("the theme is the only place a colour is written down", () => {
       .filter(([, source]) => /var\(--signal-/.test(source))
       .map(([path]) => path);
     expect(readers).toEqual(["editor/LevelMeter.css"]);
+  });
+
+  it("keeps the toast's dark red to the toast (GRV-88)", () => {
+    const hued = [...themeTokens().keys()].filter((name) => name.startsWith("--toast-"));
+    expect(hued).toEqual(TOAST_TOKENS);
+    const readers = Object.entries(appStylesheets())
+      .filter(([, source]) => /var\(--toast-/.test(source))
+      .map(([path]) => path);
+    expect(readers).toEqual(["components/Toast.css"]);
+    // Dark and muted: red leads, but every channel stays in the bottom third.
+    const hex = /^#([0-9a-f]{6})$/i.exec(resolveToken("--toast-alert"));
+    const [r, g, b] = [0, 2, 4].map((i) =>
+      Number.parseInt(hex?.[1]?.slice(i, i + 2) ?? "", 16),
+    ) as [number, number, number];
+    expect(r).toBeGreaterThan(g);
+    expect(g).toBe(b);
+    expect(Math.max(r, g, b)).toBeLessThan(96);
   });
 
   it("spends mid-greys sparingly — a short ramp between black and white", () => {

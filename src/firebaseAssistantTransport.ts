@@ -11,6 +11,16 @@ import type {
   AssistantTurnRequest,
   AssistantTurnResult,
 } from "./assistant/protocol";
+import {
+  ASSISTANT_RETENTION_CALLABLE,
+  type RetentionRequest,
+} from "./assistant/retention";
+import type { RetentionCall } from "./assistant/retentionClient";
+import {
+  TRANSCRIPT_ADMIN_CALLABLE,
+  type TranscriptAdminRequest,
+} from "./assistant/transcriptAdmin";
+import type { TranscriptAdminCall } from "./assistant/transcriptAdminClient";
 import { CLOUD_FUNCTIONS_REGION } from "./shared/cloudFunctions";
 
 /**
@@ -25,15 +35,20 @@ import { CLOUD_FUNCTIONS_REGION } from "./shared/cloudFunctions";
  * `emulatorHost` is the Functions emulator (`src/devBackend.ts`), or `null`
  * for the real project.
  */
-export function createFirebaseAssistantTransport(
-  app: FirebaseApp,
-  emulatorHost: string | null,
-): AssistantTurnTransport {
+function functionsFor(app: FirebaseApp, emulatorHost: string | null) {
   const functions = getFunctions(app, CLOUD_FUNCTIONS_REGION);
   if (emulatorHost) {
     const [host, port] = emulatorHost.split(":");
     connectFunctionsEmulator(functions, host, Number(port));
   }
+  return functions;
+}
+
+export function createFirebaseAssistantTransport(
+  app: FirebaseApp,
+  emulatorHost: string | null,
+): AssistantTurnTransport {
+  const functions = functionsFor(app, emulatorHost);
   const call = httpsCallable<
     AssistantTurnRequest,
     AssistantTurnResult,
@@ -49,4 +64,35 @@ export function createFirebaseAssistantTransport(
     const { stream, data } = await call.stream(request, { signal });
     return { chunks: stream, result: data };
   };
+}
+
+/**
+ * The browser's side of the `assistantRetention` callable (GRV-8): the
+ * account's answer about keeping its conversations.
+ */
+export function createFirebaseRetentionCall(
+  app: FirebaseApp,
+  emulatorHost: string | null,
+): RetentionCall {
+  const call = httpsCallable<RetentionRequest, unknown>(
+    functionsFor(app, emulatorHost),
+    ASSISTANT_RETENTION_CALLABLE,
+  );
+  return async (request) => (await call(request)).data;
+}
+
+/**
+ * The browser's side of the `assistantTranscriptsAdmin` callable (GRV-98):
+ * kept transcripts, for the admin page. The function decides who may read
+ * them; nothing here does.
+ */
+export function createFirebaseTranscriptAdminCall(
+  app: FirebaseApp,
+  emulatorHost: string | null,
+): TranscriptAdminCall {
+  const call = httpsCallable<TranscriptAdminRequest, unknown>(
+    functionsFor(app, emulatorHost),
+    TRANSCRIPT_ADMIN_CALLABLE,
+  );
+  return async (request) => (await call(request)).data;
 }

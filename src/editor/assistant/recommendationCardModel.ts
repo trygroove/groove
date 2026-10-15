@@ -11,6 +11,7 @@ import {
   type ControlAddress,
   controlAddress,
 } from "../../commands/controlAddress";
+import type { RawCommandInput } from "../../commands/types";
 import type { Project, Track } from "../../domain/entities";
 import type { PadId, TrackId } from "../../domain/ids";
 import type { LibraryAsset, LibraryPackSummary } from "../../library/manifest";
@@ -23,6 +24,8 @@ export interface ResolvedRecommendation {
   readonly pack: LibraryPackSummary;
   /** Every sound of the pack the library lists, for its cover and its demo. */
   readonly packSounds: readonly LibraryAsset[];
+  /** How many sounds the library shows for the pack. */
+  readonly soundCount: number;
   /** The sounds it suggests, best first. */
   readonly sounds: readonly LibraryAsset[];
   readonly reason: string;
@@ -48,6 +51,7 @@ export function resolveRecommendation(
   return {
     pack: entry.pack,
     packSounds: entry.sounds,
+    soundCount: entry.soundCount,
     sounds: sounds as LibraryAsset[],
     reason: recommendation.reason,
     trackId: recommendation.trackId,
@@ -135,4 +139,35 @@ export function slotExists(project: Project, slot: RecommendationSlot): boolean 
 /** The sound Try plays: the first suggested one-shot, which a slot can hold. */
 export function soundToTry(sounds: readonly LibraryAsset[]): LibraryAsset | null {
   return sounds.find((sound) => sound.type === "one-shot") ?? null;
+}
+
+/**
+ * Whether an edit changed the slot a sound is being tried in: anything on the
+ * pad (its sound, level, pitch, name, mute…), or the sampler's sound and its
+ * instrument's parameters. A track's own mixer is not the slot. `touched` is
+ * what the edit's commands touch (`controlsTouchedBy`).
+ */
+export function editTouchesSlot(
+  slot: RecommendationSlot,
+  touched: readonly ControlAddress[],
+  commands: readonly RawCommandInput[],
+): boolean {
+  const { target } = slot;
+  if (target.kind === "pad") {
+    return touched.some((address) => address.entity === target.padId);
+  }
+  const ownPart = touched.some(
+    (address) =>
+      address.entity === target.trackId &&
+      (address.param === CONTROL_PARTS.sample ||
+        address.param === CONTROL_PARTS.instrument),
+  );
+  return ownPart || commands.some((command) => setsInstrumentOf(command, target.trackId));
+}
+
+/** Whether a command is a `parameter.set` on `trackId`'s instrument. */
+function setsInstrumentOf(command: RawCommandInput, trackId: string): boolean {
+  if (command.type !== "parameter.set") return false;
+  const payload = command.payload as { target?: { scope?: unknown; trackId?: unknown } };
+  return payload.target?.scope === "instrument" && payload.target.trackId === trackId;
 }

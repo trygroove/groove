@@ -5,6 +5,8 @@
  * {@link UseAssistantConversationOptions.persistence} key a reload of the
  * same project brings back what was said and a question still waiting
  * (GRV-42, `conversationStore.ts`).
+ * What Groove keeps of it, for an account that said yes, is the gateway's
+ * transcript (GRV-8), never read back here.
  *
  * Every turn goes through an {@link AssistantClient}, the one door to the
  * gateway, and each is stamped with the scope it was sent with. Nothing here
@@ -20,7 +22,8 @@
  * Analytics: `assistant_message_sent` with the scope,
  * `assistant_suggestion_clicked` with the suggestion's ID, and
  * `assistant_ask_shown`/`assistant_ask_answered` with how many options a
- * question had and how it was answered. Never the text of a message, a
+ * question had and how it was answered, and `assistant_video_shown` once per
+ * recommended video (GRV-16). Never the text of a message, a
  * reply, a question or an answer, and nothing about what is in scope.
  */
 import {
@@ -37,7 +40,6 @@ import {
   type AssistantAsk,
   answerIsEmpty,
   answerMessage,
-  askTranscript,
   pickedLabels,
 } from "../../assistant/ask";
 import type {
@@ -45,7 +47,10 @@ import type {
   AssistantStreamEvent,
   AssistantTurnHandle,
 } from "../../assistant/assistantClient";
-import { ASSISTANT_REQUEST_LIMITS } from "../../assistant/config";
+import {
+  historyOf as historyOfEntries,
+  MAX_MESSAGE_CHARS,
+} from "../../assistant/history";
 import type {
   AssistantErrorDetails,
   AssistantLibraryContext,
@@ -55,6 +60,7 @@ import type {
   AssistantTurnRequest,
 } from "../../assistant/protocol";
 import { splitRecommendations } from "../../assistant/recommendation";
+import type { AssistantVideo } from "../../assistant/video";
 import type { Project } from "../../domain/entities";
 import type { SuggestionId } from "../../projection/projectAnalysisProjection";
 import { type AssistantScope, scopedContext } from "./assistantScope";
@@ -75,6 +81,8 @@ export interface TurnOrigin {
    * be out of date (GRV-5).
    */
   readonly remoteChanges: number;
+  /** The ID the transcript files the turn under (GRV-8), when it has one. */
+  readonly turnId?: string;
 }
 
 /** One thing in the conversation's log. */
@@ -131,6 +139,15 @@ export type ConversationEntry =
       readonly call: AssistantToolCall;
       readonly library: AssistantLibraryContext | null;
       readonly origin: TurnOrigin;
+    }
+  /**
+   * A tutorial video the reply recommends (GRV-16), checked with YouTube by
+   * the gateway. A still card until the producer presses play.
+   */
+  | {
+      readonly kind: "video";
+      readonly id: string;
+      readonly video: AssistantVideo;
     }
   /** The turn failed. The song is untouched. */
   | {
@@ -205,6 +222,14 @@ export interface UseAssistantConversationOptions {
     readonly key: Accessor<string | null>;
     readonly store?: ConversationStore;
   };
+  /**
+   * What the transcript files each turn under (GRV-8): the open project's ID
+   * and whether this browser is internal traffic. Without it, turns carry no
+   * session and are never kept.
+   */
+  readonly session?: () => { readonly projectId: string; readonly internal: boolean };
+  /** Makes the conversation's and each turn's ID; random by default. */
+  readonly newId?: () => string;
 }
 
 export interface AssistantConversation {
@@ -244,39 +269,13 @@ export interface AssistantConversation {
   dismissAsk(): void;
 }
 
-/** The most one message may say, as the gateway counts it. */
-export const MAX_MESSAGE_CHARS = ASSISTANT_REQUEST_LIMITS.maxMessageChars;
+// What a turn resends is built in `src/assistant/history.ts`, so that
+// code outside the editor (GRV-108) builds it the same way.
+export { MAX_MESSAGE_CHARS };
 
-/**
- * The conversation so far, as the next turn resends it: every message that
- * got a reply, with that reply. A message whose turn failed is left out,
- * along with whatever its reply wrote before failing, so the roles always
- * alternate and a broken answer is never passed off as the assistant's; the
- * retry resends the message, and its reply is the one that counts.
- */
-export function historyOf(entries: readonly ConversationEntry[]): AssistantMessage[] {
-  const history: AssistantMessage[] = [];
-  let pending: string | null = null;
-  for (const entry of entries) {
-    if (entry.kind === "message") pending = entry.wire ?? entry.text;
-    if (entry.kind !== "reply" || pending === null || entry.failed) continue;
-    // A question the reply asked is part of what it said (GRV-42), so the
-    // model reads its question back beside the answer.
-    const said = [entry.text.trim(), entry.ask ? askTranscript(entry.ask) : ""]
-      .filter((part) => part.length > 0)
-      .join("\n\n");
-    if (said.length === 0) continue;
-    history.push(
-      { role: "user", text: pending.slice(0, MAX_MESSAGE_CHARS) },
-      { role: "assistant", text: said.slice(0, MAX_MESSAGE_CHARS) },
-    );
-    pending = null;
-  }
-  // Room for the new message; whole pairs only, so it still starts with the user.
-  const room = ASSISTANT_REQUEST_LIMITS.maxMessages - 1;
-  const keep = room - (room % 2);
-  return history.length > keep ? history.slice(history.length - keep) : history;
-}
+/** The conversation so far, as the next turn resends it (`historyOf` in `src/assistant/history.ts`). */
+export const historyOf: (entries: readonly ConversationEntry[]) => AssistantMessage[] =
+  historyOfEntries;
 
 export function useAssistantConversation(
   options: UseAssistantConversationOptions,
@@ -289,6 +288,9 @@ export function useAssistantConversation(
     nextId += 1;
     return `entry-${nextId}`;
   };
+  const newId = options.newId ?? (() => crypto.randomUUID());
+  /** One conversation per panel session: what its kept turns are filed under. */
+  const conversationId = newId();
   /** The turn on its way: Stop goes to it. */
   let inFlight: AssistantTurnHandle | null = null;
   // Leaving the editor stops the reply on its way, at the gateway too, rather
@@ -382,6 +384,12 @@ export function useAssistantConversation(
           }
           return;
         }
+        case "videos":
+          for (const video of event.videos) {
+            append({ kind: "video", id: id(), video });
+            options.analytics().log("assistant_video_shown", {});
+          }
+          return;
         case "ask":
           update(replyId, (entry) =>
             entry.kind === "reply" ? { ...entry, ask: event.ask } : entry,
@@ -459,6 +467,8 @@ export function useAssistantConversation(
     const project = options.project();
     if (!project) return;
     const said = message.wire ?? message.text;
+    const where = options.session?.();
+    const turnId = where ? newId() : undefined;
     const request: AssistantTurnRequest = {
       projectRevision: project.metadata.revision,
       messages: [
@@ -466,6 +476,16 @@ export function useAssistantConversation(
         { role: "user", text: said.slice(0, MAX_MESSAGE_CHARS) },
       ],
       context: scopedContext(project, scope),
+      ...(where && turnId
+        ? {
+            session: {
+              conversationId,
+              turnId,
+              projectId: where.projectId,
+              internal: where.internal,
+            },
+          }
+        : {}),
     };
     append({ kind: "message", id: id(), scopeLabel: scope.label, ...message });
     const analytics = options.analytics();
@@ -475,6 +495,7 @@ export function useAssistantConversation(
       ...message,
       scope,
       remoteChanges: options.remoteChanges?.() ?? 0,
+      ...(turnId ? { turnId } : {}),
     });
   }
 

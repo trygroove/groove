@@ -32,6 +32,7 @@ import { executeTransaction } from "../commands/execute";
 import { requireCommand } from "../commands/registry";
 import type { CommandIssue, RawCommandInput } from "../commands/types";
 import type { Project } from "../domain/entities";
+import type { ProposalIssueCode } from "./proposalIssues";
 import {
   ASSISTANT_TOOLSET_VERSION,
   type AssistantCapability,
@@ -75,23 +76,7 @@ const proposalInputSchema = z.strictObject({
 /** A proposal as it arrives from the model, before anything is trusted. */
 export type ProposalInput = z.input<typeof proposalInputSchema>;
 
-export type ProposalIssueCode =
-  /** The response is not a proposal at all. */
-  | "malformed"
-  | "too_many_commands"
-  /** The project moved on since the request was built. */
-  | "stale_revision"
-  | "unknown_tool"
-  | "invalid_payload"
-  | "unauthorized"
-  /** The calls were made against another version of the tool set. */
-  | "toolset_mismatch"
-  /** A value is outside its parameter's range. */
-  | "out_of_range"
-  /** The kernel refused a command (a missing ID, a wrong kind of track, …). */
-  | "rejected"
-  /** The commands together would break a domain invariant. */
-  | "invalid_project";
+export { PROPOSAL_ISSUE_CODES, type ProposalIssueCode } from "./proposalIssues";
 
 export interface ProposalIssue {
   readonly code: ProposalIssueCode;
@@ -101,6 +86,11 @@ export interface ProposalIssue {
    */
   readonly callIndex: number | null;
   readonly message: string;
+  /**
+   * Where in the project a broken invariant sits (`song.tracks.2.instrument`),
+   * for an `invalid_project` issue whose kernel issue named one (GRV-98).
+   */
+  readonly path?: string;
 }
 
 /** What one entity kind gains, loses and changes. IDs only. */
@@ -177,7 +167,69 @@ function fromCommandIssue(issue: CommandIssue): ProposalIssue {
         : issue.code === "invalid_payload"
           ? "invalid_payload"
           : "rejected";
-  return { code, callIndex: issue.commandIndex, message: issue.message };
+  const domainPath = issue.domainIssues?.[0]?.path;
+  return {
+    code,
+    callIndex: issue.commandIndex,
+    message: issue.message,
+    ...(domainPath && domainPath.length > 0 ? { path: domainPath.join(".") } : {}),
+  };
+}
+
+/** The tool calls a proposal's issues count from: every call but `explain_change`. */
+function changingCalls(
+  input: unknown,
+): { id: string | null; name: string; input: unknown }[] {
+  const calls = (input as { calls?: unknown } | null)?.calls;
+  if (!Array.isArray(calls)) return [];
+  return calls.flatMap((call) => {
+    const parsed = toolCallSchema.safeParse(call);
+    if (!parsed.success || parsed.data.name === EXPLAIN_TOOL_NAME) return [];
+    const id = (call as { id?: unknown }).id;
+    return [
+      {
+        id: typeof id === "string" ? id : null,
+        name: parsed.data.name,
+        input: parsed.data.input,
+      },
+    ];
+  });
+}
+
+/**
+ * The tool call an issue blames, by its ID (the provider's, when the call
+ * carried one) and its tool name, or `null` when it blames no one call
+ * (GRV-98). `callIndex` counts the calls that change something, as
+ * {@link ProposalIssue} does.
+ */
+export function issueCall(
+  input: unknown,
+  issue: ProposalIssue,
+): { readonly id: string | null; readonly name: string } | null {
+  if (issue.callIndex === null) return null;
+  const call = changingCalls(input)[issue.callIndex];
+  return call ? { id: call.id, name: call.name } : null;
+}
+
+/**
+ * What a refused proposal was trying to change, for the
+ * `assistant_proposal_rejected` event (GRV-98): the capability of the calls
+ * that resolved against the allowlist (`null` when none did) and how many
+ * calls would have changed something. Never throws.
+ */
+export function rejectedProposalShape(input: unknown): {
+  readonly capability: ProposalCapability | null;
+  readonly commandCount: number;
+} {
+  const calls = changingCalls(input);
+  const capabilities = calls.flatMap((call) => {
+    const resolution = resolveToolCall(call.name, call.input);
+    return resolution.ok ? [resolution.capability] : [];
+  });
+  return {
+    capability: capabilities.length > 0 ? proposalCapability(capabilities) : null,
+    commandCount: calls.length,
+  };
 }
 
 /**

@@ -24,7 +24,12 @@ import {
 } from "../domain";
 import { createManualClock, type ManualClock } from "../shared/clock";
 import { historyProposalTarget } from "./historyProposalTarget";
-import { MAX_PROPOSAL_COMMANDS, validateProposal } from "./proposal";
+import {
+  issueCall,
+  MAX_PROPOSAL_COMMANDS,
+  rejectedProposalShape,
+  validateProposal,
+} from "./proposal";
 import { createProposalExecutor, type ProposalExecutor } from "./proposalExecutor";
 import { ASSISTANT_TOOLSET_VERSION, EXPLAIN_TOOL_NAME, toolNameFor } from "./tools";
 
@@ -114,7 +119,12 @@ describe("a malformed response", () => {
       "malformed",
     ]);
     expectNoChange();
-    expect(logged).toEqual([]);
+    expect(logged).toMatchObject([
+      {
+        name: "assistant_proposal_rejected",
+        params: { kind: "invalid", capability: "unknown", issue_code: "malformed" },
+      },
+    ]);
   });
 
   it("is refused when it carries more commands than a proposal may", () => {
@@ -143,12 +153,85 @@ describe("a malformed response", () => {
   });
 });
 
+describe("a rejected proposal (GRV-98)", () => {
+  it("logs assistant_proposal_rejected exactly once, with codes only", () => {
+    const result = executor.propose({
+      baseRevision: fx.project.metadata.revision,
+      calls: [
+        { name: EXPLAIN_TOOL_NAME, input: { goal: "Make room", technique: "Cut" } },
+        { name: "project_delete", input: { name: "My secret song" } },
+        call(transposeNotes(fx.clipAId, null, 12)),
+        { name: "notes_transpose", input: { clipId: fx.clipAId } },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    expect(logged).toEqual([
+      {
+        name: "assistant_proposal_rejected",
+        params: {
+          kind: "invalid",
+          // The one call that resolved; the explanation changes nothing.
+          capability: "notes",
+          command_count_bucket: "2_5",
+          issue_code: "unknown_tool",
+          issue_code_count: 2,
+        },
+      },
+    ]);
+    const [event] = logged;
+    expect(
+      validateEventPayload("assistant_proposal_rejected", event?.params).issues,
+    ).toEqual([]);
+    expect(JSON.stringify(logged)).not.toMatch(/secret|project_delete|clp_|toolu/);
+  });
+
+  it("names the call an issue blames by its ID and tool, counting past explain_change", () => {
+    const input = {
+      baseRevision: fx.project.metadata.revision,
+      calls: [
+        { id: "toolu_0", name: EXPLAIN_TOOL_NAME, input: {} },
+        { id: "toolu_1", ...call(transposeNotes(fx.clipAId, null, 12)) },
+        { id: "toolu_2", name: "notes_transpose", input: { clipId: fx.clipAId } },
+      ],
+    };
+    const result = validateProposal(fx.project, input);
+    if (result.ok) throw new Error("expected issues");
+    expect(result.issues.map((issue) => issueCall(input, issue))).toEqual([
+      { id: "toolu_2", name: "notes_transpose" },
+    ]);
+    expect(rejectedProposalShape(input)).toEqual({
+      capability: "notes",
+      commandCount: 2,
+    });
+    expect(rejectedProposalShape("not a proposal")).toEqual({
+      capability: null,
+      commandCount: 0,
+    });
+  });
+
+  it("logs nothing more when a valid proposal is shown", () => {
+    propose();
+    expect(logged.map((entry) => entry.name)).toEqual(["assistant_proposal_shown"]);
+  });
+});
+
 describe("a stale proposal", () => {
   it("is refused when it was built against another revision", () => {
     const result = executor.propose(notesProposal(fx.project.metadata.revision + 1));
     expect(result.ok ? null : result.issues[0].code).toBe("stale_revision");
     expectNoChange();
-    expect(logged).toEqual([]);
+    expect(logged).toEqual([
+      {
+        name: "assistant_proposal_rejected",
+        params: {
+          kind: "stale",
+          capability: "notes",
+          command_count_bucket: "2_5",
+          issue_code: "stale_revision",
+          issue_code_count: 1,
+        },
+      },
+    ]);
   });
 
   it("goes stale, and cannot be applied, when the project moves under it", () => {
@@ -238,7 +321,7 @@ describe("the tool set version", () => {
       { code: "toolset_mismatch", callIndex: null },
     ]);
     expectNoChange();
-    expect(logged).toEqual([]);
+    expect(logged.map((entry) => entry.params.issue_code)).toEqual(["toolset_mismatch"]);
   });
 });
 

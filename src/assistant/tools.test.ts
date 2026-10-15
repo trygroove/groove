@@ -13,6 +13,7 @@ import {
   proposalCapability,
   proposalExplanationSchema,
   resolveToolCall,
+  TRACK_CREATE_EXAMPLE,
   toolNameFor,
 } from "./tools";
 
@@ -149,6 +150,29 @@ describe("the assistant's tool set", () => {
   it("does not echo an over-long tool name back in full", () => {
     const resolution = resolveToolCall("x".repeat(500), {});
     expect(resolution.ok ? "" : resolution.message.length).toBeLessThan(100);
+  });
+});
+
+describe("track_create input (GRV-90)", () => {
+  it("accepts the shape its description shows", () => {
+    expect(resolveToolCall("track_create", TRACK_CREATE_EXAMPLE)).toMatchObject({
+      ok: true,
+      commandType: "track.create",
+    });
+  });
+
+  it("states the top-level shape and an example in the description", () => {
+    const description = assistantTools().find(
+      (tool) => tool.name === "track_create",
+    )?.description;
+    expect(description).toContain(JSON.stringify(TRACK_CREATE_EXAMPLE));
+    expect(description).toContain("never another");
+  });
+
+  it("still refuses the payload wrapped in an extra track key, as the eval report showed", () => {
+    const resolution = resolveToolCall("track_create", { track: TRACK_CREATE_EXAMPLE });
+    expect(resolution).toMatchObject({ ok: false, code: "invalid_payload" });
+    expect(resolution.ok ? "" : resolution.message).toContain("Unrecognized keys");
   });
 });
 

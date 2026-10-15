@@ -132,6 +132,10 @@ jobs:
             --max-turns 200
             --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite,Bash"
         env:
+          # Headless: the run ends when the agent's turn does, so nothing may wait
+          # in the background (a backgrounded command or subagent is killed, and
+          # an agent that ends its turn to wait for one ends the whole run).
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
           GH_TOKEN: ${{ github.token }}
           QA_SWEEP_FLOW: ${{ matrix.flow.id }}
       - name: Delete the QA account's projects

@@ -1,6 +1,7 @@
 /**
  * What Groove does with an account's retention answer (GRV-8): keeps a
- * completed turn only if the account said yes, adds a proposal's outcome to
+ * completed turn unless the account said no (GRV-97: keeping is the
+ * default), adds a proposal's outcome to
  * it, deletes everything on a no, and answers the `assistantRetention`
  * callable. Firebase-free, over a {@link TranscriptStore}; the Cloud Functions
  * (`functions/src/retentionHandler.ts`, `functions/src/index.ts`) supply the
@@ -14,7 +15,9 @@ import { z } from "zod";
 import {
   ASSISTANT_DISCLOSURE_VERSION,
   type CompletedTurn,
+  checkTranscriptOutcome,
   checkTranscriptRecord,
+  MAX_TRANSCRIPT_ISSUES,
   PROPOSAL_OUTCOMES,
   type ProposalOutcome,
   permitsRetention,
@@ -22,7 +25,9 @@ import {
   readPreference,
   sessionIdSchema,
   TRANSCRIPT_RETENTION_DAYS,
+  type TranscriptIssue,
   type TranscriptStore,
+  transcriptIssueSchema,
   transcriptRecordFor,
 } from "./transcripts";
 
@@ -30,7 +35,7 @@ import {
 export type TranscriptWrite =
   /** Kept. */
   | "kept"
-  /** The account has not said yes (or its answer could not be read as one). */
+  /** The account has said no. */
   | "not_permitted"
   /** The record failed {@link checkTranscriptRecord}: it carried something forbidden. */
   | "refused"
@@ -38,9 +43,9 @@ export type TranscriptWrite =
   | "failed";
 
 /**
- * Keeps a completed turn if, and only if, the account's stored preference
- * says so at the moment of writing. A preference that cannot be read keeps
- * nothing. Never throws.
+ * Keeps a completed turn unless the account's stored preference declines it
+ * at the moment of writing ({@link permitsRetention}). A preference the store
+ * cannot read keeps nothing. Never throws.
  */
 export async function recordTurn(
   store: TranscriptStore,
@@ -79,21 +84,27 @@ export async function setRetention(
   return preference;
 }
 
-/** Adds what became of a proposal to its kept turn, if there is one to add to. */
+/**
+ * Adds what became of a proposal to its kept turn, if there is one to add to.
+ * A `rejected` one carries its issues (GRV-98); an outcome that is not one
+ * ({@link checkTranscriptOutcome}) is not added.
+ */
 export async function recordOutcome(
   store: TranscriptStore,
   uid: string,
   turnId: string,
   outcome: ProposalOutcome,
   now: number,
+  issues?: readonly TranscriptIssue[],
 ): Promise<boolean> {
+  const entry = checkTranscriptOutcome({
+    outcome,
+    at: now,
+    ...(issues ? { issues } : {}),
+  });
+  if (!entry) return false;
   try {
-    return await store.addOutcomeIfPermitted(
-      uid,
-      turnId,
-      { outcome, at: now },
-      permitsRetention,
-    );
+    return await store.addOutcomeIfPermitted(uid, turnId, entry, permitsRetention);
   } catch {
     return false;
   }
@@ -110,11 +121,17 @@ export const retentionRequestSchema = z.discriminatedUnion("op", [
     /** The disclosure the answer was given against; must be the current one. */
     disclosureVersion: z.int().min(1),
   }),
-  z.strictObject({
-    op: z.literal("outcome"),
-    turnId: sessionIdSchema,
-    outcome: z.enum(PROPOSAL_OUTCOMES),
-  }),
+  z
+    .strictObject({
+      op: z.literal("outcome"),
+      turnId: sessionIdSchema,
+      outcome: z.enum(PROPOSAL_OUTCOMES),
+      /** Why a `rejected` proposal did not fit (GRV-98); no other outcome has any. */
+      issues: z.array(transcriptIssueSchema).max(MAX_TRANSCRIPT_ISSUES).optional(),
+    })
+    .refine((request) => request.issues === undefined || request.outcome === "rejected", {
+      message: "only a rejected outcome carries issues",
+    }),
 ]);
 export type RetentionRequest = z.infer<typeof retentionRequestSchema>;
 
@@ -183,7 +200,14 @@ export async function handleRetentionRequest(
       return stateOf(await setRetention(store, uid, request.retain, now));
     case "outcome":
       return {
-        recorded: await recordOutcome(store, uid, request.turnId, request.outcome, now),
+        recorded: await recordOutcome(
+          store,
+          uid,
+          request.turnId,
+          request.outcome,
+          now,
+          request.issues,
+        ),
       };
   }
 }

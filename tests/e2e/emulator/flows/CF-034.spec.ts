@@ -10,6 +10,7 @@ import {
   recommendationButton,
   recommendedSound,
   recommendedSounds,
+  seedDisclosureAnswered,
 } from "../support/assistant";
 import {
   drumMachine,
@@ -61,7 +62,9 @@ test.describe("CF-034", () => {
   // biome-ignore format: unparked by removing only test.fixme, so the frozen body keeps its lines
   test(
     "a producer asks the assistant for a dustier kick, tries it in the beat, and keeps it",
-    async ({ page }) => {
+    async ({ page, invitedProducer }) => {
+      // The account met the assistant's disclosure in an earlier session (GRV-8).
+      await seedDisclosureAnswered(invitedProducer.uid);
       const step = walkthrough(page, {
         id: "CF-034",
         title: "A producer asks for a dustier kick, tries it, and keeps it",

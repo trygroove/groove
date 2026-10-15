@@ -194,6 +194,9 @@ export default defineConfig({
         "src/userData/**/*.test.{ts,tsx}",
         "src/userLibrary/**/*.test.{ts,tsx}",
         "src/access/**/*.test.{ts,tsx}",
+        // The access scripts' pure logic (the QA account pool), kept out of
+        // `src/` so no internal address reaches the bundle (GRV-113).
+        "scripts/access/**/*.test.ts",
         "src/assistant/**/*.test.{ts,tsx}",
       ]),
       // The cross-cutting rail, plus the handful of root-level

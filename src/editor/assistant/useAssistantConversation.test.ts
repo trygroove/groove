@@ -207,3 +207,64 @@ describe("a conversation that can recommend (GRV-23)", () => {
     dispose();
   });
 });
+
+describe("a conversation that recommends a video (GRV-16)", () => {
+  const project = createSliceFixtureProject();
+  const scope: AssistantScope = {
+    level: "song",
+    label: "Song",
+    catalogScope: "song",
+    selection: null,
+    track: null,
+  };
+  const video = {
+    videoId: "tH9LHIyJ0c8",
+    title: "Acid Basslines",
+    channel: "Point Blank",
+    reason: "Shows the squelch.",
+  };
+
+  it("adds a card per video, logs each shown once, and resends it as the model's own ID", async () => {
+    const client = createFakeAssistantClient();
+    const transport = createRecordingTransport();
+    const analytics = new Analytics({ transport, storage: memoryStorage() });
+    let conversation: AssistantConversation | undefined;
+    const dispose = createRoot((dispose) => {
+      conversation = useAssistantConversation({
+        client: async () => client,
+        project: () => project,
+        scope: () => scope,
+        canSend: () => true,
+        analytics: () => analytics,
+      });
+      return dispose;
+    });
+    flush();
+    if (!conversation) throw new Error("no conversation");
+    conversation.send("How do I get that acid squelch?");
+    await vi.waitFor(() => expect(client.turns).toHaveLength(1));
+    client.last().text("Watch this:");
+    client.last().emit({ type: "videos", videos: [video] });
+    client.last().done();
+    flush();
+    expect(conversation.entries().map((entry) => entry.kind)).toEqual([
+      "message",
+      "reply",
+      "video",
+    ]);
+    const shown = transport.events.filter(
+      (event) => event.name === "assistant_video_shown",
+    );
+    expect(shown).toHaveLength(1);
+    // Nothing about the video itself reaches analytics.
+    expect(JSON.stringify(shown)).not.toContain(video.videoId);
+    expect(historyOf(conversation.entries())).toEqual([
+      { role: "user", text: "How do I get that acid squelch?" },
+      {
+        role: "assistant",
+        text: `Watch this:\n\n[I recommended the YouTube video ${video.videoId}.]`,
+      },
+    ]);
+    dispose();
+  });
+});

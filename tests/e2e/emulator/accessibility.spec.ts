@@ -23,8 +23,28 @@ import { pressView, type ViewName } from "./support/views";
 
 const STANDARD = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"];
 
+/**
+ * Wait until no CSS transition is running. A button's `background-color`
+ * eases over 0.1s (src/app.css) while its text colour flips at once, so a
+ * pressed toggle is black text on the old dark fill for that moment, and axe
+ * reads it as a contrast failure (GRV-87). WebKit, on a slow runner, is where
+ * the scan lands inside that window. Only transitions are awaited: the
+ * assistant's blinking caret is an infinite animation that never finishes.
+ */
+async function settleTransitions(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation instanceof CSSTransition)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
+  );
+}
+
 /** Run axe over the page as it stands, and fail with what it found. */
 async function expectAccessible(page: Page, surface: string): Promise<void> {
+  await settleTransitions(page);
   const { violations } = await new AxeBuilder({ page }).withTags(STANDARD).analyze();
   const found = violations.map(
     (violation) =>

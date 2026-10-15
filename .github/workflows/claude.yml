@@ -69,5 +69,9 @@ jobs:
             --append-system-prompt "Issues live in Linear: read a card with node .github/scripts/linear.mjs issue GRV-<n> (LINEAR_API_KEY is set) and refer to it as GRV-<n> in PR titles and bodies. When you push a branch for a card, open its pull request yourself before you finish (gh pr create, ready for review, not draft, following CLAUDE.md 'Landing work'), then confirm it exists with gh pr view. Never end with only a 'Create PR' link."
             --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite,NotebookEdit,WebFetch,WebSearch,Bash,Bash(bun:*),Bash(bunx:*),Bash(node:*),Bash(npx:*),Bash(tsc:*),Bash(git:*),Bash(gh:*),Bash(ls:*),Bash(cat:*),Bash(cp:*),Bash(mv:*),Bash(mkdir:*),Bash(rm:*),Bash(echo:*),Bash(grep:*),Bash(find:*),Bash(sed:*),Bash(chmod:*)"
         env:
+          # Headless: the run ends when the agent's turn does, so nothing may wait
+          # in the background (a backgrounded command or subagent is killed, and
+          # an agent that ends its turn to wait for one ends the whole run).
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
           # The cards live in Linear; a run that reads or moves one needs the key.
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}

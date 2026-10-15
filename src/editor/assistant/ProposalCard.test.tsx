@@ -6,7 +6,11 @@ import { Analytics } from "../../analytics/analytics";
 import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
 import type { AssistantProposal } from "../../assistant/protocol";
-import { ASSISTANT_TOOLSET_VERSION, EXPLAIN_TOOL_NAME } from "../../assistant/tools";
+import {
+  ASSISTANT_TOOLSET_VERSION,
+  EXPLAIN_TOOL_NAME,
+  TRACK_CREATE_EXAMPLE,
+} from "../../assistant/tools";
 import {
   type ControlAddress,
   controlAddress,
@@ -24,6 +28,10 @@ import {
   createFakeAssistantClient,
   type FakeAssistantClient,
 } from "../../testing/fakeAssistantClient";
+import {
+  createFakeRetentionClient,
+  type FakeRetentionClient,
+} from "../../testing/fakeRetentionClient";
 import { memoryStorage } from "../../testing/storage";
 import { assistantProposalTarget } from "../assistantProposalTarget";
 import { EditorSession } from "../EditorSession";
@@ -55,7 +63,7 @@ const ARRANGEMENT: EditorLocation = {
   openPlacementId: null,
 } as unknown as EditorLocation;
 
-async function setUp() {
+async function setUp(options: { retention?: FakeRetentionClient } = {}) {
   const repository = createInMemoryProjectRepository();
   const project = createSliceFixtureProject();
   const created = await repository.createProject(project);
@@ -103,6 +111,14 @@ async function setUp() {
       expanded: () => panel.layout().mode === "floating",
       client: async () => client,
       analytics: () => analytics,
+      ...(options.retention
+        ? {
+            retention: {
+              client: async () => options.retention as FakeRetentionClient,
+              internal: () => false,
+            },
+          }
+        : {}),
       editor: {
         session: {
           proposalTarget: () => assistantProposalTarget(session),
@@ -125,6 +141,8 @@ async function setUp() {
   };
   render(() => <Harness />);
   clickAndFlush(screen.getByRole("button", { name: "Open it" }));
+  // An account's answer about keeping conversations loads first (GRV-8).
+  if (options.retention) await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
   const swing = controlAddress(SONG_ENTITY, "swing");
   const volume = controlAddress(track.id, "volume");
@@ -469,11 +487,104 @@ describe("the proposal card (GRV-5)", () => {
         input: { target: { scope: "song", parameterId: SONG_SWING.id }, value: 99 },
       },
     ]);
-    expect(cardStatus()).toHaveTextContent("can't be applied");
+    expect(cardStatus()).toHaveTextContent(
+      "The assistant tried to push a setting past its range. It can't be applied as it is. Nothing changed.",
+    );
     expect(within(card()).queryByRole("button", { name: "Apply" })).toBeNull();
     await press(cardButton("Dismiss"));
     expect(cardStatus()).toHaveTextContent("Cancelled. Nothing changed.");
     expect(card()).toHaveFocus();
+  });
+
+  it("names a missing sound in plain words, and logs the rejection once with codes only (GRV-98)", async () => {
+    const retention = createFakeRetentionClient({ answered: true });
+    const { propose, client, events } = await setUp({ retention });
+    const input = structuredClone(TRACK_CREATE_EXAMPLE) as Record<string, unknown> & {
+      track: Record<string, unknown>;
+    };
+    input.track.name = "My secret pad";
+    input.track.instrument = {
+      kind: "sampler",
+      assetId: "ast_NoisePad0000000000001",
+      parameters: {},
+    };
+    await propose([
+      { id: "toolu_7", name: "track_create", input },
+      { id: "toolu_8", name: EXPLAIN_TOOL_NAME, input: EXPLANATION },
+    ]);
+    expect(cardStatus()).toHaveTextContent(
+      "The assistant tried to use a sound that isn't in your library. It can't be applied as it is. Nothing changed.",
+    );
+    expect(within(card()).getByRole("button", { name: "Dismiss" })).toBeEnabled();
+
+    const rejected = events("assistant_proposal_rejected");
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.params).toMatchObject({
+      kind: "invalid",
+      capability: "tracks",
+      command_count_bucket: "1",
+      issue_code: "invalid_project",
+      issue_code_count: 1,
+    });
+    expect(JSON.stringify(rejected)).not.toMatch(/secret|ast_|trk_|toolu/);
+
+    // A kept turn hears why: the code, the call, and the kernel's own path.
+    await settle();
+    const turnId = client.last().request.session?.turnId;
+    expect(retention.requests.filter((request) => request.op === "outcome")).toEqual([
+      {
+        op: "outcome",
+        turnId,
+        outcome: "rejected",
+        issues: [
+          {
+            code: "invalid_project",
+            callId: "toolu_7",
+            callName: "track_create",
+            path: "song.tracks.1.instrument.assetId",
+            message: expect.stringContaining("references missing asset"),
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("tells a kept turn what became of its proposal: applied, undone, cancelled (GRV-8)", async () => {
+    const retention = createFakeRetentionClient({ answered: true });
+    const { propose, client } = await setUp({ retention });
+    await propose();
+    const turnId = client.last().request.session?.turnId;
+    expect(turnId).toBeDefined();
+    await press(cardButton("Apply"));
+    await press(cardButton("Undo"));
+    await settle();
+    expect(retention.requests.filter((request) => request.op === "outcome")).toEqual([
+      { op: "outcome", turnId, outcome: "applied" },
+      { op: "outcome", turnId, outcome: "undone" },
+    ]);
+
+    await propose();
+    const next = client.last().request.session?.turnId;
+    await press(
+      within(
+        within(panel())
+          .getAllByRole("region", { name: /^Proposal\b/ })
+          .at(-1) as HTMLElement,
+      ).getByRole("button", { name: "Cancel" }),
+    );
+    await settle();
+    expect(
+      retention.requests.filter((request) => request.op === "outcome").at(-1),
+    ).toEqual({ op: "outcome", turnId: next, outcome: "cancelled" });
+  });
+
+  it("says nothing about outcomes for an account that keeps nothing (GRV-8)", async () => {
+    const retention = createFakeRetentionClient({ answered: false });
+    const { propose } = await setUp({ retention });
+    await propose();
+    await press(cardButton("Apply"));
+    await settle();
+    expect(retention.requests.filter((request) => request.op === "outcome")).toEqual([]);
   });
 
   it("turns a proposal down with Cancel, changing nothing", async () => {

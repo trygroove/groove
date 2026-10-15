@@ -1,3 +1,4 @@
+import { seedDisclosureAnswered } from "./support/assistant";
 import { expect, type Locator, type Page, test } from "./support/test";
 import {
   dock,
@@ -201,7 +202,10 @@ test.describe("view layout", () => {
 
   test("the docked assistant has one border, the composer's, in the editor's tone", async ({
     page,
+    invitedProducer,
   }) => {
+    // The composer's border is checked, so the disclosure has been answered (GRV-8).
+    await seedDisclosureAnswered(invitedProducer.uid);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/projects");
     await page.getByRole("button", { name: "New Project" }).click();

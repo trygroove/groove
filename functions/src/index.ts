@@ -26,6 +26,7 @@
  * account that said yes; `assistantRetention` reads and stores that answer
  * (a no deletes what was kept), an hourly job deletes every transcript past
  * its 30 days, and deleting a project or an account deletes its transcripts.
+ * Admins read them through `assistantTranscriptsAdmin` (GRV-98).
  * `src/assistant/retention.ts` and `transcripts.ts` decide all of it.
  *
  * Every kind of user data (packs today, recordings and presets later) is a
@@ -75,9 +76,11 @@ import {
 } from "../../src/assistant/config";
 import {
   createEmulatorAssistantProvider,
+  emulatorVideoVerifier,
   usesEmulatorProvider,
 } from "../../src/assistant/emulatorProvider";
 import type { AssistantProvider } from "../../src/assistant/provider";
+import { createOEmbedVideoVerifier, type VideoVerifier } from "../../src/assistant/video";
 import { CLOUD_FUNCTIONS_REGION } from "../../src/shared/cloudFunctions";
 import type { VersionedPack } from "../../src/userData/packVersions";
 import { withdrawRefusedSound } from "../../src/userData/refusedSound";
@@ -99,6 +102,7 @@ import { createAssistantHandler } from "./assistantHandler";
 import { firestoreGuardStores } from "./assistantStores";
 import { createRetentionHandler } from "./retentionHandler";
 import { createRevokeAccessHandler } from "./revokeAccessHandler";
+import { createTranscriptAdminHandler } from "./transcriptAdminHandler";
 import { firestoreTranscriptStore } from "./transcriptStore";
 
 /**
@@ -366,6 +370,20 @@ function assistantProvider(): AssistantProvider {
 }
 
 /**
+ * How the gateway checks a tutorial video the model recommends (GRV-16, ADR
+ * 0009 decision 5): YouTube's oEmbed endpoint, over plain HTTPS with no key,
+ * from here and never from the browser. In the emulator with the scripted
+ * provider, the scripted video's own check, so the browser suite never
+ * depends on YouTube.
+ */
+function videoVerifier(): VideoVerifier {
+  const apiKey = anthropicApiKey.value() ?? "";
+  return usesEmulatorProvider(process.env, apiKey)
+    ? emulatorVideoVerifier
+    : createOEmbedVideoVerifier(fetch);
+}
+
+/**
  * The assistant's gateway (#69, ADR 0006): one authenticated turn, its reply
  * streamed back as it is written. A callable, so Firebase verifies the
  * caller's ID token before the handler runs; the gateway then refuses a
@@ -382,6 +400,7 @@ export const assistantTurn = onCall(
     provider: assistantProvider(),
     guards: firestoreGuardStores(getFirestore()),
     transcripts: firestoreTranscriptStore(getFirestore()),
+    verifyVideo: videoVerifier(),
   })),
 );
 
@@ -394,6 +413,18 @@ export const assistantTurn = onCall(
  */
 export const assistantRetention = onCall(
   createRetentionHandler(() => firestoreTranscriptStore(getFirestore())),
+);
+
+/**
+ * Kept transcripts for admins (GRV-98): the newest turns, narrowed by
+ * account, project, outcome and traffic, and one turn in full, so the team
+ * can see why a proposal was rejected. Only the `admin` claim gets anything;
+ * the rules still deny every client the collection. The export's name is
+ * what the browser calls (`TRANSCRIPT_ADMIN_CALLABLE` in
+ * `src/assistant/transcriptAdmin.ts`).
+ */
+export const assistantTranscriptsAdmin = onCall(
+  createTranscriptAdminHandler(() => firestoreTranscriptStore(getFirestore())),
 );
 
 /**
