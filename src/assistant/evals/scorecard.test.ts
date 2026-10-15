@@ -11,6 +11,7 @@ import {
   secondaryOf,
   turnCostUsd,
 } from "./scorecard";
+import { comparisonConsoleLines, comparisonLines } from "./scorecardMarkdown";
 
 const sonnet = ASSISTANT_MODELS["claude-sonnet-5"];
 
@@ -167,6 +168,30 @@ describe("the secondary numbers", () => {
     expect(report.scorecard.secondary.latencyMs.p95).toBe(9_000);
   });
 
+  it("scores each set apart, a record saved before sets as a musical one (GRV-119)", () => {
+    const report = buildTestReport([
+      testRecord({ caseId: "a", valid: "pass" }),
+      testRecord({ caseId: "b", set: "musical", valid: "fail" }),
+      testRecord({ caseId: "c", set: "basicActions", valid: "pass", outcome: "pass" }),
+      testRecord({ caseId: "d", set: "basicActions", valid: "fail", outcome: "fail" }),
+      testRecord({ caseId: "d", set: "basicActions", errorCode: "provider_error" }),
+    ]);
+    const sets = report.scorecard.sets ?? {};
+    expect(Object.keys(sets)).toEqual(["musical", "basicActions"]);
+    expect(sets.musical.cases).toBe(2);
+    expect(sets.musical.headline.applies).toEqual({ pass: 1, judged: 2, rate: 0.5 });
+    expect(sets.basicActions.cases).toBe(2);
+    expect(sets.basicActions.headline.expectMatch).toEqual({
+      pass: 1,
+      judged: 2,
+      rate: 0.5,
+    });
+    expect(sets.basicActions.headline.overall).toEqual({ pass: 2, judged: 4, rate: 0.5 });
+    expect(sets.basicActions.headline).toMatchObject({ turns: 3, errored: 1 });
+    // The run's headline is every set's together.
+    expect(report.scorecard.headline.applies).toEqual({ pass: 2, judged: 4, rate: 0.5 });
+  });
+
   it("scores an older record without usage or first text as n/a, never zero", () => {
     const { usage: _usage, firstTextMs: _first, ...older } = testRecord();
     const card = scorecardOf({
@@ -220,6 +245,59 @@ describe("compareScorecards", () => {
     expect(row("Cost per turn")?.delta).toBeCloseTo(-0.005, 10);
     expect(row("Cost per turn")?.verdict).toBe("better");
     expect(row("Errored turns")).toMatchObject({ delta: 0, verdict: "same" });
+  });
+
+  it("compares a two-set run with a musical-only baseline set by set (GRV-119)", () => {
+    const twoSets = buildTestReport([
+      testRecord({ caseId: "m", set: "musical", valid: "pass", durationMs: 10_000 }),
+      testRecord({ caseId: "m", set: "musical", valid: "fail", durationMs: 20_000 }),
+      testRecord({ caseId: "b", set: "basicActions", valid: "pass", durationMs: 1_000 }),
+      testRecord({ caseId: "b", set: "basicActions", valid: "pass", durationMs: 1_000 }),
+    ]).scorecard;
+    // A baseline saved before sets: its whole scorecard, with no `sets`.
+    const { sets: _sets, ...musicalOnly } = baseline;
+    const compared = compareScorecards(twoSets, musicalOnly);
+    const of = (set: string, label: string) =>
+      compared.find((entry) => entry.set === set && entry.label === label);
+    // The musical cases against the musical baseline: 50% then and now, not
+    // the run's 75% (which counts the basic actions in).
+    expect(twoSets.headline.applies.rate).toBe(0.75);
+    expect(of("musical", "Applies cleanly (check 1)")).toMatchObject({
+      current: 0.5,
+      baseline: 0.5,
+      verdict: "same",
+    });
+    expect(of("musical", "Latency p95")).toMatchObject({
+      current: 20_000,
+      baseline: 20_000,
+    });
+    // The basic actions have no baseline to compare with.
+    expect(of("basicActions", "Applies cleanly (check 1)")).toMatchObject({
+      current: 1,
+      baseline: null,
+      verdict: "n/a",
+    });
+    // The report shows each set's rows under its own heading.
+    const lines = comparisonLines(compared, {
+      path: "baseline.json",
+      generatedAt: "then",
+      model: "m",
+      promptVersion: "p",
+    });
+    expect(lines).toContain("### Musical capability");
+    expect(lines).toContain("### Basic production actions");
+    expect(comparisonConsoleLines(compared)).toContain("  Basic production actions:");
+    // A baseline with sets is compared set by set as well.
+    expect(
+      compareScorecards(twoSets, twoSets).every(
+        (entry) => entry.verdict === "same" || entry.verdict === "n/a",
+      ),
+    ).toBe(true);
+    expect(
+      compareScorecards(twoSets, twoSets).find(
+        (entry) => entry.set === "basicActions" && entry.label === "Latency p95",
+      )?.baseline,
+    ).toBe(1_000);
   });
 
   it("says n/a where either side has no number", () => {

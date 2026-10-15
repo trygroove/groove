@@ -17,7 +17,8 @@
  *   a major 7th or a tritone.
  *
  * GRV-107's four (`addsTracks`, `endsAt`, `noEmptyClips`, `noNoOps`) are in
- * `caseChecksQa.ts`.
+ * `caseChecksQa.ts`; GRV-119's two (`exactEdit`, `nothingElse`), which judge
+ * a basic production action, are in `basicActionChecks.ts`.
  */
 
 import type { RawCommandInput } from "../../commands/types";
@@ -28,6 +29,7 @@ import {
   SYNTH_AMP_RELEASE,
 } from "../../domain/parameters";
 import { TICKS_PER_BAR } from "../../domain/time";
+import { type BasicAction, checkNothingElse } from "./basicActionChecks";
 import {
   checkAddsTracks,
   checkEndsAt,
@@ -40,8 +42,12 @@ import type { CheckResult } from "./checks";
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });
 const fail = (detail: string): CheckResult => ({ status: "fail", detail });
 
-/** What a case expects the turn to come back with. */
-export type EvalExpectation = "proposal" | "ask" | "either";
+/**
+ * What a case expects the turn to come back with: a proposal, a question, a
+ * proposal or a scope-widening question (`either`), or no proposal and a
+ * question or an explanation instead (`explain`, GRV-119).
+ */
+export type EvalExpectation = "proposal" | "ask" | "either" | "explain";
 
 /** The checks a case may name beside the shared ones. */
 export const CASE_CHECK_IDS = [
@@ -55,6 +61,9 @@ export const CASE_CHECK_IDS = [
   "endsAt",
   "noEmptyClips",
   "noNoOps",
+  // GRV-119: the basic production actions.
+  "exactEdit",
+  "nothingElse",
 ] as const;
 export type CaseCheckId = (typeof CASE_CHECK_IDS)[number];
 
@@ -65,6 +74,8 @@ export type CaseCheckId = (typeof CASE_CHECK_IDS)[number];
 /** What of a turn {@link checkOutcome} reads. */
 export interface OutcomeTurn {
   readonly proposal: unknown;
+  /** The reply's text, which `explain` reads when it asked nothing. */
+  readonly text?: string;
   readonly ask?: {
     readonly question: string;
     readonly context?: string;
@@ -101,6 +112,13 @@ export function checkOutcome(expect: EvalExpectation, turn: OutcomeTurn): CheckR
     return WIDEN_SCOPE.test(askText(turn.ask))
       ? pass(`Asked to widen the scope: ${asked}`)
       : fail(`Asked ${asked}, which does not offer to widen the scope`);
+  }
+  if (expect === "explain") {
+    if (proposed) return fail("Proposed a change instead of asking or explaining");
+    if (asked) return pass(`Asked ${asked}`);
+    return turn.text?.trim()
+      ? pass("Explained, and proposed nothing")
+      : fail("Neither asked, explained nor proposed");
   }
   if (expect === "ask") {
     if (proposed) return fail("Proposed a change instead of asking first");
@@ -457,6 +475,8 @@ export interface CaseCheckInputs {
   readonly commands?: readonly RawCommandInput[];
   /** The case's {@link ExpectedValue}, for `endsAt`. */
   readonly expectedValue?: ExpectedValue;
+  /** The case's basic production action, for `exactEdit` and `nothingElse`. */
+  readonly action?: BasicAction;
 }
 
 /** Runs the case check `id` on an applied proposal. */
@@ -486,5 +506,13 @@ export function runCaseCheck(
       return checkNoEmptyClips(before, after);
     case "noNoOps":
       return checkNoNoOps(before, inputs.commands ?? []);
+    case "exactEdit":
+      return inputs.action
+        ? inputs.action.target(before, after)
+        : fail("The case names no action");
+    case "nothingElse":
+      return inputs.action
+        ? checkNothingElse(before, after, inputs.action.allows(before, after))
+        : fail("The case names no action");
   }
 }

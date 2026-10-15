@@ -546,3 +546,6 @@ export function createBdSketchProject(): Project {
   };
   return project(context, "House sketch", song, clips);
 }
+
+// The helpers the basic production actions fixtures (GRV-119) build with too.
+export { evalContext, hits, notes, project as evalProject };
