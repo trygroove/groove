@@ -50,6 +50,16 @@
   gap: 8px;
 }
 
+.dashboard-memory-link {
+  padding: 10px 8px;
+  color: var(--color-foreground);
+  font-size: var(--font-size-small);
+}
+
+.dashboard-memory-link:hover {
+  color: var(--color-foreground-bright);
+}
+
 .upgrade-prompt button,
 .dashboard-actions button {
   display: inline-flex;

@@ -161,3 +161,28 @@ export function markAsked(
     laterQuestions: profile.laterQuestions.filter((question) => question !== id),
   };
 }
+
+/** `profile` with one field forgotten. */
+export function forgetField(
+  profile: ProducerProfile,
+  field: MemoryField,
+): ProducerProfile {
+  return {
+    ...profile,
+    memory: { ...profile.memory, [field]: EMPTY_FIELDS[field] } as ProducerMemory,
+  };
+}
+
+/** `profile` with one note forgotten. */
+export function forgetNote(profile: ProducerProfile, noteId: string): ProducerProfile {
+  return { ...profile, notes: profile.notes.filter((note) => note.id !== noteId) };
+}
+
+/**
+ * `profile` with everything Cue remembers forgotten: every field, every note,
+ * and every question it meant to ask later. Whether onboarding was done, and
+ * the share box, are settings rather than memory, and stay.
+ */
+export function forgetEverything(profile: ProducerProfile): ProducerProfile {
+  return { ...profile, memory: EMPTY_FIELDS, notes: [], laterQuestions: [] };
+}

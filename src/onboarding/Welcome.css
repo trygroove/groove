@@ -162,3 +162,8 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+.memory-card-link {
+  color: var(--color-foreground);
+  font-size: var(--font-size-small);
+}
