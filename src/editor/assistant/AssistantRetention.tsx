@@ -1,5 +1,6 @@
 import type { JSX } from "@solidjs/web";
 import { createSignal, For, Show } from "solid-js";
+import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import {
   ACCEPT_ANSWER,
   DECLINE_ANSWER,
@@ -18,7 +19,7 @@ import {
 import type { AssistantRetention } from "./useAssistantRetention";
 
 /** What the panel says while it looks up the account's answer. */
-export const RETENTION_LOADING = "Checking your assistant settings…";
+export const RETENTION_LOADING = `Checking your ${ASSISTANT_NAME} settings…`;
 
 /** What is sent, what the provider does with it, and what Groove keeps. */
 function DisclosureText(): JSX.Element {

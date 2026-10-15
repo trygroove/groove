@@ -4271,7 +4271,7 @@ describe("EditorView assistant panel", () => {
     expect(retention.requests).toEqual([{ op: "get" }]);
     expect(
       within(panel() as HTMLElement).getByRole("textbox", {
-        name: "Message the assistant",
+        name: "Message Cue",
       }),
     ).toBeInTheDocument();
   });

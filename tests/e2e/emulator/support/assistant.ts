@@ -103,7 +103,7 @@ export const resizeEdge = (page: Page, name: "Resize height" | "Resize width"): 
 
 /** The disclosure the assistant shows before the first message (GRV-8). */
 export const disclosure = (page: Page): Locator =>
-  panel(page).getByRole("region", { name: "About the assistant" });
+  panel(page).getByRole("region", { name: "About Cue" });
 
 /**
  * Answers the disclosure a fresh account meets the first time it opens the

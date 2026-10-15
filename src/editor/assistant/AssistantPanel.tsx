@@ -19,6 +19,7 @@ import {
   resizable,
   rightClearance,
 } from "./assistantPanelLayout";
+import { SETTINGS_TITLE } from "./retentionCopy";
 import type { AssistantChat } from "./useAssistantChat";
 import type { AssistantPanel as AssistantPanelState } from "./useAssistantPanel";
 import "./AssistantPanel.css";
@@ -186,8 +187,8 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
             <button
               type="button"
               class="assistant-panel-button"
-              aria-label="Assistant settings"
-              title="Assistant settings: what Groove keeps of your conversations"
+              aria-label={SETTINGS_TITLE}
+              title={`${SETTINGS_TITLE}: what Groove keeps of your conversations`}
               aria-pressed={settingsOpen() ? "true" : "false"}
               onClick={() => setSettingsOpen((open) => !open)}
             >
