@@ -120,6 +120,9 @@ test.describe("CF-035", () => {
       const projectUrl = page.url();
       await arrangement(page).waitFor();
       await expect(cuePanel(page)).toBeVisible();
+      // Cue's panel opens on its first-run notice (GRV-8) until it is
+      // answered; the conversation is behind it.
+      await cuePanel(page).getByRole("button", { name: "OK" }).click();
       await expect(conversationIn(cuePanel(page))).toContainText("Four Tet");
       await expect(cuePanel(page)).toContainText(/first lesson/i);
       await step("The studio opens, and the conversation carries on in Cue's panel");

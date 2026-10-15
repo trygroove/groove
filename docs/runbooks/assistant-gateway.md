@@ -17,9 +17,18 @@ provider's API key or talks to the provider directly.
   `src/assistant/config.ts`. Switching between `claude-sonnet-5` and
   `claude-haiku-4-5` is a change to `ASSISTANT_MODEL_ID` and a deploy.
 - Each turn logs one `assistant turn` record to Cloud Logging: outcome code,
-  model, prompt version, attempts, failure kinds, token counts, duration.
-  Never the conversation, the project, the account or the provider's error
-  text.
+  model, prompt version, attempts, failure kinds, token counts, duration, and
+  how many recommended videos were shown, dropped, and dropped unchecked.
+  Never the conversation,
+  the project, the account or the provider's error text.
+- A tutorial video the model recommends (GRV-16, ADR 0009) is checked from
+  `assistantTurn` against YouTube's public oEmbed endpoint
+  (`https://www.youtube.com/oembed`, no key, plain outbound HTTPS, no Google
+  Cloud API). A video oEmbed answers with a 4xx for (missing, private, not
+  embeddable) is dropped; while YouTube is unreachable every video is dropped
+  unchecked, and `videosUnchecked` climbing is the sign. `videosDropped`
+  climbing with `videosUnchecked` at 0 means the model is naming IDs that do
+  not exist. A reply whose video was dropped ends with a line saying so.
 
 ## Limits and the kill switch
 
@@ -76,6 +85,27 @@ gateway, or the next `main` deploy fails:
 To check it is live: Cloud Functions in the Google Cloud console lists
 `assistantTurn` in `us-east1`, with `ANTHROPIC_API_KEY` under its secrets.
 
+## Why a proposal was rejected
+
+A proposal the browser cannot apply logs `assistant_proposal_rejected` (its
+kind, capability and issue codes, nothing else), so the rejection rate sits
+beside the other proposal rates in analytics. A kept turn also records the
+`rejected` outcome with each issue's code, the tool call it blames, and the
+validator's own path and message (GRV-98).
+
+To see one, sign in to `/admin` with the `admin` claim: **Assistant
+transcripts** lists the newest kept turns (filter by account, project, outcome
+and internal traffic) through the `assistantTranscriptsAdmin` callable, and
+**Open** shows the message, the reply, every tool call with its input, and the
+outcomes with their issues. No client reads the collection directly, admins
+included.
+
+To make a failure a regression case, **Download eval case** on the opened turn
+and run `bun run eval:assistant -- --from-transcript <file>`. A transcript
+does not keep the song, so the file names an eval fixture to run the message
+against (`house-loop` unless edited to `kit-sketch` or `arrangement`). The file
+carries the producer's words: keep it off the repository.
+
 ## Rotating the key
 
 ```bash
@@ -95,7 +125,9 @@ you press Stop (`[hang]`), one that fails once and then works (`[flaky]`), or
 one that ends in a proposal (`[propose]`), or one that ends in a question for
 you with options (`[ask]`, `[ask-multi]` for several picks, or `[ask-rich]`
 for options that point at the first track and bars 1-2, can be heard, and
-answer themselves when you set the tempo to 100 BPM or below; GRV-42). Two
+answer themselves when you set the tempo to 100 BPM or below; GRV-42), or one
+that recommends a tutorial video (`[video]`, GRV-16: one real video, which the
+emulator vouches for without asking YouTube, and one it drops). Two
 scripts serve the core flows: "Loosen the beat" proposes swing and a quieter
 track (CF-027), and asking for something dusty or dustier recommends kicks from
 the library the turn carries (CF-034). The browser suite drives the real

@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { createEffect, Match, Show, Switch } from "solid-js";
+import { createEffect, createSignal, Match, Show, Switch } from "solid-js";
 import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import {
   CloseIcon,
@@ -7,6 +7,7 @@ import {
   FloatIcon,
   MinimiseIcon,
   RestoreIcon,
+  SettingsIcon,
   SparkIcon,
 } from "../../components/icons";
 import AssistantChatView, { COMPOSER_LABEL, WRITING_STATUS } from "./AssistantChatView";
@@ -18,6 +19,7 @@ import {
   resizable,
   rightClearance,
 } from "./assistantPanelLayout";
+import { SETTINGS_TITLE } from "./retentionCopy";
 import type { AssistantChat } from "./useAssistantChat";
 import type { AssistantPanel as AssistantPanelState } from "./useAssistantPanel";
 import "./AssistantPanel.css";
@@ -76,6 +78,10 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
   const mode = () => props.panel.layout().mode;
   const expanded = () => mode() === "floating" || mode() === "docked";
   const underModal = () => props.underModal?.() ?? false;
+  // The assistant's settings (GRV-8), in place of the conversation.
+  const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const hasSettings = () =>
+    Boolean(props.chat?.retention && props.chat.account().registered);
 
   // The room the panel takes at the window's right edge, published for the
   // app's bottom-right chrome so none of it is ever drawn over the panel's
@@ -94,7 +100,16 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
     <Show when={mode() !== "closed"}>
       <section
         ref={(element) => props.panel.bindPanel(element)}
-        class={["assistant-panel", { "assistant-panel-under-modal": underModal() }]}
+        class={[
+          "assistant-panel",
+          {
+            "assistant-panel-under-modal": underModal(),
+            // A tutorial video fills the window (GRV-16): the panel, which
+            // holds it, lifts over the app's chrome until it is put back.
+            "assistant-panel-video-expanded":
+              !underModal() && props.panel.collapseVideo() !== undefined,
+          },
+        ]}
         data-mode={props.panel.layout().mode}
         inert={underModal() || undefined}
         style={{
@@ -168,6 +183,18 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
               </HeaderButton>
             </Match>
           </Switch>
+          <Show when={expanded() && hasSettings()}>
+            <button
+              type="button"
+              class="assistant-panel-button"
+              aria-label={SETTINGS_TITLE}
+              title={`${SETTINGS_TITLE}: what Groove keeps of your conversations`}
+              aria-pressed={settingsOpen() ? "true" : "false"}
+              onClick={() => setSettingsOpen((open) => !open)}
+            >
+              <SettingsIcon size={14} />
+            </button>
+          </Show>
           <HeaderButton label="Close" onClick={() => props.panel.close()}>
             <CloseIcon size={14} />
           </HeaderButton>
@@ -179,6 +206,9 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
               bindComposer={(element) => props.panel.bindComposer(element)}
               bindAskText={(element) => props.panel.bindAskText(element)}
               focusComposer={() => props.panel.focusComposer()}
+              settingsOpen={settingsOpen}
+              closeSettings={() => setSettingsOpen(false)}
+              holdExpandedVideo={(collapse) => props.panel.holdExpandedVideo(collapse)}
             />
           )}
         </Show>

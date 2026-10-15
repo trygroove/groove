@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { validateRecommendation } from "../../assistant/recommendation";
 import { CONTROL_PARTS, controlAddress } from "../../commands/controlAddress";
+import { controlsTouchedBy } from "../../commands/controls";
+import { setPadParameter } from "../../commands/definitions/drum";
+import { setParameter } from "../../commands/definitions/parameters";
+import type { RawCommandInput } from "../../commands/types";
 import type { Project, Track } from "../../domain/entities";
 import {
   createDrumPad,
   createFactoryContext,
+  createSamplerInstrument,
   createSynthInstrument,
   createTrack,
 } from "../../domain/factories";
@@ -13,12 +18,19 @@ import {
   createSliceFixtureProject,
 } from "../../domain/fixtures";
 import type { PadId } from "../../domain/ids";
+import {
+  PAD_PITCH,
+  SAMPLER_PITCH,
+  TRACK_PAN,
+  TRACK_VOLUME,
+} from "../../domain/parameters";
 import { fixtureFetcher } from "../../library/__fixtures__/fixtures";
 import { LibraryClient } from "../../library/libraryClient";
 import { emptyPadSelection, withSelectedPad } from "../padSelection";
 import { createStarterProject } from "../starterProject";
 import { createAssistantLibrary, libraryContext } from "./assistantLibrary";
 import {
+  editTouchesSlot,
   recommendationSlot,
   resolveRecommendation,
   slotExists,
@@ -182,5 +194,84 @@ describe("resolveRecommendation", () => {
     if (!loop || !shot) throw new Error("the fixtures lack a loop or a one-shot");
     expect(soundToTry([loop, shot])).toBe(shot);
     expect(soundToTry([loop])).toBeNull();
+  });
+});
+
+describe("editTouchesSlot (GRV-23)", () => {
+  const touches = (
+    slot: Parameters<typeof editTouchesSlot>[0],
+    on: Project,
+    ...commands: RawCommandInput[]
+  ) =>
+    editTouchesSlot(
+      slot,
+      commands.flatMap((command) => controlsTouchedBy(command, on)),
+      commands,
+    );
+
+  it("counts any edit to the pad a sound is tried on: its level and its pitch too", () => {
+    const { project: twoPads, snareId } = withSnarePad();
+    const slot = recommendationSlot(twoPads, bd.id, kickPad.id, null, emptyPadSelection);
+    if (!slot) throw new Error("no slot");
+    expect(
+      touches(slot, twoPads, setPadParameter(bd.id, kickPad.id, TRACK_VOLUME.id, -1)),
+    ).toBe(true);
+    expect(
+      touches(slot, twoPads, setPadParameter(bd.id, kickPad.id, PAD_PITCH.id, 2)),
+    ).toBe(true);
+    // Another pad, or the track's own fader, is not the slot.
+    expect(touches(slot, twoPads, setPadParameter(bd.id, snareId, PAD_PITCH.id, 2))).toBe(
+      false,
+    );
+    expect(
+      touches(
+        slot,
+        twoPads,
+        setParameter(
+          { scope: "track", trackId: bd.id, parameterId: TRACK_VOLUME.id },
+          -3,
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("counts a sampler's instrument parameters, not its track's mixer", () => {
+    const sampler = createTrack(createFactoryContext(), {
+      name: "Keys",
+      order: 1,
+      instrument: createSamplerInstrument(),
+    });
+    const withSampler: Project = {
+      ...project,
+      song: { ...project.song, tracks: [...project.song.tracks, sampler] },
+    };
+    const slot = recommendationSlot(
+      withSampler,
+      sampler.id,
+      null,
+      null,
+      emptyPadSelection,
+    );
+    if (!slot) throw new Error("no slot");
+    expect(
+      touches(
+        slot,
+        withSampler,
+        setParameter(
+          { scope: "instrument", trackId: sampler.id, parameterId: SAMPLER_PITCH.id },
+          3,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      touches(
+        slot,
+        withSampler,
+        setParameter(
+          { scope: "track", trackId: sampler.id, parameterId: TRACK_PAN.id },
+          0.5,
+        ),
+      ),
+    ).toBe(false);
   });
 });

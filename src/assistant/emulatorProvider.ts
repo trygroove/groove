@@ -18,6 +18,9 @@
  *   Make the message unique per test.
  * - `[propose]`: a short reply that ends in a tool call, so the turn returns
  *   a proposal: the tempo to 100 BPM.
+ * - `[misfit]` (GRV-98): a proposal that does not fit the song, a sampler
+ *   track on a sound the project does not have ({@link MISFIT_ASSET_ID}), so
+ *   the browser rejects it.
  * - "Loosen the beat" (CF-027, any case): a proposal of two changes, swing to
  *   58% and the BD track 3 dB quieter, read from the project context, and
  *   `explain_change`'s goal and technique for them.
@@ -32,6 +35,9 @@
  *   the project's first track and bars 1-2, let it be heard, and answer
  *   themselves when the tempo goes to 100 BPM or below
  *   ({@link emulatorRichAsk}).
+ * - `[video]` (GRV-16): a short reply that recommends {@link EMULATOR_VIDEO},
+ *   and a second video {@link emulatorVideoVerifier} refuses, so the turn shows
+ *   one card and drops the other.
  * - `[remember]`: a short reply that ends in `remember_producer` (GRV-25),
  *   proposing {@link EMULATOR_REMEMBER}'s note. The gateway only lets it
  *   through on a turn that carries the producer's memory.
@@ -50,6 +56,7 @@ import { ProviderFailure } from "./provider";
 import type { ProviderMessagesRequest } from "./providerRequest";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
 import { EXPLAIN_TOOL_NAME, toolNameFor } from "./tools";
+import { RECOMMEND_VIDEO_TOOL, type VideoFacts, type VideoVerifier } from "./video";
 
 /** The reply every ordinary turn streams, piece by piece. */
 export const EMULATOR_REPLY_CHUNKS = [
@@ -156,6 +163,34 @@ function tempoProposal(): Step[] {
     {
       name: "parameter_set",
       input: { target: { scope: "song", parameterId: "song.tempo" }, value: 100 },
+    },
+  ]);
+}
+
+/** The sound `[misfit]`'s track asks for: shaped like an asset ID, in no project. */
+export const MISFIT_ASSET_ID = "ast_NoisePad0000000000001";
+
+/** `[misfit]`'s one change: a noise pad on a sampler whose sound is not in the song. */
+function misfitProposal(request: ProviderMessagesRequest): Step[] {
+  const trackId = "trk_NoisePad0000000000001";
+  return proposalReply("A noisy pad underneath would add some air.", [
+    {
+      name: "track_create",
+      input: {
+        track: {
+          id: trackId,
+          name: "Noise pad",
+          color: "#808080",
+          order: contextTracks(request).length,
+          type: "instrument",
+          instrument: { kind: "sampler", assetId: MISFIT_ASSET_ID, parameters: {} },
+          devices: [],
+          sendConfig: [],
+          mixer: { volume: -6, pan: 0, muted: false, soloed: false },
+        },
+        clips: [],
+        placements: [],
+      },
     },
   ]);
 }
@@ -360,6 +395,55 @@ function askReply(multiSelect: boolean): Step[] {
   ]);
 }
 
+/**
+ * The video `[video]` recommends: a real, embeddable YouTube tutorial, so a
+ * screenshot of it playing shows the real player. Its facts are what YouTube's
+ * oEmbed reported for it, which {@link emulatorVideoVerifier} answers without
+ * asking YouTube.
+ */
+export const EMULATOR_VIDEO = {
+  videoId: "tH9LHIyJ0c8",
+  title: "How to Make an Acid Bassline with the TB-303 by Roland Cloud",
+  channel: "pointblank music school",
+  reason: "Shows how resonance and envelope mod make a 303 line squelch.",
+} as const;
+
+/** The second video `[video]` names, which does not exist and is dropped. */
+export const EMULATOR_MISSING_VIDEO_ID = "zzzzzzzzzzz";
+
+/**
+ * The emulator's and the mock backend's video check (GRV-16): it vouches for
+ * {@link EMULATOR_VIDEO} alone and refuses every other ID, with no request to
+ * YouTube, so the browser suite never depends on YouTube being up.
+ */
+export const emulatorVideoVerifier: VideoVerifier = async (videoId) =>
+  videoId === EMULATOR_VIDEO.videoId
+    ? ({
+        title: EMULATOR_VIDEO.title,
+        channel: EMULATOR_VIDEO.channel,
+      } satisfies VideoFacts)
+    : "missing";
+
+/** `[video]`'s reply: a sentence, then two video recommendations. */
+function videoReply(): Step[] {
+  return proposalReply(
+    "It's the resonance and the envelope sweeping the cutoff together: push the resonance up, then let a short filter envelope open and close the cutoff on every note.",
+    [
+      {
+        name: RECOMMEND_VIDEO_TOOL,
+        input: { videoId: EMULATOR_VIDEO.videoId, reason: EMULATOR_VIDEO.reason },
+      },
+      {
+        name: RECOMMEND_VIDEO_TOOL,
+        input: {
+          videoId: EMULATOR_MISSING_VIDEO_ID,
+          reason: "A video that is not there.",
+        },
+      },
+    ],
+  );
+}
+
 /** What `[remember]` proposes remembering. */
 export const EMULATOR_REMEMBER = {
   kind: "note",
@@ -411,12 +495,14 @@ export function createEmulatorAssistantProvider(
       return [...textReply([EMULATOR_REPLY_CHUNKS[0]]).slice(0, 3), { fail: true }];
     }
     if (message.includes("[propose]")) return tempoProposal();
+    if (message.includes("[misfit]")) return misfitProposal(request);
     if (/loosen the beat/i.test(message)) return loosenProposal(request);
     if (/\bdust(y|ier)\b/i.test(message)) return dustierRecommendation(request);
     if (message.includes("[ask-rich]")) return richAskReply(request);
     if (message.includes("[ask-multi]")) return askReply(true);
     if (message.includes("[ask]")) return askReply(false);
     if (message.includes("[remember]")) return rememberReply();
+    if (message.includes("[video]")) return videoReply();
     return textReply(EMULATOR_REPLY_CHUNKS);
   }
 

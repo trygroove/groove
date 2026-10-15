@@ -16,6 +16,7 @@ import {
   type EditorSessionSnapshot,
   type PreviewResult,
   type SessionEditListener,
+  type SessionNoticeListener,
 } from "./EditorSession";
 import { reportProjectLoad } from "./projectLoadReport";
 
@@ -140,6 +141,8 @@ export interface UseEditorSessionResult {
   onEdit(listener: SessionEditListener): () => void;
   /** Hears every change adopted from elsewhere (`subscribeRemoteChanges`). */
   onRemoteChange(listener: () => void): () => void;
+  /** Hears every notice the open session raises (`subscribeNotices`, GRV-88). */
+  onNotice(listener: SessionNoticeListener): () => void;
 }
 
 /**
@@ -206,6 +209,7 @@ export function useEditorSession(
   // project has loaded hears the session that opens.
   const editListeners = new Set<SessionEditListener>();
   const remoteListeners = new Set<() => void>();
+  const noticeListeners = new Set<SessionNoticeListener>();
 
   // Split effect. The compute half holds *both* reactive reads — `projectId()`
   // and `repository()` — and nothing else in the body below reads a signal or
@@ -238,6 +242,7 @@ export function useEditorSession(
       let unsubscribeSave: (() => void) | null = null;
       let unsubscribeEdits: (() => void) | null = null;
       let unsubscribeRemote: (() => void) | null = null;
+      let unsubscribeNotices: (() => void) | null = null;
 
       function applySnapshot(snapshot: EditorSessionSnapshot): void {
         setState((draft) => {
@@ -284,6 +289,9 @@ export function useEditorSession(
         unsubscribeRemote = localSession.subscribeRemoteChanges(() => {
           for (const listener of [...remoteListeners]) listener();
         });
+        unsubscribeNotices = localSession.subscribeNotices((notice) => {
+          for (const listener of [...noticeListeners]) listener(notice);
+        });
         unsubscribeSave = localSession.autosave.subscribe((status) =>
           setState((draft) => {
             draft.saveStatus = status;
@@ -298,6 +306,7 @@ export function useEditorSession(
         unsubscribeSave?.();
         unsubscribeEdits?.();
         unsubscribeRemote?.();
+        unsubscribeNotices?.();
         if (localSession) {
           const disposing = localSession;
           void disposing.autosave.flush().finally(() => disposing.dispose());
@@ -353,6 +362,12 @@ export function useEditorSession(
       remoteListeners.add(listener);
       return () => {
         remoteListeners.delete(listener);
+      };
+    },
+    onNotice(listener) {
+      noticeListeners.add(listener);
+      return () => {
+        noticeListeners.delete(listener);
       };
     },
   };

@@ -25,8 +25,8 @@
  * 8. sends an empty text chunk every few seconds while it runs, so the
  *    browser can tell a long silent turn (thinking, a large proposal) from a
  *    connection that died (GRV-42);
- * 9. keeps the completed turn in the transcript store if, and only if, the
- *    account has said yes (GRV-8, `retention.ts`). Keeping it never fails or
+ * 9. keeps the completed turn in the transcript store unless the account
+ *    has said no (GRV-8, GRV-97, `retention.ts`). Keeping it never fails or
  *    changes the turn: the reply is the same either way.
  *
  * Every turn offers the model the assistant's tool set (GRV-4) and
@@ -38,7 +38,10 @@
  * a malformed reply. A turn that carries the published library is offered
  * `recommend_sounds` as well (GRV-23); its calls come back among the
  * proposal's, and the browser takes them out and checks their IDs against the
- * library it sent.
+ * library it sent. A turn whose gateway can check a video with YouTube is
+ * offered `recommend_video` too (GRV-16, ADR 0009): its calls are taken out
+ * of the proposal, checked here, and returned as the turn's `videos`, with
+ * every one YouTube does not vouch for dropped.
  */
 import { type AssistantAsk, askProducerTool, isAskCall, parseAskCall } from "./ask";
 import {
@@ -86,6 +89,15 @@ import {
   EXPLAIN_TOOL_NAME,
 } from "./tools";
 import type { TranscriptStore } from "./transcripts";
+import {
+  type CheckedVideos,
+  checkVideoCalls,
+  droppedVideoNote,
+  isVideoCall,
+  NO_VIDEOS,
+  type VideoVerifier,
+  videoRecommendationTool,
+} from "./video";
 
 /** Who is calling, as the function's auth context reports it. */
 export interface AssistantCaller {
@@ -93,8 +105,8 @@ export interface AssistantCaller {
   /** `firebase.sign_in_provider` from the ID token, e.g. `google.com`. */
   readonly signInProvider: string | null;
   /**
-   * Whether the ID token's address is a team or test account
-   * (`isInternalAccount`), so its transcripts are marked internal.
+   * Whether the ID token carries the `internal` claim (`hasInternalClaim`,
+   * `src/access/claims.ts`), so its transcripts are marked internal.
    */
   readonly internalAccount?: boolean;
 }
@@ -125,6 +137,12 @@ export interface AssistantGatewayDeps {
   readonly transcripts?: TranscriptStore;
   /** Hears how keeping each completed turn went: a code, never the content. */
   readonly onTranscript?: (write: TranscriptWrite) => void;
+  /**
+   * Checks a video the model recommends is real and embeddable (GRV-16, ADR
+   * 0009 decision 5), from the server. Without one the model is not offered
+   * `recommend_video`, and any call it makes anyway is dropped.
+   */
+  readonly verifyVideo?: VideoVerifier;
 }
 
 export interface AssistantTurnOptions {
@@ -212,13 +230,16 @@ async function prepare(
   uid: string,
   turn: AssistantTurnRequest,
   idStem: string,
+  videos: boolean,
 ): Promise<PreparedTurn> {
   const system = buildSystemBlocks(turn.context, turn.library, idStem, turn.memory);
-  // A turn that carries the library may also recommend from it (GRV-23), and
-  // one that carries the producer's memory may propose adding to it (GRV-25).
+  // A turn that carries the library may also recommend from it (GRV-23), one
+  // whose videos can be checked may recommend a tutorial (GRV-16), and one that
+  // carries the producer's memory may propose adding to it (GRV-25).
   const tools = [
     ...providerTools([...assistantTools(), EXPLAIN_TOOL, askProducerTool()]),
     ...(turn.library ? [recommendationTool()] : []),
+    ...(videos ? [videoRecommendationTool()] : []),
     ...(turn.memory ? providerTools([rememberTool()]) : []),
   ];
   // The tool definitions take room in the window just as the prompt does.
@@ -418,7 +439,7 @@ function proposalOf(
   turn: AssistantTurnRequest,
   allCalls: readonly AssistantToolCall[],
 ): AssistantProposal | null {
-  const calls = allCalls.filter((call) => !isAskCall(call));
+  const calls = allCalls.filter((call) => !isAskCall(call) && !isVideoCall(call));
   if (calls.every((call) => call.name === EXPLAIN_TOOL_NAME)) return null;
   return {
     baseRevision: turn.projectRevision,
@@ -524,6 +545,7 @@ export async function runAssistantTurn(
   let attempts = 0;
   let usage = NO_USAGE;
   let history: BoundedHistory = { messages: [], dropped: 0 };
+  let checked: CheckedVideos = NO_VIDEOS;
 
   const finish = (
     outcome: AssistantTurnLog["outcome"],
@@ -541,6 +563,9 @@ export async function runAssistantTurn(
         usage,
         historySent: history.messages.length,
         historyDropped: history.dropped,
+        videosShown: checked.videos.length,
+        videosDropped: checked.dropped,
+        videosUnchecked: checked.unchecked,
       }),
     );
 
@@ -554,7 +579,13 @@ export async function runAssistantTurn(
     if (!(await deps.guards.isEnabled())) {
       throw new AssistantGatewayError("assistant_disabled", DISABLED_MESSAGE);
     }
-    const prepared = await prepare(model, uid, turn, (deps.idStem ?? createIdStem)());
+    const prepared = await prepare(
+      model,
+      uid,
+      turn,
+      (deps.idStem ?? createIdStem)(),
+      deps.verifyVideo !== undefined,
+    );
     history = prepared.history;
 
     while (true) {
@@ -591,19 +622,37 @@ export async function runAssistantTurn(
           throw new AssistantGatewayError("reply_too_long", TOO_LONG_MESSAGE);
         }
         const ask = askOf(outcome.toolCalls);
+        // Every video YouTube does not vouch for is dropped, never shown
+        // unchecked (ADR 0009 decision 5).
+        checked = await checkVideoCalls(
+          outcome.toolCalls,
+          deps.verifyVideo,
+          options.signal,
+        );
+        if (options.signal.aborted) {
+          throw new AssistantGatewayError(
+            "cancelled",
+            "The assistant request was cancelled.",
+          );
+        }
+        // Words that lead into a dropped video are not left standing alone.
+        const note = droppedVideoNote(outcome.text, checked);
+        if (note) await options.onChunk({ type: "text", text: note });
+        const text = outcome.text + note;
         finish("completed", outcome.stopReason);
         const proposal = proposalOf(turn, outcome.toolCalls);
         await keepTranscript(deps, uid, caller, turn, startedAt, {
-          text: outcome.text,
+          text,
           stopReason: outcome.stopReason,
           proposal,
           model: model.id,
         });
         return {
-          text: outcome.text,
+          text,
           stopReason: outcome.stopReason,
           proposal,
           ask,
+          videos: checked.videos,
           model: model.id,
           promptVersion: ASSISTANT_PROMPT_VERSION,
           requestsRemaining,

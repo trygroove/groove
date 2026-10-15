@@ -75,6 +75,23 @@ export function createInMemoryTranscriptStore(): InMemoryTranscriptStore {
         });
         return true;
       }),
+    recent: (filter, limit) =>
+      serial(() =>
+        [...records.values()]
+          .filter(
+            (record) =>
+              (filter.uid === undefined || record.uid === filter.uid) &&
+              (filter.projectId === undefined || record.projectId === filter.projectId),
+          )
+          .sort((a, b) => b.createdAt - a.createdAt)
+          .slice(0, limit)
+          .map((record) => structuredClone(record)),
+      ),
+    read: (uid, turnId) =>
+      serial(() => {
+        const record = records.get(key(uid, turnId));
+        return record ? structuredClone(record) : null;
+      }),
     deleteForUser: (uid) => deleteWhere((record) => record.uid === uid),
     deleteForProject: (projectId) =>
       deleteWhere((record) => record.projectId === projectId),

@@ -82,6 +82,14 @@ describe("scanForSecrets", () => {
     expect(findings.map((f) => f.name)).toContain("GitHub personal/app token");
   });
 
+  it("flags a PostHog personal API key, but not the public project key", () => {
+    write("assets/leak.js", `const k = "phx_${"a".repeat(40)}";`);
+    write("assets/ok.js", `const k = "phc_${"a".repeat(40)}";`);
+
+    const findings = scanForSecrets(dir);
+    expect(findings.map((f) => f.name)).toEqual(["PostHog personal API key"]);
+  });
+
   it("flags a raw .env-style assignment of a known server secret", () => {
     write(
       "assets/leak.txt",

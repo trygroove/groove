@@ -150,6 +150,17 @@ p.error {
 /* Content that is available to assistive technology but not painted — a
    label for a control whose meaning is otherwise carried only by position or
    an icon. Shared: any surface may use it. */
+/* The root error boundary's message (`src/app.tsx`): where the plugin's
+   default boundary put it, through a class rather than its inline style. */
+.app-uncaught-error {
+  position: fixed;
+  left: 0;
+  bottom: 55%;
+  width: 100%;
+  font-size: 1.5em;
+  text-align: center;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

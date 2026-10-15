@@ -16,6 +16,7 @@ import { createRecordingTransport } from "../analytics/transport";
 import { INITIAL_PIXELS_PER_TICK, ROW_METRICS } from "../arrangement/ArrangementView";
 import type { AssistantClient } from "../assistant/assistantClient";
 import { RECOMMEND_SOUNDS_TOOL } from "../assistant/recommendation";
+import type { AssistantRetentionClient } from "../assistant/retentionClient";
 import { ASSISTANT_TOOLSET_VERSION } from "../assistant/tools";
 import { installWebAudioGlobals } from "../audio/testAudioContext";
 import { type CapabilityReport, detectCapabilities } from "../browser/capabilities";
@@ -46,6 +47,7 @@ import {
   parsePackManifest,
 } from "../library/manifest";
 import type { InMemoryProjectRepository } from "../persistence/inMemoryProjectRepository";
+import { saveFailure } from "../persistence/projectRepository";
 import { systemClock } from "../shared/clock";
 import { detectPlatform, shortcutLabel } from "../shortcuts";
 import { buildArrangementProject } from "../testing/arrangementProject";
@@ -54,6 +56,7 @@ import {
   createFakeAssistantClient,
   type FakeAssistantClient,
 } from "../testing/fakeAssistantClient";
+import { createFakeRetentionClient } from "../testing/fakeRetentionClient";
 import { memoryStorage } from "../testing/storage";
 import { packAudioPath } from "../userData/userData";
 import { createInMemoryUserLibraryRepository } from "../userLibrary/inMemoryUserLibraryRepository";
@@ -249,8 +252,11 @@ function renderEditor(
     account?: UserLibraryAccount | null;
     userLibraryRepository?: () => Promise<UserLibraryRepository>;
     assistantClient?: () => Promise<AssistantClient>;
+    assistantRetentionClient?: () => Promise<AssistantRetentionClient>;
   } = {},
 ) {
+  // Unless a test is about the disclosure, the account has already answered it.
+  const retentionClient = createFakeRetentionClient({ answered: true });
   const EditorView = EditorViewModule.default;
   const location = memoryHistory(editorViewPath(projectId, "arrangement"));
   const Page = () => {
@@ -269,6 +275,9 @@ function renderEditor(
         libraryAccount={options.account}
         userLibraryRepository={options.userLibraryRepository}
         assistantClient={options.assistantClient}
+        assistantRetentionClient={
+          options.assistantRetentionClient ?? (async () => retentionClient)
+        }
       />
     );
   };
@@ -1190,7 +1199,7 @@ describe("EditorView", () => {
     expect(clip.content.events).toHaveLength(5);
   });
 
-  it("does not offer a retry button for a non-retryable failure", async () => {
+  it("replays its edit over a change another tab wrote first, and ends on Saved (GRV-88)", async () => {
     repository = inMemoryModule.createInMemoryProjectRepository();
     const project = createStepGridProject();
     const created = await repository.createProject(project);
@@ -1201,10 +1210,11 @@ describe("EditorView", () => {
 
     // Another client's write lands in the store directly, without going
     // through `saveMetadata` (which would notify this session's own
-    // `watchProject` listener and let it adopt the newer revision before the
-    // edit below ever conflicts). That models the real race the revision
-    // check exists for: the remote write reaches the server before this
-    // tab's watcher has delivered word of it.
+    // `watchProject` listener before the edit below is written). That models
+    // the real race the revision check exists for: the remote write reaches
+    // the server before this tab's watcher has delivered word of it. The
+    // write is refused as a conflict, and the session takes the saved project
+    // in, replays the edit on top of it and writes it at the new revision.
     const path = documentsModule.projectDocumentPath(project.metadata.id);
     const stored = repository.readDocument(path);
     if (!stored) throw new Error("expected the metadata document to exist");
@@ -1215,9 +1225,39 @@ describe("EditorView", () => {
 
     paintStep("BD, step 2, off");
 
+    await vi.waitFor(
+      async () => {
+        const loaded = await repository.loadProject(project.metadata.id);
+        if (!loaded.ok) throw new Error("expected the project to load");
+        const clip = loaded.value.clips[0];
+        if (clip.content.kind !== "notes") throw new Error("expected a note clip");
+        expect(clip.content.events).toHaveLength(5);
+      },
+      { timeout: 3_000 },
+    );
+    await screen.findByText("Saved", {}, { timeout: 3_000 });
+    expect(
+      screen.queryByText("This project changed in another tab or session."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not offer a retry button for a non-retryable failure", async () => {
+    repository = inMemoryModule.createInMemoryProjectRepository();
+    const project = createStepGridProject();
+    const created = await repository.createProject(project);
+    if (!created.ok) throw new Error("fixture project failed to create");
+
+    renderEditor(project.metadata.id);
+    await openSequenceEditor();
+
+    vi.spyOn(repository, "saveChanges").mockResolvedValue(
+      saveFailure("document_too_large", "too large"),
+    );
+    paintStep("BD, step 2, off");
+
     await screen.findByText("Save failed", {}, { timeout: 3_000 });
     expect(
-      screen.getByText("This project changed in another tab or session."),
+      screen.getByText("This project is too large to save further changes."),
     ).toBeInTheDocument();
     expect(saveRetryButton()).toBeNull();
   });
@@ -1702,7 +1742,7 @@ describe("EditorView library insert keys", () => {
     await vi.waitFor(() => expect(slot()).toHaveTextContent(first));
     // Staying, an insert shows it went in: the readout lights, and says so.
     expect(slot()).toHaveClass("library-modal-readout-inserted");
-    expect(screen.getByRole("status")).toHaveTextContent(`Inserted ${first}`);
+    expect(within(library).getByRole("status")).toHaveTextContent(`Inserted ${first}`);
     await insertByKey(second);
     await vi.waitFor(() => expect(slot()).toHaveTextContent(second));
     expect(location.get()).toMatch(/\/library$/);
@@ -3684,7 +3724,7 @@ describe("EditorView assistant panel", () => {
     });
     await screen.findByTestId("arrangement-view-ready");
 
-    press("k", assistantChord());
+    await openPanel();
     const composer = within(panel() as HTMLElement).getByRole("textbox", {
       name: "Message Cue",
     });
@@ -3715,6 +3755,16 @@ describe("EditorView assistant panel", () => {
     expect(within(panel() as HTMLElement).getByText("Writing…")).toBeInTheDocument();
   });
 
+  /**
+   * Opens the assistant with its shortcut, and lets the account's answer to
+   * the disclosure load: it is only asked for once the panel opens (GRV-8).
+   */
+  async function openPanel() {
+    press("k", assistantChord());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    flush();
+  }
+
   /** The editor over `project`, signed in, talking to a fake assistant. */
   async function renderTalking(project: Project) {
     const client = createFakeAssistantClient();
@@ -3733,7 +3783,7 @@ describe("EditorView assistant panel", () => {
 
   /** Opens the panel over what is selected, and sends `text` from it. */
   async function openAndSend(client: FakeAssistantClient, text: string) {
-    if (!panel()) press("k", assistantChord());
+    if (!panel()) await openPanel();
     const composer = within(panel() as HTMLElement).getByRole("textbox", {
       name: "Message Cue",
     });
@@ -4082,10 +4132,73 @@ describe("EditorView assistant panel", () => {
     expect(within(card).getByRole("status")).toHaveTextContent("BD is trying");
   });
 
+  it("makes a try stale when the pad's level changes under it (GRV-23)", async () => {
+    const client = createFakeAssistantClient();
+    repository = inMemoryModule.createInMemoryProjectRepository();
+    const project = createStarterProject("u1", () => 0.5);
+    const [drums] = project.song.tracks;
+    if (drums?.instrument?.kind !== "drumMachine") throw new Error("no drum machine");
+    const bd = drums.instrument.pads.find((pad) => pad.name === "BD");
+    if (!bd) throw new Error("no BD pad");
+    const created = await repository.createProject(project);
+    if (!created.ok) throw new Error("fixture project failed to create");
+    renderEditor(project.metadata.id, {
+      account: { uid: "u1", registered: true },
+      assistantClient: async () => client,
+      libraryClient: new LibraryClient(fixtureFetcher()),
+      createAuditionEngine: fakePreviewEngine,
+    });
+    await screen.findByTestId("arrangement-view-ready");
+
+    await openAndSend(client, "the kick is too clean, anything dustier?");
+    fireAndFlush(() =>
+      client.last().emit({
+        type: "proposal",
+        proposal: {
+          baseRevision: project.metadata.revision,
+          toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+          calls: [
+            {
+              id: "toolu_1",
+              name: RECOMMEND_SOUNDS_TOOL,
+              input: {
+                packId: "pak_SdlN_OazweXrwury0j27Y",
+                soundIds: ["sg-one-shot-drums-kick-0004"],
+                reason: "Dustier.",
+                trackId: drums.id,
+                padId: bd.id,
+              },
+            },
+          ],
+        },
+      }),
+    );
+    fireAndFlush(() => client.last().done());
+    const card = await screen.findByRole("region", { name: /^Recommended pack/ });
+    clickAndFlush(within(card).getByRole("button", { name: "Try on BD" }));
+    expect(within(card).getByRole("status")).toHaveTextContent("BD is trying");
+
+    const level = await screen.findByRole("slider", { name: "Level for BD" });
+    // An arrow-key nudge: jsdom's range input does not move on a key, so the
+    // events the browser fires for one are fired here.
+    fireAndFlush(() => {
+      level.focus();
+      fireEvent.input(level, { target: { value: "-1" } });
+      fireEvent.change(level, { target: { value: "-1" } });
+    });
+
+    await waitFor(() =>
+      expect(within(card).getByRole("status")).toHaveTextContent(
+        "Out of date. BD changed while a sound was being tried",
+      ),
+    );
+    expect(within(card).queryByRole("button", { name: "Keep" })).toBeNull();
+  });
+
   it("scopes to the clips selected in the arrangement, as a section (GRV-26)", async () => {
     const { client, transport } = await renderTalking(createSliceFixtureProject());
     await clickBdClip();
-    press("k", assistantChord());
+    await openPanel();
     expect(scopeChip()).toHaveAccessibleName("Scope: 1 clip");
     const request = await openAndSend(client, "Vary this");
     expect(request.context.selection?.countByKind).toEqual({ placement: 1 });
@@ -4098,7 +4211,7 @@ describe("EditorView assistant panel", () => {
     const { client, transport } = await renderTalking(createSliceFixtureProject());
     await clickBdClip();
     await goToView("Mixer");
-    press("k", assistantChord());
+    await openPanel();
     expect(scopeChip()).toHaveAccessibleName("Scope: BD");
     const request = await openAndSend(client, "Mix it");
     expect(request.context.selection?.countByKind).toEqual({ track: 1 });
@@ -4113,7 +4226,7 @@ describe("EditorView assistant panel", () => {
     within(editor).getByRole("region", { name: /Piano roll/ });
     fireAndFlush(() => fireEvent.keyDown(window, { key: "a", ctrlKey: true }));
     expect(within(editor).getByText("4 selected")).toBeInTheDocument();
-    press("k", assistantChord());
+    await openPanel();
     expect(scopeChip()).toHaveAccessibleName("Scope: 4 notes");
     const request = await openAndSend(client, "Humanise these");
     expect(request.context.selectedNotes?.noteCount).toBe(4);
@@ -4131,7 +4244,7 @@ describe("EditorView assistant panel", () => {
     const editor = await openSequenceEditor();
     within(editor).getByRole("region", { name: "Step editor" });
     fireAndFlush(() => fireEvent.keyDown(window, { key: "a", ctrlKey: true }));
-    press("k", assistantChord());
+    await openPanel();
     expect(scopeChip()).toHaveAccessibleName(`Scope: ${notes.length} notes`);
     const request = await openAndSend(client, "Swing these");
     expect(notes.length).toBeGreaterThan(0);
@@ -4139,9 +4252,33 @@ describe("EditorView assistant panel", () => {
     expect(request.context.selection?.countByKind).toEqual({ event: notes.length });
   });
 
+  it("asks for the account's answer to the disclosure only once the assistant opens (GRV-8)", async () => {
+    const retention = createFakeRetentionClient({ answered: true });
+    repository = inMemoryModule.createInMemoryProjectRepository();
+    const project = createSliceFixtureProject();
+    const created = await repository.createProject(project);
+    if (!created.ok) throw new Error("fixture project failed to create");
+    renderEditor(project.metadata.id, {
+      account: { uid: "u1", registered: true },
+      assistantClient: async () => createFakeAssistantClient(),
+      assistantRetentionClient: async () => retention,
+    });
+    await screen.findByTestId("arrangement-view-ready");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(retention.requests).toEqual([]);
+
+    await openPanel();
+    expect(retention.requests).toEqual([{ op: "get" }]);
+    expect(
+      within(panel() as HTMLElement).getByRole("textbox", {
+        name: "Message Cue",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("offers a sign-in in place of the composer to someone not signed in (GRV-26)", async () => {
     await renderSlice();
-    press("k", assistantChord());
+    await openPanel();
     expect(panel()).toHaveFocus();
     expect(within(panel() as HTMLElement).queryByRole("textbox")).toBeNull();
     expect(panel()).toHaveTextContent("Sign in to talk to Cue.");
@@ -4176,7 +4313,7 @@ describe("EditorView assistant panel", () => {
   it("minimises a floating panel on Escape, and closes a docked one", async () => {
     await renderSlice();
     launcher().focus();
-    press("k", assistantChord());
+    await openPanel();
     press("Escape");
     expect(panel()).toHaveAttribute("data-mode", "minimised");
 
@@ -4186,7 +4323,7 @@ describe("EditorView assistant panel", () => {
     expect(panel()).toBeNull();
     expect(launcher()).toHaveFocus();
     // Out of the panel, Escape is not the panel's.
-    press("k", assistantChord());
+    await openPanel();
     launcher().focus();
     press("Escape");
     expect(panel()).toHaveAttribute("data-mode", "docked");
@@ -4205,7 +4342,7 @@ describe("EditorView assistant panel", () => {
     const drumRegion = `Drum machine: ${project.song.tracks[0].name}`;
     expect(screen.getByRole("region", { name: drumRegion })).toBeInTheDocument();
 
-    press("k", assistantChord());
+    await openPanel();
     const edge = within(panel() as HTMLElement).getByRole("separator");
     edge.focus();
     press("ArrowUp");
@@ -4229,7 +4366,7 @@ describe("EditorView assistant panel", () => {
   it("leaves the docked column free in the editor's layout, and only while docked", async () => {
     await renderSlice();
     expect(dockSpace()).toBe("0px");
-    press("k", assistantChord());
+    await openPanel();
     expect(dockSpace()).toBe("0px");
     clickAndFlush(panelButton("Dock to the right"));
     expect(dockSpace()).toBe("384px");
@@ -4239,7 +4376,7 @@ describe("EditorView assistant panel", () => {
 
   it("drops under a modal dialog and out of reach until it closes", async () => {
     await renderSlice();
-    press("k", assistantChord());
+    await openPanel();
     expect(panel()).not.toHaveAttribute("inert");
 
     clickAndFlush(screen.getByRole("button", { name: "Export" }));
@@ -4248,7 +4385,7 @@ describe("EditorView assistant panel", () => {
     expect(region).toHaveAttribute("inert");
     expect(region).toHaveClass("assistant-panel-under-modal");
     // Cmd/Ctrl+K is the editor's, which the dialog stands down.
-    press("k", assistantChord());
+    await openPanel();
     expect(region).toHaveAttribute("data-mode", "floating");
 
     clickAndFlush(screen.getByRole("button", { name: "Close export" }));

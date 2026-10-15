@@ -82,15 +82,15 @@ jobs:
       # on a `pull_request` event is the ephemeral merge commit and identifies
       # nothing a reviewer can check out.
       #
-      # Two build inputs the `deploy` job sets are deliberately omitted:
-      # `VITE_FIREBASE_MEASUREMENT_ID` and `VITE_SENTRY_DSN`. With them unset,
-      # `loadAnalytics()` resolves `null` and `sentrySink.start()` resolves
-      # false, so a preview reports no GA4 events and no Sentry errors instead
+      # Build inputs the `deploy` job sets are deliberately omitted:
+      # `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` and `VITE_SENTRY_DSN`. With them
+      # unset, analytics runs on `noopTransport` and `sentrySink.start()`
+      # resolves false, so a preview reports no PostHog events and no Sentry errors instead
       # of mixing unreviewed branch traffic into production's product analytics
       # and error budget. The three `SENTRY_*` build-time values are omitted for
       # the same reason: a preview must not register a Sentry release.
       - name: Build and verify
-        run: bun run build && bun run verify:bundle && bun run verify:client-config && bun run verify:landing-static
+        run: bun run build && bun run verify:bundle && bun run verify:client-config && bun run verify:landing-static && bun run verify:no-inline-styles
         env:
           VITE_RELEASE_SHA: ${{ github.event.pull_request.head.sha }}
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}

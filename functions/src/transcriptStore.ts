@@ -19,6 +19,14 @@ import {
   transcriptDocPath,
 } from "../../src/assistant/transcripts";
 
+/**
+ * The most records a filtered listing reads before sorting them newest first
+ * (GRV-98). A filter on one field and an order on another would need a
+ * composite index; an account's or a project's records within the 30-day
+ * window are few enough to sort here instead.
+ */
+const FILTERED_READ_LIMIT = 1_000;
+
 /** Documents deleted per batch; Firestore takes at most 500 writes in one. */
 const DELETE_PAGE = 400;
 
@@ -70,6 +78,26 @@ export function firestoreTranscriptStore(db: Firestore): TranscriptStore {
         tx.update(ref, { outcomes: [...record.outcomes, outcome] });
         return true;
       });
+    },
+    async recent(filter, limit) {
+      if (filter.uid === undefined && filter.projectId === undefined) {
+        const page = await transcripts.orderBy("createdAt", "desc").limit(limit).get();
+        return page.docs.map((doc) => doc.data());
+      }
+      let query: Query = transcripts;
+      if (filter.uid !== undefined) query = query.where("uid", "==", filter.uid);
+      if (filter.projectId !== undefined) {
+        query = query.where("projectId", "==", filter.projectId);
+      }
+      const page = await query.limit(FILTERED_READ_LIMIT).get();
+      return page.docs
+        .map((doc) => doc.data())
+        .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0))
+        .slice(0, limit);
+    },
+    async read(uid, turnId) {
+      const snapshot = await db.doc(transcriptDocPath(uid, turnId)).get();
+      return snapshot.exists ? snapshot.data() : null;
     },
     deleteForUser: (uid) => deleteAll(db, transcripts.where("uid", "==", uid)),
     deleteForProject: (projectId) =>

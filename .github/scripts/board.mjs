@@ -9,6 +9,9 @@
  *                                                   SHIP_PER_POLL (4) of them in priority order
  *                                                   (moved to In Progress here)
  *                           rework=[{issue,prs,comment}, …]  cards sent back to In Progress with PRs open
+ *                                                   (sent back with none open and no merged PR that
+ *                                                   completes it, the card is unfinished: it joins ship,
+ *                                                   and /ship continues from its handoff)
  *                           mentions=[{issue,comment,reply}, …]  comments that say @claude
  *                           milestone=["GRV-40", …] new bugs with no milestone
  *                         and approves the open PRs of every card in Approved.
@@ -40,6 +43,7 @@ const SHIP_PER_POLL = Number(process.env.SHIP_PER_POLL ?? 4);
 export const PICKUP = "**Picking this up";
 const PICKUP_SHIP = `${PICKUP}.** ([/ship run](${RUN_URL}))`;
 const PICKUP_REWORK = `${PICKUP} again: it was sent back while its PRs were open.** ([rework run](${RUN_URL}))`;
+const PICKUP_CONTINUE = `${PICKUP} again: it was sent back with work left and no PR open.** ([/ship run](${RUN_URL}))`;
 const PICKUP_MENTION = `${PICKUP}.** ([run](${RUN_URL}))`;
 const PLACEHOLDER =
   "_Reading the issue and working out a plan; this comment will show it and track progress._";
@@ -116,6 +120,34 @@ function changesRules(pr) {
   }
 }
 
+/**
+ * True when a merged PR completes or closes the card, so nothing is left to
+ * build. When GitHub can't be asked, say so: starting a build on a guess is
+ * worse than waiting for the next poll.
+ */
+function completedOnMain(identifier) {
+  try {
+    const bodies = JSON.parse(
+      gh([
+        "api",
+        "-X",
+        "GET",
+        "search/issues",
+        "-f",
+        `q=repo:${REPO} is:pr is:merged "${identifier}" in:body`,
+        "--jq",
+        "[.items[].body]",
+      ]),
+    );
+    return bodies.some((b) => [...completedBy(b), ...closedBy(b)].includes(identifier));
+  } catch {
+    console.warn(
+      `${identifier}: could not search its merged PRs; assuming it is finished`,
+    );
+    return true;
+  }
+}
+
 // ---------------------------------------------------------------- poll
 
 const REWORK_GRACE_MS = 15 * 60 * 1000;
@@ -171,29 +203,46 @@ async function pollApproved(index) {
 }
 
 /**
- * A card moved to In Progress while its PRs are open was sent back for more
- * work (from QA, review or Blocked), unless it just came from Ready (that is
- * /ship starting), a run has already announced itself on it since the move,
- * or an `@claude` comment on one of its PRs in the last 15 minutes means a
- * Claude run is already on it (the CI-failure handler's is one).
+ * A card moved to In Progress (from QA, review, Approved or Blocked) was sent
+ * back for more work, unless it just came from Ready (that is /ship starting)
+ * or Backlog (not agreed yet), or a run has already announced itself on it
+ * since the move. With PRs open, a rework run fixes them, unless an `@claude`
+ * comment on one of them in the last 15 minutes means a Claude run is already
+ * on it (the CI-failure handler's is one). With none open, the card is
+ * unfinished when no merged PR completes it (a sequence stopped at a gated PR,
+ * say), and /ship continues it from its handoff; a finished card, such as one
+ * that failed QA, is left to the `@claude` run QA started.
  */
-async function pollRework(index) {
+async function pollRework(index, ship) {
   const rework = [];
   const now = Date.now();
+  const line = lineStatus();
   for (const card of await linear.list({
     state: "In Progress",
     history: true,
     comments: true,
   })) {
-    const prs = index.prs.filter((p) => refersTo(p.body, card.identifier));
-    if (!prs.length) continue;
     const moved = enteredInProgress(card);
-    if (!moved || moved.fromState?.name.toLowerCase() === "ready") continue;
+    const from = moved?.fromState?.name.toLowerCase();
+    if (!moved || from === "ready" || from === "backlog") continue;
     const announced = latest(
       card.comments,
       (c) => c.body.startsWith(PICKUP) && c.createdAt > moved.createdAt,
     );
     if (announced) continue;
+    const prs = index.prs.filter((p) => refersTo(p.body, card.identifier));
+    if (!prs.length) {
+      if (line.stopped || completedOnMain(card.identifier)) continue;
+      const c = await linear.comment(
+        card.identifier,
+        `${PICKUP_CONTINUE}\n\n${PLACEHOLDER}`,
+      );
+      ship.push({ issue: card.identifier, comment: c.id });
+      console.log(
+        `${card.identifier}: sent back from ${moved.fromState?.name ?? "?"} with no PR open and none completing it; continuing /ship`,
+      );
+      continue;
+    }
     const handled = prs.some((pr) =>
       (pr.comments ?? []).some(
         (c) =>
@@ -256,7 +305,7 @@ async function poll() {
   const index = openPrs();
   const ship = await pollReady();
   await pollApproved(index);
-  const rework = await pollRework(index);
+  const rework = await pollRework(index, ship);
   const mentions = await pollMentions();
   const milestone = await pollMilestones();
   output("ship", ship);

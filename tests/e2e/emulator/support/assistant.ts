@@ -1,4 +1,9 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import {
+  ASSISTANT_DISCLOSURE_VERSION,
+  ASSISTANT_TRANSCRIPTS_COLLECTION,
+  preferenceDocPath,
+} from "../../../../src/assistant/transcripts";
 
 /**
  * Shared steps and locators for the assistant's core flows (CF-027, CF-028).
@@ -95,6 +100,95 @@ export const panelButton = (page: Page, name: string): Locator =>
 
 export const resizeEdge = (page: Page, name: "Resize height" | "Resize width"): Locator =>
   panel(page).getByRole("separator", { name });
+
+/** The disclosure the assistant shows before the first message (GRV-8). */
+export const disclosure = (page: Page): Locator =>
+  panel(page).getByRole("region", { name: "About Cue" });
+
+/**
+ * Answers the disclosure a fresh account meets the first time it opens the
+ * assistant (GRV-8), and waits for the composer it gives way to. It declines
+ * unless told otherwise, so tests leave nothing behind: keeping or not, the
+ * assistant behaves the same.
+ */
+export async function answerDisclosure(
+  page: Page,
+  answer: "OK" | "Don't keep them" = "Don't keep them",
+): Promise<void> {
+  await disclosure(page).getByRole("button", { name: answer, exact: true }).click();
+  await expect(composer(page)).toBeVisible();
+}
+
+/**
+ * Records `uid` as having answered the disclosure already, as an account
+ * that met it in an earlier session has (GRV-8). Written through the
+ * Firestore emulator's REST API with its `owner` token, which bypasses the
+ * rules the way the `assistantRetention` function's admin credential does:
+ * no client may write the answer itself.
+ */
+export async function seedDisclosureAnswered(uid: string, retain = false): Promise<void> {
+  const url = emulatorDocumentsUrl(preferenceDocPath(uid));
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fields: {
+        schemaVersion: { integerValue: "1" },
+        retain: { booleanValue: retain },
+        disclosureVersion: { integerValue: String(ASSISTANT_DISCLOSURE_VERSION) },
+        answeredAt: { integerValue: String(Date.now()) },
+      },
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `The Firestore emulator refused the disclosure answer (${response.status}): ` +
+        `${await response.text()}`,
+    );
+  }
+}
+
+/** A path under the Firestore emulator's REST root for the test project. */
+function emulatorDocumentsUrl(path: string): string {
+  const host = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8080";
+  return `http://${host}/v1/projects/demo-solid-groove/databases/(default)/documents/${path}`;
+}
+
+/** One kept turn as the emulator holds it: the fields a spec checks. */
+export interface StoredTranscript {
+  readonly userMessage: string;
+  readonly reply: string;
+  readonly projectId: string;
+}
+
+/**
+ * The transcripts the server has kept for `uid` (GRV-8), read through the
+ * Firestore emulator's REST API with its `owner` token, since no client may
+ * read them: so a spec can check that keeping, and deleting, really happened.
+ */
+export async function storedTranscripts(uid: string): Promise<StoredTranscript[]> {
+  const response = await fetch(
+    `${emulatorDocumentsUrl(ASSISTANT_TRANSCRIPTS_COLLECTION)}?pageSize=300`,
+    { headers: { Authorization: "Bearer owner" } },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `The Firestore emulator refused to list transcripts (${response.status}): ` +
+        `${await response.text()}`,
+    );
+  }
+  type Field = { stringValue?: string };
+  const body = (await response.json()) as {
+    documents?: { fields: Record<string, Field | undefined> }[];
+  };
+  return (body.documents ?? [])
+    .filter((document) => document.fields.uid?.stringValue === uid)
+    .map((document) => ({
+      userMessage: document.fields.userMessage?.stringValue ?? "",
+      reply: document.fields.reply?.stringValue ?? "",
+      projectId: document.fields.projectId?.stringValue ?? "",
+    }));
+}
 
 export const composer = (page: Page): Locator =>
   panel(page).getByRole("textbox", { name: "Message Cue" });

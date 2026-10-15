@@ -275,6 +275,14 @@ jobs:
       # added without `data-landing`, is a green build otherwise.
       - name: Verify the landing page is statically generated
         run: bun run verify:landing-static
+      # GRV-105: the CSP (GRV-7) leaves 'unsafe-inline' out of `style-src`, so
+      # a `style` attribute the browser has to parse -- in the prerendered
+      # HTML, or baked into a Solid template in a chunk -- is refused at
+      # runtime and the layout silently loses a rule. Checked against the
+      # build output, where the compiler's folding of constant style entries
+      # into templates is visible.
+      - name: Verify no inline style reaches the build
+        run: bun run verify:no-inline-styles
 
   # FND-001b (PRD OPS-01): deploys to the alpha's one hosted environment --
   # the production Firebase project -- from CI on every merge to `main`, never
@@ -394,11 +402,19 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_PROJECT_ID }}.firebasestorage.app
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
-          VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
+          VITE_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
+          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # GRV-120 (ADR 0011 decision 3): the same source maps, uploaded to
+          # PostHog error tracking by vite.config.ts's `postHogBuildPlugins`
+          # after Sentry's upload, then deleted. Optional like the Sentry
+          # values: with the key or project ID unset the upload is inactive.
+          POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
+          POSTHOG_PROJECT_ID: ${{ vars.POSTHOG_PROJECT_ID }}
+          POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
 
       # FND-001c (PRD OPS-03): the second half of release registration. The
       # build step above created the release and attached its source maps;

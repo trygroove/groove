@@ -1190,12 +1190,15 @@ export default function ArrangementView(props: ArrangementViewProps) {
       data-pixels-per-tick={pixelsPerTick()}
       {...VERTICAL_SCALE}
     >
-      <div class="arrangement-body">
-        <div
-          class="arrangement-headers"
-          ref={headerColumnEl}
-          style={{ width: `${HEADER_WIDTH_PX}px` }}
-        >
+      {/* The header column's width reaches the stylesheet as a custom property
+          set through the CSSOM, not a `style={{ … }}` entry: Solid's compiler
+          folds a constant entry into the element's template as a `style`
+          attribute, which a CSP without 'unsafe-inline' refuses (GRV-105). */}
+      <div
+        class="arrangement-body"
+        ref={(el) => el.style.setProperty("--track-column-width", `${HEADER_WIDTH_PX}px`)}
+      >
+        <div class="arrangement-headers" ref={headerColumnEl}>
           <div class="arrangement-headers-ruler-spacer" />
           <ul
             class="arrangement-headers-inner"
@@ -1217,10 +1220,8 @@ export default function ArrangementView(props: ArrangementViewProps) {
                     previewing(track().id) ? "track-drop-indicator" : undefined
                   }
                   style={{
-                    position: "absolute",
                     top: `${track().rowIndex * ROW_METRICS.headerHeightPx}px`,
                     height: `${ROW_METRICS.headerHeightPx}px`,
-                    width: "100%",
                   }}
                 >
                   <Show when={trackOf(track().id)}>
@@ -1318,7 +1319,6 @@ export default function ArrangementView(props: ArrangementViewProps) {
             class="arrangement-below-tracks"
             ref={belowTracksEl}
             style={{
-              left: `${HEADER_WIDTH_PX}px`,
               transform: `translateY(${-scrollTopMemo()}px)`,
               top: `${RULER_HEIGHT_PX + headerRows().length * ROW_METRICS.headerHeightPx}px`,
             }}

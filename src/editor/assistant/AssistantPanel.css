@@ -26,6 +26,14 @@
   z-index: 79;
 }
 
+/* A tutorial video fills the window from inside the panel (GRV-16). The panel
+   is its own stacking context, so the panel itself lifts over the app's
+   chrome (the release badge and the telemetry notice, 1000) while it does.
+   The player stays where it is in the document: moving an iframe reloads it. */
+.assistant-panel.assistant-panel-video-expanded {
+  z-index: 1001;
+}
+
 .assistant-panel:focus {
   outline: none;
 }
@@ -685,7 +693,7 @@
   background: var(--color-background);
   color: var(--color-text);
   font: inherit;
-  font-size: var(--font-size-small);
+  font-size: var(--font-size-base);
 }
 
 /* A black field on the panel's ground needs no ring at rest; focus has one. */
@@ -789,7 +797,7 @@
 
 .assistant-ask-options {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 4px;
   min-width: 0;
   margin: 0;
@@ -802,6 +810,7 @@
   align-items: flex-start;
   gap: 8px;
   min-height: 30px;
+  width: 100%;
   max-width: 100%;
   padding: 6px 10px 6px 8px;
   border: none;
@@ -850,6 +859,7 @@
 }
 
 .assistant-ask-text {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -1051,4 +1061,283 @@
 .memory-proposal-secondary:focus-visible {
   outline: 1px solid var(--color-accent);
   outline-offset: 2px;
+}
+
+/* The settings button while the settings are open (GRV-8). */
+.assistant-panel-button[aria-pressed="true"] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+/* The disclosure and the settings (GRV-8): read, then answer. */
+.assistant-disclosure,
+.assistant-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--color-foreground);
+  font-size: var(--font-size-small);
+}
+
+.assistant-disclosure p,
+.assistant-settings p {
+  margin: 0;
+}
+
+.assistant-disclosure-title,
+.assistant-disclosure-subtitle {
+  margin: 0;
+  color: var(--color-foreground-bright);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+.assistant-disclosure-subtitle {
+  margin-top: 6px;
+  font-size: var(--font-size-small);
+}
+
+.assistant-retention-choice {
+  min-width: 0;
+  margin: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--color-background);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+.assistant-retention-choice b {
+  color: var(--color-foreground-bright);
+}
+
+/* "OK" and "Don't keep them" sit side by side: one style, one width. */
+.assistant-retention-answers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.assistant-retention-scope {
+  color: var(--color-foreground-bright);
+}
+
+.assistant-retention-status {
+  display: block;
+}
+
+.assistant-retention-status:empty {
+  display: none;
+}
+
+.assistant-retention-error {
+  padding: 8px 10px;
+  background: var(--color-danger-wash);
+  box-shadow: inset 0 0 0 1px var(--color-danger-edge);
+  color: var(--color-foreground-bright);
+}
+
+.assistant-setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--color-foreground-bright);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+}
+
+.assistant-setting input {
+  margin: 2px 0 0;
+  accent-color: var(--color-accent);
+}
+
+/* A tutorial video the assistant recommends (GRV-16), after
+   docs/design/mocks/07-assistant-video*.png: a 16:9 stage that is a still
+   poster until Play (nothing from YouTube in it, not even a thumbnail), then
+   the player; under it the title, the channel, why it helps, its actions and
+   the line that names YouTube's terms. Square, on black, a hairline frame. */
+.assistant-video {
+  gap: 0;
+  padding: 0;
+}
+
+.assistant-video-stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--color-background-sunken) 0 12px,
+    var(--color-background) 12px 24px
+  );
+}
+
+.assistant-video-poster {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.assistant-card .assistant-video-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 3px 8px;
+  background: var(--color-background);
+  color: var(--color-foreground-bright);
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assistant-video-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  padding: 0 0 0 4px;
+  border: none;
+  border-radius: 0;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  cursor: pointer;
+}
+
+.assistant-video-play:hover {
+  background: var(--color-accent-dim);
+}
+
+.assistant-video-play:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+.assistant-card .assistant-video-poster-channel {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  color: var(--color-foreground-bright);
+  font-weight: 600;
+}
+
+/* The player did not load: framed and worded, never red (docs/design.md). */
+.assistant-video-failed {
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 16px;
+  background: var(--color-danger-wash);
+  box-shadow: inset 0 0 0 1px var(--color-danger-edge);
+  text-align: center;
+}
+
+.assistant-video-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.assistant-video-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.assistant-card .assistant-video-title {
+  font-size: var(--font-size-base);
+  overflow-wrap: anywhere;
+}
+
+.assistant-video-why,
+.assistant-video-disclosure {
+  margin: 0;
+  font-size: var(--font-size-small);
+}
+
+.assistant-video-why {
+  color: var(--color-foreground);
+}
+
+.assistant-video-disclosure {
+  color: var(--color-foreground-muted);
+}
+
+.assistant-video-disclosure a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.assistant-video-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.assistant-video-actions .assistant-button,
+.assistant-video-overlay-bar .assistant-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  text-decoration: none;
+}
+
+/* Full screen: the stage fills the window, over the editor and (with the
+   panel lifted, above) the app's chrome, with a bar naming the video and its
+   Close. Only the stage's frame moves, so the iframe is the
+   same one and the video carries on where it was. */
+.assistant-video-expanded .assistant-video-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: auto;
+  background: var(--color-background);
+}
+
+.assistant-video-overlay-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  height: 44px;
+  padding-left: 12px;
+  background: var(--color-background-secondary);
+}
+
+.assistant-card .assistant-video-overlay-bar .assistant-video-tag {
+  position: static;
+  padding: 0;
+  background: none;
+}
+
+.assistant-card .assistant-video-overlay-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-foreground);
+  font-size: var(--font-size-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-video-overlay-bar .assistant-button {
+  height: 44px;
+}
+
+.assistant-video-expanded .assistant-video-frame {
+  position: static;
+  flex: 1;
+  height: auto;
 }

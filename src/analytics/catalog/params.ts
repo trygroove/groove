@@ -116,7 +116,7 @@ export interface AnalyticsEventDefinition {
 }
 
 /**
- * Values sent to the transport. GA4 accepts strings, numbers, and booleans.
+ * Values sent to the transport: strings, numbers, and booleans.
  */
 export type AnalyticsParamValue = string | number | boolean;
 

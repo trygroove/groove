@@ -653,9 +653,10 @@
   }
 }
 
-/* Focus that lost its element lands here (#76). A container, not a control,
-   so it shows where focus is without looking like something to press. */
+/* Focus that lost its element lands here (#76). It is a container, not a
+   control, so it draws no ring: a keyboard switch to a view (its number key)
+   left it `:focus-visible`, and the 2px outline framed the whole view in white
+   (GRV-94). Focus still moves here, so Tab starts from the view on screen. */
 .editor-body:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: -2px;
+  outline: none;
 }

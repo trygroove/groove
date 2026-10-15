@@ -6,11 +6,20 @@ import { pressView } from "./support/views";
 // not the whole window. It was `width: 100vw`, which ignores the scrollbar and
 // left Sign out under it plus a horizontal scrollbar. Playwright hides
 // scrollbars in headless Chromium, so bring the classic 15px one back.
+//
+// Chromium-family only: `--hide-scrollbars` is a Chromium flag, and headless
+// Firefox and WebKit draw overlay scrollbars that take no room (clientWidth is
+// the full 1280), so there is no classic scrollbar to fit beside and no
+// launch option that makes one. The CSS under test is engine-neutral.
 test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
 
 test.describe("editor width beside a classic scrollbar", () => {
   for (const view of ["Mixer", "Instrument"] as const) {
-    test(`${view} fits the page area`, async ({ page }) => {
+    test(`${view} fits the page area`, async ({ page, browserName }) => {
+      test.skip(
+        browserName !== "chromium",
+        "needs a classic scrollbar, which only Chromium's --hide-scrollbars switch can restore",
+      );
       await page.setViewportSize({ width: 1280, height: 720 });
       await newProject(page);
       await pressView(page, view);

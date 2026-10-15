@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 // The delivered factory pack set, the source of truth `pack_id` is pinned
 // against — see the cross-reference test below.
 import { PACKS } from "../../scripts/starter-library/packs.mjs";
+import { PROPOSAL_ISSUE_CODES } from "../assistant/proposalIssues";
 import { RECOMMENDATION_ISSUE_CODES } from "../assistant/recommendation";
 import { PROPOSAL_CAPABILITIES } from "../assistant/tools";
 import { CAPABILITY_IDS } from "../browser/capabilities";
@@ -17,6 +18,7 @@ import {
   type AnalyticsEventDefinition,
   type AnalyticsParam,
   ASSISTANT_PROPOSAL_CAPABILITIES,
+  ASSISTANT_PROPOSAL_ISSUE_CODES,
   ASSISTANT_RECOMMENDATION_REFUSALS,
   ASSISTANT_SUGGESTION_IDS,
   BROWSER_CAPABILITY_IDS,
@@ -88,6 +90,7 @@ describe("event names", () => {
         "assistant_message_sent",
         "assistant_proposal_applied",
         "assistant_proposal_cancelled",
+        "assistant_proposal_rejected",
         "assistant_proposal_shown",
         "assistant_proposal_undone",
         "assistant_recommendation_kept",
@@ -96,7 +99,12 @@ describe("event names", () => {
         "assistant_recommendation_shown",
         "assistant_recommendation_tried",
         "assistant_result_edited",
+        "assistant_retention_changed",
         "assistant_suggestion_clicked",
+        "assistant_video_expanded",
+        "assistant_video_failed",
+        "assistant_video_played",
+        "assistant_video_shown",
         "audio_start_failed",
         "audio_underrun",
         "automation_lane_created",
@@ -144,7 +152,9 @@ describe("event names", () => {
         "track_added",
         "track_reordered",
         "transport_play",
+        "undo_refused",
         "undo_used",
+        "unsaved_edits_replayed",
         "unsaved_exit_warned",
         "user_pack_created",
         "view_changed",
@@ -223,7 +233,7 @@ describe("parameter declarations", () => {
       if (spec.kind !== "count") continue;
       expect(spec.max, `${event}.${param}`).toBeGreaterThan(0);
       // Bucketed cardinality: an unbounded count is a re-identification risk
-      // and a GA4 cardinality problem.
+      // and an analytics cardinality problem.
       expect(spec.max, `${event}.${param}`).toBeLessThanOrEqual(1000);
     }
   });
@@ -328,6 +338,15 @@ describe("catalog cross-references", () => {
     ).toEqual([...RECOMMENDATION_ISSUE_CODES].sort());
   });
 
+  it("pins exactly the proposal validator's issue codes as the rejected event's issue_code", () => {
+    // A new way to refuse a proposal added without an analytics decision
+    // fails here (GRV-98).
+    expect([...ASSISTANT_PROPOSAL_ISSUE_CODES]).toEqual([...PROPOSAL_ISSUE_CODES]);
+    expect([
+      ...declaredValues(ANALYTICS_EVENTS.assistant_proposal_rejected.params.issue_code),
+    ]).toEqual([...PROPOSAL_ISSUE_CODES]);
+  });
+
   it("pins exactly the assistant's capability keys as the proposal events' capability", () => {
     // A tool family added to the assistant's tool set without an analytics
     // decision fails here (GRV-4).
@@ -430,6 +449,8 @@ describe("catalog cross-references", () => {
         "assistant_message",
         "assistant_proposal",
         "assistant_recommendation",
+        "assistant_retention",
+        "assistant_video",
         "audio_loop",
         "automation",
         "device_chain",
@@ -509,6 +530,7 @@ describe("section 11 measure coverage", () => {
       "assistant_proposal_applied",
       "assistant_proposal_cancelled",
       "assistant_proposal_undone",
+      "assistant_proposal_rejected",
     ],
     "assistant result ownership": [
       "assistant_proposal_applied",
@@ -519,6 +541,7 @@ describe("section 11 measure coverage", () => {
       "save_failed",
       "save_recovered",
       "unsaved_exit_warned",
+      "unsaved_edits_replayed",
       "asset_load_failed",
       "audio_start_failed",
       "audio_underrun",

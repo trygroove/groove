@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
+import { SMOKE_QA_SLOT } from "../../../scripts/access/qaPool";
 import { requestAccessUrl } from "../../../site.config.mjs";
-import { SMOKE_QA_SLOT } from "../../../src/access/qaAccounts";
 import { passWelcome, qaSignInUnavailable, signInAsQaAccount } from "./qaSession";
 
 // PRD `OPS-01` post-deploy smoke test. Runs against `SMOKE_URL` (the real

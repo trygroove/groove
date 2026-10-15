@@ -9,6 +9,7 @@
 import { type Accessor, createEffect, createMemo, createSignal } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
 import type { AssistantClient } from "../../assistant/assistantClient";
+import type { AssistantRetentionClient } from "../../assistant/retentionClient";
 import type { Project } from "../../domain/entities";
 import { memoryContext } from "../../memory/memoryEdits";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
@@ -42,6 +43,7 @@ import {
   type RecommendationEditorPort,
   useAssistantRecommendations,
 } from "./useAssistantRecommendations";
+import { type AssistantRetention, useAssistantRetention } from "./useAssistantRetention";
 import { type AssistantMemoryProposals, useMemoryProposals } from "./useMemoryProposals";
 
 /** Who is here to talk: a signed-in account, or someone who must sign in. */
@@ -62,6 +64,18 @@ export interface UseAssistantChatOptions {
   readonly expanded: Accessor<boolean>;
   readonly client: () => Promise<AssistantClient>;
   readonly analytics: () => Analytics;
+  /**
+   * The account's answer about keeping conversations (GRV-8). With it, the
+   * assistant cannot be messaged until a signed-in account has answered the
+   * disclosure, and each turn carries the session its transcript is filed
+   * under. The editor always passes one; a test that leaves it out is testing
+   * something else, and its turns are never kept.
+   */
+  readonly retention?: {
+    readonly client: () => Promise<AssistantRetentionClient>;
+    /** Whether this browser is internal traffic (`isInternalTraffic`). */
+    readonly internal: () => boolean;
+  };
   /**
    * The editor session and controls a proposal previews, applies and shows
    * itself through (GRV-5). Without them a proposal is listed, but there is
@@ -124,6 +138,10 @@ export interface AssistantChat {
   readonly ask: AskDraft;
   /** The memory cards, when there is a profile to save them to (GRV-25). */
   readonly memory: AssistantMemoryProposals | null;
+  /** The account's answer about keeping conversations, when it is asked for. */
+  readonly retention: AssistantRetention | null;
+  /** What a card logs its own actions through (a video's Play, GRV-16). */
+  readonly analytics?: () => Analytics;
 }
 
 export type { AskDraft } from "./useAskDraft";
@@ -151,6 +169,20 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
   });
   const [draft, setDraft] = createSignal("");
 
+  const retentionOptions = options.retention;
+  const retention = retentionOptions
+    ? useAssistantRetention({
+        client: retentionOptions.client,
+        registered: () => options.account().registered,
+        analytics: options.analytics,
+        // Only once the assistant is first opened: an editor whose assistant
+        // stays shut never asks.
+        wanted: options.expanded,
+      })
+    : null;
+  /** The turn each proposal card came from, so its outcome reaches the right record. */
+  const turnOfEntry = new Map<string, string>();
+
   const editor = options.editor;
   const proposals = editor
     ? useAssistantProposals({
@@ -160,6 +192,10 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         analytics: options.analytics,
         // The conversation is made just below; Refresh is only ever pressed later.
         refresh: (entryId) => conversation.refresh(entryId),
+        onOutcome: (entryId, outcome, issues) => {
+          const turnId = turnOfEntry.get(entryId);
+          if (turnId) retention?.reportOutcome(turnId, outcome, issues);
+        },
       })
     : null;
 
@@ -187,11 +223,25 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     client: options.client,
     project: options.project,
     scope,
-    canSend: () => options.account().registered,
+    // Nobody messages the assistant before answering the disclosure (GRV-8).
+    canSend: () =>
+      options.account().registered && (retention ? retention.answered() : true),
     analytics: options.analytics,
     committedProject: options.committedProject,
     onProposal: proposals
-      ? (entryId, proposal, origin) => proposals.receive(entryId, proposal, origin)
+      ? (entryId, proposal, origin) => {
+          if (origin.turnId) turnOfEntry.set(entryId, origin.turnId);
+          proposals.receive(entryId, proposal, origin);
+        }
+      : undefined,
+    session: retentionOptions
+      ? () => {
+          const project = options.project();
+          return {
+            projectId: project?.metadata.id ?? "",
+            internal: retentionOptions.internal(),
+          };
+        }
       : undefined,
     remoteChanges: proposals ? () => proposals.remoteChanges() : undefined,
     library: recommending
@@ -254,5 +304,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     recommendations,
     ask,
     memory,
+    retention,
+    analytics: options.analytics,
   };
 }

@@ -12,7 +12,7 @@ import {
   initializeApp as initAdmin,
 } from "firebase-admin/app";
 import { getAuth as getAdminAuth } from "firebase-admin/auth";
-import { isQaSlot, type QaAccount, qaAccount } from "../../../src/access/qaAccounts";
+import { isQaSlot, type QaAccount, qaAccount } from "../../../scripts/access/qaPool";
 import { installFirebaseUser } from "../support/firebaseSession";
 
 /**
