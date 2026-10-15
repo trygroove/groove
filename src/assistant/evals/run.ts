@@ -38,15 +38,24 @@ import {
   type AssistantStopReason,
 } from "../protocol";
 import type { AssistantProvider } from "../provider";
+import type { ProviderUsage } from "../streamEvents";
 import type { AssistantTurnLog } from "../telemetry";
 import { ASSISTANT_TOOLSET_VERSION } from "../tools";
-import { casePairs, type EvalCase, resolveScope, resolveSelection } from "./cases";
+import { checkOutcome, runCaseCheck } from "./caseChecks";
+import {
+  caseMessages,
+  casePairs,
+  type EvalCase,
+  resolveScope,
+  resolveSelection,
+} from "./cases";
 import {
   CHECK_IDS,
   type CheckId,
   type CheckResult,
   checkAtomicUndo,
   checkBundled,
+  checkCoverage,
   checkGrounded,
   checkInScope,
   checkNotFlattened,
@@ -55,6 +64,7 @@ import {
   skip,
 } from "./checks";
 import { describeProposal, type ProposalStats } from "./describe";
+import { type Scorecard, scorecardOf } from "./scorecard";
 
 /** Why a turn errored, as far as the gateway and the provider said. */
 export interface EvalTurnError {
@@ -69,6 +79,20 @@ export interface EvalTurnError {
   readonly providerStatus: number | null;
   /** Why each failed provider attempt failed, in order (`rejected`, `rate_limited`, ...). */
   readonly providerFailures: readonly string[];
+}
+
+/**
+ * Where a turn's output tokens went (GRV-91). The provider reports one output
+ * count, thinking included; the split is the characters of each kind of block
+ * streamed, which is how a cut-off turn (no usable tool calls kept) is still
+ * accounted for. Summed over the turn's provider calls.
+ */
+export interface EvalTokens {
+  /** The provider's own output count, the last call's. */
+  readonly outputTokens: number | null;
+  readonly thinkingChars: number;
+  readonly toolInputChars: number;
+  readonly textChars: number;
 }
 
 /** What one turn came back with, or how it failed. */
@@ -86,6 +110,20 @@ export interface EvalTurn {
   readonly proposal: AssistantProposal | null;
   /** The question the turn asked instead, if it asked one. Absent from older reports. */
   readonly ask?: AssistantAsk | null;
+  /** Where the output tokens went. Absent from reports saved before it existed. */
+  readonly tokens?: EvalTokens;
+  /**
+   * The provider's token counts summed over the turn's calls, retries
+   * included (GRV-102); null when the turn ended before the gateway logged
+   * them (an eval timeout). Absent from reports saved before it existed.
+   */
+  readonly usage?: ProviderUsage | null;
+  /**
+   * Milliseconds from the start of the turn to its first streamed text, the
+   * gateway's empty heartbeats aside; null when it streamed none. Absent from
+   * reports saved before it existed.
+   */
+  readonly firstTextMs?: number | null;
 }
 
 /** One run of one case: the request, everything the model returned, every check. */
@@ -115,6 +153,8 @@ export interface EvalReport {
   readonly records: readonly EvalRecord[];
   /** Why the run stopped before every turn ran, or null when it did not. */
   readonly aborted: string | null;
+  /** The headline and secondary numbers (GRV-102), from the records and the summary. */
+  readonly scorecard: Scorecard;
   readonly summary: {
     readonly checks: Record<CheckId, Tally>;
     readonly cases: Record<string, Partial<Record<CheckId, Tally>>>;
@@ -126,6 +166,17 @@ export interface EvalReport {
       readonly cases: Record<string, number>;
     };
   };
+}
+
+/**
+ * A report without its records: every number and no reply, so it can be
+ * committed (`docs/assistant-eval-baseline.json`) and read back as a baseline.
+ */
+export type EvalSummary = Omit<EvalReport, "records">;
+
+export function summaryOf(report: EvalReport): EvalSummary {
+  const { records: _records, ...summary } = report;
+  return summary;
 }
 
 /** The provider refused the API key: every other turn will be refused too. */
@@ -174,6 +225,42 @@ export interface RunTurnOptions {
 
 class EvalTimeout extends Error {}
 
+/** Wraps `provider` so the characters and tokens of each streamed block are counted. */
+function measureProvider(provider: AssistantProvider): {
+  provider: AssistantProvider;
+  tokens: () => EvalTokens;
+} {
+  let outputTokens: number | null = null;
+  let thinkingChars = 0;
+  let toolInputChars = 0;
+  let textChars = 0;
+  return {
+    provider: {
+      async *stream(request, signal) {
+        for await (const raw of provider.stream(request, signal)) {
+          const event = raw as {
+            type?: string;
+            delta?: { text?: string; thinking?: string; partial_json?: string };
+            usage?: { output_tokens?: number };
+          } | null;
+          if (event?.type === "content_block_delta") {
+            thinkingChars += event.delta?.thinking?.length ?? 0;
+            toolInputChars += event.delta?.partial_json?.length ?? 0;
+            textChars += event.delta?.text?.length ?? 0;
+          } else if (
+            event?.type === "message_delta" &&
+            typeof event.usage?.output_tokens === "number"
+          ) {
+            outputTokens = event.usage.output_tokens;
+          }
+          yield raw;
+        }
+      },
+    },
+    tokens: () => ({ outputTokens, thinkingChars, toolInputChars, textChars }),
+  };
+}
+
 /** Runs one case once through the gateway's own turn. Never throws for a failed turn. */
 export async function runCaseTurn(
   evalCase: EvalCase,
@@ -196,11 +283,17 @@ export async function runCaseTurn(
     }, timeoutMs);
   });
   const startedAt = now();
+  let firstTextAt: number | null = null;
+  const measured = measureProvider(options.provider);
+  const timing = () => ({
+    usage: turnLog ? usageOfLog(turnLog) : null,
+    firstTextMs: firstTextAt === null ? null : firstTextAt - startedAt,
+  });
   try {
     const result = await Promise.race([
       runAssistantTurn(
         {
-          provider: options.provider,
+          provider: measured.provider,
           guards: createInMemoryGuardStores(),
           log: (record) => {
             turnLog = record;
@@ -212,10 +305,17 @@ export async function runCaseTurn(
         EVAL_CALLER,
         {
           projectRevision: project.metadata.revision,
-          messages: [{ role: "user", text: evalCase.request }],
+          messages: caseMessages(evalCase),
           context,
         },
-        { signal: controller.signal, onChunk: () => {} },
+        {
+          signal: controller.signal,
+          onChunk: (chunk) => {
+            if (firstTextAt === null && chunk.type === "text" && chunk.text !== "") {
+              firstTextAt = now();
+            }
+          },
+        },
       ),
       timedOut,
     ]);
@@ -227,6 +327,8 @@ export async function runCaseTurn(
       text: result.text,
       proposal: result.proposal,
       ask: result.ask,
+      tokens: measured.tokens(),
+      ...timing(),
     };
   } catch (error) {
     const log = turnLog as AssistantTurnLog | null;
@@ -248,10 +350,23 @@ export async function runCaseTurn(
               message: error instanceof Error ? error.message : String(error),
               ...provider,
             };
-    return erroredTurn(now() - startedAt, turnError);
+    return {
+      ...erroredTurn(now() - startedAt, turnError),
+      tokens: measured.tokens(),
+      ...timing(),
+    };
   } finally {
     clearTimeout(timer);
   }
+}
+
+function usageOfLog(log: AssistantTurnLog): ProviderUsage {
+  return {
+    inputTokens: log.inputTokens,
+    outputTokens: log.outputTokens,
+    cacheCreationInputTokens: log.cacheCreationInputTokens,
+    cacheReadInputTokens: log.cacheReadInputTokens,
+  };
 }
 
 function erroredTurn(durationMs: number, turnError: EvalTurnError): EvalTurn {
@@ -277,8 +392,10 @@ export function whyNoProposal(turn: EvalTurn): string {
 }
 
 /**
- * Checks 1 to 5 on one turn, and its descriptive numbers. An errored turn is
- * judged by no check.
+ * Checks 1 to 5, 7 and 8 and the case's own checks on one turn, and its
+ * descriptive numbers. An errored turn is judged by no check. A case that
+ * expects a question is judged by check 8 alone unless the turn proposed
+ * something anyway, which every other check then judges too.
  */
 export function evaluateTurn(
   evalCase: EvalCase,
@@ -294,6 +411,12 @@ export function evaluateTurn(
     run,
   };
   if (turn.error) return { ...base, checks: {}, stats: null, fingerprint: null };
+  const outcome = checkOutcome(evalCase.expect, turn);
+  const proposed = turn.proposal !== null && turn.proposal !== undefined;
+  if (evalCase.expect !== "proposal" && !proposed) {
+    return { ...base, checks: { outcome }, stats: null, fingerprint: null };
+  }
+  const caseChecks = evalCase.checks ?? [];
   const project = evalCase.fixture();
   const valid = checkValid(project, turn.proposal, whyNoProposal(turn));
   if (!valid.applied) {
@@ -306,6 +429,9 @@ export function evaluateTurn(
         inScope: notJudged,
         atomicUndo: notJudged,
         grounded: notJudged,
+        coverage: notJudged,
+        outcome,
+        ...Object.fromEntries(caseChecks.map((id) => [id, notJudged])),
       },
       stats: null,
       fingerprint: null,
@@ -320,6 +446,17 @@ export function evaluateTurn(
       inScope: checkInScope(project, after, resolveScope(project, evalCase.scope)),
       atomicUndo: checkAtomicUndo(project, turn.proposal),
       grounded: checkGrounded(project, after, proposal.impact.controls, turn.text),
+      coverage: checkCoverage(project, after, evalCase.parts ?? []),
+      outcome,
+      ...Object.fromEntries(
+        caseChecks.map((id) => [
+          id,
+          runCaseCheck(id, project, after, turn.text, {
+            commands: proposal.commands,
+            expectedValue: evalCase.expectedValue,
+          }),
+        ]),
+      ),
     },
     stats: describeProposal(project, after, proposal.commands.length),
     fingerprint: proposalFingerprint(project, proposal.commands),
@@ -399,16 +536,20 @@ export function buildReport(
   meta: ReportMeta,
 ): EvalReport {
   const judged = judgeFlattening(records, cases);
+  const caseIds = cases.map((entry) => entry.id);
+  const summary = summarize(judged);
+  // Key order is the JSON's: the scorecard leads, the records come last.
   return {
     generatedAt: meta.generatedAt,
     model: meta.model,
     promptVersion: meta.promptVersion ?? ASSISTANT_PROMPT_VERSION,
     toolsetVersion: meta.toolsetVersion ?? ASSISTANT_TOOLSET_VERSION,
     runsPerCase: meta.runsPerCase,
-    caseIds: cases.map((entry) => entry.id),
+    caseIds,
     aborted: meta.aborted ?? null,
+    scorecard: scorecardOf({ model: meta.model, caseIds, records: judged, summary }),
+    summary,
     records: judged,
-    summary: summarize(judged),
   };
 }
 

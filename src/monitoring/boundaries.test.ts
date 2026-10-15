@@ -18,15 +18,8 @@ const sourceRoot = join(process.cwd(), "src");
 /** The single module allowed to import the Sentry SDK. */
 const SENTRY_SDK_OWNER = join("monitoring", "sentrySink.ts");
 
-/**
- * Modules allowed to import Firebase's analytics SDK: the transport behind the
- * logging boundary, and the Firebase app bootstrap that predates it and owns
- * SDK initialization for the whole app.
- */
-const ANALYTICS_SDK_OWNERS = [
-  join("analytics", "firebaseTransport.ts"),
-  "firebaseConfig.ts",
-];
+/** The single module allowed to import the analytics SDK (GRV-106). */
+const ANALYTICS_SDK_OWNER = join("analytics", "posthogTransport.ts");
 
 /** Names a barrel must not export, ignoring the prose above the exports. */
 function exportedSpecifiers(barrelPath: string): string[] {
@@ -95,15 +88,23 @@ describe("the Sentry SDK is reachable from exactly one module (ADR 0001)", () =>
 });
 
 describe("the analytics vendor SDK is reachable from exactly one module", () => {
-  it("is imported by the transport and the app bootstrap, and nothing else", () => {
-    expect(importersOf("firebase/analytics").sort()).toEqual(
-      [...ANALYTICS_SDK_OWNERS].sort(),
-    );
+  it("is imported by the transport and nothing else", () => {
+    expect(importersOf("posthog-js")).toEqual([ANALYTICS_SDK_OWNER]);
+  });
+
+  it("is imported only dynamically, so it stays out of the entry chunk", () => {
+    const source = readFileSync(join(sourceRoot, ANALYTICS_SDK_OWNER), "utf8");
+    expect(source).toMatch(/await import\("posthog-js"\)/);
+    expect(source).not.toMatch(/^import (?!type ).*"posthog-js"/m);
+  });
+
+  it("leaves Google Analytics out entirely", () => {
+    expect(importersOf("firebase/analytics")).toEqual([]);
   });
 
   it("is not re-exported from the analytics barrel", () => {
     expect(exportedSpecifiers(join(sourceRoot, "analytics", "index.ts"))).not.toContain(
-      "./firebaseTransport",
+      "./posthogTransport",
     );
   });
 });

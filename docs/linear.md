@@ -28,6 +28,7 @@ work once.
 | Move a card to **Ready** | It moves to In Progress, a "Picking this up" comment appears on it, and `/ship` runs on it in Actions. At most four start per poll, by priority then column order; a card blocked by work that has not reached QA waits in Ready until it has |
 | Move a card to **Approved** | Every open PR that refers to it (`Closes`, `Completes`, `Refs GRV-<n>`) is labelled `status:approved` and queued to merge |
 | Move a card with open PRs back to **In Progress** (from QA, Ready For Review or Blocked) | A rework agent fixes those PRs in place, after announcing itself on the card |
+| Move an unfinished card with no open PRs to **In Progress** (none that `Completes` or `Closes` it has merged, as when a sequence stopped at a gated PR) | `/ship` continues it from its handoff, after announcing itself on the card |
 | Comment `@claude …` on a card | A Claude run replies "Picking this up" under your comment and does what it asks |
 | File a bug with no milestone | A short run puts it on the milestone of its area |
 
@@ -61,7 +62,7 @@ yours. Do not start a comment of your own with those words.
 ## Columns
 
 The team's workflow states, in order, are the board's columns: Backlog, Ready,
-In Progress, Blocked, QA, Ready For Review, Approved, Done (completed),
+In Progress, Blocked, Ready For Review, Approved, QA, Done (completed),
 Canceled (canceled) and Duplicate (duplicate). Their names are a contract:
 `.github/scripts/linear.mjs` lists them in `STATES`, and a renamed column
 breaks the poll. The set is per team, which is why Groove has a team of its

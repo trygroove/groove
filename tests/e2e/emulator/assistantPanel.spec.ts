@@ -1,3 +1,4 @@
+import { seedDisclosureAnswered } from "./support/assistant";
 import { expect, type Locator, type Page, test } from "./support/test";
 
 /**
@@ -44,6 +45,9 @@ async function buttonsAnswer(page: Page, mode: string): Promise<void> {
   for (let index = 0; index < count; index += 1) {
     const button = buttons.nth(index);
     const name = await button.getAttribute("aria-label");
+    // A button scrolled out of the panel's own scroller is not covered by
+    // chrome, just out of view: bring it in before asking what is on top.
+    await button.scrollIntoViewIfNeeded();
     const box = await button.boundingBox();
     if (!box) throw new Error(`${name} has no box`);
     const centreX = box.x + box.width / 2;
@@ -60,7 +64,10 @@ async function buttonsAnswer(page: Page, mode: string): Promise<void> {
 test.describe("assistant panel", () => {
   test("no app chrome is drawn over its controls, in any of its homes", async ({
     page,
+    invitedProducer,
   }) => {
+    // The composer is checked, so the disclosure has been answered (GRV-8).
+    await seedDisclosureAnswered(invitedProducer.uid);
     await openEditor(page);
     await page.keyboard.press(ASSISTANT_CHORD);
     await expect(panel(page)).toHaveAttribute("data-mode", "floating");

@@ -23,6 +23,7 @@ import { clickAndFlush } from "../testing/events";
 import { memoryStorage } from "../testing/storage";
 import { dragTrackHandle, stubTrackDragLayout } from "../testing/trackDrag";
 import ArrangementView, {
+  HEADER_WIDTH_PX,
   INITIAL_PIXELS_PER_TICK,
   type PlacementEditingActions,
   ROW_METRICS,
@@ -203,6 +204,17 @@ describe("ArrangementView shell", () => {
     const before = scaleOf();
     clickAndFlush(screen.getByLabelText("Zoom in"));
     expect(scaleOf()).toBeGreaterThan(before);
+  });
+
+  it("hands the header column's width to its stylesheet as a custom property (GRV-105)", () => {
+    // Not a `style={{ width }}` entry: Solid folds a constant one into the
+    // template as a `style` attribute, which a strict CSP refuses.
+    const { analytics } = analyticsAllowing();
+    const { container } = renderView(analytics);
+    const body = container.querySelector(".arrangement-body") as HTMLElement;
+    expect(body.style.getPropertyValue("--track-column-width")).toBe(
+      `${HEADER_WIDTH_PX}px`,
+    );
   });
 
   it("windows the DOM track headers rather than rendering one per track", () => {

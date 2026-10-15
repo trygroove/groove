@@ -1,4 +1,5 @@
 import {
+  answerDisclosure,
   assistantButton,
   composer,
   newProject,
@@ -18,6 +19,7 @@ import { expect, type Page, test } from "./support/test";
 
 async function askToLoosen(page: Page): Promise<void> {
   await assistantButton(page).click();
+  await answerDisclosure(page);
   await composer(page).fill("Loosen the beat");
   await page.keyboard.press("Enter");
   await expect(proposalButton(page, "Apply")).toBeEnabled({ timeout: 15_000 });

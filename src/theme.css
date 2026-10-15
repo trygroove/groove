@@ -95,6 +95,13 @@
   --signal-ok: #22c55e;
   --signal-clip: #ef4444;
 
+  /* ---- Toast ------------------------------------------------------------
+   * The shared toast's fill (GRV-88): a muted dark red, so a notice that a
+   * change was discarded or an undo refused reads as a problem without
+   * becoming an alert. A second product-owner exception, beside the meters'
+   * pair; only `Toast.css` may read it. */
+  --toast-alert: #4a1c1c;
+
   /* ---- Tints and scrims -------------------------------------------------
    * Translucent white and black. They borrow whatever is underneath, so they
    * cost no new step — prefer one of these over a new grey whenever the

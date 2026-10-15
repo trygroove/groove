@@ -53,6 +53,25 @@ describe("default state (DEC-009 owns the value, this owns the mechanism)", () =
   });
 });
 
+describe("whether a preference was expressed (GRV-106)", () => {
+  it("is false until the user makes a choice", () => {
+    expect(new ConsentStore(memoryStorage()).preferenceExpressed).toBe(false);
+  });
+
+  it("is true once they do, and on every later load", () => {
+    const storage = memoryStorage();
+    const store = new ConsentStore(storage);
+    store.optOut();
+    expect(store.preferenceExpressed).toBe(true);
+    store.optIn();
+    expect(new ConsentStore(storage).preferenceExpressed).toBe(true);
+  });
+
+  it("is false on storage that throws", () => {
+    expect(new ConsentStore(hostileStorage()).preferenceExpressed).toBe(false);
+  });
+});
+
 describe("opting out", () => {
   it("turns every collection off in one action, replay included", () => {
     // ADR 0002 decision 4: replay is covered by the same single control, so a

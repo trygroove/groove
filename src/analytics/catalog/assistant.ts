@@ -16,6 +16,8 @@ export const ASSISTANT_FEATURE_KEYS = [
   "assistant_proposal",
   "assistant_recommendation",
   "assistant_ask",
+  "assistant_retention",
+  "assistant_video",
 ] as const;
 
 /**
@@ -102,6 +104,38 @@ export const ASSISTANT_RECOMMENDATION_REFUSALS = [
   "unknown_sound",
 ] as const;
 
+/**
+ * Why a proposal was refused, as `assistant_proposal_rejected`'s
+ * `issue_code` (GRV-98). Pinned against `PROPOSAL_ISSUE_CODES` in
+ * `src/assistant/proposalIssues.ts` by `catalog.test.ts`, so a new way to
+ * refuse a proposal needs a decision here.
+ */
+export const ASSISTANT_PROPOSAL_ISSUE_CODES = [
+  "malformed",
+  "too_many_commands",
+  "stale_revision",
+  "unknown_tool",
+  "invalid_payload",
+  "unauthorized",
+  "toolset_mismatch",
+  "out_of_range",
+  "rejected",
+  "invalid_project",
+] as const;
+
+/**
+ * What a refused proposal was trying to change: a capability as the other
+ * proposal events carry it, or `unknown` when none of its calls named a tool
+ * the assistant has with a payload it could read.
+ */
+export const ASSISTANT_REJECTED_CAPABILITIES = [
+  ...ASSISTANT_PROPOSAL_CAPABILITIES,
+  "unknown",
+] as const;
+
+/** The most issues `assistant_proposal_rejected` counts (`MAX_TRANSCRIPT_ISSUES`). */
+const MAX_PROPOSAL_ISSUES = 20;
+
 /** The most sounds one recommendation suggests (`ASSISTANT_LIBRARY_LIMITS`). */
 const MAX_RECOMMENDED_SOUNDS = 3;
 
@@ -181,6 +215,27 @@ export const ASSISTANT_EVENTS = {
   },
 
   /**
+   * A proposal the assistant made did not reach the producer as something to
+   * apply (GRV-98): once per proposal, when its card shows it. `kind` is
+   * `stale` when the song had moved on since the request, otherwise
+   * `invalid`. `issue_code` is the first issue's code (the one the card
+   * explains), `issue_code_count` how many different codes it had. Codes
+   * only: never a message, a path, a tool's input or an ID; a kept
+   * transcript holds the rest.
+   */
+  assistant_proposal_rejected: {
+    phase: 3,
+    owners: ["AI-003"],
+    params: {
+      kind: enumParam(["invalid", "stale"]),
+      capability: enumParam(ASSISTANT_REJECTED_CAPABILITIES),
+      command_count_bucket: bucketParam("command_count"),
+      issue_code: enumParam(ASSISTANT_PROPOSAL_ISSUE_CODES),
+      issue_code_count: countParam(MAX_PROPOSAL_ISSUES),
+    },
+  },
+
+  /**
    * A producer edited, by hand, a control an applied proposal changed: once
    * per proposal, which then stops being watched (GRV-5). `capability` is the
    * proposal's, as its `assistant_proposal_applied` carried it.
@@ -237,5 +292,49 @@ export const ASSISTANT_EVENTS = {
       pack_in_project: boolParam(),
       seconds_to_decision_bucket: bucketParam("elapsed_seconds"),
     },
+  },
+
+  /**
+   * A tutorial video the assistant recommended was shown, as a still card
+   * that has loaded nothing from YouTube (GRV-16). Never the video's ID,
+   * title, channel or URL.
+   */
+  assistant_video_shown: {
+    phase: 3,
+    owners: ["GRV-16"],
+    params: {},
+  },
+
+  /** Play on a recommended video: the player loads from YouTube and starts. */
+  assistant_video_played: {
+    phase: 3,
+    owners: ["GRV-16"],
+    params: {},
+  },
+
+  /** A playing video was opened full screen. */
+  assistant_video_expanded: {
+    phase: 3,
+    owners: ["GRV-16"],
+    params: {},
+  },
+
+  /** A video's player did not load, and the card said so. */
+  assistant_video_failed: {
+    phase: 3,
+    owners: ["GRV-16"],
+    params: {},
+  },
+
+  /**
+   * A producer answered whether Groove keeps their assistant conversations,
+   * in the first-run disclosure or the setting (GRV-8): the answer and
+   * nothing else. Logged once the answer is stored, and nothing about keeping
+   * a conversation depends on it arriving.
+   */
+  assistant_retention_changed: {
+    phase: 3,
+    owners: ["AI-009"],
+    params: { state: enumParam(["on", "off"]) },
   },
 } as const satisfies Record<string, AnalyticsEventDefinition>;

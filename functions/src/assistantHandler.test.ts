@@ -194,7 +194,7 @@ describe("createAssistantHandler", () => {
     expect(error.code).toBe("invalid-argument");
   });
 
-  it("marks a team account's kept turn internal, from the ID token's address", async () => {
+  async function keptTurnInternal(claims: Record<string, unknown>): Promise<boolean[]> {
     const transcripts = createInMemoryTranscriptStore();
     const info = vi.spyOn(logger, "info").mockImplementation(() => {});
     try {
@@ -221,15 +221,27 @@ describe("createAssistantHandler", () => {
           },
         },
       );
-      (request.auth?.token as { email?: string }).email = "someone@qa.trygroove.app";
+      Object.assign(request.auth?.token ?? {}, claims);
       await handle(request, streamingResponse().response);
-      expect(transcripts.records().map((record) => record.internal)).toEqual([true]);
       // How it went is logged as a code; what was said never is.
       expect(info).toHaveBeenCalledWith("assistant transcript", { write: "kept" });
       expect(JSON.stringify(info.mock.calls)).not.toContain("Swing it.");
+      return transcripts.records().map((record) => record.internal);
     } finally {
       info.mockRestore();
     }
+  }
+
+  it("marks a flagged account's kept turn internal, from the ID token's claim", async () => {
+    expect(await keptTurnInternal({ internal: true })).toEqual([true]);
+  });
+
+  // GRV-113: the address is not what makes an account internal.
+  it.each([
+    ["no claim", { email: "someone@example.com" }],
+    ["a claim that is not true", { internal: "true" }],
+  ])("leaves the kept turn of an account with %s as it was", async (_, claims) => {
+    expect(await keptTurnInternal(claims)).toEqual([false]);
   });
 
   it("cancels when the client disconnects", async () => {

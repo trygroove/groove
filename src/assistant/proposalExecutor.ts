@@ -35,7 +35,12 @@ import {
 import type { CommandIssue, RawCommandInput } from "../commands/types";
 import type { Project } from "../domain/entities";
 import { type Clock, systemClock } from "../shared/clock";
-import { type ProposalIssue, type ValidProposal, validateProposal } from "./proposal";
+import {
+  type ProposalIssue,
+  rejectedProposalShape,
+  type ValidProposal,
+  validateProposal,
+} from "./proposal";
 
 /**
  * What the executor applies to. In the editor that is the editor session
@@ -130,7 +135,8 @@ export interface ProposalExecutor {
   /**
    * Validates a model's proposal against the target's committed project.
    * A valid one is shown (`assistant_proposal_shown`) and returned as a
-   * pending handle; an invalid one changes nothing and logs nothing.
+   * pending handle; an invalid one changes nothing and logs
+   * `assistant_proposal_rejected` once, with its issue codes only (GRV-98).
    */
   propose(input: unknown): ProposeResult;
 }
@@ -259,6 +265,24 @@ class Handle implements ProposalHandle {
   }
 }
 
+/** `assistant_proposal_rejected`: codes, a capability and a bucketed count, nothing else. */
+function logRejection(
+  analytics: ProposalAnalytics,
+  input: unknown,
+  issues: readonly ProposalIssue[],
+): void {
+  const first = issues[0];
+  if (!first) return;
+  const shape = rejectedProposalShape(input);
+  analytics.log("assistant_proposal_rejected", {
+    kind: issues.some((issue) => issue.code === "stale_revision") ? "stale" : "invalid",
+    capability: shape.capability ?? "unknown",
+    command_count_bucket: bucketOf("command_count", shape.commandCount),
+    issue_code: first.code,
+    issue_code_count: new Set(issues.map((issue) => issue.code)).size,
+  });
+}
+
 export function createProposalExecutor(
   options: ProposalExecutorOptions,
 ): ProposalExecutor {
@@ -269,7 +293,10 @@ export function createProposalExecutor(
   return {
     propose(input) {
       const validation = validateProposal(resolved.target.project, input);
-      if (!validation.ok) return validation;
+      if (!validation.ok) {
+        logRejection(resolved.analytics, input, validation.issues);
+        return validation;
+      }
       return { ok: true, handle: new Handle(validation.proposal, resolved) };
     },
   };

@@ -45,9 +45,9 @@ describe("SoundRow", () => {
     renderRow({ ...asset, id: "ast_mine", name: "my kick", licence: "user-owned" });
 
     const [factory, personal] = screen.getAllByRole("listitem");
-    expect(factory.querySelector(".sound-row-name")).not.toHaveClass("sentry-mask");
-    expect(personal.querySelector(".sound-row-name")).toHaveClass("sentry-mask");
-    expect(personal.querySelector(".sound-row-meta")).toHaveClass("sentry-mask");
+    expect(factory.querySelector(".sound-row-name")).not.toHaveClass("ph-mask");
+    expect(personal.querySelector(".sound-row-name")).toHaveClass("ph-mask");
+    expect(personal.querySelector(".sound-row-meta")).toHaveClass("ph-mask");
   });
 
   it("slots the sound's own controls in before the heart (GRV-75)", async () => {

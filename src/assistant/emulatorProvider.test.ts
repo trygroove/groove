@@ -12,10 +12,14 @@ import {
   createEmulatorAssistantProvider,
   DUSTIER_ROLE,
   EMULATOR_ASK,
+  EMULATOR_MISSING_VIDEO_ID,
   EMULATOR_REPLY_CHUNKS,
+  EMULATOR_VIDEO,
+  emulatorVideoVerifier,
   LOOSEN_EXPLANATION,
   LOOSEN_SWING,
   LOOSEN_VOLUME_DROP_DB,
+  MISFIT_ASSET_ID,
   usesEmulatorProvider,
 } from "./emulatorProvider";
 import { type AssistantGatewayDeps, runAssistantTurn } from "./gateway";
@@ -121,6 +125,27 @@ describe("the emulator's assistant provider", () => {
     expect(reply.proposal?.calls).toHaveLength(1);
     const validation = validateProposal(createReferenceProject(), reply.proposal);
     expect(validation.ok).toBe(true);
+  });
+
+  it("ends [misfit] in a proposal the browser rejects: a sound the song does not have (GRV-98)", async () => {
+    for (const project of [createReferenceProject(), createSliceFixtureProject()]) {
+      const reply = await turn(
+        gateway(),
+        "Add a noisy layer [misfit]",
+        new AbortController().signal,
+        project,
+      ).result;
+      expect(reply.stopReason).toBe("tool_use");
+      const validation = validateProposal(project, reply.proposal);
+      expect(validation.ok ? null : validation.issues).toEqual([
+        expect.objectContaining({
+          code: "invalid_project",
+          callIndex: 0,
+          path: expect.stringMatching(/instrument\.assetId$/),
+          message: expect.stringContaining(MISFIT_ASSET_ID),
+        }),
+      ]);
+    }
   });
 
   it("answers CF-027's 'Loosen the beat' with swing and a quieter track", async () => {
@@ -252,6 +277,24 @@ describe("the emulator's assistant provider", () => {
     expect(reply.stopReason).toBe("end_turn");
     expect(reply.proposal).toBeNull();
     expect(reply.text).toMatch(/can't find/);
+  });
+
+  it("answers [video] with the one video its verifier vouches for (GRV-16)", async () => {
+    const reply = await turn(
+      { ...gateway(), verifyVideo: emulatorVideoVerifier },
+      "How do I get that acid squelch? [video]",
+    ).result;
+    expect(reply.text.length).toBeGreaterThan(0);
+    expect(reply.proposal).toBeNull();
+    expect(reply.videos).toEqual([EMULATOR_VIDEO]);
+    expect(
+      await emulatorVideoVerifier(
+        EMULATOR_MISSING_VIDEO_ID,
+        new AbortController().signal,
+      ),
+    ).toBe("missing");
+    // The video it refused is said to be left out, not left implied.
+    expect(reply.text).toMatch(/left it out\.$/);
   });
 
   it("is only chosen in the emulator, and only with no key", () => {

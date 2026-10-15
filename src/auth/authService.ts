@@ -1,6 +1,7 @@
 // Firebase auth service wrapper, with a mock for the in-memory backend.
 
 import type { Auth, User } from "firebase/auth";
+import { hasInternalClaim } from "../access/claims";
 import { isMockBackend } from "../devBackend";
 
 export interface AuthService {
@@ -16,6 +17,13 @@ export interface AuthService {
    * only decides whether the admin page is shown.
    */
   isAdmin(): Promise<boolean>;
+  /**
+   * Whether the signed-in account carries the `internal: true` custom claim
+   * (GRV-113, `src/access/claims.ts`), read from its ID token: a team or test
+   * account whose sessions are internal traffic. `false` with no session, for
+   * a guest, and for every other account.
+   */
+  isInternal(): Promise<boolean>;
 }
 
 // Firebase implementation
@@ -105,6 +113,14 @@ class FirebaseAuthService implements AuthService {
     if (!user || user.isAnonymous) return false;
     const token = await user.getIdTokenResult();
     return token.claims.admin === true;
+  }
+
+  async isInternal(): Promise<boolean> {
+    const auth = await this.ready;
+    const user = auth.currentUser;
+    if (!user || user.isAnonymous) return false;
+    const token = await user.getIdTokenResult();
+    return hasInternalClaim(token.claims);
   }
 }
 
@@ -204,6 +220,14 @@ class MockAuthService implements AuthService {
   /** The mock's Google account is an admin, so `/admin` can be tried in the mock backend. */
   async isAdmin(): Promise<boolean> {
     return this.mockUser !== null && !this.mockUser.isAnonymous;
+  }
+
+  /**
+   * The mock's account is not internal: `dev:mock` sessions are local, never
+   * reach analytics' production project, and `?internal=1` still marks one.
+   */
+  async isInternal(): Promise<boolean> {
+    return false;
   }
 }
 

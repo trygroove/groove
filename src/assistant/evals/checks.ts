@@ -18,6 +18,13 @@
  *    proposal changes.
  * 6. {@link checkNotFlattened}: an extreme proposal is not identical to a
  *    conventional one.
+ * 7. {@link checkCoverage}: a case that asks for named parts (a sketch asks for
+ *    drums, bass, chords, a melody and a texture) gets notes on a distinct
+ *    track or clip for each.
+ *
+ * Check 8, the expected outcome (a proposal, or a question and no proposal),
+ * and the checks only some cases name (GRV-99) live in `caseChecks.ts`; their
+ * IDs and labels are here so a report tallies them with the rest.
  */
 import {
   CONTROL_PARTS,
@@ -38,7 +45,8 @@ import { historyProposalTarget } from "../historyProposalTarget";
 import { type ValidProposal, validateProposal } from "../proposal";
 import { createProposalExecutor, type ProposalTarget } from "../proposalExecutor";
 import { ASSISTANT_COMMAND_TYPES } from "../tools";
-import type { ResolvedScope } from "./cases";
+import { CASE_CHECK_IDS } from "./caseChecks";
+import type { EvalPart, ResolvedScope } from "./cases";
 
 export type CheckStatus = "pass" | "fail" | "skip";
 
@@ -59,6 +67,9 @@ export const CHECK_IDS = [
   "atomicUndo",
   "grounded",
   "notFlattened",
+  "coverage",
+  "outcome",
+  ...CASE_CHECK_IDS,
 ] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
@@ -69,6 +80,17 @@ export const CHECK_LABELS: Record<CheckId, string> = {
   atomicUndo: "4. Atomic undo",
   grounded: "5. Grounded explanation",
   notFlattened: "6. Extreme is not flattened",
+  coverage: "7. Covers the requested parts",
+  outcome: "8. Expected outcome",
+  hatDensity: "9. Denser hats, nothing else",
+  pointsToGenerate: "10. Points to the Generate panel",
+  developsTrack: "11. Develops the loop into a track",
+  padSound: "12. A sparse, slow pad",
+  dissonant: "13. Dissonant chords",
+  addsTracks: "14. Adds tracks",
+  endsAt: "15. A parameter ends at the exact value",
+  noEmptyClips: "16. No clip left without notes",
+  noNoOps: "17. No command sets a value to what it already is",
 };
 
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });
@@ -633,4 +655,72 @@ export function checkNotFlattened(
   return same > 0
     ? fail(`Identical to ${same} of ${comparable.length} conventional proposals`)
     : pass(`Differs from all ${comparable.length} conventional proposals`);
+}
+
+// ---------------------------------------------------------------------------
+// 7. Coverage
+// ---------------------------------------------------------------------------
+
+/**
+ * The clips whose notes the proposal wrote: new ones, and existing ones whose
+ * events changed, that hold at least one note afterwards. A clip the proposal
+ * only emptied (`notes_clear`) plays nothing, so it covers no part. Each is
+ * keyed by the kind of instrument on its track.
+ */
+function notedClipKinds(before: Project, after: Project): ("drumMachine" | "synth")[] {
+  const kindOf = new Map(
+    after.song.tracks.map((track) => [track.id, track.instrument?.kind]),
+  );
+  const eventsBefore = new Map(
+    before.clips.map((clip) => [
+      clip.id,
+      clip.content.kind === "notes" ? JSON.stringify(clip.content.events) : null,
+    ]),
+  );
+  const kinds: ("drumMachine" | "synth")[] = [];
+  for (const clip of after.clips) {
+    if (clip.content.kind !== "notes" || clip.content.events.length === 0) continue;
+    if (eventsBefore.get(clip.id) === JSON.stringify(clip.content.events)) continue;
+    const kind = kindOf.get(clip.trackId);
+    if (kind === "drumMachine" || kind === "synth") kinds.push(kind);
+  }
+  return kinds;
+}
+
+/**
+ * A request that asks for named parts gets notes for each one, on a distinct
+ * track or clip: a drum part is notes on a drum-machine track, any other part
+ * notes on a synth track. It sets no threshold on how many notes, which
+ * pitches or which rhythm, and ignores what the reply says it made. `parts`
+ * empty (a case that is not a sketch) skips it.
+ */
+export function checkCoverage(
+  before: Project,
+  after: Project,
+  parts: readonly EvalPart[],
+): CheckResult {
+  if (parts.length === 0) return skip("The request names no parts");
+  const kinds = notedClipKinds(before, after);
+  const drumClips = kinds.filter((kind) => kind === "drumMachine").length;
+  const synthClips = kinds.length - drumClips;
+  let drumsLeft = drumClips;
+  let synthLeft = synthClips;
+  const missing: EvalPart[] = [];
+  for (const part of parts) {
+    if (part === "drums") {
+      if (drumsLeft > 0) drumsLeft -= 1;
+      else missing.push(part);
+    } else if (synthLeft > 0) synthLeft -= 1;
+    else missing.push(part);
+  }
+  return missing.length === 0
+    ? pass(`Notes for all ${parts.length} requested parts`)
+    : fail(
+        `No notes on a distinct ${missing
+          .map((part) => (part === "drums" ? "drum-machine track" : "synth clip"))
+          .filter((label, i, all) => all.indexOf(label) === i)
+          .join(
+            " or ",
+          )} for: ${missing.join(", ")} (${parts.length - missing.length} of ${parts.length} covered)`,
+      );
 }
