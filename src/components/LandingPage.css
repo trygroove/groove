@@ -80,9 +80,8 @@
 }
 
 .landing-brand-mark {
-  width: 22px;
-  height: 22px;
-  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-deep));
+  display: inline-flex;
+  color: var(--color-accent);
 }
 
 .landing-nav {
