@@ -36,6 +36,7 @@ import {
   PRODUCER_GOALS,
 } from "../persistence/profileDocuments";
 import type { AssistantProposal, AssistantToolCall } from "./protocol";
+import { makesChanges } from "./tools";
 
 /** The tool's name, as the model calls it. */
 export const REMEMBER_TOOL_NAME = "remember_producer";
@@ -181,7 +182,8 @@ export function isRememberCall(call: Pick<AssistantToolCall, "name">): boolean {
 
 /**
  * The proposal's song changes, with its memory proposals taken out: each is
- * a card of its own, and the changes, if any are left, are one.
+ * a card of its own, and the changes, if any are left, are one. An
+ * explanation left with no change beside it is no proposal.
  */
 export function splitMemoryProposals(proposal: AssistantProposal): {
   readonly proposal: AssistantProposal | null;
@@ -190,7 +192,7 @@ export function splitMemoryProposals(proposal: AssistantProposal): {
   const memory = proposal.calls.filter(isRememberCall);
   const changes = proposal.calls.filter((call) => !isRememberCall(call));
   return {
-    proposal: changes.length > 0 ? { ...proposal, calls: changes } : null,
+    proposal: makesChanges(changes) ? { ...proposal, calls: changes } : null,
     memory,
   };
 }

@@ -12,6 +12,7 @@ import { Analytics } from "../../analytics/analytics";
 import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
 import { REMEMBER_TOOL_NAME } from "../../assistant/memory";
+import { EXPLAIN_TOOL_NAME } from "../../assistant/tools";
 import { createSliceFixtureProject } from "../../domain/fixtures";
 import { useProducerProfile } from "../../memory/useProducerProfile";
 import { InMemoryProfileRepository } from "../../persistence/inMemoryProfileRepository";
@@ -89,8 +90,14 @@ async function send(text: string) {
   await settle();
 }
 
-/** Cue's reply proposing a note, as the gateway returns it among the calls. */
-function proposeNote(client: ReturnType<typeof createFakeAssistantClient>) {
+/**
+ * Cue's reply proposing a note, as the gateway returns it among the calls,
+ * with any other calls the reply made beside it.
+ */
+function proposeNote(
+  client: ReturnType<typeof createFakeAssistantClient>,
+  beside: readonly { id: string; name: string; input: unknown }[] = [],
+) {
   const turn = client.last();
   fireAndFlush(() => turn.text("Shall I remember that?"));
   fireAndFlush(() =>
@@ -105,6 +112,7 @@ function proposeNote(client: ReturnType<typeof createFakeAssistantClient>) {
             name: REMEMBER_TOOL_NAME,
             input: { kind: "note", text: "Making more trap lately" },
           },
+          ...beside,
         ],
       },
     }),
@@ -153,6 +161,23 @@ describe("Cue's memory in the conversation (GRV-25)", () => {
     expect(stored.ok && stored.profile?.notes).toEqual([]);
     expect(transport.named("memory_note_undone")).toHaveLength(1);
     expect(JSON.stringify(transport.events)).not.toContain("trap");
+  });
+
+  it("draws only the memory card when the note comes with an explanation", async () => {
+    const { client } = await renderChat();
+    await settle();
+    await send("I'm making more trap now");
+    proposeNote(client, [
+      {
+        id: "toolu_2",
+        name: EXPLAIN_TOOL_NAME,
+        input: { goal: "Remember what you make now", technique: "A note in memory" },
+      },
+    ]);
+    expect(screen.getByRole("region", { name: MEMORY_CARD_LABEL })).toBeInTheDocument();
+    // An explanation on its own changes nothing, so it is no proposal.
+    expect(screen.queryByRole("region", { name: /^Proposal/ })).toBeNull();
+    expect(within(panel()).queryByRole("alert")).toBeNull();
   });
 
   it("saves nothing when the producer says Not now", async () => {

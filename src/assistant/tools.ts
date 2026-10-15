@@ -536,6 +536,16 @@ const { $schema: _explainDialect, ...explainInputSchema } = z.toJSONSchema(
   { io: "input" },
 ) as JsonSchema;
 
+/**
+ * Whether `calls` change anything: an explanation on its own does not, so
+ * calls that are only `explain_change` are no proposal. Whatever takes other
+ * calls out of a proposal (asks, videos, recommendations, memory) asks this of
+ * what is left.
+ */
+export function makesChanges(calls: readonly { readonly name: string }[]): boolean {
+  return calls.some((call) => call.name !== EXPLAIN_TOOL_NAME);
+}
+
 /** `explain_change` as it is offered to the model, beside the command tools. */
 export const EXPLAIN_TOOL: Pick<
   AssistantToolDefinition,

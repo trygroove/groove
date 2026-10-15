@@ -86,7 +86,7 @@ import {
   ASSISTANT_TOOLSET_VERSION,
   assistantTools,
   EXPLAIN_TOOL,
-  EXPLAIN_TOOL_NAME,
+  makesChanges,
 } from "./tools";
 import type { TranscriptStore } from "./transcripts";
 import {
@@ -440,7 +440,7 @@ function proposalOf(
   allCalls: readonly AssistantToolCall[],
 ): AssistantProposal | null {
   const calls = allCalls.filter((call) => !isAskCall(call) && !isVideoCall(call));
-  if (calls.every((call) => call.name === EXPLAIN_TOOL_NAME)) return null;
+  if (!makesChanges(calls)) return null;
   return {
     baseRevision: turn.projectRevision,
     toolsetVersion: ASSISTANT_TOOLSET_VERSION,
