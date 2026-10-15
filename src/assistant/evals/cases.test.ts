@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Project } from "../../domain/entities";
-import { stringifyProject } from "../../domain/serialize";
+import { serializeProject, stringifyProject } from "../../domain/serialize";
 import { TICKS_PER_BAR } from "../../domain/time";
 import { buildAssistantPayload } from "../payload";
 import { assistantContextPayloadSchema, assistantTurnRequestSchema } from "../protocol";
@@ -10,16 +13,63 @@ import {
   casePairs,
   EVAL_CASES,
   EVAL_PARTS,
+  type EvalCase,
+  evalCaseFromJson,
+  loadJsonCases,
   PAIRED_CAPABILITIES,
+  parseJsonEvalCase,
   resolveScope,
   resolveSelection,
+  TYPESCRIPT_CASES,
 } from "./cases";
 import { CHECK_IDS, CHECK_LABELS, checkBundled } from "./checks";
+import { selectEvalCases } from "./cli";
 import {
+  createHouseLoopProject,
   createTechnoDrumsProject,
   createTechnoLoopProject,
   TECHNO_TEMPO,
 } from "./fixtures";
+import { namedFixture, TS_FIXTURES } from "./namedFixtures";
+
+/**
+ * What every case, written or saved, must hold: a fixture that builds the
+ * same valid project every time with only factory sounds, and a selection and
+ * scope that resolve against it.
+ */
+function expectRunnableFixture(entry: EvalCase) {
+  const project = entry.fixture();
+  expect(stringifyProject(entry.fixture())).toBe(stringifyProject(project));
+  expect(checkBundled([], project).status).toBe("pass");
+  // The selection and scope resolve against the fixture's names.
+  const selection = resolveSelection(project, entry.selection);
+  expect(resolveScope(project, entry.scope).tracks.size).toBeGreaterThanOrEqual(0);
+  const context = assistantContextPayloadSchema.parse(
+    buildAssistantPayload(project, selection),
+  );
+  if (!entry.selection) expect(context.selectedNotes).toBeNull();
+  // A written case selects notes to work on; a saved one may select an
+  // empty clip or a new track, as the producer did.
+  else if (TYPESCRIPT_CASES.includes(entry)) {
+    expect(context.selectedNotes?.noteCount).toBeGreaterThan(0);
+  }
+}
+
+/** Every case's turn is a conversation the gateway takes, ending in its request. */
+function expectGatewayConversation(entry: EvalCase) {
+  const project = entry.fixture();
+  const messages = caseMessages(entry);
+  const request = assistantTurnRequestSchema.parse({
+    projectRevision: project.metadata.revision,
+    messages,
+    context: buildAssistantPayload(project, resolveSelection(project, entry.selection)),
+  });
+  expect(request.messages.at(-1)).toEqual({ role: "user", text: entry.request });
+  // The producer opens, and the two take turns.
+  messages.forEach((message, index) => {
+    expect(message.role).toBe(index % 2 === 0 ? "user" : "assistant");
+  });
+}
 
 describe("the eval cases", () => {
   it("ask every capability once conventionally and once at an extreme, on one fixture", () => {
@@ -39,19 +89,7 @@ describe("the eval cases", () => {
 
   it.each(EVAL_CASES.map((entry) => [entry.id, entry] as const))(
     "%s: builds the same valid project every time, with only factory sounds",
-    (_id, entry) => {
-      const project = entry.fixture();
-      expect(stringifyProject(entry.fixture())).toBe(stringifyProject(project));
-      expect(checkBundled([], project).status).toBe("pass");
-      // The selection and scope resolve against the fixture's names.
-      const selection = resolveSelection(project, entry.selection);
-      expect(resolveScope(project, entry.scope).tracks.size).toBeGreaterThanOrEqual(0);
-      const context = assistantContextPayloadSchema.parse(
-        buildAssistantPayload(project, selection),
-      );
-      if (entry.selection) expect(context.selectedNotes?.noteCount).toBeGreaterThan(0);
-      else expect(context.selectedNotes).toBeNull();
-    },
+    (_id, entry) => expectRunnableFixture(entry),
   );
 
   it("show a loop sketch every drum pad it can play", () => {
@@ -83,8 +121,8 @@ describe("the eval cases", () => {
     );
   });
 
-  it("name the five sketch parts on the loop sketches and nothing elsewhere", () => {
-    for (const evalCase of EVAL_CASES) {
+  it("name the five sketch parts on the written loop sketches and nothing elsewhere", () => {
+    for (const evalCase of TYPESCRIPT_CASES) {
       expect(evalCase.parts ?? []).toEqual(
         evalCase.capability === "loopSketch" ? EVAL_PARTS : [],
       );
@@ -93,23 +131,7 @@ describe("the eval cases", () => {
 
   it.each(EVAL_CASES.map((entry) => [entry.id, entry] as const))(
     "%s: sends a conversation the gateway takes, ending in its request",
-    (_id, entry) => {
-      const project = entry.fixture();
-      const messages = caseMessages(entry);
-      const request = assistantTurnRequestSchema.parse({
-        projectRevision: project.metadata.revision,
-        messages,
-        context: buildAssistantPayload(
-          project,
-          resolveSelection(project, entry.selection),
-        ),
-      });
-      expect(request.messages.at(-1)).toEqual({ role: "user", text: entry.request });
-      // The producer opens, and the two take turns.
-      messages.forEach((message, index) => {
-        expect(message.role).toBe(index % 2 === 0 ? "user" : "assistant");
-      });
-    },
+    (_id, entry) => expectGatewayConversation(entry),
   );
 
   it("name only checks that exist, and give every check a label", () => {
@@ -121,7 +143,7 @@ describe("the eval cases", () => {
 
   // GRV-99: the sessions copied from testing.
   it("expect a question on the broad requests and a proposal on the rest", () => {
-    const asking = EVAL_CASES.filter((entry) => entry.expect === "ask").map(
+    const asking = TYPESCRIPT_CASES.filter((entry) => entry.expect === "ask").map(
       (entry) => entry.id,
     );
     expect(asking).toEqual(["develop-track-ask", "pad-genre-unknown"]);
@@ -241,5 +263,150 @@ describe("the cases from GRV-6's QA findings", () => {
     expect(resketch.checks).toEqual(["noEmptyClips", "noNoOps"]);
     expect(byId("noop-bd-only").request).toBe(resketch.request);
     expect(byId("noop-bd-only").checks).toEqual(["noNoOps"]);
+  });
+});
+
+describe("JSON eval cases (GRV-108)", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function scratch(files: Record<string, unknown>) {
+    const root = mkdtempSync(join(tmpdir(), "eval-cases-"));
+    dirs.push(root);
+    for (const [path, content] of Object.entries(files)) {
+      mkdirSync(join(root, dirname(path)), { recursive: true });
+      writeFileSync(
+        join(root, path),
+        typeof content === "string" ? content : JSON.stringify(content),
+      );
+    }
+    return { casesDir: join(root, "cases"), fixturesDir: join(root, "fixtures") };
+  }
+
+  const json = {
+    id: "saved-case",
+    capability: "balancing",
+    axis: "conventional",
+    request: "Tuck the bass in",
+    expect: "proposal",
+    fixture: "house-loop",
+    selection: { tracks: ["Bass"] },
+    scope: {
+      tracks: ["Bass"],
+      createTracks: false,
+      song: false,
+      master: false,
+      returns: false,
+      sections: false,
+    },
+  };
+
+  it("load beside the TypeScript ones, on a named or a JSON fixture", () => {
+    const moved = {
+      ...createHouseLoopProject(),
+      metadata: { ...createHouseLoopProject().metadata, name: "Moved" },
+    };
+    const where = scratch({
+      "cases/saved-case.json": json,
+      "cases/on-json.json": { ...json, id: "on-json", fixture: "moved" },
+      "fixtures/moved.json": serializeProject(moved),
+    });
+    const loaded = loadJsonCases(where.casesDir, where.fixturesDir);
+    expect(loaded.map((entry) => entry.id)).toEqual(["on-json", "saved-case"]);
+    const [onJson, saved] = loaded;
+    expect(stringifyProject(saved.fixture())).toBe(
+      stringifyProject(createHouseLoopProject()),
+    );
+    expect(stringifyProject(onJson.fixture())).toBe(stringifyProject(moved));
+    expect(onJson.fixture()).not.toBe(onJson.fixture());
+    expect(selectEvalCases(["saved-case"], [...EVAL_CASES, ...loaded])).toEqual([saved]);
+    expect(evalCaseFromJson(parseJsonEvalCase(json, "it")).scope).toEqual(json.scope);
+  });
+
+  it("hold every suite-wide property when saved asking, on an empty selection, at an extreme", () => {
+    // What `save-case` may legitimately write: a question expected, a track
+    // with no notes selected, a paired capability's extreme, a loop sketch
+    // with no parts named.
+    const house = createHouseLoopProject();
+    const bass = house.song.tracks.find((entry) => entry.name === "Bass");
+    if (!bass) throw new Error("no Bass track");
+    const emptied = new Set(
+      house.clips.filter((clip) => clip.trackId === bass.id).map((clip) => clip.id),
+    );
+    const bassless: Project = {
+      ...house,
+      clips: house.clips.filter((clip) => !emptied.has(clip.id)),
+      song: {
+        ...house.song,
+        placements: house.song.placements.filter(
+          (placement) => !emptied.has(placement.clipId),
+        ),
+      },
+    };
+    const where = scratch({
+      "cases/asks-first.json": {
+        ...json,
+        id: "asks-first",
+        capability: "loopSketch",
+        axis: "extreme",
+        expect: "ask",
+        history: [
+          { role: "user", text: "Bass down" },
+          { role: "assistant", text: "The Bass down to -6 dB." },
+        ],
+        fixture: "bassless",
+      },
+      "fixtures/bassless.json": serializeProject(bassless),
+    });
+    const loaded = loadJsonCases(where.casesDir, where.fixturesDir);
+    expect(loaded.map((entry) => entry.expect)).toEqual(["ask"]);
+    const all = [...TYPESCRIPT_CASES, ...loaded];
+    for (const entry of all) {
+      expectRunnableFixture(entry);
+      expectGatewayConversation(entry);
+    }
+    // The pairs check 6 compares stay the written ones.
+    expect(casePairs(all)).toEqual(casePairs(TYPESCRIPT_CASES));
+    expect(new Set(all.map((entry) => entry.id)).size).toBe(all.length);
+  });
+
+  it("refuse a broken case rather than leave it out", () => {
+    const misnamed = scratch({ "cases/other.json": json });
+    expect(() => loadJsonCases(misnamed.casesDir, misnamed.fixturesDir)).toThrow(
+      "name it saved-case.json",
+    );
+    const unknown = scratch({
+      "cases/saved-case.json": { ...json, capability: "vibes" },
+    });
+    expect(() => loadJsonCases(unknown.casesDir, unknown.fixturesDir)).toThrow(
+      /is not an eval case: capability/,
+    );
+    const noFixture = scratch({ "cases/saved-case.json": { ...json, fixture: "gone" } });
+    expect(() => loadJsonCases(noFixture.casesDir, noFixture.fixturesDir)).toThrow(
+      'No eval fixture "gone"',
+    );
+    const broken = scratch({
+      "cases/saved-case.json": { ...json, fixture: "bad" },
+      "fixtures/bad.json": { metadata: {} },
+    });
+    expect(() => loadJsonCases(broken.casesDir, broken.fixturesDir)).toThrow(
+      "is not a valid project",
+    );
+    expect(loadJsonCases(join(tmpdir(), "no-such-dir-for-evals"))).toEqual([]);
+  });
+
+  it("name every fixture fixtures.ts builds", () => {
+    expect(Object.keys(TS_FIXTURES)).toEqual([
+      "kit-sketch",
+      "house-loop",
+      "arrangement",
+      "techno-drums",
+      "techno-loop",
+      "bd-only",
+      "bd-sketch",
+    ]);
+    expect(() => namedFixture("constructor")).toThrow('No eval fixture "constructor"');
   });
 });
