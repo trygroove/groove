@@ -15,6 +15,7 @@ import {
   comparisonLines,
   headlineLines,
   secondaryLines,
+  setLines,
 } from "./scorecardMarkdown";
 
 /** A baseline to print the scorecard against. */
@@ -158,10 +159,11 @@ function numberLines(
     `- Tool set version: ${report.toolsetVersion}`,
     `- Runs per case: ${report.runsPerCase}; cases: ${report.caseIds.length}; turns: ${report.scorecard.headline.turns}; errored turns: ${report.summary.errored.total}`,
     "",
-    "Pass rates count the proposals a check could judge. A reply with no proposal, or one that did not apply, fails check 1 and is not judged by checks 2 to 5 or 7. A turn that errored (the provider or the transport failed, or it timed out) is not judged by any check and is counted apart. Check 6 is judged on extreme cases only, and check 7 on the sketch cases only (the ones that name the parts they ask for). Check 8 judges every case: a proposal, or, where the case expects one, a question and no proposal; a case that expects a question is judged by checks 1 to 7 only if it proposed something anyway. Checks 9 to 13 are judged only on the cases that name them. Nothing gates on the descriptive numbers.",
+    "Pass rates count the proposals a check could judge. A reply with no proposal, or one that did not apply, fails check 1 and is not judged by checks 2 to 5 or 7. A turn that errored (the provider or the transport failed, or it timed out) is not judged by any check and is counted apart. Check 6 is judged on extreme cases only, and check 7 on the sketch cases only (the ones that name the parts they ask for). Check 8 judges every case: a proposal, or, where the case expects one, a question and no proposal; a case that expects a question is judged by checks 1 to 7 only if it proposed something anyway. Checks 9 to 19 are judged only on the cases that name them; 18 and 19 judge the basic production actions. Nothing gates on the descriptive numbers.",
     "",
     ...erroredLines(report),
     ...headlineLines(report.scorecard),
+    ...setLines(report.scorecard),
     ...(baseline ? comparisonLines(baseline.comparisons, baseline.label) : []),
     ...secondaryLines(report.scorecard),
     "## Pass rate per check",

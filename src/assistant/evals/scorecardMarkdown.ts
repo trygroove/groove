@@ -12,6 +12,7 @@ import {
   type Scorecard,
   type Secondary,
 } from "./scorecard";
+import { setLabel } from "./sets";
 
 /** "72.5% (29/40)", or "n/a (0 judged)". */
 export function formatRate(rate: Rate): string {
@@ -38,6 +39,23 @@ export function headlineLines(card: Scorecard): string[] {
     `| Overall pass rate (every check) | ${formatRate(headline.overall)} |`,
     `| Expected outcome (check 8) | ${formatRate(headline.expectMatch)} |`,
     `| Errored turns (judged by no check) | ${headline.errored} of ${headline.turns} |`,
+    "",
+  ];
+}
+
+/** The headline per set (GRV-119); nothing for a scorecard without sets. */
+export function setLines(card: Scorecard): string[] {
+  const sets = Object.entries(card.sets ?? {});
+  if (sets.length === 0) return [];
+  return [
+    "## By set",
+    "",
+    "| Set | Cases | Applies cleanly (check 1) | Overall pass rate | Expected outcome (check 8) | Errored turns |",
+    "| --- | --- | --- | --- | --- | --- |",
+    ...sets.map(
+      ([set, { cases, headline }]) =>
+        `| ${setLabel(set)} | ${cases} | ${formatRate(headline.applies)} | ${formatRate(headline.overall)} | ${formatRate(headline.expectMatch)} | ${headline.errored} of ${headline.turns} |`,
+    ),
     "",
   ];
 }

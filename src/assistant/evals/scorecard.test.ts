@@ -167,6 +167,30 @@ describe("the secondary numbers", () => {
     expect(report.scorecard.secondary.latencyMs.p95).toBe(9_000);
   });
 
+  it("scores each set apart, a record saved before sets as a musical one (GRV-119)", () => {
+    const report = buildTestReport([
+      testRecord({ caseId: "a", valid: "pass" }),
+      testRecord({ caseId: "b", set: "musical", valid: "fail" }),
+      testRecord({ caseId: "c", set: "basicActions", valid: "pass", outcome: "pass" }),
+      testRecord({ caseId: "d", set: "basicActions", valid: "fail", outcome: "fail" }),
+      testRecord({ caseId: "d", set: "basicActions", errorCode: "provider_error" }),
+    ]);
+    const sets = report.scorecard.sets ?? {};
+    expect(Object.keys(sets)).toEqual(["musical", "basicActions"]);
+    expect(sets.musical.cases).toBe(2);
+    expect(sets.musical.headline.applies).toEqual({ pass: 1, judged: 2, rate: 0.5 });
+    expect(sets.basicActions.cases).toBe(2);
+    expect(sets.basicActions.headline.expectMatch).toEqual({
+      pass: 1,
+      judged: 2,
+      rate: 0.5,
+    });
+    expect(sets.basicActions.headline.overall).toEqual({ pass: 2, judged: 4, rate: 0.5 });
+    expect(sets.basicActions.headline).toMatchObject({ turns: 3, errored: 1 });
+    // The run's headline is every set's together.
+    expect(report.scorecard.headline.applies).toEqual({ pass: 2, judged: 4, rate: 0.5 });
+  });
+
   it("scores an older record without usage or first text as n/a, never zero", () => {
     const { usage: _usage, firstTextMs: _first, ...older } = testRecord();
     const card = scorecardOf({

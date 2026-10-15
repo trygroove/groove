@@ -21,6 +21,7 @@ describe("parseEvalArgs", () => {
   it("defaults to every case, 3 runs, the configured model and production's 540 s turn limit", () => {
     expect(options([])).toEqual({
       caseIds: [],
+      set: null,
       runs: 3,
       model: ASSISTANT_MODEL_ID,
       out: null,
@@ -75,6 +76,10 @@ describe("parseEvalArgs", () => {
     });
   });
 
+  it("reads the set to run", () => {
+    expect(options(["--set", "basicActions"]).set).toBe("basicActions");
+  });
+
   it("takes the run count from EVAL_RUNS unless --runs says otherwise", () => {
     expect(options([], { EVAL_RUNS: "7" }).runs).toBe(7);
     expect(options(["--runs", "2"], { EVAL_RUNS: "7" }).runs).toBe(2);
@@ -94,6 +99,7 @@ describe("parseEvalArgs", () => {
     [["--runs"], "--runs needs a value"],
     [["--wat"], "Unknown option --wat"],
     [["--model", "gpt-4"], 'Unknown model "gpt-4"'],
+    [["--set", "vibes"], 'Unknown set "vibes". Sets: musical, basicActions'],
   ])("refuses %j", (argv, message) => {
     expect(() => parseEvalArgs(argv)).toThrow(EvalUsageError);
     expect(() => parseEvalArgs(argv)).toThrow(message);
@@ -109,6 +115,17 @@ describe("selectEvalCases", () => {
 
   it("refuses an unknown case and lists the real ones", () => {
     expect(() => selectEvalCases(["nope"])).toThrow(/No eval case "nope"\. Cases: /);
+  });
+
+  it("keeps to one set when given one (GRV-119)", () => {
+    const basic = selectEvalCases([], EVAL_CASES, "basicActions");
+    expect(basic).toHaveLength(32);
+    expect(basic.every((entry) => entry.set === "basicActions")).toBe(true);
+    const musical = selectEvalCases([], EVAL_CASES, "musical");
+    expect(musical.length + basic.length).toBe(EVAL_CASES.length);
+    expect(() => selectEvalCases(["sketch-house"], EVAL_CASES, "basicActions")).toThrow(
+      'No eval case "sketch-house"',
+    );
   });
 });
 

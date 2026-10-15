@@ -10,6 +10,9 @@
  *   input, output and cache-read tokens, the estimated cost per turn from the
  *   model's price in `ASSISTANT_MODELS`, and how often a turn was cut off at
  *   `max_tokens` or refused.
+ * - The **sets** (GRV-119): the headline again for each set of cases (the
+ *   musical capability evals, the basic production actions), so each set
+ *   reads as its own score beside the run's.
  * - {@link compareScorecards} sets each number beside a baseline's, with its
  *   delta and whether that is better or worse.
  *
@@ -81,8 +84,19 @@ export interface Secondary {
   readonly refusalRate: number | null;
 }
 
+/** One set's score: how many of its cases ran, and its headline. */
+export interface SetScore {
+  readonly cases: number;
+  readonly headline: Headline;
+}
+
 export interface Scorecard {
   readonly headline: Headline;
+  /**
+   * The headline per set, by set ID, in the order the records first name
+   * them. Absent from scorecards saved before sets existed.
+   */
+  readonly sets?: Readonly<Record<string, SetScore>>;
   readonly secondary: Secondary;
   readonly cases: Readonly<Record<string, Secondary>>;
 }
@@ -207,10 +221,52 @@ export function secondaryOf(
   };
 }
 
+/** The set a record was scored in; a record saved before sets is a musical one. */
+export function recordSet(record: EvalRecord): string {
+  return record.set ?? "musical";
+}
+
+/** Each set's headline, tallied from its own records. */
+export function setScoresOf(
+  model: string,
+  records: readonly EvalRecord[],
+): Record<string, SetScore> {
+  const sets: Record<string, SetScore> = {};
+  for (const set of [...new Set(records.map(recordSet))]) {
+    const own = records.filter((record) => recordSet(record) === set);
+    const checks: Partial<Record<CheckId, Tally>> = {};
+    for (const record of own) {
+      if (record.error) continue;
+      for (const id of CHECK_IDS) {
+        const result = record.checks[id];
+        if (!result) continue;
+        const tally = checks[id] ?? { pass: 0, fail: 0, skip: 0 };
+        tally[result.status] += 1;
+        checks[id] = tally;
+      }
+    }
+    const caseIds = [...new Set(own.map((record) => record.caseId))];
+    sets[set] = {
+      cases: caseIds.length,
+      headline: headlineOf({
+        model,
+        caseIds,
+        records: own,
+        summary: {
+          checks,
+          errored: { total: own.filter((record) => record.error).length },
+        },
+      }),
+    };
+  }
+  return sets;
+}
+
 export function scorecardOf(source: ScorecardSource): Scorecard {
   const model = modelProfile(source.model);
   return {
     headline: headlineOf(source),
+    sets: setScoresOf(source.model, source.records),
     secondary: secondaryOf(source.records, model),
     cases: Object.fromEntries(
       source.caseIds.map((caseId) => [
