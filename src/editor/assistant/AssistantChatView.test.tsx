@@ -85,9 +85,8 @@ function renderChat(options: Options = {}) {
   return { client, transport, project, setSelection, setAccount, unmount };
 }
 
-const panel = () => screen.getByRole("region", { name: "Assistant" });
-const composer = () =>
-  within(panel()).getByRole("textbox", { name: "Message the assistant" });
+const panel = () => screen.getByRole("region", { name: "Cue" });
+const composer = () => within(panel()).getByRole("textbox", { name: "Message Cue" });
 const log = () => within(panel()).getByRole("log", { name: "Conversation" });
 const button = (name: string | RegExp) => within(panel()).getByRole("button", { name });
 const scopeChip = () => button(/^Scope:/);
@@ -295,7 +294,7 @@ describe("the assistant's inline errors", () => {
         retryable: false,
         resetsAt: Date.now() + 60_000,
       },
-      says: /used all your assistant requests.*frees up (at|tomorrow at) \d/,
+      says: /used all your requests to Cue.*frees up (at|tomorrow at) \d/,
       retry: false,
     },
     {
@@ -313,7 +312,7 @@ describe("the assistant's inline errors", () => {
       await send("Help");
       fireAndFlush(() => client.last().fail(error));
       const alert = within(log()).getByRole("alert");
-      expect(alert).toHaveTextContent("The assistant couldn't reply.");
+      expect(alert).toHaveTextContent("Cue couldn't reply.");
       expect(alert).toHaveTextContent(says);
       expect(alert).toHaveTextContent(ERROR_REASSURANCE);
       expect(within(alert).queryByRole("button", { name: "Try again" }) !== null).toBe(

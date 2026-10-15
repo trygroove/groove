@@ -22,7 +22,7 @@ import { expect, test } from "./support/test";
  * a yes keeps nothing or a no leaves anything behind.
  */
 
-const LABEL = "Keep my conversations with the assistant for 30 days";
+const LABEL = "Keep my conversations with Cue for 30 days";
 const SCOPE =
   "This controls Groove's own copy only. It does not take back anything already sent to Anthropic.";
 
@@ -66,7 +66,7 @@ test.describe("the assistant's disclosure and setting", () => {
     expect(kept?.reply).toContain("Here is one idea.");
 
     // The setting shows what was answered, and opening it changes nothing.
-    await panelButton(page, "Assistant settings").click();
+    await panelButton(page, "Cue settings").click();
     const box = panel(page).getByRole("checkbox", { name: LABEL });
     await expect(box).toBeChecked();
     await expect(panel(page)).toContainText(SCOPE);
@@ -95,7 +95,7 @@ test.describe("the assistant's disclosure and setting", () => {
     if (!(await panel(page).isVisible())) await assistantButton(page).click();
     await expect(composer(page)).toBeVisible();
     await expect(disclosure(page)).toHaveCount(0);
-    await panelButton(page, "Assistant settings").click();
+    await panelButton(page, "Cue settings").click();
     await expect(panel(page).getByRole("checkbox", { name: LABEL })).not.toBeChecked();
     expect(await storedTranscripts(invitedProducer.uid)).toEqual([]);
   });

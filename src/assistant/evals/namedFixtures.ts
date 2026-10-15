@@ -63,6 +63,21 @@ export function fixtureNames(dir = jsonFixturesDir()): string[] {
   return [...Object.keys(TS_FIXTURES), ...jsonFixtureNames(dir)];
 }
 
+/** A fixture a session can start on, and where it comes from. */
+export interface FixtureListing {
+  readonly name: string;
+  /** `fixtures.ts` builds it, or it is a JSON file in the fixtures directory. */
+  readonly source: "ts" | "json";
+}
+
+/** Every fixture a session can start on, the `fixtures.ts` ones first. */
+export function listFixtures(dir = jsonFixturesDir()): FixtureListing[] {
+  return [
+    ...Object.keys(TS_FIXTURES).map((name) => ({ name, source: "ts" as const })),
+    ...jsonFixtureNames(dir).map((name) => ({ name, source: "json" as const })),
+  ];
+}
+
 /** Parses a JSON fixture's text, or throws saying what is wrong with it. */
 export function parseFixtureJson(text: string, label: string): Project {
   let raw: unknown;

@@ -183,6 +183,7 @@ export default defineConfig({
         "src/arrangement/**/*.test.{ts,tsx}",
         "src/controls/**/*.test.{ts,tsx}",
         "src/routes/**/*.test.{ts,tsx}",
+        "src/onboarding/**/*.test.{ts,tsx}",
       ]),
       // The boundaries that talk to something outside the app: the
       // repository, the sample-library manifest, auth, and exported files.

@@ -1,0 +1,74 @@
+/* Cue's mark (GRV-25): concentric squares that breathe at rest and pulse
+   outwards while Cue speaks. Brightness, never hue (docs/design.md). */
+
+.cue-mark {
+  display: block;
+  overflow: visible;
+}
+
+.cue-mark-ring {
+  fill: none;
+  stroke: var(--color-foreground);
+  stroke-width: 1;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: cue-mark-breathe 4s ease-in-out infinite;
+}
+
+.cue-mark-ring-1 {
+  stroke: var(--color-foreground-bright);
+}
+
+.cue-mark-ring-2 {
+  animation-delay: 0.4s;
+}
+
+.cue-mark-ring-3 {
+  stroke: var(--color-foreground-muted);
+  animation-delay: 0.8s;
+}
+
+.cue-mark-core {
+  fill: var(--color-accent);
+}
+
+.cue-mark-active .cue-mark-ring {
+  stroke: var(--color-foreground-bright);
+  animation: cue-mark-pulse 0.9s ease-out infinite;
+}
+
+.cue-mark-active .cue-mark-ring-2 {
+  animation-delay: 0.15s;
+}
+
+.cue-mark-active .cue-mark-ring-3 {
+  animation-delay: 0.3s;
+}
+
+@keyframes cue-mark-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes cue-mark-pulse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0.35;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cue-mark-ring,
+  .cue-mark-active .cue-mark-ring {
+    animation: none;
+  }
+}

@@ -2,6 +2,7 @@
  * `bun run assistant:try`: talk to the live assistant on an eval fixture, and
  * save a moment that went wrong as an eval case (GRV-108).
  *
+ *   bun run assistant:try -- fixtures               list the fixtures a session can start on
  *   bun run assistant:try -- new house-loop          start a session (prints its ID)
  *   bun run assistant:try -- ask "Make the hats busier"
  *   bun run assistant:try -- apply | cancel | undo
@@ -94,7 +95,7 @@ async function once(argv: readonly string[]): Promise<number> {
 
 /** The prompt: one command per line, with the flags the script was started with. */
 async function prompt(flags: readonly string[]): Promise<number> {
-  console.log(`${TRY_USAGE}\n\nType a command, or exit.`);
+  console.log(`${TRY_USAGE}\n\nType a command, or quit.`);
   const lines = createInterface({ input: process.stdin, output: process.stdout });
   lines.setPrompt("try> ");
   lines.prompt();

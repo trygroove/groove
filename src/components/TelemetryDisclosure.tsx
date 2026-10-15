@@ -1,4 +1,5 @@
 import { type Component, createEffect, createSignal, onCleanup } from "solid-js";
+import { ASSISTANT_NAME } from "../../site.config.mjs";
 import { type ConsentState, type ConsentStore, consentStore } from "../analytics/consent";
 import "./TelemetryDisclosure.css";
 
@@ -104,11 +105,11 @@ const TelemetryDisclosure: Component<{
         </p>
         <p>
           Names and typed text stay hidden. Event reports, error reports, and replays
-          carry no project, track, or clip names, no audio, no assistant messages, and no
-          text you type.
+          carry no project, track, or clip names, no audio, no messages to{" "}
+          {ASSISTANT_NAME}, and no text you type.
         </p>
         <p>
-          Your conversations with the assistant are stored with your project so we can
+          Your conversations with {ASSISTANT_NAME} are stored with your project so we can
           tell whether it is helping. They stay with us — never sent to PostHog or Sentry
           — and deleting a project deletes its conversations.
         </p>

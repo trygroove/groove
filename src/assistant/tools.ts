@@ -45,7 +45,7 @@
  * {@link NON_ASSISTANT_COMMANDS}, so a newly registered command needs a
  * decision here before the tests pass.
  */
-import { z } from "zod";
+import { type ZodType, z } from "zod";
 import type { DrumSetPadParameterPayload } from "../commands/definitions/drum";
 import {
   type ParameterSetPayload,
@@ -560,6 +560,16 @@ export type ToolCallResolution =
       readonly code: "unknown_tool" | "invalid_payload" | "unauthorized";
       readonly message: string;
     };
+
+/**
+ * The payload schema behind the tool called `name`, or null when it is not an
+ * assistant tool. For describing a refused call field by field; validate
+ * through {@link resolveToolCall}.
+ */
+export function toolPayloadSchema(name: string): ZodType<unknown> | null {
+  const entry = RULES_BY_NAME.get(name);
+  return (entry && findCommand(entry.commandType)?.schema) ?? null;
+}
 
 /**
  * Resolves one call against the allowlist: the tool must exist, its input

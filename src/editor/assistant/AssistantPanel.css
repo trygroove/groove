@@ -758,6 +758,30 @@
   color: var(--color-foreground-bright);
 }
 
+/* A worded skip (onboarding's "Skip this question", GRV-25). */
+.assistant-ask-skip {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-foreground);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.assistant-ask-skip:hover:not(:disabled) {
+  background: var(--color-background-hover);
+  color: var(--color-foreground-bright);
+}
+
+.assistant-ask-skip:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.assistant-ask-skip:focus-visible,
 .assistant-ask-dismiss:focus-visible,
 .assistant-ask-option:focus-visible {
   outline: 1px solid var(--color-accent);
