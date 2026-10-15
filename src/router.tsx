@@ -42,6 +42,9 @@ export const Router = createRouter({
     { path: "/", component: IndexPage },
     { path: "/projects", component: lazy(() => import("./routes/dashboard")) },
     { path: "/dashboard", component: lazy(() => import("./routes/LegacyDashboard")) },
+    // Onboarding with Cue (GRV-25). The dashboard sends anyone who has not
+    // completed or skipped it here.
+    { path: "/welcome", component: lazy(() => import("./routes/welcome")) },
     // The alpha allowlist (#854). Only an `admin`-claim account sees it; the
     // page answers everyone else with the 404 page.
     { path: "/admin", component: lazy(() => import("./routes/admin")) },

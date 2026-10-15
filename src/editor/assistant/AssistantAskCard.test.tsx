@@ -107,9 +107,8 @@ function renderChat(options: ChatOptions = {}) {
   return { client, transport, chat };
 }
 
-const panel = () => screen.getByRole("region", { name: "Assistant" });
-const composer = () =>
-  within(panel()).getByRole("textbox", { name: "Message the assistant" });
+const panel = () => screen.getByRole("region", { name: "Cue" });
+const composer = () => within(panel()).getByRole("textbox", { name: "Message Cue" });
 const log = () => within(panel()).getByRole("log", { name: "Conversation" });
 const card = () => within(panel()).queryByRole("region", { name: ASK_CARD_LABEL });
 const inCard = () => {

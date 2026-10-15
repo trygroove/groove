@@ -16,11 +16,27 @@
 // - It is **not loaded at all on the marketing landing page** (ADR 0001,
 //   `LOOP-001b`), which has no editing state to protect and the strictest
 //   first-impression budget.
-// - The PostHog SDK follows the same rules (ADR 0011, GRV-106): its own
-//   chunk, loaded after first paint and never on the landing page. Analytics
-//   is still *wired* there, because `landing_cta_click` is measured there:
-//   the transport queues it, and it is sent once the visitor reaches a
-//   surface that loads the SDK (sign-in is a popup, so the queue survives it).
+// - The PostHog SDK is its own chunk too (ADR 0011, GRV-106), loaded when the
+//   browser is idle after first paint, and never part of the prerendered
+//   shell or the entry chunk. Unlike Sentry it **does** load on the landing
+//   page (GRV-123), so a visitor who reads `/` and leaves is counted: its
+//   `$pageview`, `landing_cta_click` and `$pageleave` are sent from there,
+//   each event by beacon as it is logged rather than batched, because the
+//   visitor may be about to leave.
+//   On `/` it waits longer, until the page has loaded and settled
+//   (`afterLandingSettled`), so it costs the landing page's LCP and TBT
+//   nothing.
+//   On `/` it is analytics only. Replay, web vitals, network timing and the
+//   PostHog error sink start only once the session reaches an app surface
+//   (`PostHogLoader.startAppCollection`, and the sinks with Sentry's).
+//
+// - **Errors go to two sinks** while PostHog's error tracking is evaluated
+//   (ADR 0011 decision 3): Sentry's and PostHog's, attached to the reporting
+//   boundary at the same moment so both see the same reports. PostHog's uses
+//   the analytics client, so it adds no chunk of its own.
+// - **Session replay is PostHog's** (ADR 0011 decision 2): the analytics
+//   client records a sampled session whose replay consent allows it, and
+//   Sentry records nothing.
 //
 // ## Consent governs collection, on every path
 //
@@ -30,9 +46,9 @@
 //
 // - **The vendor SDK.** A declined session never loads PostHog at all, and
 //   withdrawing consent at runtime calls its `opt_out_capturing()`
-//   (`setVendorAnalyticsCollection`). Withdrawn before the SDK has loaded (on
-//   the landing page, where it waits), the transport is disposed: its queue is
-//   dropped and its load never runs. Until the user has made a choice, the
+//   (`setVendorAnalyticsCollection`). Withdrawn before the SDK has loaded
+//   (while it waits for the browser to go idle), the transport is disposed:
+//   its queue is dropped and its load never runs. Until the user has made a choice, the
 //   SDK keeps its identity in memory; once they have granted it, in
 //   `localStorage` and a cookie.
 // - **The surface.** Navigation off the landing page is client-side, so
@@ -54,8 +70,13 @@ import {
   postHogSettings,
 } from "./analytics/posthogTransport";
 import { type AnalyticsTransport, noopTransport } from "./analytics/transport";
-import { type ErrorReporter, errorReporter } from "./monitoring/errorReporting";
+import {
+  type ErrorReporter,
+  type ErrorSink,
+  errorReporter,
+} from "./monitoring/errorReporting";
 import { installGlobalErrorHandlers } from "./monitoring/globalHandlers";
+import { PostHogErrorSink } from "./monitoring/posthogSink";
 import { RELEASE_SHA } from "./release";
 
 export interface InitTelemetryOptions {
@@ -79,6 +100,16 @@ export interface InitTelemetryOptions {
     persistence: PostHogPersistence,
   ) => void;
   /**
+   * Stops the vendor's in-flight session recording when replay consent is
+   * withdrawn. Overridden in tests so no test loads PostHog.
+   */
+  stopSessionReplay?: () => void;
+  /**
+   * Builds the PostHog error sink, attached beside Sentry's. Defaults to one
+   * over the PostHog loader's client, or none without a PostHog key.
+   */
+  createPostHogErrorSink?: () => StoppableErrorSink | null;
+  /**
    * Starts the error sink in place of the real dynamic import. May resolve to
    * a stopper, which lets a test observe that a sink started during a consent
    * withdrawal is stopped again.
@@ -86,6 +117,12 @@ export interface InitTelemetryOptions {
   startErrorSink?: StartErrorSink;
   /** Schedules work for after first paint. */
   afterPaint?: (task: () => void) => void;
+  /**
+   * Schedules the analytics SDK's load on the landing page: later than
+   * `afterPaint`, once the page has loaded and settled (GRV-123). Returns a
+   * canceller, which `dispose` calls.
+   */
+  afterLandingSettled?: (task: () => void) => () => void;
   reporter?: ErrorReporter;
   consent?: ConsentStore;
   target?: Pick<Window, "addEventListener" | "removeEventListener">;
@@ -111,34 +148,24 @@ export interface Telemetry {
 /** Detaches a started error sink and shuts its vendor transport down. */
 export type StopErrorSink = () => Promise<void>;
 
-/**
- * A running sink's teardown handles.
- *
- * `stopReplay` is separate from `stop` because the two consents are separate:
- * withdrawing replay alone must stop the in-flight recording (ADR 0002
- * decision 4) while error monitoring keeps running, so tearing the whole sink
- * down is the wrong action for it.
- */
+/** A running sink's teardown handle. */
 export interface RunningSink {
   stop: StopErrorSink;
-  stopReplay: () => Promise<void>;
 }
 
+/** An error sink that can be told to stop sending. */
+export type StoppableErrorSink = ErrorSink & { stop?: () => void };
+
 /**
- * A test's stand-in for the real dynamic import.
+ * A test's stand-in for the real dynamic import of the Sentry sink.
  *
- * May resolve to nothing, to a bare stopper, or to a whole `RunningSink` — the
- * last of which is what lets a test observe the replay stop *separately* from
- * the sink teardown, which is the distinction ADR 0002 decision 4 turns on.
+ * May resolve to nothing or to a stopper.
  */
 // biome-ignore-start lint/suspicious/noConfusingVoidType: `void` rather than
 // `undefined` so an override can be written `async () => {}`, which most of
 // them are — the "returns nothing" case is the common one here, and `undefined`
 // would force every such override to return it explicitly.
-export type StartErrorSink = (
-  release: string,
-  options: { sessionReplay: boolean },
-) => Promise<void | StopErrorSink | RunningSink>;
+export type StartErrorSink = (release: string) => Promise<void | StopErrorSink>;
 // biome-ignore-end lint/suspicious/noConfusingVoidType: see above.
 
 /**
@@ -159,18 +186,28 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
   const postHog =
     options.postHogLoader !== undefined ? options.postHogLoader : defaultPostHogLoader();
 
-  // The analytics SDK waits for this: a non-landing surface, painted. It is a
-  // gate rather than a call so the transport can be created (and queue) from
-  // the first line, on the landing page included.
+  // The analytics SDK waits for this gate. On an app surface it opens after
+  // first paint and an idle main thread. On the landing page (GRV-123) it
+  // opens later still, once the page has loaded and settled
+  // (`afterLandingSettled`), so parsing the SDK lands outside the window that
+  // decides `/`'s LCP and TBT; if the visitor moves on into the app before
+  // then, reaching the app surface opens it on the app's timing instead. It
+  // is a gate rather than a call so the transport can be created (and queue)
+  // from the first line, and so a transport rebuilt after a re-grant waits on
+  // the same one.
   let openAnalyticsGate: () => void = () => {};
   const analyticsGate = new Promise<void>((resolve) => {
-    let opened = false;
-    openAnalyticsGate = () => {
-      if (opened || !postHog) return;
-      opened = true;
-      afterPaint(resolve);
-    };
+    openAnalyticsGate = resolve;
   });
+  let analyticsGateScheduledForApp = false;
+  /** The surface showing now: events logged on the landing page go at once. */
+  let currentSurface = options.surface;
+  let cancelLandingGate: () => void = () => {};
+  if (postHog && options.surface === "landing") {
+    cancelLandingGate = (options.afterLandingSettled ?? afterLandingSettled)(
+      openAnalyticsGate,
+    );
+  }
   const createTransport =
     options.createAnalyticsTransport ??
     (() =>
@@ -183,14 +220,25 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
               analyticsGate.then(() =>
                 signal.aborted || !consent.analyticsAllowed
                   ? null
-                  : postHog.load(persistence()),
+                  : postHog.load(persistence(), {
+                      sessionReplayAllowed: () => consent.sessionReplayAllowed,
+                    }),
               ),
+            // A landing event is often the visitor's last, as when "Request an
+            // invite" takes the tab to another site: it is sent as it is
+            // logged rather than left in the batch for the unload to drain.
+            sendAtOnce: () => currentSurface === "landing",
           })
         : noopTransport);
   const setVendorCollection =
     options.setVendorAnalyticsCollection ??
     ((enabled: boolean, mode: PostHogPersistence) =>
       postHog?.setCollection(enabled, mode));
+  const stopSessionReplay =
+    options.stopSessionReplay ?? (() => postHog?.stopSessionRecording());
+  const createPostHogErrorSink =
+    options.createPostHogErrorSink ??
+    (() => (postHog ? new PostHogErrorSink(postHog.client) : null));
 
   analytics.refreshInternalTraffic();
 
@@ -209,7 +257,8 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
   let disposed = false;
 
   /**
-   * Attaches the sink, re-checking consent and disposal once it has resolved.
+   * Attaches the sinks, re-checking consent and disposal once Sentry's has
+   * resolved.
    *
    * The start lands two animation frames plus an idle callback after it was
    * scheduled, and `TelemetryDisclosure` is reachable throughout. Neither the
@@ -219,29 +268,48 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
    * session envelope stay attached for a user who has already declined or for
    * a page that has already torn telemetry down.
    *
-   * Replay consent is read here rather than at schedule time, because it is
-   * the value the SDK is *constructed* with (ADR 0002 decision 4) and the user
-   * can change it anywhere in that window. Withdrawing it after the sink
-   * resolves is handled by the consent subscription below, which stops the
-   * in-flight recording.
+   * The PostHog sink is attached in the same step as Sentry's, so the two see
+   * the same reports from the same moment: the evaluation compares their
+   * counts per release (ADR 0011 decision 3).
    */
   const attachSink = async (): Promise<void> => {
     try {
       const started = await startMonitoring(reporter, {
-        sessionReplay: consent.sessionReplayAllowed,
         override: options.startErrorSink,
       });
       if (disposed || !consent.errorMonitoringAllowed) {
         void started.stop();
         return;
       }
-      sink = started;
-      // Replay consent withdrawn while the SDK was resolving: the
-      // subscription below could not see this sink to stop it.
-      if (!consent.sessionReplayAllowed) void started.stopReplay();
+      sink = withPostHogSink(started);
     } finally {
       sinkStarting = false;
     }
+  };
+
+  /** Adds the PostHog sink beside a started Sentry one, under one teardown. */
+  const withPostHogSink = (started: RunningSink): RunningSink => {
+    let postHogSink: StoppableErrorSink | null = null;
+    try {
+      postHogSink = createPostHogErrorSink();
+      if (postHogSink) reporter.addSink(postHogSink);
+    } catch {
+      // One sink failing to start never stops the other (ADR 0011).
+      postHogSink = null;
+    }
+    if (!postHogSink) return started;
+    const attached = postHogSink;
+    return {
+      stop: async () => {
+        reporter.removeSink(attached);
+        try {
+          attached.stop?.();
+        } catch {
+          // Stopping is best-effort and must not surface.
+        }
+        await started.stop();
+      },
+    };
   };
 
   const startMonitoringIfAllowed = (): void => {
@@ -262,12 +330,22 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     // After `dispose` the wiring is gone; a late navigation must not resurrect
     // `app_opened` or a monitoring start the disposer has no handle on.
     if (disposed) return;
+    currentSurface = surface;
     analytics.setSurface(surface);
     // ADR 0001: the marketing landing page loads no monitoring SDK, and
-    // `app_opened` is not its event — `landing_cta_click` is.
+    // `app_opened` is not its event — `landing_cta_click` is. The analytics
+    // SDK loads there too, but collects analytics only (GRV-123).
     if (surface === "landing") return;
     monitoredSurfaceReached = true;
-    openAnalyticsGate();
+    if (postHog && !analyticsGateScheduledForApp) {
+      analyticsGateScheduledForApp = true;
+      afterPaint(openAnalyticsGate);
+    }
+    try {
+      postHog?.startAppCollection();
+    } catch {
+      // Telemetry never throws into navigation.
+    }
     if (!appOpenedLogged) {
       // PRD `OPS-02`: `app_opened` fires when "the editor or dashboard shell
       // becomes interactive". That is reaching a non-landing surface, whether
@@ -288,16 +366,20 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
   // rebuilds exactly what a withdrawal tore down.
   const unsubscribeConsent = consent.subscribe((state) => {
     // ADR 0002 decision 4: withdrawing replay stops the in-flight recording
-    // rather than merely dropping it before send. Done *first*, and
-    // unconditionally on the replay flag, so it happens whether replay alone
-    // was withdrawn or the single control turned everything off — the sink
-    // teardown below would otherwise take the handle away before we got here.
+    // rather than merely dropping it before send, and analytics keeps running.
+    // Done *first*, and on the replay flag alone, so it happens whether replay
+    // alone was withdrawn or the single control turned everything off. A
+    // replay declined before the SDK loads is honoured at the source instead:
+    // the loader reads the same flag before it starts a recording.
     //
-    // A later re-grant does not resume *this* session's recording: replay is
-    // configured when the SDK is constructed, so it takes effect on the next
-    // load. That is the safe direction to be asymmetric in.
-    if (!state.sessionReplay && sink) {
-      void sink.stopReplay();
+    // A later re-grant does not resume recording in this page load; it takes
+    // effect on the next. That is the safe direction to be asymmetric in.
+    if (!state.sessionReplay) {
+      try {
+        stopSessionReplay();
+      } catch {
+        // Consent changes never throw into the app.
+      }
     }
 
     if (state.errorMonitoring) {
@@ -343,6 +425,7 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     startMonitoringIfAllowed,
     dispose: async () => {
       disposed = true;
+      cancelLandingGate();
       unsubscribeConsent();
       uninstallHandlers();
       const running = sink;
@@ -389,29 +472,16 @@ function recordMonitoringStatus(status: MonitoringStatus): void {
  */
 async function startMonitoring(
   reporter: ErrorReporter,
-  config: { sessionReplay: boolean; override?: StartErrorSink },
+  config: { override?: StartErrorSink },
 ): Promise<RunningSink> {
-  const inert: RunningSink = {
-    stop: async () => {},
-    stopReplay: async () => {},
-  };
+  const inert: RunningSink = { stop: async () => {} };
   if (config.override) {
-    const result = await config
-      .override(RELEASE_SHA, { sessionReplay: config.sessionReplay })
-      .catch(() => undefined);
-    if (typeof result === "function") return { ...inert, stop: result };
-    return result && typeof result.stop === "function"
-      ? { stop: result.stop, stopReplay: result.stopReplay ?? inert.stopReplay }
-      : inert;
+    const result = await config.override(RELEASE_SHA).catch(() => undefined);
+    return typeof result === "function" ? { stop: result } : inert;
   }
   try {
     const { SentrySink } = await import("./monitoring/sentrySink");
-    const sink = new SentrySink({
-      release: RELEASE_SHA,
-      // ADR 0002 decision 4, honoured at the source: `false` here means the
-      // replay integration is never constructed for this session.
-      sessionReplay: config.sessionReplay,
-    });
+    const sink = new SentrySink({ release: RELEASE_SHA });
     const started = await sink.start();
     if (!started) {
       // `SentrySink.start()` resolves false only when no DSN is configured;
@@ -426,7 +496,6 @@ async function startMonitoring(
         reporter.removeSink(sink);
         await sink.stop();
       },
-      stopReplay: () => sink.stopReplay(),
     };
   } catch {
     // A blocked or failed SDK load is expected for some sessions (ADR 0001:
@@ -500,6 +569,60 @@ export function afterFirstPaint(task: () => void): void {
   // the tab may never be foregrounded, and monitoring that only starts if the
   // user happens to look at the page is not monitoring.
   whenIdle();
+}
+
+/**
+ * How long the landing page waits after its `load` event before it loads the
+ * analytics SDK (GRV-123). Long enough that the SDK's download and parse fall
+ * outside the window lab tools measure `/`'s LCP and TBT in; short enough
+ * that most visits, bounces included, still last until it loads.
+ */
+export const LANDING_ANALYTICS_DELAY_MS = 3_000;
+
+/**
+ * Runs a task once the landing page has loaded and settled: after the window
+ * `load` event, then `LANDING_ANALYTICS_DELAY_MS`, then `afterFirstPaint`'s
+ * frame and idle wait. Nothing the page needs to render or respond is still
+ * in flight by then, so the analytics SDK competes with none of it.
+ *
+ * Returns a canceller: the load listener and the delay are cleared, and a
+ * task already handed to `afterFirstPaint` does not run.
+ */
+export function afterLandingSettled(
+  task: () => void,
+  delayMs: number = LANDING_ANALYTICS_DELAY_MS,
+): () => void {
+  let cancelled = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const run = () => {
+    if (!cancelled) task();
+  };
+  const settle = () => {
+    if (cancelled) return;
+    timer = setTimeout(() => afterFirstPaint(run), delayMs);
+  };
+  let listening = false;
+  try {
+    if (typeof document === "undefined" || document.readyState === "complete") {
+      settle();
+    } else {
+      window.addEventListener("load", settle, { once: true });
+      listening = true;
+    }
+  } catch {
+    settle();
+  }
+  return () => {
+    cancelled = true;
+    if (timer !== undefined) clearTimeout(timer);
+    if (listening) {
+      try {
+        window.removeEventListener("load", settle);
+      } catch {
+        // Nothing left to cancel.
+      }
+    }
+  };
 }
 
 /**

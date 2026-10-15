@@ -13,6 +13,7 @@ import {
   DUSTIER_ROLE,
   EMULATOR_ASK,
   EMULATOR_MISSING_VIDEO_QUERY,
+  EMULATOR_REMEMBER,
   EMULATOR_REPLY_CHUNKS,
   EMULATOR_VIDEO,
   emulatorVideoFinder,
@@ -24,6 +25,7 @@ import {
 } from "./emulatorProvider";
 import { type AssistantGatewayDeps, runAssistantTurn } from "./gateway";
 import { createInMemoryGuardStores } from "./inMemoryGuardStores";
+import { type AssistantMemoryContext, REMEMBER_TOOL_NAME } from "./memory";
 import { buildAssistantPayload } from "./payload";
 import { validateProposal } from "./proposal";
 import type { AssistantLibraryContext } from "./protocol";
@@ -51,6 +53,7 @@ function turn(
   signal: AbortSignal = new AbortController().signal,
   project: Project = createReferenceProject(),
   library?: AssistantLibraryContext,
+  memory?: AssistantMemoryContext,
 ): { chunks: AssistantStreamChunk[]; result: Promise<AssistantTurnResult> } {
   const chunks: AssistantStreamChunk[] = [];
   const result = runAssistantTurn(
@@ -61,6 +64,7 @@ function turn(
       messages: [{ role: "user", text }],
       context: buildAssistantPayload(project),
       ...(library ? { library } : {}),
+      ...(memory ? { memory } : {}),
     },
     { signal, onChunk: (chunk) => chunks.push(chunk) },
   );
@@ -178,6 +182,31 @@ describe("the emulator's assistant provider", () => {
     expect(single.ask).toEqual({ id: "toolu_ask", ...EMULATOR_ASK, multiSelect: false });
     const multi = await turn(gateway(), "Help [ask-multi]").result;
     expect(multi.ask?.multiSelect).toBe(true);
+  });
+
+  it("ends [remember] in a memory proposal on a turn that carries memory (GRV-25)", async () => {
+    const memory: AssistantMemoryContext = {
+      taste: [],
+      artists: "",
+      experience: null,
+      goal: null,
+      learn: [],
+      gear: [],
+      notes: [],
+      askLater: null,
+    };
+    const reply = await turn(
+      gateway(),
+      "I'm making more trap lately [remember]",
+      new AbortController().signal,
+      createReferenceProject(),
+      undefined,
+      memory,
+    ).result;
+    expect(reply.stopReason).toBe("tool_use");
+    expect(reply.proposal?.calls).toEqual([
+      expect.objectContaining({ name: REMEMBER_TOOL_NAME, input: EMULATOR_REMEMBER }),
+    ]);
   });
 
   it("ends [ask-rich] in a question about the project's first track, with a preview that applies", async () => {

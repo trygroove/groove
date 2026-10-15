@@ -1,6 +1,7 @@
 import { type JSX, Portal } from "@solidjs/web";
 import { HiSolidSquares2x2 } from "solid-icons/hi";
 import { type Accessor, createEffect, createSignal, Show, untrack } from "solid-js";
+import { ASSISTANT_NAME } from "../../site.config.mjs";
 import { type Analytics, analytics as defaultAnalytics } from "../analytics/analytics";
 import { MAX_TEMPO_BPM, MIN_TEMPO_BPM } from "../audio/Transport";
 import { parameterControl, SONG_ENTITY } from "../commands/controlAddress";
@@ -278,12 +279,12 @@ export default function EditorHeader(props: EditorHeaderProps) {
               ref={(element) => untrack(() => assistant().bindLauncher(element))}
               aria-pressed={ariaBool(assistant().open())}
               aria-keyshortcuts={assistant().ariaKeys}
-              title={`Assistant (${props.keyHint("assistant.toggle")})`}
+              title={`${ASSISTANT_NAME} (${props.keyHint("assistant.toggle")})`}
               onClick={(event) => assistant().toggle(event.currentTarget)}
             >
               <SparkIcon size={12} />
               {/* Only an icon at narrow widths (#1031), and still the name. */}
-              <span class="assistant-button-label">Assistant</span>
+              <span class="assistant-button-label">{ASSISTANT_NAME}</span>
             </button>
           )}
         </Show>

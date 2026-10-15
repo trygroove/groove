@@ -31,8 +31,13 @@ import {
   createInMemoryGuardStores,
   type InMemoryGuardStores,
 } from "./inMemoryGuardStores";
+import { type AssistantMemoryContext, REMEMBER_TOOL_NAME } from "./memory";
 import { buildAssistantPayload } from "./payload";
-import { ASSISTANT_PROMPT_VERSION, LIBRARY_BLOCK_HEADING } from "./prompt";
+import {
+  ASSISTANT_PROMPT_VERSION,
+  LIBRARY_BLOCK_HEADING,
+  MEMORY_BLOCK_HEADING,
+} from "./prompt";
 import { validateProposal } from "./proposal";
 import { createProposalExecutor } from "./proposalExecutor";
 import {
@@ -472,6 +477,85 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
     expect(sent.system).toHaveLength(4);
     expect(sent.system[2].text).toContain("Dusty Kick");
     expect(sent.system[2].text).toContain(library.packs[0].id);
+  });
+
+  it("reads memory and offers remember_producer only on a turn that carries it (GRV-25)", async () => {
+    const without = harness([replyEvents(["ok"])]);
+    await run(without);
+    const plain = without.provider.requests[0];
+    expect(plain.tools.map((tool) => tool.name)).not.toContain(REMEMBER_TOOL_NAME);
+    expect(
+      plain.system.some((block) => block.text.startsWith(MEMORY_BLOCK_HEADING)),
+    ).toBe(false);
+
+    const memory: AssistantMemoryContext = {
+      taste: ["Techno"],
+      artists: "Four Tet",
+      experience: "played_around",
+      goal: null,
+      learn: [],
+      gear: ["Ableton Move"],
+      notes: [{ id: "note-1", text: "Making more trap lately" }],
+      askLater: "goal",
+    };
+    const h = harness([replyEvents(["ok"])]);
+    await run(h, request({ memory }));
+    const sent = h.provider.requests[0];
+    expect(sent.tools.map((tool) => tool.name)).toContain(REMEMBER_TOOL_NAME);
+    for (const tool of sent.tools) expect(tool.input_schema.type).toBe("object");
+    // The prompt, the project, the memory, then the turn's ID stem.
+    expect(sent.system).toHaveLength(4);
+    expect(sent.system[2].text.startsWith(MEMORY_BLOCK_HEADING)).toBe(true);
+    expect(sent.system[2].text).toContain("Making more trap lately");
+    expect(sent.system[2].text).toContain('"askLater":"goal"');
+    expect(sent.system[0].text).toMatch(/You are Cue/);
+  });
+
+  it("returns a memory proposal among the turn's calls, for the browser to take out", async () => {
+    const remember = {
+      name: REMEMBER_TOOL_NAME,
+      input: { kind: "note", text: "Making more trap lately" },
+    };
+    const h = harness([toolUseEvents("Shall I remember that?", [remember])]);
+    const result = await run(
+      h,
+      request({
+        memory: {
+          taste: [],
+          artists: "",
+          experience: null,
+          goal: null,
+          learn: [],
+          gear: [],
+          notes: [],
+          askLater: null,
+        },
+      }),
+    );
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([
+      REMEMBER_TOOL_NAME,
+    ]);
+  });
+
+  it("refuses memory carrying a field it does not name", async () => {
+    const h = harness([replyEvents(["ok"])]);
+    const error = await failure(
+      run(h, {
+        ...request(),
+        memory: {
+          taste: [],
+          artists: "",
+          experience: null,
+          goal: null,
+          learn: [],
+          gear: [],
+          notes: [],
+          askLater: null,
+          email: "someone@example.com",
+        },
+      }),
+    );
+    expect(error.code).toBe("invalid_request");
   });
 
   it("returns a recommendation among the turn's calls, for the browser to take out", async () => {

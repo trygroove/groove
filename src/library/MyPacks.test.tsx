@@ -335,7 +335,7 @@ describe("My packs", () => {
     );
     expect(main.querySelector(".sound-row-length")).toHaveTextContent("0.10 s");
     // The producer named it, so replay masks it, as it did before.
-    expect(main.querySelector(".sound-row-name")).toHaveClass("sentry-mask");
+    expect(main.querySelector(".sound-row-name")).toHaveClass("ph-mask");
 
     // Rename and delete come before the heart and similar sounds, which keep
     // the last two places they have on every other row.

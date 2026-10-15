@@ -45,7 +45,7 @@
  * {@link NON_ASSISTANT_COMMANDS}, so a newly registered command needs a
  * decision here before the tests pass.
  */
-import { z } from "zod";
+import { type ZodType, z } from "zod";
 import type { DrumSetPadParameterPayload } from "../commands/definitions/drum";
 import {
   type ParameterSetPayload,
@@ -80,8 +80,10 @@ import {
  *    proposal's goal and technique (GRV-5).
  * 6: a turn that carries the library is offered `recommend_sounds`
  *    (`recommendation.ts`, GRV-23).
+ * 7: a turn that carries the producer's memory is offered `remember_producer`
+ *    (`memory.ts`), and `ask_producer` takes a `memoryQuestion` (GRV-25).
  */
-export const ASSISTANT_TOOLSET_VERSION = 6;
+export const ASSISTANT_TOOLSET_VERSION = 7;
 
 /** The song's own parameters the assistant may set: its tempo and its swing. */
 const SONG_PARAMETER_IDS: readonly string[] = [SONG_TEMPO.id, SONG_SWING.id];
@@ -534,6 +536,16 @@ const { $schema: _explainDialect, ...explainInputSchema } = z.toJSONSchema(
   { io: "input" },
 ) as JsonSchema;
 
+/**
+ * Whether `calls` change anything: an explanation on its own does not, so
+ * calls that are only `explain_change` are no proposal. Whatever takes other
+ * calls out of a proposal (asks, videos, recommendations, memory) asks this of
+ * what is left.
+ */
+export function makesChanges(calls: readonly { readonly name: string }[]): boolean {
+  return calls.some((call) => call.name !== EXPLAIN_TOOL_NAME);
+}
+
 /** `explain_change` as it is offered to the model, beside the command tools. */
 export const EXPLAIN_TOOL: Pick<
   AssistantToolDefinition,
@@ -560,6 +572,16 @@ export type ToolCallResolution =
       readonly code: "unknown_tool" | "invalid_payload" | "unauthorized";
       readonly message: string;
     };
+
+/**
+ * The payload schema behind the tool called `name`, or null when it is not an
+ * assistant tool. For describing a refused call field by field; validate
+ * through {@link resolveToolCall}.
+ */
+export function toolPayloadSchema(name: string): ZodType<unknown> | null {
+  const entry = RULES_BY_NAME.get(name);
+  return (entry && findCommand(entry.commandType)?.schema) ?? null;
+}
 
 /**
  * Resolves one call against the allowlist: the tool must exist, its input

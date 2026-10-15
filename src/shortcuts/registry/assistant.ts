@@ -2,6 +2,7 @@
 // resizing it from its focused edge, sending from its composer, and answering
 // a question it asks. Part of the one shortcut registry: see `../registry.ts`.
 
+import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import type { AbletonParity } from "../types";
 import { define, type ShortcutDefinition } from "./define";
 
@@ -53,7 +54,7 @@ const ASK_OPTION_KEYS: readonly ShortcutDefinition[] = ASK_OPTION_SHORTCUT_IDS.m
     define({
       id,
       label: `Pick answer ${index + 1}`,
-      description: `Picks the assistant's question's option ${index + 1}: it answers a single choice, and toggles one of several.`,
+      description: `Picks ${ASSISTANT_NAME}'s question's option ${index + 1}: it answers a single choice, and toggles one of several.`,
       group: "navigation",
       contexts: ["assistant_ask"],
       keys: String(index + 1),
@@ -93,25 +94,25 @@ function resizeKey(
 const ASSISTANT_RESIZE_KEYS: readonly ShortcutDefinition[] = [
   resizeKey(
     "assistant.grow",
-    "Grow the assistant",
+    `Grow ${ASSISTANT_NAME}`,
     "Moves the focused resize edge out 16px: taller while it floats, wider while it is docked.",
     ["ArrowUp", "ArrowLeft"],
   ),
   resizeKey(
     "assistant.shrink",
-    "Shrink the assistant",
+    `Shrink ${ASSISTANT_NAME}`,
     "Moves the focused resize edge in 16px: shorter while it floats, narrower while it is docked.",
     ["ArrowDown", "ArrowRight"],
   ),
   resizeKey(
     "assistant.grow_more",
-    "Grow the assistant more",
+    `Grow ${ASSISTANT_NAME} more`,
     "Moves the focused resize edge out 64px.",
     ["Shift+ArrowUp", "Shift+ArrowLeft"],
   ),
   resizeKey(
     "assistant.shrink_more",
-    "Shrink the assistant more",
+    `Shrink ${ASSISTANT_NAME} more`,
     "Moves the focused resize edge in 64px.",
     ["Shift+ArrowDown", "Shift+ArrowRight"],
   ),
@@ -120,8 +121,8 @@ const ASSISTANT_RESIZE_KEYS: readonly ShortcutDefinition[] = [
 export const ASSISTANT_SHORTCUTS: readonly ShortcutDefinition[] = [
   define({
     id: "assistant.toggle",
-    label: "Open or close the assistant",
-    description: "Opens the assistant where you left it, or closes it.",
+    label: `Open or close ${ASSISTANT_NAME}`,
+    description: `Opens ${ASSISTANT_NAME} where you left it, or closes it.`,
     group: "navigation",
     contexts: ["editor"],
     keys: "Mod+K",
@@ -142,8 +143,7 @@ export const ASSISTANT_SHORTCUTS: readonly ShortcutDefinition[] = [
   define({
     id: "assistant.send",
     label: "Send the message",
-    description:
-      "Sends what is in the assistant's composer. Shift+Enter adds a line instead.",
+    description: `Sends what is in ${ASSISTANT_NAME}'s composer. Shift+Enter adds a line instead.`,
     group: "navigation",
     contexts: ["composer"],
     keys: "Enter",
@@ -158,8 +158,7 @@ export const ASSISTANT_SHORTCUTS: readonly ShortcutDefinition[] = [
   define({
     id: "assistant.ask_finish",
     label: "Send the answers",
-    description:
-      "Sends the options picked in the assistant's question when it takes several.",
+    description: `Sends the options picked in ${ASSISTANT_NAME}'s question when it takes several.`,
     group: "navigation",
     contexts: ["assistant_ask"],
     keys: "Enter",
@@ -170,8 +169,7 @@ export const ASSISTANT_SHORTCUTS: readonly ShortcutDefinition[] = [
   define({
     id: "assistant.ask_hear",
     label: "Hear the answer",
-    description:
-      "Plays the focused option's sound, when the assistant's question has one. With focus elsewhere in the panel, Space plays and stops the song as usual.",
+    description: `Plays the focused option's sound, when ${ASSISTANT_NAME}'s question has one. With focus elsewhere in the panel, Space plays and stops the song as usual.`,
     group: "navigation",
     contexts: ["assistant_ask"],
     keys: "Space",

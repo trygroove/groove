@@ -18,6 +18,13 @@ export const SITE_ORIGIN = "https://trygroove.app";
 export const SITE_NAME = "Groove";
 
 /**
+ * The assistant's name (GRV-25): what Groove's AI producer is called wherever
+ * it speaks or is spoken of. One constant, so a rename is one edit; "the
+ * assistant" never appears in copy.
+ */
+export const ASSISTANT_NAME = "Cue";
+
+/**
  * The landing page's `<title>`.
  *
  * Also set as the route's title once the client mounts (see `LandingPage`), so
