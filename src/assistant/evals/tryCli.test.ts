@@ -5,7 +5,7 @@ import {
   type ScriptedAssistantProvider,
   toolUseEvents,
 } from "../../testing/scriptedAssistantProvider";
-import { toolNameFor } from "../tools";
+import { TRACK_CREATE_EXAMPLE, toolNameFor } from "../tools";
 import { createHouseLoopProject } from "./fixtures";
 import { parseTryArgs, runTryCommand, splitCommandLine, type TryIo } from "./tryCli";
 import type { TrySession } from "./trySession";
@@ -95,6 +95,16 @@ describe("bun run assistant:try", () => {
     );
     const asked = await runTryCommand(["ask", "Tuck", "the", "bass", "in"], io);
     expect(asked.exitCode).toBe(0);
+    expect(asked.output).toContain("Response: stop tool_use");
+    expect(asked.output).toContain("  [text]\n    The Bass down to -6 dB.");
+    const call = bassDown();
+    expect(asked.output).toContain(`  [tool call] ${call.name} (toolu_1)`);
+    expect(asked.output).toContain(
+      JSON.stringify(call.input, null, 2)
+        .split("\n")
+        .map((line) => `    ${line}`)
+        .join("\n"),
+    );
     expect(asked.output).toContain("Proposal: ");
     expect(asked.output).toContain("0.0 dB -> -6.0 dB");
     expect(asked.output).toContain("pass  3. In scope");
@@ -126,6 +136,60 @@ describe("bun run assistant:try", () => {
     expect((await runTryCommand(["show"], io)).output).toContain(
       "1 turns, 0 applied proposals to undo",
     );
+  });
+
+  it("spells out a refused payload field by field, under the call it blames", async () => {
+    // GRV-90's failure: the whole payload wrapped in a second `track` key.
+    const nested = { name: "track_create", input: { track: TRACK_CREATE_EXAMPLE } };
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("A bass.", [bassDown(), nested]),
+    ]);
+    const { io } = memoryIo(provider, KEY);
+    await runTryCommand(["new", "house-loop"], io);
+    const asked = await runTryCommand(["ask", "Add a bass"], io);
+    const refusal = asked.output.slice(asked.output.indexOf("The proposal was refused"));
+    expect(refusal).toContain("The proposal was refused (1 issue):");
+    expect(refusal).toContain("  invalid_payload in call 2 of 2, track_create (toolu_2)");
+    expect(refusal).toMatch(/^ {4}track\.id +missing, expected string$/m);
+    expect(refusal).toMatch(
+      /^ {4}track\.type +missing, expected one of "instrument" \| "audio"$/m,
+    );
+    expect(refusal).toMatch(
+      /^ {4}track +unexpected keys "track", "clips", "placements"$/m,
+    );
+    expect(refusal).toContain(
+      'Hint: "track" holds another "track": the model nested the payload one level too deep.',
+    );
+    expect(asked.output).toContain("FAIL  1. Valid: the proposal was refused, as above");
+  });
+
+  it("lists the fixtures without a session, and leaves the current one alone", async () => {
+    const { io, sessions } = memoryIo(createScriptedAssistantProvider([]));
+    const listed = await runTryCommand(["fixtures"], io);
+    expect(listed.exitCode).toBe(0);
+    expect(listed.output).toContain(
+      "Fixtures (start a session on one with new <fixture>):",
+    );
+    expect(listed.output).toMatch(/^ {2}house-loop +fixtures\.ts$/m);
+    expect(listed.output).toMatch(/^ {2}bd-sketch +fixtures\.ts$/m);
+    expect(sessions.size).toBe(0);
+    expect(io.currentSessionId()).toBeNull();
+
+    const json = JSON.parse((await runTryCommand(["fixtures", "--json"], io)).output);
+    expect(json.fixtures).toContainEqual({ name: "kit-sketch", source: "ts" });
+
+    const extra = await runTryCommand(["fixtures", "more"], io);
+    expect(extra.exitCode).toBe(1);
+    expect(extra.output).toBe("fixtures takes no arguments");
+  });
+
+  it("knows quit, which only the prompt acts on", async () => {
+    const { io, sessions } = memoryIo(createScriptedAssistantProvider([]));
+    const quit = await runTryCommand(["quit"], io);
+    expect(quit.exitCode).toBe(0);
+    expect(quit.output).toBe("quit leaves the prompt; no prompt is open.");
+    expect(sessions.size).toBe(0);
+    expect((await runTryCommand(["help"], io)).output).toContain("quit ");
   });
 
   it("says what is wrong, without a session or with a bad command", async () => {

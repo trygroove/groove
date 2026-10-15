@@ -15,9 +15,12 @@
  */
 import { ASSISTANT_MODEL_ID, ASSISTANT_MODELS, type AssistantModelId } from "../config";
 import type { AssistantProvider } from "../provider";
+import type { ProviderCallRecord, TranscriptBlock } from "./callTranscript";
 import type { EvalExpectation } from "./caseChecks";
 import { EvalUsageError, requireApiKey } from "./cli";
 import type { ProjectOverview } from "./describe";
+import { type FixtureListing, listFixtures } from "./namedFixtures";
+import type { RefusalDetail } from "./refusal";
 import {
   answer,
   apply,
@@ -57,6 +60,7 @@ export interface TryIo {
 }
 
 export const TRY_COMMANDS = [
+  "fixtures",
   "new",
   "ask",
   "answer",
@@ -67,12 +71,14 @@ export const TRY_COMMANDS = [
   "select",
   "show",
   "save-case",
+  "quit",
   "help",
 ] as const;
 export type TryCommand = (typeof TRY_COMMANDS)[number];
 
 export const TRY_USAGE = `Usage: bun run assistant:try -- <command> [--session ID] [--model ID] [--json]
 
+  fixtures                       list the eval fixtures a session can start on
   new <fixture> [--session ID]   start a session on an eval fixture
   ask "<message>"                one live turn (needs ANTHROPIC_API_KEY)
   answer <option>                answer the waiting question: option numbers (1,3), a label, or words
@@ -83,6 +89,7 @@ export const TRY_USAGE = `Usage: bun run assistant:try -- <command> [--session I
   show                           tracks, clips, levels, pans and devices
   save-case <case-id> --capability <c> [--expect proposal|ask|either] [--axis conventional|extreme]
                                  the last request, as an eval case
+  quit                           leave the prompt (exit works too)
 
 With no command it opens a prompt that takes the same commands.`;
 
@@ -306,6 +313,26 @@ export async function runTryCommand(
     json = parsed.json;
     if (parsed.command === "help")
       return { exitCode: 0, output: TRY_USAGE, result: null };
+    if (parsed.command === "quit") {
+      // The prompt ends itself on quit; run on its own there is nothing to leave.
+      return {
+        exitCode: 0,
+        output: "quit leaves the prompt; no prompt is open.",
+        result: null,
+      };
+    }
+    if (parsed.command === "fixtures") {
+      // Needs no session, and leaves the one used last as it was.
+      if (parsed.args.length > 0) throw new EvalUsageError("fixtures takes no arguments");
+      const fixtures = listFixtures(io.fixturesDir);
+      return {
+        exitCode: 0,
+        output: json
+          ? JSON.stringify({ fixtures }, null, 2)
+          : formatFixtures(fixtures, io.fixturesDir),
+        result: null,
+      };
+    }
     const { session, result } = await transition(parsed, io);
     for (const file of result.kind === "save-case" ? result.files : []) {
       io.writeFile(file.path, file.content);
@@ -413,6 +440,86 @@ function tokenLine(result: Extract<TryResult, { kind: "ask" }>): string {
   return `Tokens: ${usage.inputTokens} in (${usage.cacheReadInputTokens} cache read, ${usage.cacheCreationInputTokens} cache write), ${usage.outputTokens} out; about $${(result.costUsd ?? 0).toFixed(4)}; ${seconds}`;
 }
 
+/** The fixtures as the console shows them: name, then where it comes from. */
+export function formatFixtures(
+  fixtures: readonly FixtureListing[],
+  fixturesDir: string,
+): string {
+  const width = Math.max(...fixtures.map((fixture) => fixture.name.length));
+  return [
+    "Fixtures (start a session on one with new <fixture>):",
+    ...fixtures.map(
+      (fixture) =>
+        `  ${fixture.name.padEnd(width)}  ${fixture.source === "ts" ? "fixtures.ts" : `${fixturesDir}/${fixture.name}.json`}`,
+    ),
+  ].join("\n");
+}
+
+const indent = (text: string, by: string) =>
+  text
+    .split("\n")
+    .map((line) => `${by}${line}`)
+    .join("\n");
+
+function blockLines(block: TranscriptBlock): string[] {
+  switch (block.kind) {
+    case "text":
+      return ["  [text]", indent(block.text.trim() || "(empty)", "    ")];
+    case "thinking":
+      return ["  [thinking]", indent(block.text.trim() || "(empty)", "    ")];
+    case "tool_use":
+      return [
+        `  [tool call] ${block.name} (${block.id})`,
+        indent(
+          block.rawInput === undefined
+            ? JSON.stringify(block.input, null, 2)
+            : `(input did not parse as JSON)\n${block.rawInput}`,
+          "    ",
+        ),
+      ];
+    case "other":
+      return [`  [${block.type}]`];
+  }
+}
+
+/** Everything the model sent back, call by call: what `ask` prints first. */
+export function callLines(calls: readonly ProviderCallRecord[]): string[] {
+  if (calls.length === 0) return ["Response: no provider call was made."];
+  return calls.flatMap((call, index) => [
+    `Response${calls.length > 1 ? ` (call ${index + 1} of ${calls.length})` : ""}: stop ${call.stopReason ?? "none"}${call.complete ? "" : ", cut off before it ended"}`,
+    ...(call.blocks.length === 0 ? ["  (no blocks)"] : call.blocks.flatMap(blockLines)),
+    "",
+  ]);
+}
+
+/** A refused proposal: each issue under the call it blames, a payload's fields one per line. */
+export function refusalLines(issues: readonly RefusalDetail[]): string[] {
+  const lines = [
+    `The proposal was refused (${issues.length} ${issues.length === 1 ? "issue" : "issues"}):`,
+  ];
+  for (const issue of issues) {
+    const where = issue.call
+      ? ` in call ${issue.call.position} of ${issue.call.of}, ${issue.call.name}${issue.call.id ? ` (${issue.call.id})` : ""}`
+      : "";
+    lines.push(`  ${issue.code}${where}${issue.path ? ` at ${issue.path}` : ""}`);
+    if (issue.fields) {
+      const width = Math.max(...issue.fields.map((field) => field.path.length));
+      lines.push(
+        ...issue.fields.map(
+          (field) => `    ${field.path.padEnd(width)}  ${field.problem}`,
+        ),
+      );
+    } else {
+      lines.push(indent(issue.message, "    "));
+    }
+    lines.push(...issue.hints.map((hint) => `    Hint: ${hint}`));
+  }
+  if (issues.some((issue) => issue.call)) {
+    lines.push("  Each call's full input is printed under Response above.");
+  }
+  return lines;
+}
+
 const STATUS_MARK = { pass: "pass", fail: "FAIL", skip: "skip" } as const;
 
 /** The result as the console shows it. */
@@ -427,13 +534,18 @@ export function formatResult(result: TryResult): string {
     case "ask": {
       if (result.error) {
         return [
+          ...callLines(result.calls),
           `The turn errored: ${result.error}`,
           "The song is unchanged.",
           "",
           tokenLine(result),
         ].join("\n");
       }
-      const lines = [result.reply.trim() || "(no text)"];
+      const lines = [
+        ...callLines(result.calls),
+        "Reply:",
+        result.reply.trim() || "(no text)",
+      ];
       if (result.proposal) {
         lines.push(
           "",
@@ -442,13 +554,7 @@ export function formatResult(result: TryResult): string {
         );
         lines.push("apply, or cancel?");
       }
-      if (result.rejected) {
-        lines.push(
-          "",
-          "The proposal was refused:",
-          ...result.rejected.map((issue) => `  ${issue.code}: ${issue.message}`),
-        );
-      }
+      if (result.rejected) lines.push("", ...refusalLines(result.rejected));
       if (result.recommendations > 0) {
         lines.push(`(${result.recommendations} sound recommendations, not shown here)`);
       }
@@ -457,9 +563,14 @@ export function formatResult(result: TryResult): string {
         lines.push(
           "",
           "Checks:",
-          ...result.checks.map(
-            (check) => `  ${STATUS_MARK[check.status]}  ${check.label}: ${check.detail}`,
-          ),
+          ...result.checks.map((check) => {
+            // The refusal is spelled out above; its one-line form only repeats it.
+            const detail =
+              check.id === "valid" && check.status === "fail" && result.rejected
+                ? "the proposal was refused, as above"
+                : check.detail;
+            return `  ${STATUS_MARK[check.status]}  ${check.label}: ${detail}`;
+          }),
         );
       } else if (result.noProposal) {
         lines.push("", `No proposal: ${result.noProposal}`);
