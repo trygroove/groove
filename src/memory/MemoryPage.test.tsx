@@ -130,6 +130,37 @@ describe("the Memory page (GRV-25)", () => {
     expect(JSON.stringify(transport.events)).not.toContain("Four Tet");
   });
 
+  it("keeps an unsaved edit elsewhere when one field or note is forgotten", async () => {
+    await renderPage();
+    fireAndFlush(() =>
+      fireEvent.input(screen.getByLabelText("Gear"), {
+        target: { value: "Ableton Move, OP-1" },
+      }),
+    );
+    fireAndFlush(() =>
+      fireEvent.input(screen.getByLabelText("Note 2"), {
+        target: { value: "Works early now" },
+      }),
+    );
+    clickAndFlush(screen.getByRole("button", { name: "Forget Artists" }));
+    await waitFor(async () => expect((await stored()).memory.artists).toBe(""));
+    clickAndFlush(screen.getByRole("button", { name: "Forget note 1" }));
+    await waitFor(async () =>
+      expect((await stored()).notes.map((note) => note.id)).toEqual(["n2"]),
+    );
+    expect(screen.getByLabelText("Artists")).toHaveValue("");
+    expect(screen.getByLabelText("Gear")).toHaveValue("Ableton Move, OP-1");
+    expect(screen.getByLabelText("Note 1")).toHaveValue("Works early now");
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+    // Saving the rest does not bring the forgotten field back.
+    clickAndFlush(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(async () =>
+      expect((await stored()).memory.gear).toEqual(["Ableton Move", "OP-1"]),
+    );
+    expect((await stored()).memory.artists).toBe("");
+    expect((await stored()).notes.map((note) => note.text)).toEqual(["Works early now"]);
+  });
+
   it("forgets everything once it is confirmed", async () => {
     await renderPage();
     clickAndFlush(screen.getByRole("button", { name: "Forget everything" }));

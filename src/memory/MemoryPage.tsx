@@ -139,12 +139,17 @@ export default function MemoryPage(props: MemoryPageProps): JSX.Element {
     }
   }
 
+  /**
+   * Forgets something and saves it at once. Unsaved edits elsewhere on the
+   * page stay; only the draft of what was forgotten goes with it.
+   */
   async function forget(
     what: "field" | "note" | "everything",
     change: (profile: ProducerProfile) => ProducerProfile,
+    keep: (current: Draft) => Draft | null = () => null,
   ): Promise<void> {
     if (await save(change)) {
-      setEdits(null);
+      setEdits((current) => (current ? keep(current) : null));
       analytics.log("memory_forgotten", { what });
     }
   }
@@ -194,7 +199,14 @@ export default function MemoryPage(props: MemoryPageProps): JSX.Element {
                     class="memory-page-forget"
                     aria-label={`Forget ${MEMORY_FIELD_LABELS[field]}`}
                     onClick={() =>
-                      void forget("field", (profile) => forgetField(profile, field))
+                      void forget(
+                        "field",
+                        (profile) => forgetField(profile, field),
+                        (current) => ({
+                          ...current,
+                          fields: { ...current.fields, [field]: "" },
+                        }),
+                      )
                     }
                   >
                     Forget
@@ -239,7 +251,18 @@ export default function MemoryPage(props: MemoryPageProps): JSX.Element {
                         class="memory-page-forget"
                         aria-label={`Forget note ${index() + 1}`}
                         onClick={() =>
-                          void forget("note", (profile) => forgetNote(profile, note.id))
+                          void forget(
+                            "note",
+                            (profile) => forgetNote(profile, note.id),
+                            (current) => ({
+                              ...current,
+                              notes: Object.fromEntries(
+                                Object.entries(current.notes).filter(
+                                  ([id]) => id !== note.id,
+                                ),
+                              ),
+                            }),
+                          )
                         }
                       >
                         Forget
