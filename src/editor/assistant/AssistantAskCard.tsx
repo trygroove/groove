@@ -1,5 +1,6 @@
 import type { JSX } from "@solidjs/web";
 import { createEffect, For, onCleanup, Show, untrack } from "solid-js";
+import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import { ASK_LIMITS } from "../../assistant/ask";
 import { CloseIcon } from "../../components/icons";
 
@@ -31,7 +32,7 @@ export interface AssistantAskCardProps {
 }
 
 /** The card's accessible name. */
-export const ASK_CARD_LABEL = "The assistant asks";
+export const ASK_CARD_LABEL = `${ASSISTANT_NAME} asks`;
 
 /** What the "something else" box is called, and says when empty. */
 export const ASK_TEXT_LABEL = "Something else";

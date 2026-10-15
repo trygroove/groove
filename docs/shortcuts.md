@@ -74,11 +74,11 @@ than also meaning `track.move_left`. It suppresses nothing else.
 | `arrangement.open_clip` | Open clip | `Enter` | `Enter` | Navigation | arrangement | Groove addition — Live shows a clip's notes under the arrangement; Groove's are a view of their own |
 | `view.close_surface` | Close or cancel | `Escape` | `Escape` | Navigation | global, dialog, gesture | Follows Live (`Esc`) |
 | `help.shortcut_guide` | Open keyboard mapping guide | `?` | `?` | Navigation | editor, library | Groove addition — `?` is the web convention |
-| `assistant.toggle` | Open or close the assistant | `Cmd+K` | `Ctrl+K` | Navigation | editor | Groove addition — Live has no assistant; `Cmd/Ctrl+K` is the web's convention for summoning one |
-| `assistant.grow` | Grow the assistant | `Up / Left` | `Up / Left` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
-| `assistant.shrink` | Shrink the assistant | `Down / Right` | `Down / Right` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
-| `assistant.grow_more` | Grow the assistant more | `Shift+Up / Shift+Left` | `Shift+Up / Shift+Left` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
-| `assistant.shrink_more` | Shrink the assistant more | `Shift+Down / Shift+Right` | `Shift+Down / Shift+Right` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
+| `assistant.toggle` | Open or close Cue | `Cmd+K` | `Ctrl+K` | Navigation | editor | Groove addition — Live has no assistant; `Cmd/Ctrl+K` is the web's convention for summoning one |
+| `assistant.grow` | Grow Cue | `Up / Left` | `Up / Left` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
+| `assistant.shrink` | Shrink Cue | `Down / Right` | `Down / Right` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
+| `assistant.grow_more` | Grow Cue more | `Shift+Up / Shift+Left` | `Shift+Up / Shift+Left` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
+| `assistant.shrink_more` | Shrink Cue more | `Shift+Down / Shift+Right` | `Shift+Down / Shift+Right` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
 | `assistant.send` | Send the message | `Enter` | `Enter` | Navigation | composer | Groove addition — Live has no assistant; Enter sends, as in any chat composer |
 | `assistant.ask_option_1` | Pick answer 1 | `1` | `1` | Navigation | assistant_ask | Groove addition — Live has no assistant; number keys pick an answer |
 | `assistant.ask_option_2` | Pick answer 2 | `2` | `2` | Navigation | assistant_ask | Groove addition — Live has no assistant; number keys pick an answer |

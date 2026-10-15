@@ -1195,7 +1195,7 @@ proposal of two changes: swing up to 58%, and the BD track 3 dB quieter. This
 account has already answered the assistant's disclosure (GRV-8).
 
 1. Create a new project. It opens on the arrangement.
-2. Press the Assistant button in the header. The assistant opens floating over
+2. Press the Cue button in the header. The assistant opens floating over
    the bottom-right corner of the editor, ready to type into. It says its scope
    is the selected track, BD.
 3. Type "Loosen the beat" and press Enter. Your message appears in the
@@ -1449,7 +1449,7 @@ track. The library holds at least one such kick.
 
 1. Create a new project. It opens on the arrangement, with the starter kick on
    the drum machine's "BD" pad.
-2. Press the Assistant button, type "The kick is too clean. Anything dustier?"
+2. Press the Cue button, type "The kick is too clean. Anything dustier?"
    and press Enter. Your message appears in the conversation, and the
    assistant's reply follows it.
 3. The reply ends with a recommended pack. It names the pack, its publisher,
