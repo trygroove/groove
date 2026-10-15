@@ -51,6 +51,7 @@ import type { AssistantMessage, AssistantProposal } from "../protocol";
 import type { AssistantProvider } from "../provider";
 import { splitRecommendations } from "../recommendation";
 import type { ProviderUsage } from "../streamEvents";
+import { type ProviderCallRecord, recordCalls } from "./callTranscript";
 import type { EvalExpectation } from "./caseChecks";
 import {
   EVAL_CAPABILITIES,
@@ -67,6 +68,7 @@ import { CHECK_IDS, CHECK_LABELS, type CheckResult, canonicalSongState } from ".
 import { EvalUsageError } from "./cli";
 import { describeProject, type ProjectOverview } from "./describe";
 import { FIXTURE_NAME, namedFixture, TS_FIXTURES } from "./namedFixtures";
+import { describeRefusal, type RefusalDetail } from "./refusal";
 import { type EvalTurn, evaluateTurn, runCaseTurn, whyNoProposal } from "./run";
 import { turnCostUsd } from "./scorecard";
 
@@ -224,6 +226,8 @@ export type TryResult =
       readonly error: string | null;
       readonly reply: string;
       readonly stopReason: string | null;
+      /** Every provider call the turn made, block by block, tool calls included. */
+      readonly calls: readonly ProviderCallRecord[];
       /** The proposal's card: its summary and a row per control it changes. */
       readonly proposal: {
         readonly summary: string;
@@ -231,7 +235,7 @@ export type TryResult =
         readonly rows: readonly ProposalRow[];
       } | null;
       /** Why the proposal was refused, as the card would say, when it was. */
-      readonly rejected: readonly ProposalIssue[] | null;
+      readonly rejected: readonly RefusalDetail[] | null;
       /** Sounds the reply recommends, which the CLI does not show. */
       readonly recommendations: number;
       readonly question: AssistantAsk | null;
@@ -418,8 +422,9 @@ export async function ask(
   const history = historyOf(session.entries);
   const evalCase = turnCase(session, request, history);
   const model = ASSISTANT_MODELS[session.model];
+  const recorded = recordCalls(deps.provider);
   const turn = await runCaseTurn(evalCase, {
-    provider: deps.provider,
+    provider: recorded.provider,
     model,
     now: deps.now,
     turnTimeoutMs: deps.turnTimeoutMs,
@@ -475,10 +480,14 @@ export async function ask(
       error: turn.error,
       reply: turn.text,
       stopReason: turn.stopReason,
+      calls: recorded.calls(),
       proposal: card?.ok
         ? { summary: card.summary, intent: card.intent, rows: card.rows }
         : null,
-      rejected: card && !card.ok ? card.issues : null,
+      rejected:
+        card && !card.ok && split?.proposal
+          ? describeRefusal(split.proposal, card.issues)
+          : null,
       recommendations: split?.recommendations.length ?? 0,
       question: turn.ask ?? null,
       checks,
