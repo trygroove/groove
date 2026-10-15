@@ -3,7 +3,9 @@
  * opens a project with Cue's panel open, Cue may offer one "Want to try…?",
  * at most once a day across every project, and dismissable. Opening the
  * editor with the panel closed, or before the day after onboarding, offers
- * nothing.
+ * nothing. While the conversation cannot be shown (the retention notice is
+ * waiting for an answer, GRV-8), nothing is decided: the day is not spent on
+ * a nudge nobody could see.
  *
  * Analytics: `cue_nudge_shown` once it is offered, and `cue_nudge_answered`
  * with whether they tried it or put it away.
@@ -28,6 +30,11 @@ export interface UseCueNudgeOptions {
   readonly profile: ProducerProfileStore;
   /** Whether the panel is open: read once, as the profile arrives. */
   readonly expanded: Accessor<boolean>;
+  /**
+   * Whether the conversation can be on screen: false while the retention
+   * notice stands in for it (GRV-8). The nudge is decided once it is true.
+   */
+  readonly ready?: Accessor<boolean>;
   readonly conversation: Pick<AssistantConversation, "send" | "pendingAsk">;
   readonly analytics: () => Pick<Analytics, "log">;
   readonly clock?: Clock;
@@ -43,11 +50,15 @@ export function useCueNudge(options: UseCueNudgeOptions): CueNudge {
   const [lesson, setLesson] = createSignal<string | null>(null);
   let decided = false;
 
-  // Decided once, as the profile first arrives: the profile is the one
-  // reactive read, and the panel and the question waiting are read as they
-  // are at that moment. Offering it writes, so it is the apply half's.
+  // Decided once, as the profile first arrives and the conversation can be
+  // shown: those are the reactive reads, and the panel and the question
+  // waiting are read as they are at that moment. Offering it writes, so it is
+  // the apply half's.
   createEffect(
-    () => (options.profile.loaded() ? options.profile.profile() : undefined),
+    () =>
+      options.profile.loaded() && (options.ready?.() ?? true)
+        ? options.profile.profile()
+        : undefined,
     (profile) => {
       if (profile === undefined || decided) return;
       decided = true;

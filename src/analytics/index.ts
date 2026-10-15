@@ -1,9 +1,8 @@
 // Public surface of the analytics layer (PRD `OPS-02`).
 //
-// `firebaseTransport.ts` is deliberately absent: it is the only module *in
-// this layer* that imports `firebase/analytics` (the other is
-// `src/firebaseConfig.ts`, the app-wide SDK bootstrap), and application code
-// must reach analytics through the boundary rather than through a vendor SDK.
+// `posthogTransport.ts` is deliberately absent: it is the only module that
+// imports `posthog-js`, and application code must reach analytics through the
+// boundary rather than through a vendor SDK.
 // `src/monitoring/boundaries.test.ts` enforces both. `src/telemetry.ts`
 // imports it directly to wire it up, the same way `src/persistence`'s Firestore
 // repository is imported only by its composition root.

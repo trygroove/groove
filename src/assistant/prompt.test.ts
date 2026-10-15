@@ -17,6 +17,87 @@ describe("the assistant's system prompt", () => {
     expect(ASSISTANT_PROMPT_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
   });
 
+  // GRV-91: a loop sketch must fit the output limit, so each part is one looped bar.
+  it("tells a loop sketch to use one-bar clips looped to the loop's length", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("one clip of one bar");
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "looped: true and durationTicks the loop's full length",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("never place a part once per bar");
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("four at most");
+  });
+
+  // GRV-99: a request to change a drum part's density can point at the Generate panel.
+  it("tells the assistant where the Generate panel is", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "a Generate panel in the row of panels below its step grid, beside Transform",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "try more patterns for a row in the Generate panel",
+    );
+  });
+
+  // GRV-101: the prompt names every panel the producer can use, so a new one is added here and there.
+  it("names each of the app's panels in 'What Groove has'", () => {
+    const section =
+      ASSISTANT_SYSTEM_PROMPT.split("## What Groove has")[1]?.split("\n## ")[0];
+    expect(section).toBeDefined();
+    const panels = [
+      "Synth",
+      "Drum machine",
+      "Sampler",
+      "Step editor",
+      "Piano roll",
+      "Generate panel",
+      "Transform panel",
+      "Loop panel",
+      "Library",
+      "My packs",
+      "Mixer",
+      "device chain",
+      "Sends",
+      "Returns",
+      "Master",
+      "level meter",
+      "Sections",
+      "loop brace",
+      "metronome",
+      "Export dialog",
+    ];
+    for (const panel of panels) {
+      expect(section, panel).toContain(panel);
+    }
+    expect(section?.trim().split("\n").length).toBeLessThanOrEqual(25);
+  });
+
+  it("no longer says audio cannot exist", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain(
+      "You cannot add, generate or upload audio",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("Groove has audio (loops and samples)");
+  });
+
+  // GRV-101 QA: the live eval scored the Generate pointer 0/3 while it was optional.
+  it("always points a drum density or rhythm request at the Generate panel", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "Whenever a request is about a drum part's density or rhythm",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("you may add in a sentence");
+  });
+
+  // GRV-101 QA: notes.transpose skips pad triggers, so the prompt must not promise it.
+  it("says Transform's transpose leaves pad hits alone", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("Transpose moves pitched notes only");
+  });
+
+  // GRV-101 QA: replies said "recommend_sounds" and "notes_quantize" to the producer.
+  it("keeps tool names out of the producer's words", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("never by a tool's name");
+    const section =
+      ASSISTANT_SYSTEM_PROMPT.split("## What Groove has")[1]?.split("\n## ")[0] ?? "";
+    expect(section).not.toMatch(/\b[a-z]+_[a-z_]+\b/);
+  });
+
   it("lists every device type and every one of its parameters by key", () => {
     for (const device of deviceTypes()) {
       const line = ASSISTANT_SYSTEM_PROMPT.split("\n").find((candidate) =>
@@ -85,5 +166,43 @@ describe("the assistant's system prompt", () => {
     );
     expect(ASSISTANT_SYSTEM_PROMPT).toContain("looped: true to fill its length");
     expect(ASSISTANT_SYSTEM_PROMPT).toContain("never the whole part you would propose");
+  });
+
+  // GRV-6 QA: a "broken" re-sketch proposed only notes_clear on the kick and
+  // bass clips, meaning to write the new notes once the calls came back.
+  it("says no tool answers back, so a replacement is cleared and written in one reply", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("No tool ever answers back");
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "to replace a clip's notes, clear them and add the new ones (note_add) in the same reply",
+    );
+  });
+
+  // GRV-6 QA: drum pads are in every drum track's "pads" (GRV-23), not only
+  // in selectedNotes, so a whole-song request can write drums.
+  it("takes drum pads from the track's pads in the description", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(`that track's "pads" in the description`);
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("use only pads you have seen there");
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("select the drum track");
+  });
+
+  // GRV-6 QA: "Nudge the melody down 1 dB" at -3 dB proposed -1 dB.
+  it("makes parameter_set's value the new value, never the change", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "parameter_set's value is always the new value, never the change",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      '"down 1 dB" on a track at -3 dB is the value -4',
+    );
+  });
+
+  // GRV-6 QA: a sketch scoped to the BD track came back unappliable.
+  it("says what a scope allows: new parts on new tracks, asking before widening", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain('When "selection" says what is in scope');
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "goes on a new track made with track_create, whatever the scope",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "ask with ask_producer whether to widen it",
+    );
   });
 });

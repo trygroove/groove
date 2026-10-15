@@ -11,11 +11,16 @@ import { InMemoryProfileRepository } from "../../persistence/inMemoryProfileRepo
 import { emptyProfile, type ProducerProfile } from "../../persistence/profileDocuments";
 import { clickAndFlush } from "../../testing/events";
 import { createFakeAssistantClient } from "../../testing/fakeAssistantClient";
+import {
+  createFakeRetentionClient,
+  type FakeRetentionClient,
+} from "../../testing/fakeRetentionClient";
 import { memoryStorage } from "../../testing/storage";
 import type { EditorViewName } from "../editorViews";
 import { NUDGE_LABEL } from "./AssistantChatView";
 import AssistantPanel from "./AssistantPanel";
 import { DEFAULT_LAYOUT, float, saveLayout } from "./assistantPanelLayout";
+import { ACCEPT_ANSWER, NOTICE_HEADING } from "./retentionCopy";
 import { useAssistantChat } from "./useAssistantChat";
 import { useAssistantPanel } from "./useAssistantPanel";
 import { nudgeMessage } from "./useCueNudge";
@@ -35,7 +40,11 @@ function onboarded(extra: Partial<ProducerProfile> = {}): ProducerProfile {
   };
 }
 
-async function renderEditorChat(profile: ProducerProfile, open = true) {
+async function renderEditorChat(
+  profile: ProducerProfile,
+  open = true,
+  retention?: FakeRetentionClient,
+) {
   const client = createFakeAssistantClient();
   const transport = createRecordingTransport();
   const analytics = new Analytics({
@@ -65,6 +74,9 @@ async function renderEditorChat(profile: ProducerProfile, open = true) {
       client: async () => client,
       analytics: () => analytics,
       profile: store,
+      retention: retention
+        ? { client: async () => retention, internal: () => false }
+        : undefined,
     });
     return <AssistantPanel panel={panel} chat={chat} />;
   };
@@ -129,5 +141,33 @@ describe("Cue's daily nudge (GRV-25)", () => {
     await renderEditorChat(onboarded({ onboardedAt: Date.now() - DAY }), false);
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(screen.queryByRole("region", { name: NUDGE_LABEL })).not.toBeInTheDocument();
+  });
+
+  it("sits beside the retention settings once the account has answered (GRV-8)", async () => {
+    const { transport } = await renderEditorChat(
+      onboarded({ onboardedAt: Date.now() - DAY }),
+      true,
+      createFakeRetentionClient({ uid: UID, answered: true }),
+    );
+    await screen.findByRole("region", { name: NUDGE_LABEL });
+    expect(transport.named("cue_nudge_shown")).toHaveLength(1);
+  });
+
+  it("waits behind the retention notice, and is offered once it is answered (GRV-8)", async () => {
+    const { transport, profiles } = await renderEditorChat(
+      onboarded({ onboardedAt: Date.now() - DAY }),
+      true,
+      createFakeRetentionClient({ uid: UID }),
+    );
+    const notice = await screen.findByRole("group", { name: NOTICE_HEADING });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Not offered, and the day not spent, while the notice hides it.
+    expect(transport.named("cue_nudge_shown")).toHaveLength(0);
+    const loaded = await profiles.loadProfile(UID);
+    expect(loaded.ok && loaded.profile?.lastNudgeDay).toBeNull();
+
+    clickAndFlush(within(notice).getByRole("button", { name: ACCEPT_ANSWER }));
+    await screen.findByRole("region", { name: NUDGE_LABEL });
+    expect(transport.named("cue_nudge_shown")).toHaveLength(1);
   });
 });

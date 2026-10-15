@@ -1,12 +1,27 @@
 /**
- * The Markdown summary of an assistant eval run (GRV-6): the pass rate per
- * check, a case-by-check grid, why check 1 failed in each case, every
+ * The Markdown summary of an assistant eval run (GRV-6): the scorecard's
+ * headline and its cost (GRV-102), beside a baseline's when one is given, the
+ * pass rate per check, a case-by-check grid, why check 1 failed in each case, every
  * failure with its reason, and the
  * descriptive numbers per run. The JSON report beside it keeps everything,
  * every proposal included; this is the page a human reads first.
  */
 import { CHECK_IDS, CHECK_LABELS, type CheckId, type ValidFailureKind } from "./checks";
-import type { EvalRecord, EvalReport, Tally } from "./run";
+import type { EvalRecord, EvalReport, EvalSummary, Tally } from "./run";
+import type { Comparison } from "./scorecard";
+import {
+  type BaselineLabel,
+  caseSecondaryLines,
+  comparisonLines,
+  headlineLines,
+  secondaryLines,
+} from "./scorecardMarkdown";
+
+/** A baseline to print the scorecard against. */
+export interface MarkdownBaseline {
+  readonly label: BaselineLabel;
+  readonly comparisons: readonly Comparison[];
+}
 
 /** "7/9 (78%)" over the proposals the check could judge; skips said apart. */
 export function formatTally(tally: Tally | undefined): string {
@@ -19,6 +34,17 @@ export function formatTally(tally: Tally | undefined): string {
 
 function cell(text: string): string {
   return text.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+}
+
+/** Where a run's output tokens went, in characters of each kind of block. */
+function tokensLine(record: EvalRecord): string | null {
+  const tokens = record.tokens;
+  if (!tokens) return null;
+  const count = tokens.outputTokens === null ? "?" : String(tokens.outputTokens);
+  const usage = record.usage
+    ? `; input ${record.usage.inputTokens}, cache read ${record.usage.cacheReadInputTokens}`
+    : "";
+  return `Output tokens ${count}${usage}; streamed characters: thinking ${tokens.thinkingChars}, tool input ${tokens.toolInputChars}, text ${tokens.textChars}`;
 }
 
 function statsLine(record: EvalRecord): string {
@@ -96,7 +122,7 @@ function validFailureLines(report: EvalReport): string[] {
   return [...lines, "", ...reasons, ""];
 }
 
-function erroredLines(report: EvalReport): string[] {
+function erroredLines(report: EvalSummary): string[] {
   const { errored } = report.summary;
   const lines: string[] = [];
   if (report.aborted) lines.push(`**The run stopped early.** ${report.aborted}`, "");
@@ -106,26 +132,38 @@ function erroredLines(report: EvalReport): string[] {
         ? `, ${errored.auth} of them because the provider rejected the API key`
         : "";
     lines.push(
-      `**Errored turns: ${errored.total} of ${report.records.length}**${auth}. They are not the model's answers, so no check judged them; each is listed under its run below.`,
+      `**Errored turns: ${errored.total} of ${report.scorecard.headline.turns}**${auth}. They are not the model's answers, so no check judged them; each is listed under its run below.`,
       "",
     );
   }
   return lines;
 }
 
-export function renderMarkdown(report: EvalReport): string {
-  const lines: string[] = [
-    "# Assistant musical capability evals",
+/**
+ * Everything in a report that is a number: its run, the scorecard, a
+ * baseline comparison if given, and the pass rates per check and per case.
+ * No reply, proposal or failure reason, so it can be committed.
+ */
+function numberLines(
+  report: EvalSummary,
+  title: string,
+  baseline?: MarkdownBaseline,
+): string[] {
+  return [
+    `# ${title}`,
     "",
     `- Run: ${report.generatedAt}`,
     `- Model: \`${report.model}\``,
     `- Prompt version: \`${report.promptVersion}\``,
     `- Tool set version: ${report.toolsetVersion}`,
-    `- Runs per case: ${report.runsPerCase}; cases: ${report.caseIds.length}; turns: ${report.records.length}; errored turns: ${report.summary.errored.total}`,
+    `- Runs per case: ${report.runsPerCase}; cases: ${report.caseIds.length}; turns: ${report.scorecard.headline.turns}; errored turns: ${report.summary.errored.total}`,
     "",
-    "Pass rates count the proposals a check could judge. A reply with no proposal, or one that did not apply, fails check 1 and is not judged by checks 2 to 5. A turn that errored (the provider or the transport failed, or it timed out) is not judged by any check and is counted apart. Check 6 is judged on extreme cases only. Nothing gates on the descriptive numbers.",
+    "Pass rates count the proposals a check could judge. A reply with no proposal, or one that did not apply, fails check 1 and is not judged by checks 2 to 5 or 7. A turn that errored (the provider or the transport failed, or it timed out) is not judged by any check and is counted apart. Check 6 is judged on extreme cases only, and check 7 on the sketch cases only (the ones that name the parts they ask for). Check 8 judges every case: a proposal, or, where the case expects one, a question and no proposal; a case that expects a question is judged by checks 1 to 7 only if it proposed something anyway. Checks 9 to 13 are judged only on the cases that name them. Nothing gates on the descriptive numbers.",
     "",
     ...erroredLines(report),
+    ...headlineLines(report.scorecard),
+    ...(baseline ? comparisonLines(baseline.comparisons, baseline.label) : []),
+    ...secondaryLines(report.scorecard),
     "## Pass rate per check",
     "",
     "| Check | Pass rate |",
@@ -147,6 +185,21 @@ export function renderMarkdown(report: EvalReport): string {
       return `| \`${caseId}\` | ${cells.join(" | ")} | ${report.summary.errored.cases[caseId] ?? 0} |`;
     }),
     "",
+    ...caseSecondaryLines(report.scorecard),
+  ];
+}
+
+/** The numbers alone: what `summary.md` holds, and what a committed baseline is. */
+export function renderSummaryMarkdown(
+  report: EvalSummary,
+  title = "Assistant musical capability evals: summary",
+): string {
+  return `${numberLines(report, title).join("\n").trimEnd()}\n`;
+}
+
+export function renderMarkdown(report: EvalReport, baseline?: MarkdownBaseline): string {
+  const lines: string[] = [
+    ...numberLines(report, "Assistant musical capability evals", baseline),
     ...validFailureLines(report),
     "## Runs",
   ];
@@ -165,14 +218,17 @@ export function renderMarkdown(report: EvalReport): string {
       if (record.error) {
         lines.push(
           `**Run ${record.run}** (${Math.round(record.durationMs / 1000)} s): errored, not judged: ${cell(record.error)}`,
+          ...(tokensLine(record) ? ["", `- ${tokensLine(record)}`] : []),
           "",
         );
         continue;
       }
       lines.push(
-        `**Run ${record.run}** (${Math.round(record.durationMs / 1000)} s, stop: ${record.stopReason ?? "none"}): ${statsLine(record)}`,
+        `**Run ${record.run}** (${Math.round(record.durationMs / 1000)} s${record.firstTextMs != null ? `, first text ${Math.round(record.firstTextMs / 1000)} s` : ""}, stop: ${record.stopReason ?? "none"}): ${statsLine(record)}`,
       );
       lines.push("");
+      const tokensText = tokensLine(record);
+      if (tokensText) lines.push(`- ${tokensText}`);
       for (const id of CHECK_IDS) {
         const result = record.checks[id];
         if (result && result.status === "fail") {

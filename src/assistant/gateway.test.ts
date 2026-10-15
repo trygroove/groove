@@ -54,6 +54,7 @@ import {
   EXPLAIN_TOOL_NAME,
   toolNameFor,
 } from "./tools";
+import { RECOMMEND_VIDEO_TOOL, type VideoVerifier } from "./video";
 
 function call(command: RawCommandInput) {
   return { name: toolNameFor(command.type), input: command.payload };
@@ -155,6 +156,7 @@ describe("runAssistantTurn: a completed turn", () => {
       stopReason: "end_turn",
       proposal: null,
       ask: null,
+      videos: [],
       model: ASSISTANT_MODELS["claude-sonnet-5"].id,
       promptVersion: ASSISTANT_PROMPT_VERSION,
       requestsRemaining: 99,
@@ -299,6 +301,131 @@ describe("runAssistantTurn: asking the producer (GRV-42)", () => {
       toolUseEvents("A question.", [{ name: ASK_PRODUCER_TOOL_NAME, input }]),
     ]);
     await expectCode(run(h), "malformed_response");
+  });
+});
+
+describe("runAssistantTurn: tutorial videos (GRV-16, ADR 0009)", () => {
+  const real = "tH9LHIyJ0c8";
+  const missing = "zzzzzzzzzzz";
+  const videoCall = (videoId: string, reason = "Shows the squelch.") => ({
+    name: RECOMMEND_VIDEO_TOOL,
+    input: { videoId, reason },
+  });
+  const verifier: VideoVerifier = async (videoId) =>
+    videoId === real ? { title: "Acid Basslines", channel: "Point Blank" } : "missing";
+
+  it("offers recommend_video only when the gateway can check a video", async () => {
+    const without = harness([replyEvents(["ok"])]);
+    await run(without);
+    expect(without.provider.requests[0].tools.map((tool) => tool.name)).not.toContain(
+      RECOMMEND_VIDEO_TOOL,
+    );
+
+    const h = harness([replyEvents(["ok"])]);
+    h.deps = { ...h.deps, verifyVideo: verifier };
+    await run(h);
+    expect(h.provider.requests[0].tools.map((tool) => tool.name)).toContain(
+      RECOMMEND_VIDEO_TOOL,
+    );
+  });
+
+  it("returns the videos YouTube vouches for, with its title and channel, and drops the rest", async () => {
+    const h = harness([
+      toolUseEvents("Watch this.", [videoCall(real), videoCall(missing)]),
+    ]);
+    const checked: string[] = [];
+    h.deps = {
+      ...h.deps,
+      verifyVideo: async (videoId, signal) => {
+        checked.push(videoId);
+        return verifier(videoId, signal);
+      },
+    };
+    const result = await run(h);
+    expect(checked.sort()).toEqual([real, missing].sort());
+    expect(result.videos).toEqual([
+      {
+        videoId: real,
+        title: "Acid Basslines",
+        channel: "Point Blank",
+        reason: "Shows the squelch.",
+      },
+    ]);
+    // A video is not a change to the song.
+    expect(result.proposal).toBeNull();
+    expect(h.logs[0]).toMatchObject({
+      videosShown: 1,
+      videosDropped: 1,
+      videosUnchecked: 0,
+    });
+    // The dropped one is said to be left out, in the stream and the result.
+    expect(result.text).toMatch(/^Watch this\.\n\nOne of the videos I picked/);
+    expect(h.chunks.map((chunk) => chunk.text).join("")).toBe(result.text);
+  });
+
+  it("says there is no video when a reply's only video is dropped, rather than ending on nothing", async () => {
+    const h = harness([toolUseEvents("", [videoCall(missing)])]);
+    h.deps = { ...h.deps, verifyVideo: verifier };
+    const result = await run(h);
+    expect(result.videos).toEqual([]);
+    expect(result.text).toMatch(/^I couldn't find a video on YouTube/);
+    expect(h.chunks.map((chunk) => chunk.text).join("")).toBe(result.text);
+    expect(h.logs[0]).toMatchObject({ videosDropped: 1, videosUnchecked: 0 });
+  });
+
+  it("adds nothing to a reply whose video is shown", async () => {
+    const h = harness([toolUseEvents("The squelch is resonance.", [videoCall(real)])]);
+    h.deps = { ...h.deps, verifyVideo: verifier };
+    const result = await run(h);
+    expect(result.text).toBe("The squelch is resonance.");
+    expect(result.videos).toHaveLength(1);
+  });
+
+  it("drops every video when the check is unavailable, and never shows one unchecked", async () => {
+    const h = harness([toolUseEvents("Watch this.", [videoCall(real)])]);
+    h.deps = {
+      ...h.deps,
+      verifyVideo: async () => {
+        throw new Error("YouTube is down");
+      },
+    };
+    const result = await run(h);
+    expect(result.videos).toEqual([]);
+    expect(result.text).toMatch(/^Watch this\.\n\nI couldn't find a video/);
+    expect(h.logs[0]).toMatchObject({
+      outcome: "completed",
+      videosDropped: 1,
+      videosUnchecked: 1,
+    });
+  });
+
+  it("drops a video call made without a verifier, and a malformed ID unchecked", async () => {
+    const h = harness([toolUseEvents("Watch this.", [videoCall(real)])]);
+    expect((await run(h)).videos).toEqual([]);
+
+    const checked: string[] = [];
+    const g = harness([
+      toolUseEvents("Watch this.", [videoCall("../../evil"), videoCall(real)]),
+    ]);
+    g.deps = {
+      ...g.deps,
+      verifyVideo: async (videoId, signal) => {
+        checked.push(videoId);
+        return verifier(videoId, signal);
+      },
+    };
+    const result = await run(g);
+    expect(checked).toEqual([real]);
+    expect(result.videos.map((video) => video.videoId)).toEqual([real]);
+  });
+
+  it("keeps the changes a turn proposes beside its video", async () => {
+    const tempo = call(setParameter({ scope: "song", parameterId: "song.tempo" }, 120));
+    const h = harness([toolUseEvents("Both.", [tempo, videoCall(real)])]);
+    h.deps = { ...h.deps, verifyVideo: verifier };
+    const result = await run(h);
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([tempo.name]);
+    expect(result.videos).toHaveLength(1);
   });
 });
 

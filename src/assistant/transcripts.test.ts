@@ -115,16 +115,29 @@ describe("permitsRetention", () => {
     disclosureVersion: ASSISTANT_DISCLOSURE_VERSION,
     answeredAt: AT,
   };
-  it("permits only a current, well-formed yes", () => {
+  it("keeps by default: no answer, a yes, and a malformed or stale document", () => {
     expect(permitsRetention(yes)).toBe(true);
-    expect(permitsRetention(null)).toBe(false);
-    expect(permitsRetention(undefined)).toBe(false);
-    expect(permitsRetention({ ...yes, retain: false })).toBe(false);
-    expect(permitsRetention({ ...yes, retain: "true" })).toBe(false);
+    expect(permitsRetention(null)).toBe(true);
+    expect(permitsRetention(undefined)).toBe(true);
+    expect(permitsRetention({ ...yes, retain: "false" })).toBe(true);
+    expect(permitsRetention({ retain: true })).toBe(true);
     expect(
       permitsRetention({ ...yes, disclosureVersion: ASSISTANT_DISCLOSURE_VERSION + 1 }),
+    ).toBe(true);
+    expect(permitsRetention({ ...yes, extra: 1 })).toBe(true);
+  });
+
+  it("stops only on an explicit no, at any disclosure version or shape", () => {
+    const no = { ...yes, retain: false };
+    expect(permitsRetention(no)).toBe(false);
+    expect(
+      permitsRetention({ ...no, disclosureVersion: ASSISTANT_DISCLOSURE_VERSION - 1 }),
     ).toBe(false);
-    expect(permitsRetention({ ...yes, extra: 1 })).toBe(false);
+    expect(
+      permitsRetention({ ...no, disclosureVersion: ASSISTANT_DISCLOSURE_VERSION + 1 }),
+    ).toBe(false);
+    expect(permitsRetention({ retain: false })).toBe(false);
+    expect(permitsRetention({ ...no, extra: 1 })).toBe(false);
   });
 });
 
@@ -200,7 +213,7 @@ describe("the assistant with retention on, off, or never answered", () => {
     return { results, requests: provider.requests, kept: store.records().length };
   }
 
-  it("answers identically, and only a yes keeps anything", async () => {
+  it("answers identically, and only a no keeps nothing", async () => {
     const on = await run(true);
     const off = await run(false);
     const unanswered = await run(null);
@@ -208,6 +221,6 @@ describe("the assistant with retention on, off, or never answered", () => {
     expect(unanswered.results).toEqual(on.results);
     expect(off.requests).toEqual(on.requests);
     expect(on.results[1]?.proposal?.calls).toHaveLength(1);
-    expect([on.kept, off.kept, unanswered.kept]).toEqual([3, 0, 0]);
+    expect([on.kept, off.kept, unanswered.kept]).toEqual([3, 0, 3]);
   });
 });

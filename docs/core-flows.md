@@ -1196,8 +1196,8 @@ project dashboard
 
 **Preconditions:** signed in with no projects. The assistant is answered by the
 suite's scripted provider (#69). Asked to loosen the beat, it replies with a
-proposal of two changes: swing up to 58%, and the BD track 3 dB quieter. Once
-the assistant disclosure exists (#95), this account has already seen it.
+proposal of two changes: swing up to 58%, and the BD track 3 dB quieter. This
+account has already answered the assistant's disclosure (GRV-8).
 
 1. Create a new project. It opens on the arrangement.
 2. Press the Cue button in the header. The assistant opens floating over
@@ -1507,8 +1507,10 @@ onboarding, with no projects.
    said: House, Techno, Four Tet, Played around, Drums and beats and Ableton
    Move. Its box to share your answers is unticked. Cue offers a first lesson.
 7. Choose Open the studio. A new project opens on the arrangement, with Cue's
-   panel open and the same conversation in it: your answers, and Cue's offer
-   of a first lesson.
+   panel open. A producer who has not yet answered the notice about Groove
+   keeping conversations (GRV-8) sees it first; choose OK. The same
+   conversation is in the panel: your answers, and Cue's offer of a first
+   lesson.
 8. Reload the page. The conversation is still in Cue's panel.
 9. Open the dashboard. It stays on the dashboard, and lists the project.
 

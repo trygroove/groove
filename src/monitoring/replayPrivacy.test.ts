@@ -20,7 +20,17 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative as relativeTo } from "node:path";
 import { describe, expect, it } from "vitest";
-import { MASK_ATTRIBUTES, MASK_CONTENT, UNMASK_CONTENT } from "./replayPrivacy";
+import {
+  isSessionSampled,
+  MASK_ALL_TEXT_SELECTOR,
+  MASK_ATTRIBUTES,
+  MASK_CONTENT,
+  maskReplayAttribute,
+  maskReplayNetworkRequest,
+  maskReplayText,
+  REPLAY_SESSION_SAMPLE_RATE,
+  REPLAY_UNMASK_SELECTORS,
+} from "./replayPrivacy";
 
 const sourceRoot = join(process.cwd(), "src");
 
@@ -280,7 +290,7 @@ describe("user-authored names are masked (ADR 0002 decision 2)", () => {
   }
 
   it("imports the marking from this module rather than writing the class inline", () => {
-    // A hand-written "sentry-mask" string would not be found by a rename and
+    // A hand-written "ph-mask" string would not be found by a rename and
     // would not be found by the check above either.
     for (const file of new Set(MASKED_NAMES.map((s) => s.file))) {
       expect(read(file), `${file} should import its marking`).toContain(
@@ -404,20 +414,109 @@ describe("names in attributes are masked (ADR 0002 decision 2)", () => {
 });
 
 describe("nothing unmasks itself (ADR 0002 decision 2)", () => {
-  it("exposes the mask class Sentry looks for by default", () => {
-    // Named as a string rather than imported from the SDK, so `sentrySink.ts`
-    // stays the only module importing `@sentry/*` (ADR 0001 decision 1).
-    expect(MASK_CONTENT).toBe("sentry-mask");
+  it("exposes the mask class PostHog's recorder looks for by default", () => {
+    // Named as a string rather than imported from the SDK, so
+    // `posthogTransport.ts` stays the only module importing `posthog-js`.
+    expect(MASK_CONTENT).toBe("ph-mask");
   });
 
-  it("has no component that unmasks itself", () => {
+  it("masks every text node, and names no exception", () => {
     // Unmasking is permitted only for stable, non-user-authored chrome, and
-    // only by an explicit named selector in the SDK configuration — never by a
+    // only by an explicit selector in `REPLAY_UNMASK_SELECTORS` — never by a
     // component deciding for itself that its own content is safe to record.
+    expect(MASK_ALL_TEXT_SELECTOR).toBe("*");
+    expect(REPLAY_UNMASK_SELECTORS).toEqual([]);
+  });
+
+  it("has no component that tells the recorder to skip its masking", () => {
+    // PostHog's recorder has no unmask class; the classes that change what it
+    // records are its block and ignore classes, and no surface may use them
+    // to opt out of masking either.
     const offenders: string[] = [];
-    for (const file of new Set(MASKED_NAMES.map((s) => s.file))) {
-      if (read(file).includes(UNMASK_CONTENT)) offenders.push(file);
+    for (const path of componentFiles()) {
+      const source = readFileSync(path, "utf8");
+      if (/ph-unmask|ph-ignore-input|sentry-unmask/.test(source)) {
+        offenders.push(relativeTo(sourceRoot, path));
+      }
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("the recorder's masking functions (GRV-120)", () => {
+  it("masks every visible character of a text node and keeps its spacing", () => {
+    const element = document.createElement("p");
+    expect(maskReplayText("Midnight Drive", element)).toBe("******** *****");
+  });
+
+  it("masks the attributes names reach the DOM through", () => {
+    expect(maskReplayAttribute("aria-label", "Mute Lead Vocal")).toBe("**** **** *****");
+    expect(maskReplayAttribute("title", "Chorus Riff")).toBe("****** ****");
+    expect(maskReplayAttribute("placeholder", "dusty piano")).toBe("***** *****");
+  });
+
+  it("strips the query string and fragment from every URL attribute", () => {
+    expect(maskReplayAttribute("href", "/download?token=abc#x")).toBe("/download");
+    expect(
+      maskReplayAttribute("src", "https://cdn.example/k.wav?alt=media&token=t"),
+    ).toBe("https://cdn.example/k.wav");
+    expect(maskReplayAttribute("srcset", "/a.png?t=1 1x, /b.png?t=2 2x")).toBe(
+      "/a.png 1x, /b.png 2x",
+    );
+  });
+
+  it("leaves other attributes alone, so the interface stays legible", () => {
+    expect(maskReplayAttribute("class", "mixer-strip")).toBe("mixer-strip");
+    expect(maskReplayAttribute("data-testid", "mixer-strip")).toBe("mixer-strip");
+  });
+
+  it("keeps a request's method, status and timing, and nothing of its payload", () => {
+    const masked = maskReplayNetworkRequest({
+      name: "https://firebasestorage.googleapis.com/v0/b/bucket/o/users%2Fu1%2Fkick.wav?alt=media&token=secret",
+      method: "GET",
+      status: 200,
+      startTime: 1,
+      duration: 20,
+      requestHeaders: { authorization: "Bearer secret" },
+      requestBody: "secret body",
+      responseHeaders: { "set-cookie": "secret" },
+      responseBody: "secret response",
+    });
+    expect(masked).toEqual({
+      name: "https://firebasestorage.googleapis.com/v0/b/:param/o/:param/:param/:param",
+      method: "GET",
+      status: 200,
+      startTime: 1,
+      duration: 20,
+    });
+  });
+
+  it("drops a request whose URL it cannot read", () => {
+    expect(maskReplayNetworkRequest({ name: "not a url" })).toBeUndefined();
+    expect(maskReplayNetworkRequest({})).toBeUndefined();
+  });
+});
+
+describe("replay sampling (ADR 0002 decision 6)", () => {
+  it("samples sessions low", () => {
+    expect(REPLAY_SESSION_SAMPLE_RATE).toBe(0.1);
+  });
+
+  it("samples about that share of sessions, the same way for the same session", () => {
+    const ids = Array.from(
+      { length: 2000 },
+      (_, i) => `0199${i.toString(16).padStart(8, "0")}-session`,
+    );
+    const sampled = ids.filter((id) => isSessionSampled(id, REPLAY_SESSION_SAMPLE_RATE));
+    expect(sampled.length / ids.length).toBeGreaterThan(0.05);
+    expect(sampled.length / ids.length).toBeLessThan(0.15);
+    for (const id of ids.slice(0, 50)) {
+      expect(isSessionSampled(id, 0.1)).toBe(isSessionSampled(id, 0.1));
+    }
+  });
+
+  it("samples none at 0 and all at 1", () => {
+    expect(isSessionSampled("any", 0)).toBe(false);
+    expect(isSessionSampled("any", 1)).toBe(true);
   });
 });

@@ -222,7 +222,9 @@ describe("EditorSession preview (UI-005)", () => {
 
     await vi.waitFor(() => expect(preview.status).toBe("stale"));
     expect(preview.endReason).toBe("remote_change");
-    expect(session.project).toBe(project);
+    // The session shows the project as it was saved elsewhere, never the preview.
+    expect(session.project.metadata.name).toBe("Renamed elsewhere");
+    expect(noteCount(session.project, clipId)).toBe(noteCount(project, clipId));
     expect(preview.commit("assistant")).toBeNull();
   });
 

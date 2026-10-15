@@ -14,17 +14,24 @@ import {
   createIdStem,
   newId,
 } from "../prompt";
-import { toolNameFor } from "../tools";
+import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { createHouseLoopProject } from "./fixtures";
-import { formatTally, renderMarkdown, validFailureLine } from "./markdown";
+import {
+  formatTally,
+  renderMarkdown,
+  renderSummaryMarkdown,
+  validFailureLine,
+} from "./markdown";
 import {
   AUTH_ABORT_REASON,
   buildReport,
   evalExitCode,
   evaluateRecords,
+  evaluateTurn,
   evaluateTurnSafely,
   runEvals,
+  summaryOf,
   whyNoProposal,
 } from "./run";
 
@@ -144,11 +151,77 @@ describe("runEvals", () => {
     const markdown = renderMarkdown(report);
     expect(markdown).toContain("**Errored turns: 1 of 2**");
     expect(markdown).toContain(
-      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 1 |",
+      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | - | - | 1 |",
     );
     expect(markdown).toContain(
       "**Run 2** (0 s): errored, not judged: provider_error: The assistant could not take that request. (provider: rejected, HTTP 400)",
     );
+  });
+
+  // GRV-99: cases that carry a conversation, expect a question, or name checks of their own.
+  it("sends a case's history ahead of its request", async () => {
+    const known = EVAL_CASES.find((entry) => entry.id === "pad-genre-known") as EvalCase;
+    const provider = createScriptedAssistantProvider([
+      replyEvents(["A pad, coming up."]),
+    ]);
+    await runEvals({ provider, cases: [known], runs: 1, now: fixedNow });
+    expect(provider.requests[0].messages).toEqual([
+      ...(known.history ?? []).map((message) => ({
+        role: message.role,
+        content: message.text,
+      })),
+      { role: "user", content: known.request },
+    ]);
+  });
+
+  it("passes a case that expects a question only when it asks and proposes nothing", async () => {
+    const unknown = EVAL_CASES.find(
+      (entry) => entry.id === "pad-genre-unknown",
+    ) as EvalCase;
+    const project = unknown.fixture();
+    const synth = project.song.tracks.find((track) => track.name === "Synth");
+    if (!synth) throw new Error("no Synth track");
+    const synthDown = setParameter(
+      { scope: "track", trackId: synth.id, parameterId: "track.volume" },
+      -3,
+    );
+    const askCall = {
+      name: "ask_producer",
+      input: {
+        question: "What kind of track is this?",
+        options: [{ label: "Deep techno" }, { label: "Ambient" }],
+      },
+    };
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("Before I add a pad: what kind of track is this?", [askCall]),
+      toolUseEvents("A pad, and the Synth volume down.", [
+        { name: toolNameFor(synthDown.type), input: synthDown.payload },
+      ]),
+    ]);
+    const report = await runEvals({ provider, cases: [unknown], runs: 2, now: fixedNow });
+    const [asked, proposed] = report.records;
+    expect(asked.checks).toEqual({
+      outcome: { status: "pass", detail: 'Asked "What kind of track is this?"' },
+    });
+    expect(proposed.checks.outcome?.status).toBe("fail");
+    // A proposal it should not have made is still judged by the shared checks.
+    expect(proposed.checks.valid?.status).toBe("pass");
+    expect(proposed.checks.inScope?.status).toBe("fail");
+    expect(report.summary.checks.outcome).toEqual({ pass: 1, fail: 1, skip: 0 });
+  });
+
+  it("judges a case's own checks, and leaves them unjudged when nothing applied", async () => {
+    const hats = EVAL_CASES.find((entry) => entry.id === "density-hats") as EvalCase;
+    const provider = createScriptedAssistantProvider([
+      replyEvents(["Could you select the hi-hat notes first?"]),
+    ]);
+    const report = await runEvals({ provider, cases: [hats], runs: 1, now: fixedNow });
+    const [record] = report.records;
+    expect(record.checks.valid?.status).toBe("fail");
+    expect(record.checks.outcome).toEqual({ status: "fail", detail: "Proposed nothing" });
+    expect(record.checks.hatDensity?.status).toBe("skip");
+    expect(record.checks.pointsToGenerate?.status).toBe("skip");
+    expect(record.checks.padSound).toBeUndefined();
   });
 
   it("stops at once and exits 1 when the provider rejects the API key", async () => {
@@ -234,7 +307,68 @@ describe("runEvals", () => {
       runsPerCase: 1,
     });
     expect(replayed.records[0].checks).toEqual(report.records[0].checks);
+    expect(replayed.scorecard).toEqual(report.scorecard);
+    expect(replayed.scorecard.headline.applies).toEqual({ pass: 1, judged: 1, rate: 1 });
     expect(provider.requests).toHaveLength(1);
+  });
+
+  it("records each turn's token usage and time to first streamed text (GRV-102)", async () => {
+    let clock = 1_000;
+    const now = () => {
+      clock += 10;
+      return clock;
+    };
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("A Compressor on the master.", [compressorCall("a", -18)]),
+    ]);
+    const report = await runEvals({ provider, cases: [glue], runs: 1, now });
+    const [record] = report.records;
+    expect(record.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+    });
+    expect(record.firstTextMs).toBeGreaterThan(0);
+    expect(record.firstTextMs).toBeLessThan(record.durationMs);
+    expect(report.scorecard.secondary.tokens).toMatchObject({ turns: 1, input: 100 });
+    // 100 input at $2/M and 20 output at $10/M on claude-sonnet-5.
+    expect(report.scorecard.secondary.costUsd.total).toBeCloseTo(0.0004, 10);
+    expect(Object.keys(report).slice(-3)).toEqual(["scorecard", "summary", "records"]);
+  });
+});
+
+describe("evaluateTurn for GRV-107's cases", () => {
+  const find = (id: string) => EVAL_CASES.find((entry) => entry.id === id) as EvalCase;
+  const base = { durationMs: 1, error: null, stopReason: null, text: "" };
+
+  it("hands a db case's commands and expected value to its check", () => {
+    const evalCase = find("db-nudge-down");
+    const project = evalCase.fixture();
+    const track = project.song.tracks[0];
+    const expected = evalCase.expectedValue;
+    if (!expected) throw new Error("db-nudge-down has no expected value");
+    const command = setParameter(
+      { scope: "track", trackId: track.id, parameterId: "track.volume" },
+      expected.value,
+    );
+    const proposal = {
+      baseRevision: project.metadata.revision,
+      toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+      calls: [{ name: toolNameFor(command.type), input: command.payload }],
+    };
+    const record = evaluateTurn(evalCase, 1, { ...base, proposal } as never);
+    expect(record.checks.endsAt?.status).toBe("pass");
+    expect(record.checks.endsAt?.detail).toContain("BD volume");
+  });
+
+  it("passes an either case with a scope-widening question and no proposal", () => {
+    const evalCase = find("sketch-track-scope");
+    const ask = { question: "Want me to widen the scope to the whole song?" };
+    const record = evaluateTurn(evalCase, 1, { ...base, proposal: null, ask } as never);
+    expect(record.checks).toEqual({
+      outcome: expect.objectContaining({ status: "pass" }),
+    });
   });
 });
 
@@ -298,6 +432,27 @@ describe("check 1 and new IDs", () => {
     expect(record.checks.valid?.kind).toBe("schema");
   });
 
+  it("records where a turn's output tokens went and prints them", async () => {
+    const provider = createScriptedAssistantProvider([
+      replyEvents(["Nothing to do."], {
+        stopReason: "max_tokens",
+        outputTokens: 16_000,
+        withThinking: true,
+      }),
+    ]);
+    const report = await runEvals({ provider, cases: [glue], runs: 1, now: fixedNow });
+    const [record] = report.records;
+    expect(record.tokens).toEqual({
+      outputTokens: 16_000,
+      thinkingChars: "private reasoning".length,
+      toolInputChars: 0,
+      textChars: "Nothing to do.".length,
+    });
+    expect(renderMarkdown(report)).toContain(
+      `Output tokens 16000; input 100, cache read 0; streamed characters: thinking ${"private reasoning".length}, tool input 0, text ${"Nothing to do.".length}`,
+    );
+  });
+
   it.each([
     [{ stopReason: "max_tokens" }, "cut off at max_tokens"],
     [{ stopReason: "refusal" }, "The model refused"],
@@ -354,6 +509,35 @@ describe("renderMarkdown", () => {
     ]);
     const report = await runEvals({ provider, cases: [glue], runs: 1, now: fixedNow });
     expect(renderMarkdown(report)).not.toContain("## Why check 1 failed");
+  });
+
+  it("leads with the scorecard and keeps the summary to numbers (GRV-102)", async () => {
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("A Compressor on the master.", [compressorCall("a", -18)]),
+      replyEvents(["No."]),
+    ]);
+    const report = await runEvals({
+      provider,
+      cases: [glue, crushed],
+      runs: 1,
+      now: fixedNow,
+    });
+    const markdown = renderMarkdown(report);
+    const headline = markdown.indexOf("## Headline");
+    expect(headline).toBeGreaterThan(-1);
+    expect(headline).toBeLessThan(markdown.indexOf("## Pass rate per check"));
+    expect(markdown).toContain("| Applies cleanly (check 1) | 50.0% (1/2) |");
+    expect(markdown).toContain("| Expected outcome (check 8) |");
+    expect(markdown).toContain("## Cost by case");
+    expect(markdown).not.toContain("## Against the baseline");
+
+    const summary = renderSummaryMarkdown(summaryOf(report));
+    expect(summary).toContain("## Headline");
+    expect(summary).toContain("## By case");
+    expect(summary).not.toContain("## Runs");
+    expect(summary).not.toContain("Said:");
+    expect(summary).not.toContain("A Compressor on the master");
+    expect(summaryOf(report)).not.toHaveProperty("records");
   });
 
   it("formats a tally over the proposals a check could judge", () => {

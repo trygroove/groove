@@ -24,7 +24,7 @@
 //
 // The identifier is the pack's stable **slug** (`scripts/starter-library/
 // packs.mjs` for ours; the pack index's `slug` for a third party's), never its
-// display name and never its `pak_` ID: a GA4 breakdown reads as
+// display name and never its `pak_` ID: a PostHog breakdown reads as
 // `foundation-bass` rather than an opaque token, a rename cannot rewrite
 // analytics history, and library copy never lands in a report.
 

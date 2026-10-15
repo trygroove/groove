@@ -119,7 +119,7 @@ export class ErrorReporter {
 
   /**
    * Adds a transport. Called by `initTelemetry()` once the Sentry SDK has
-   * lazily loaded, so reports made before then still reach the GA4 counter.
+   * lazily loaded, so reports made before then still reach the analytics counter.
    */
   addSink(sink: ErrorSink): void {
     this.sinks.push(sink);
@@ -172,7 +172,7 @@ export class ErrorReporter {
       fingerprint,
     };
 
-    // The GA4 counter event. It keeps the section 11 measures computable from
+    // The analytics counter event. It keeps the section 11 measures computable from
     // one catalog (ADR 0001 decision 3) and carries no message at all — only
     // `fatal`, `area`, and `error_code`.
     this.analytics.log("exception", {

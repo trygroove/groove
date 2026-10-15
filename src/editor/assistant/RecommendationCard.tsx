@@ -160,8 +160,7 @@ export default function RecommendationCard(props: RecommendationCardProps): JSX.
                   </span>{" "}
                   <span class="assistant-entry-label">
                     {found().pack.publisher} · {found().pack.version} ·{" "}
-                    {found().pack.assetCount}{" "}
-                    {found().pack.assetCount === 1 ? "sound" : "sounds"}
+                    {found().soundCount} {found().soundCount === 1 ? "sound" : "sounds"}
                   </span>
                 </div>
               </div>

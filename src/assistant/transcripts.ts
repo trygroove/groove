@@ -10,7 +10,10 @@
  * Two top-level collections, written only by the Cloud Functions with the
  * admin credential. `firestore.rules` denies every client both of them, the
  * owner included, so no browser can write a transcript, widen its own
- * preference past what the callable allows, or read anyone's records.
+ * preference past what the callable allows, or read anyone's records. An
+ * account with the `admin` claim reads them through the
+ * `assistantTranscriptsAdmin` callable (`transcriptAdmin.ts`, GRV-98), never
+ * through the rules.
  *
  * - `assistantTranscripts/{uid}_{turnId}`: one completed turn
  *   ({@link TranscriptRecord}): the user's message, the reply, the proposal
@@ -19,14 +22,19 @@
  *   ({@link RetentionPreference}), keyed by uid so it survives sign-out,
  *   sign-in, and a guest linking an account (which keeps the uid).
  *
+ * Keeping is the default (GRV-97, ADR 0007 decision 9): an account that has
+ * not answered is kept, and only its explicit "don't keep" stops it.
+ *
  * The rules a store follows are here, Firebase-free, and run as one contract
  * suite against the in-memory store and the Firestore one
  * (`transcriptStoreContract.ts`):
  *
  * - **Read before every write.** A record is written only inside the same
  *   transaction that reads the preference and finds it permits retention
- *   ({@link permitsRetention}); absent, malformed, stale (answered against an
- *   older disclosure) or unreadable means no.
+ *   ({@link permitsRetention}); absent, malformed or stale (answered against
+ *   another disclosure) means yes, an explicit `retain: false` at any
+ *   disclosure version means no, and a preference the store cannot read
+ *   keeps nothing.
  * - **Opting out deletes.** Setting retention off removes every record the
  *   account has, and a turn racing it either lands before (and is deleted)
  *   or reads the new preference (and is not written).
@@ -37,6 +45,7 @@
  */
 import { z } from "zod";
 import { ASSISTANT_LIMITS } from "./config";
+import { PROPOSAL_ISSUE_CODES } from "./proposalIssues";
 
 export const ASSISTANT_TRANSCRIPTS_COLLECTION = "assistantTranscripts";
 export const ASSISTANT_PREFERENCES_COLLECTION = "assistantPreferences";
@@ -47,8 +56,10 @@ export const TRANSCRIPT_RETENTION_MS = TRANSCRIPT_RETENTION_DAYS * 24 * 60 * 60 
 
 /**
  * The disclosure an answer was given against. Bump it when the copy changes
- * what it promises: every earlier answer becomes stale, so nothing more is
- * kept until the account has read the new one and answered again.
+ * what it promises: every earlier answer becomes stale, so the browser shows
+ * the notice again. A stale answer never widens retention past what the
+ * account said: a stale "don't keep" still stops it (see
+ * {@link permitsRetention}).
  */
 export const ASSISTANT_DISCLOSURE_VERSION = 1;
 
@@ -87,17 +98,21 @@ export const retentionPreferenceSchema = z.strictObject({
 export type RetentionPreference = z.infer<typeof retentionPreferenceSchema>;
 
 /**
- * Whether a stored preference lets Groove keep a transcript. Only a
- * well-formed `retain: true` given against the current disclosure does;
- * anything else (no answer, a malformed one, one given against older copy)
- * keeps nothing.
+ * Whether a stored preference lets Groove keep a transcript (GRV-97: keeping
+ * is the default). Only an explicit "don't keep" stops it: any stored
+ * document whose `retain` is `false`, whatever disclosure it answered and
+ * however well-formed the rest of it is. No answer, a yes, and a malformed or
+ * stale document that does not say `retain: false` all keep.
  */
 export function permitsRetention(raw: unknown): boolean {
-  const parsed = retentionPreferenceSchema.safeParse(raw);
+  return !declinesRetention(raw);
+}
+
+function declinesRetention(raw: unknown): boolean {
   return (
-    parsed.success &&
-    parsed.data.retain &&
-    parsed.data.disclosureVersion === ASSISTANT_DISCLOSURE_VERSION
+    typeof raw === "object" &&
+    raw !== null &&
+    (raw as { readonly retain?: unknown }).retain === false
   );
 }
 
@@ -107,8 +122,45 @@ export function readPreference(raw: unknown): RetentionPreference | null {
   return parsed.success ? parsed.data : null;
 }
 
-export const PROPOSAL_OUTCOMES = ["applied", "cancelled", "undone"] as const;
+/**
+ * What became of a proposal. `rejected` (GRV-98): it never reached the
+ * producer as something to apply, because it did not fit the song (or the
+ * song had moved on); the outcome carries why ({@link TranscriptIssue}).
+ */
+export const PROPOSAL_OUTCOMES = ["applied", "cancelled", "undone", "rejected"] as const;
 export type ProposalOutcome = (typeof PROPOSAL_OUTCOMES)[number];
+
+/** The most issues one rejected outcome keeps. */
+export const MAX_TRANSCRIPT_ISSUES = 20;
+
+/**
+ * One reason a proposal was rejected, as the browser's validator found it
+ * (`ProposalIssue` in `proposal.ts`, GRV-98): its code, the tool call it blames
+ * (by the call's ID and tool name, both the model's), and where the validator
+ * and the kernel say so, the path and message they wrote. Never the
+ * producer's words: those are machine-generated, and a path or message that
+ * carries anything {@link checkTranscriptOutcome} forbids is dropped.
+ */
+export const transcriptIssueSchema = z.strictObject({
+  code: z.enum(PROPOSAL_ISSUE_CODES),
+  callId: z.string().max(200).nullable(),
+  callName: z.string().max(200).nullable(),
+  path: z.string().max(300).nullable(),
+  message: z.string().max(500).nullable(),
+});
+export type TranscriptIssue = z.infer<typeof transcriptIssueSchema>;
+
+/** One outcome as a record keeps it; only `rejected` carries issues. */
+export const transcriptOutcomeSchema = z
+  .strictObject({
+    outcome: z.enum(PROPOSAL_OUTCOMES),
+    at: z.int().min(0),
+    issues: z.array(transcriptIssueSchema).max(MAX_TRANSCRIPT_ISSUES).optional(),
+  })
+  .refine((entry) => entry.issues === undefined || entry.outcome === "rejected", {
+    message: "only a rejected outcome carries issues",
+  });
+export type TranscriptOutcome = z.infer<typeof transcriptOutcomeSchema>;
 
 const text = z.string().max(64_000);
 
@@ -144,9 +196,7 @@ export const transcriptRecordSchema = z.strictObject({
   reply: text,
   stopReason: z.enum(["end_turn", "max_tokens", "refusal", "tool_use"]),
   proposal: transcriptProposalSchema.nullable(),
-  outcomes: z
-    .array(z.strictObject({ outcome: z.enum(PROPOSAL_OUTCOMES), at: z.int().min(0) }))
-    .max(50),
+  outcomes: z.array(transcriptOutcomeSchema).max(50),
   model: z.string().max(100),
   promptVersion: z.string().max(100),
   /** When the message arrived, ms since the epoch: the retention clock. */
@@ -212,6 +262,37 @@ function forbiddenContent(value: unknown, depth = 0): string | null {
   return null;
 }
 
+/** A free-text issue field, or `null` when it carries anything forbidden. */
+function cleanIssueField(value: string | null): string | null {
+  return value !== null && forbiddenContent(value) ? null : value;
+}
+
+/**
+ * The gate an outcome passes before a store adds it to a record (GRV-98):
+ * the strict shape, then nothing forbidden. Every free-text field of an issue
+ * (the call's ID and name, which come from the client, and the path and
+ * message) is dropped on its own when it carries something forbidden, keeping
+ * the code, so a rejection is never kept without its reason codes and never
+ * with a URL or a credential. Returns `null` for anything that is not an
+ * outcome.
+ */
+export function checkTranscriptOutcome(raw: unknown): TranscriptOutcome | null {
+  const parsed = transcriptOutcomeSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const { issues, ...rest } = parsed.data;
+  if (!issues) return rest;
+  return {
+    ...rest,
+    issues: issues.map((issue) => ({
+      code: issue.code,
+      callId: cleanIssueField(issue.callId),
+      callName: cleanIssueField(issue.callName),
+      path: cleanIssueField(issue.path),
+      message: cleanIssueField(issue.message),
+    })),
+  };
+}
+
 export type TranscriptCheck =
   | { readonly ok: true; readonly record: TranscriptRecord }
   | { readonly ok: false; readonly reason: string };
@@ -242,7 +323,7 @@ export interface AssistantProposalShown {
 export interface CompletedTurn {
   readonly uid: string;
   readonly session: AssistantTurnSession;
-  /** Whether the account is a team or test one (`isInternalAccount`). */
+  /** Whether the account carries the `internal` claim (`src/access/claims.ts`). */
   readonly internalAccount: boolean;
   readonly projectRevision: number;
   readonly userMessage: string;
@@ -316,9 +397,17 @@ export interface TranscriptStore {
   addOutcomeIfPermitted(
     uid: string,
     turnId: string,
-    outcome: { outcome: ProposalOutcome; at: number },
+    outcome: TranscriptOutcome,
     permits: (preference: unknown) => boolean,
   ): Promise<boolean>;
+  /**
+   * The newest records, unparsed, newest first: every account's, or only the
+   * account's or the project's when the filter names one (GRV-98, the admin
+   * viewer). At most `limit`.
+   */
+  recent(filter: TranscriptListFilter, limit: number): Promise<unknown[]>;
+  /** One record, unparsed, by its account and turn, or `null`. */
+  read(uid: string, turnId: string): Promise<unknown>;
   /** Deletes every record the account has. Returns how many. */
   deleteForUser(uid: string): Promise<number>;
   /** Deletes every record about the project. Returns how many. */
@@ -327,6 +416,12 @@ export interface TranscriptStore {
   deleteExpired(now: number): Promise<number>;
   /** Deletes the account's preference (account deletion). */
   deletePreference(uid: string): Promise<void>;
+}
+
+/** What {@link TranscriptStore.recent} narrows to; an empty filter is every account. */
+export interface TranscriptListFilter {
+  readonly uid?: string;
+  readonly projectId?: string;
 }
 
 /** Records are capped per outcome list; a record never holds more. */

@@ -140,6 +140,148 @@ describe("consent (PRD OPS-02 opt-out)", () => {
   });
 });
 
+describe("identity (GRV-106)", () => {
+  it("identifies the signed-in account by its UID", () => {
+    const { analytics, transport } = setup();
+    analytics.setUserId("uid_123");
+    expect(transport.userId).toBe("uid_123");
+  });
+
+  it("identifies once per account, not once per call", () => {
+    const transport = createRecordingTransport();
+    const identify = vi.spyOn(transport, "identify");
+    const { analytics } = setup({ transport });
+    analytics.setUserId("uid_123");
+    analytics.setUserId("uid_123");
+    analytics.log("app_opened");
+    expect(identify).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets on sign-out and sends the person properties again", () => {
+    const { analytics, transport } = setup();
+    analytics.setUserId("uid_123");
+    transport.reset();
+    analytics.setUserId(null);
+    expect(transport.userId).toBeNull();
+    expect(transport.identityResets).toBe(1);
+    expect(transport.userProperties).toEqual({
+      account_type: "unknown",
+      internal: "false",
+    });
+  });
+
+  it("resets before identifying a different account on the same browser", () => {
+    const { analytics, transport } = setup();
+    analytics.setUserId("uid_a");
+    analytics.setUserId("uid_b");
+    expect(transport.identityResets).toBe(1);
+    expect(transport.userId).toBe("uid_b");
+  });
+
+  it("does not reset for a page that loads signed out", () => {
+    const { analytics, transport } = setup();
+    analytics.setUserId(null);
+    expect(transport.identityResets).toBe(0);
+  });
+
+  it("identifies nobody while opted out, and identifies on a new transport after", () => {
+    const { analytics, transport, consent } = setup();
+    consent.optOut();
+    analytics.setUserId("uid_123");
+    expect(transport.userId).toBeNull();
+
+    consent.optIn();
+    const next = createRecordingTransport();
+    analytics.setTransport(next);
+    expect(next.userId).toBe("uid_123");
+  });
+
+  it("owes the vendor a reset for a sign-out made while opted out", () => {
+    // The vendor client under every PostHog transport is the same one, and it
+    // still holds the account it was identified as. Opting back in without a
+    // reset would persist that account's ID for later signed-out visits.
+    const { analytics, consent } = setup();
+    analytics.setUserId("uid_a");
+    consent.optOut();
+    analytics.setTransport(createRecordingTransport());
+    analytics.setUserId(null);
+
+    consent.optIn();
+    const next = createRecordingTransport();
+    analytics.setTransport(next);
+
+    expect(next.identityResets).toBe(1);
+    expect(next.userId).toBeNull();
+
+    analytics.log("app_opened");
+    expect(next.identityResets).toBe(1);
+  });
+
+  it("resets before identifying the next account after an opted-out switch", () => {
+    const { analytics, consent } = setup();
+    analytics.setUserId("uid_a");
+    consent.optOut();
+    analytics.setTransport(createRecordingTransport());
+    analytics.setUserId("uid_b");
+
+    consent.optIn();
+    const next = createRecordingTransport();
+    const calls: string[] = [];
+    vi.spyOn(next, "resetIdentity").mockImplementation(() => void calls.push("reset"));
+    vi.spyOn(next, "identify").mockImplementation((id) => void calls.push(id));
+    analytics.setTransport(next);
+
+    expect(calls).toEqual(["reset", "uid_b"]);
+  });
+});
+
+describe("transport replacement (GRV-106)", () => {
+  it("disposes the transport it replaces, so its buffer is never sent", () => {
+    const { analytics, transport } = setup();
+    const dispose = vi.fn();
+    const buffering: AnalyticsTransport = { ...transport, dispose };
+    analytics.setTransport(buffering);
+    analytics.setTransport(createRecordingTransport());
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("never throws from a transport whose dispose throws", () => {
+    const { analytics, transport } = setup();
+    analytics.setTransport({
+      ...transport,
+      dispose: () => {
+        throw new Error("blocked");
+      },
+    });
+    expect(() => analytics.setTransport(createRecordingTransport())).not.toThrow();
+  });
+});
+
+describe("page views (GRV-106)", () => {
+  it("sends one page view per call", () => {
+    const { analytics, transport } = setup();
+    analytics.pageview();
+    analytics.pageview();
+    expect(transport.pageviews).toBe(2);
+  });
+
+  it("sends none while opted out", () => {
+    const { analytics, transport, consent } = setup();
+    consent.optOut();
+    analytics.pageview();
+    expect(transport.pageviews).toBe(0);
+  });
+
+  it("never throws from a failing transport", () => {
+    const { analytics } = setup({ transport: createFailingTransport() });
+    expect(() => {
+      analytics.pageview();
+      analytics.setUserId("uid_123");
+      analytics.setUserId(null);
+    }).not.toThrow();
+  });
+});
+
 describe("library_pack_added (LOOP-013, LIB-08)", () => {
   // Its call site is the library browser's `addPack` (see
   // `useLibraryBrowser.test.ts`), which is the only place a pack's *published*
@@ -184,7 +326,7 @@ describe("library_pack_added (LOOP-013, LIB-08)", () => {
 
   it("drops an event whose pack id is not a published slug", () => {
     // The untyped edge: a caller that reaches past the compiler with a pack's
-    // own ID gets the event dropped, not a pack ID delivered to GA4.
+    // own ID gets the event dropped, not a pack ID delivered to the vendor.
     const { analytics, transport } = setup();
     analytics.log("library_pack_added", {
       pack_kind: "user",

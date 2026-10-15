@@ -1,4 +1,5 @@
 import {
+  answerDisclosure,
   assistantButton,
   composer,
   conversation,
@@ -26,6 +27,8 @@ test.describe("the assistant's conversation", { tag: "@sanity" }, () => {
   test("sends, streams, stops and tries again through the gateway", async ({ page }) => {
     await newProject(page);
     await assistantButton(page).click();
+    // A fresh account answers the disclosure first (GRV-8).
+    await answerDisclosure(page);
     await expect(composer(page)).toBeFocused();
     await expect(scope(page)).toHaveAccessibleName("Scope: BD");
 
@@ -82,6 +85,7 @@ test.describe("the assistant's conversation", { tag: "@sanity" }, () => {
   test("ends a reply in a proposal card", async ({ page }) => {
     await newProject(page);
     await assistantButton(page).click();
+    await answerDisclosure(page);
     await composer(page).fill("Speed it up [propose]");
     await page.keyboard.press("Enter");
     const card = conversation(page).getByRole("region", { name: /^Proposal\b/ });
@@ -96,6 +100,7 @@ test.describe("a question the assistant asks", () => {
   }) => {
     await newProject(page);
     await assistantButton(page).click();
+    await answerDisclosure(page);
     await composer(page).fill("Build me a drop [ask]");
     await page.keyboard.press("Enter");
 
@@ -119,6 +124,7 @@ test.describe("a question the assistant asks", () => {
   test("is answered by making the change in the editor (GRV-42)", async ({ page }) => {
     await newProject(page);
     await assistantButton(page).click();
+    await answerDisclosure(page);
     await composer(page).fill("Where do I start? [ask-rich]");
     await page.keyboard.press("Enter");
 

@@ -20,6 +20,7 @@ import type { AssistantAsk } from "./ask";
 import { ASSISTANT_LIBRARY_LIMITS, ASSISTANT_REQUEST_LIMITS } from "./config";
 import { assistantMemoryContextSchema } from "./memory";
 import { assistantTurnSessionSchema } from "./transcripts";
+import type { AssistantVideo } from "./video";
 
 const name = z.string().max(200);
 const count = z.int().min(0);
@@ -313,6 +314,11 @@ export interface AssistantTurnResult {
   readonly proposal: AssistantProposal | null;
   /** The question the turn asks the producer (`ask_producer`, GRV-42), if any. */
   readonly ask: AssistantAsk | null;
+  /**
+   * The tutorial videos the turn recommends (`recommend_video`, GRV-16), each
+   * checked with YouTube; empty when it recommends none or none survived.
+   */
+  readonly videos: readonly AssistantVideo[];
   readonly model: string;
   readonly promptVersion: string;
   /** Provider calls the account has left in the rolling window. */

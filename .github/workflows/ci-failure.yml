@@ -20,6 +20,9 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
+    # Only the runs either job acts on: main and the merge queue. Without this,
+    # every PR branch's CI starts a run that is skipped at once.
+    branches: [main, "gh-readonly-queue/**"]
 
 permissions:
   contents: write
@@ -97,6 +100,10 @@ jobs:
           attempt="${{ github.event.workflow_run.run_attempt }}"
           if [ "$prev" != success ] || [ "$attempt" != 1 ]; then echo "was=stopped" >> "$GITHUB_OUTPUT"; fi
       - if: steps.before.outputs.was == 'stopped'
-        run: |
-          node .github/scripts/merge.mjs resume
-          gh workflow run board.yml --repo "$GITHUB_REPOSITORY" --ref main
+        run: node .github/scripts/merge.mjs resume
+      # GITHUB_TOKEN, not RESTACK_TOKEN: the PAT has no Actions permission, and a
+      # workflow_dispatch is the one event GITHUB_TOKEN is allowed to trigger.
+      - if: steps.before.outputs.was == 'stopped'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run board.yml --repo "$GITHUB_REPOSITORY" --ref main

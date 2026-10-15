@@ -1,5 +1,11 @@
 import type { AssistantClient } from "./assistant/assistantClient";
 import { createAssistantClient } from "./assistant/assistantClient";
+import type { InMemoryTranscriptStore } from "./assistant/inMemoryTranscriptStore";
+import {
+  type AssistantRetentionClient,
+  createRetentionClient,
+} from "./assistant/retentionClient";
+import type { TranscriptAdminClient } from "./assistant/transcriptAdminClient";
 import { isMockBackend, resolveEmulatorHosts } from "./devBackend";
 
 /**
@@ -11,6 +17,17 @@ import { isMockBackend, resolveEmulatorHosts } from "./devBackend";
  * nor the gateway joins a graph that never opens the assistant.
  */
 let cached: Promise<AssistantClient> | null = null;
+let cachedRetention: Promise<AssistantRetentionClient> | null = null;
+
+/** The mock backend's one transcript store, shared by its gateway and its retention calls. */
+const MOCK_UID = "mock-user";
+let mockTranscripts: Promise<InMemoryTranscriptStore> | null = null;
+function mockTranscriptStore(): Promise<InMemoryTranscriptStore> {
+  mockTranscripts ??= import("./assistant/inMemoryTranscriptStore").then((module) =>
+    module.createInMemoryTranscriptStore(),
+  );
+  return mockTranscripts;
+}
 
 export function getAssistantClient(): Promise<AssistantClient> {
   if (cached) return cached;
@@ -24,26 +41,93 @@ export function getAssistantClient(): Promise<AssistantClient> {
   return pending;
 }
 
+/**
+ * The editor's retention client (GRV-8), chosen like the assistant client:
+ * the `assistantRetention` callable, or on the mock backend the same logic in
+ * the page over the store its gateway keeps transcripts in.
+ */
+export function getAssistantRetentionClient(): Promise<AssistantRetentionClient> {
+  if (cachedRetention) return cachedRetention;
+  const pending = createRetention();
+  cachedRetention = pending;
+  pending.catch(() => {
+    if (cachedRetention === pending) cachedRetention = null;
+  });
+  return pending;
+}
+
+async function createRetention(): Promise<AssistantRetentionClient> {
+  if (isMockBackend) {
+    const [{ handleRetentionRequest }, store] = await Promise.all([
+      import("./assistant/retention"),
+      mockTranscriptStore(),
+    ]);
+    return createRetentionClient((request) =>
+      handleRetentionRequest(store, MOCK_UID, request, Date.now()),
+    );
+  }
+  const [{ createFirebaseRetentionCall }, { app }] = await Promise.all([
+    import("./firebaseAssistantTransport"),
+    import("./firebaseConfig"),
+  ]);
+  return createRetentionClient(
+    createFirebaseRetentionCall(app, resolveEmulatorHosts()?.functions ?? null),
+  );
+}
+
+/**
+ * The admin page's transcript client (GRV-98): the
+ * `assistantTranscriptsAdmin` callable, or on the mock backend the same
+ * logic over the store its gateway keeps transcripts in, as an admin (the
+ * mock backend's one account is one).
+ */
+export async function getTranscriptAdminClient(): Promise<TranscriptAdminClient> {
+  const { createTranscriptAdminClient } = await import(
+    "./assistant/transcriptAdminClient"
+  );
+  if (isMockBackend) {
+    const [{ handleTranscriptAdminRequest }, store] = await Promise.all([
+      import("./assistant/transcriptAdmin"),
+      mockTranscriptStore(),
+    ]);
+    return createTranscriptAdminClient((request) =>
+      handleTranscriptAdminRequest(store, { admin: true }, request),
+    );
+  }
+  const [{ createFirebaseTranscriptAdminCall }, { app }] = await Promise.all([
+    import("./firebaseAssistantTransport"),
+    import("./firebaseConfig"),
+  ]);
+  return createTranscriptAdminClient(
+    createFirebaseTranscriptAdminCall(app, resolveEmulatorHosts()?.functions ?? null),
+  );
+}
+
 async function createClient(): Promise<AssistantClient> {
   if (isMockBackend) {
     const [
       { createLocalAssistantTransport },
-      { createEmulatorAssistantProvider },
+      { createEmulatorAssistantProvider, emulatorVideoVerifier },
       guards,
+      transcripts,
     ] = await Promise.all([
       import("./assistant/localTransport"),
       import("./assistant/emulatorProvider"),
       import("./assistant/inMemoryGuardStores"),
+      mockTranscriptStore(),
     ]);
     return createAssistantClient(
       createLocalAssistantTransport(
         {
           provider: createEmulatorAssistantProvider(),
           guards: guards.createInMemoryGuardStores(),
+          transcripts,
+          // Never YouTube from the page: the mock backend vouches for its own video.
+          verifyVideo: emulatorVideoVerifier,
           log: () => {},
           now: Date.now,
         },
-        { uid: "mock-user", signInProvider: "google.com" },
+        { uid: MOCK_UID, signInProvider: "google.com" },
       ),
     );
   }

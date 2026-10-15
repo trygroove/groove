@@ -241,3 +241,27 @@ test.describe("editor header at narrow widths", () => {
     });
   }
 });
+
+// GRV-94: a view switched with its number key drops focus onto `.editor-body`
+// (focus rescue, #76), and a keyboard-driven focus matched `:focus-visible`,
+// framing every view in a 2px white outline. The body is a container, not a
+// control: it must never draw a frame, so the content stays flush to the edges.
+test.describe("view panes carry no frame", () => {
+  for (const [name, key] of [
+    ["Instrument", "3"],
+    ["Library", "4"],
+    ["Mixer", "5"],
+  ] as const) {
+    test(`${name} view has no outline after a key switch`, async ({ page }) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto("/projects");
+      await page.getByRole("button", { name: "New Project" }).click();
+      await expect(page.getByTestId("arrangement-view-ready")).toBeVisible();
+      await page.mouse.click(700, 400);
+      await page.keyboard.press(key);
+      const body = page.locator(".editor-body");
+      await expect(body).toBeFocused();
+      await expect(body).toHaveCSS("outline-style", "none");
+    });
+  }
+});

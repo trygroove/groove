@@ -24,6 +24,7 @@
  */
 import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
+import { issueCall, type ProposalIssue } from "../../assistant/proposal";
 import {
   createProposalExecutor,
   type ProposalExecutor,
@@ -32,6 +33,11 @@ import {
 } from "../../assistant/proposalExecutor";
 import type { AssistantProposal } from "../../assistant/protocol";
 import type { ProposalCapability } from "../../assistant/tools";
+import {
+  MAX_TRANSCRIPT_ISSUES,
+  type ProposalOutcome,
+  type TranscriptIssue,
+} from "../../assistant/transcripts";
 import {
   type ControlAddress,
   controlKey,
@@ -52,6 +58,7 @@ import {
   projectAfter,
   proposalRows,
 } from "./proposalCardModel";
+import { rejectionReason } from "./rejectionReason";
 import type { TurnOrigin } from "./useAssistantConversation";
 
 /**
@@ -61,7 +68,8 @@ import type { TurnOrigin } from "./useAssistantConversation";
  * - `undone`: applied, then undone.
  * - `cancelled`: turned down; nothing changed.
  * - `stale`: the song changed under it; it cannot be applied.
- * - `invalid`: it does not fit the song at all (a refused value, a missing ID).
+ * - `invalid`: it does not fit the song at all (a refused value, a missing ID);
+ *   its `reason` says which change, in plain words (GRV-98).
  */
 export type ProposalCardStatus =
   | "pending"
@@ -89,6 +97,8 @@ export interface ProposalCard {
   readonly refreshed: boolean;
   /** A one-off note after an action could not be done (an Undo too late). */
   readonly notice: string | null;
+  /** For an invalid one: which change did not fit, in plain words (GRV-98). */
+  readonly reason: string | null;
   /** Its changed controls still wear the solid outline (until the next edit). */
   readonly outlined: boolean;
 }
@@ -111,6 +121,16 @@ export interface UseAssistantProposalsOptions {
   readonly analytics: () => Analytics;
   /** Asks again, in the same scope, for the proposal in this entry. */
   refresh(entryId: string): boolean;
+  /**
+   * Hears what became of a proposal: turned down, applied (or redone),
+   * undone, or rejected with the issues that rejected it (GRV-98), so a kept
+   * transcript can record it (GRV-8).
+   */
+  onOutcome?(
+    entryId: string,
+    outcome: ProposalOutcome,
+    issues?: readonly TranscriptIssue[],
+  ): void;
 }
 
 export interface AssistantProposals {
@@ -202,6 +222,7 @@ export function useAssistantProposals(
       refreshed: false,
       notice: null,
       outlined: false,
+      reason: null,
     };
     const current = session.proposalTarget();
     if (!current) return;
@@ -209,8 +230,14 @@ export function useAssistantProposals(
     const proposed = executor.propose(proposal);
     if (!proposed.ok) {
       const stale = proposed.issues.some((issue) => issue.code === "stale_revision");
+      const issues = transcriptIssues(proposal, proposed.issues);
       entries.set(entryId, blankEntry(null, []));
-      show(entryId, { ...base, status: stale ? "stale" : "invalid" });
+      show(entryId, {
+        ...base,
+        status: stale ? "stale" : "invalid",
+        reason: stale ? null : rejectionReason(issues),
+      });
+      options.onOutcome?.(entryId, "rejected", issues);
       return;
     }
     const { handle } = proposed;
@@ -304,6 +331,7 @@ export function useAssistantProposals(
     }
     entry.handle?.cancel();
     update(entryId, { status: "cancelled" });
+    options.onOutcome?.(entryId, "cancelled");
   }
 
   function apply(entryId: string) {
@@ -335,6 +363,7 @@ export function useAssistantProposals(
     entry.marked = true;
     controls.registry.setMark(entry.addresses, "changed");
     update(entryId, { status: "applied", returnView: null, outlined: true });
+    options.onOutcome?.(entryId, "applied");
     options.analytics().logFeatureFirstUse("assistant_proposal");
   }
 
@@ -392,9 +421,11 @@ export function useAssistantProposals(
       if (edit.kind === "undo") {
         entry.watching = false;
         update(entryId, { status: "undone" });
+        options.onOutcome?.(entryId, "undone");
       } else if (edit.kind === "redo") {
         entry.watching = !entry.reported;
         update(entryId, { status: "applied" });
+        options.onOutcome?.(entryId, "applied");
       }
     } else if (edit.kind === "edit" && edit.actor === "user") {
       noticeEditByHand(edit);
@@ -463,6 +494,27 @@ export function useAssistantProposals(
     },
     remoteChanges: () => remoteChanges,
   };
+}
+
+/**
+ * A refused proposal's issues as a kept transcript stores them (GRV-98): the
+ * code, the call it blames by ID and tool name, and the validator's own path
+ * and message, cut to what the transcript holds.
+ */
+function transcriptIssues(
+  proposal: AssistantProposal,
+  issues: readonly ProposalIssue[],
+): TranscriptIssue[] {
+  return issues.slice(0, MAX_TRANSCRIPT_ISSUES).map((issue) => {
+    const call = issueCall(proposal, issue);
+    return {
+      code: issue.code,
+      callId: call?.id?.slice(0, 200) ?? null,
+      callName: call?.name.slice(0, 200) ?? null,
+      path: issue.path?.slice(0, 300) ?? null,
+      message: issue.message.slice(0, 500) || null,
+    };
+  });
 }
 
 function blankEntry(

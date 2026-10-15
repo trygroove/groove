@@ -3,13 +3,15 @@
 // Two halves. The rules: no client reaches `assistantTranscripts` or
 // `assistantPreferences`, the owner included, so a browser can neither write
 // a transcript, nor give itself a "yes" the disclosure did not, nor read
-// anyone's records. And the store itself, over the Firestore store the Cloud
+// anyone's records; an admin reads them only through the
+// `assistantTranscriptsAdmin` callable (GRV-98), never the rules. And the
+// store itself, over the Firestore store the Cloud
 // Functions use (`functions/src/transcriptStore.ts`) through the admin SDK,
 // running the same contract suite as the in-memory store: retention only on
 // a current "yes", opting out mid-conversation, a racing opt-out, the 30-day
 // expiry, and project and account deletion, with real transactions.
 import type { RulesTestEnvironment } from "@firebase/rules-unit-testing";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 import { deleteApp, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { afterAll, afterEach, beforeAll, describe, it } from "vitest";
@@ -113,6 +115,20 @@ describe("assistant transcript rules", () => {
         getDoc(doc(context.firestore(), transcriptDocPath(OWNER, RECORD.turnId))),
       );
     }
+  });
+
+  it("denies an admin reading transcripts directly: the callable is the only way in (GRV-98)", async () => {
+    await seed();
+    const admin = testEnv.authenticatedContext("admin-uid", {
+      admin: true,
+      firebase: { sign_in_provider: "google.com" },
+    });
+    await assertFails(
+      getDoc(doc(admin.firestore(), transcriptDocPath(OWNER, RECORD.turnId))),
+    );
+    await assertFails(
+      getDocs(collection(admin.firestore(), ASSISTANT_TRANSCRIPTS_COLLECTION)),
+    );
   });
 
   it("denies a client giving itself the retention its answer does not allow", async () => {

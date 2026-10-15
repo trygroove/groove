@@ -20,9 +20,9 @@ describe("InstrumentHeader (#447)", () => {
     expect(screen.getByText("Drums")).toBeInTheDocument();
     expect(screen.getByText("Pads").nextElementSibling?.textContent).toBe("4");
     // Names the user chose or recorded are masked in replay (ADR 0002).
-    expect(screen.getByText("Drums").className).toContain("sentry-mask");
-    expect(screen.getByText("Tight Studio Snare").className).toContain("sentry-mask");
-    expect(screen.getByText("4").className).not.toContain("sentry-mask");
+    expect(screen.getByText("Drums").className).toContain("ph-mask");
+    expect(screen.getByText("Tight Studio Snare").className).toContain("ph-mask");
+    expect(screen.getByText("4").className).not.toContain("ph-mask");
   });
 
   it("offers Audition only when the instrument can be heard", () => {

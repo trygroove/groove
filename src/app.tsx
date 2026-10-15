@@ -3,14 +3,18 @@ import { useLocation } from "@solidjs/router";
 import { Errored, Loading } from "@solidjs/web";
 import { type Accessor, createEffect, createSignal, onSettled } from "solid-js";
 import { APP_TITLE } from "../site.config.mjs";
-import { analytics } from "./analytics/analytics";
 import AppErrorFallback from "./components/AppErrorFallback";
 import FloatingTelemetryDisclosure from "./components/FloatingTelemetryDisclosure";
 import ReleaseBadge from "./components/ReleaseBadge";
 import TapeLoader from "./components/TapeLoader";
 import { Router } from "./router";
 import { syncInternalTraffic } from "./shared/internalTraffic";
-import { initTelemetry, surfaceForPath, type Telemetry } from "./telemetry";
+import {
+  createRouteTracker,
+  initTelemetry,
+  surfaceForPath,
+  type Telemetry,
+} from "./telemetry";
 import "./app.css";
 
 /**
@@ -24,6 +28,9 @@ import "./app.css";
  * surface to `Telemetry` rather than to `analytics` directly is what makes that
  * one decision instead of three.
  *
+ * It also sends a page view for every pathname the session visits, since the
+ * analytics vendor's own pageview capture is off (`createRouteTracker`).
+ *
  * The compute phase reads both the pathname and the telemetry accessor, so the
  * effect re-runs with the current pathname once `initTelemetry` has finished;
  * until then the surface still reaches the analytics boundary directly and
@@ -33,20 +40,29 @@ import "./app.css";
  */
 function SurfaceTracker(props: { telemetry: Accessor<Telemetry | null> }) {
   const location = useLocation();
+  const track = createRouteTracker();
   createEffect(
     () => ({
-      surface: surfaceForPath(location.pathname),
+      pathname: location.pathname,
       telemetry: props.telemetry(),
     }),
-    ({ surface, telemetry }) => {
-      if (telemetry) {
-        telemetry.setSurface(surface);
-      } else {
-        analytics.setSurface(surface);
-      }
-    },
+    ({ pathname, telemetry }) => track(pathname, telemetry),
   );
   return null;
+}
+
+/**
+ * The last resort, for an error nothing inside the app caught: the router
+ * itself, or the badge and disclosure that sit outside the shell's boundary.
+ *
+ * This replaces `@solidjs/vite-plugin`'s default boundary (`errorBoundary:
+ * false` in `vite.config.ts`), which says the same thing in the same place but
+ * through a `style` attribute baked into its template, and a CSP without
+ * 'unsafe-inline' refuses that (GRV-105). The look is `.app-uncaught-error`.
+ */
+function UncaughtErrorFallback(props: { error: unknown }) {
+  console.error(props.error);
+  return <span class="app-uncaught-error">Error | Uncaught Client Exception</span>;
 }
 
 export default function App() {
@@ -80,7 +96,8 @@ export default function App() {
     // analytics transport. Monitoring itself is scheduled by `setSurface`,
     // which the tracker above drives, so a session that starts on the
     // marketing landing page and navigates into the app is still monitored
-    // while one that stays on the landing page loads no SDK (ADR 0001).
+    // while one that stays on the landing page loads no monitoring SDK
+    // (ADR 0001); there it loads only the analytics SDK (GRV-123).
     const instance = initTelemetry({
       surface: surfaceForPath(window.location.pathname),
     });
@@ -92,30 +109,34 @@ export default function App() {
   });
 
   return (
-    <Router>
-      {(props) => (
-        <>
-          <Title>{APP_TITLE}</Title>
-          <SurfaceTracker telemetry={telemetry} />
-          <Errored
-            fallback={(err, reset) => (
-              <AppErrorFallback error={err()} reset={reset} area="shell" />
-            )}
-          >
-            <Loading fallback={<TapeLoader label="Loading" />}>{props.children}</Loading>
-          </Errored>
-          {/* Outside the Errored/Loading boundary so the deployed revision
+    <Errored fallback={(err) => <UncaughtErrorFallback error={err()} />}>
+      <Router>
+        {(props) => (
+          <>
+            <Title>{APP_TITLE}</Title>
+            <SurfaceTracker telemetry={telemetry} />
+            <Errored
+              fallback={(err, reset) => (
+                <AppErrorFallback error={err()} reset={reset} area="shell" />
+              )}
+            >
+              <Loading fallback={<TapeLoader label="Loading" />}>
+                {props.children}
+              </Loading>
+            </Errored>
+            {/* Outside the shell's Errored/Loading boundary so the deployed revision
 					    stays visible/inspectable even while the app is loading or has
 					    hit an error -- exactly when knowing the build matters most. */}
-          <ReleaseBadge />
-          {/* Also outside the boundary: the PRD OPS-02 opt-out must stay
+            <ReleaseBadge />
+            {/* Also outside the boundary: the PRD OPS-02 opt-out must stay
 					    reachable even on the error screen -- which is why this stands
 					    down for the landing page's own inline copy (`LOOP-001b`, per
 					    DEC-009) only while that copy is actually mounted, rather than
 					    for the whole route. */}
-          <FloatingTelemetryDisclosure />
-        </>
-      )}
-    </Router>
+            <FloatingTelemetryDisclosure />
+          </>
+        )}
+      </Router>
+    </Errored>
   );
 }

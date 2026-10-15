@@ -16,7 +16,7 @@ import {
 export const SURFACES = ["landing", "dashboard", "editor"] as const;
 export type Surface = (typeof SURFACES)[number];
 
-/** Non-identifying account facts, logged as a GA4 user property. */
+/** Non-identifying account facts, set as a PostHog person property. */
 export const ACCOUNT_TYPES = ["anonymous", "registered", "unknown"] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 

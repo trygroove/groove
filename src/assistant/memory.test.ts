@@ -8,6 +8,7 @@ import {
   rememberTool,
   splitMemoryProposals,
 } from "./memory";
+import { EXPLAIN_TOOL_NAME } from "./tools";
 
 const call = (input: unknown) => ({ id: "toolu_1", name: REMEMBER_TOOL_NAME, input });
 
@@ -62,6 +63,25 @@ describe("remember_producer (GRV-25)", () => {
       splitMemoryProposals({ baseRevision: 1, toolsetVersion: 7, calls: [call({})] })
         .proposal,
     ).toBeNull();
+  });
+
+  it("leaves no proposal when all that is left is an explanation", () => {
+    const explain = { id: "toolu_2", name: EXPLAIN_TOOL_NAME, input: {} };
+    const change = { id: "toolu_3", name: "parameter_set", input: {} };
+    const memoryOnly = splitMemoryProposals({
+      baseRevision: 1,
+      toolsetVersion: 7,
+      calls: [call({ kind: "note", text: "x" }), explain],
+    });
+    expect(memoryOnly.memory.map((entry) => entry.id)).toEqual(["toolu_1"]);
+    expect(memoryOnly.proposal).toBeNull();
+    expect(
+      splitMemoryProposals({
+        baseRevision: 1,
+        toolsetVersion: 7,
+        calls: [call({ kind: "note", text: "x" }), explain, change],
+      }).proposal?.calls,
+    ).toEqual([explain, change]);
   });
 
   it("carries memory under a strict schema", () => {

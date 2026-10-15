@@ -169,7 +169,10 @@ if (existsSync(manifestPath)) {
   for (const [key, chunk] of Object.entries(manifest)) if (chunk.isEntry) walk(key);
   for (const key of eager) {
     const file = manifest[key]?.file ?? key;
-    if (/firebase|sentry|\btone\b/i.test(key) || /firebase|sentry/i.test(file)) {
+    if (
+      /firebase|sentry|posthog-js|\btone\b/i.test(key) ||
+      /firebase|sentry/i.test(file)
+    ) {
       fail(`${file} is statically imported by the entry; it must stay dynamic.`);
     }
   }

@@ -29,6 +29,7 @@ const fakeAuth = vi.hoisted(() => {
       signInWithGoogle: vi.fn(),
       linkWithGoogle: vi.fn(),
       signOut: vi.fn(),
+      isInternal: vi.fn(() => Promise.resolve(false)),
     },
   };
 });

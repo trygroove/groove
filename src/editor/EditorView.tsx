@@ -16,7 +16,11 @@ import {
 import { pageTitle } from "../../site.config.mjs";
 import { type Analytics, analytics as defaultAnalytics } from "../analytics/analytics";
 import type { AssistantClient } from "../assistant/assistantClient";
-import { getAssistantClient } from "../assistantClientProvider";
+import type { AssistantRetentionClient } from "../assistant/retentionClient";
+import {
+  getAssistantClient,
+  getAssistantRetentionClient,
+} from "../assistantClientProvider";
 import { getAudioRuntime } from "../audio/AudioRuntime";
 import { provideStoredAudio } from "../audio/storedAudio";
 import { type CapabilityReport, FULLY_CAPABLE } from "../browser/capabilities";
@@ -38,6 +42,7 @@ import type { FavouritesRepository } from "../persistence/favouritesRepository";
 import type { ProfileRepository } from "../persistence/profileRepository";
 import { getProjectRepository } from "../projectRepositoryClient";
 import type { ArrangementSelection } from "../selection";
+import { isInternalTraffic } from "../shared/internalTraffic";
 import ShortcutGuide from "../shortcuts/ShortcutGuide";
 import { getUserLibraryRepository } from "../userLibrary/userLibraryClient";
 import type { UserLibraryRepository } from "../userLibrary/userLibraryRepository";
@@ -71,6 +76,7 @@ import MissingSounds, {
 import Mixer from "./Mixer";
 import ProjectLoadStates from "./ProjectLoadStates";
 import SequencePane from "./SequencePane";
+import { SessionToast } from "./SessionToast";
 import { noteEventsOf } from "./stepEditorModel";
 import {
   type AddTrackHost,
@@ -142,6 +148,11 @@ export interface EditorViewProps {
    * app's composition root (`src/assistantClientProvider.ts`) otherwise.
    */
   readonly assistantClient?: () => Promise<AssistantClient>;
+  /**
+   * Reads and stores the account's answer about keeping its assistant
+   * conversations (GRV-8); the composition root's by default.
+   */
+  readonly assistantRetentionClient?: () => Promise<AssistantRetentionClient>;
   /**
    * Starts a sign-in, for the assistant's prompt to someone who is not
    * signed in (ADR 0006 decision 4). Supplied by the route.
@@ -460,6 +471,12 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
     analytics,
     committedProject: () => session.committedProject(),
     link: askLink,
+    // The disclosure comes before the first message, and every turn says
+    // where its transcript is filed, if the account keeps any (GRV-8).
+    retention: {
+      client: props.assistantRetentionClient ?? getAssistantRetentionClient,
+      internal: () => isInternalTraffic(),
+    },
     // A proposal previews and applies through the session, and shows its
     // controls through the editor's (GRV-5).
     editor: {
@@ -754,6 +771,7 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
               )}
             </Match>
           </Switch>
+          <SessionToast onNotice={session.onNotice} />
         </main>
       </EditorControlsContext>
     </ControlRegistryContext>

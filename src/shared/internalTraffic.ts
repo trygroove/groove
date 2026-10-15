@@ -4,21 +4,22 @@
 // non-identifying `internal` user property.
 //
 // This module owns *detection and persistence* of the flag. `src/analytics`
-// reads `isInternalTraffic()` to set the GA4 `internal` user property and to
-// stamp every event with GA4's `traffic_type: internal`, which is what the
-// property's Internal Traffic data filter excludes; nothing here talks to an
-// analytics SDK.
+// reads `isInternalTraffic()` to set the `internal` person property and to
+// stamp every event with an `internal` event property, which is what the
+// PostHog project's internal-traffic filter excludes (GRV-106); nothing here
+// talks to an analytics SDK.
 //
 // Two things mark a browser as internal:
 //
-// - **Signing in as a team or test account.** `isInternalAccount` names them:
-//   the product owner, the `groovetestuser<n>@gmail.com` accounts used for
-//   hands-on testing, and the QA pool CI signs in as (`src/access/qaAccounts.ts`,
-//   every address on its domain). `AuthProvider` calls `markInternalTraffic`
-//   when one of them signs in, so from then on every load of that browser is
-//   internal from its first event, not just from sign-in onwards.
+// - **Signing in as an internal account**: one carrying the `internal: true`
+//   custom claim (`src/access/claims.ts`, GRV-113), which only trusted code
+//   sets (`bun run internal:grant`, and QA pool provisioning). `AuthProvider`
+//   reads it from the ID token and calls `markInternalTraffic`, so from then
+//   on every load of that browser is internal from its first event, not just
+//   from sign-in onwards. Which accounts are internal is never written down
+//   here: no address, pattern or domain ships in the bundle.
 // - **Visiting with `?internal=1`** (or `?internal=true`), for a browser no
-//   listed account has signed into. `?internal=0` (or `?internal=false`) clears
+//   internal account has signed into. `?internal=0` (or `?internal=false`) clears
 //   the flag either way, so a team member testing the cohort experience can
 //   turn it back off.
 //
@@ -80,32 +81,6 @@ function setInternalTraffic(value: boolean, storage: Storage | null): void {
     // is a measurement nicety, never something that should surface an error
     // or block the app from loading.
   }
-}
-
-/** The product owner's address. */
-const PRODUCT_OWNER_EMAIL = "bpgodfrey@gmail.com";
-
-/** The Gmail accounts used for hands-on testing: `groovetestuser1@gmail.com`, … */
-const TEST_ACCOUNT_PATTERN = /^groovetestuser\d*@gmail\.com$/;
-
-/**
- * The QA pool's domain (`QA_ACCOUNT_DOMAIN` in `src/access/qaAccounts.ts`,
- * spelled out here so the bundle does not pull the provisioning code in;
- * `internalTraffic.test.ts` pins the two together).
- */
-const QA_ACCOUNT_DOMAIN = "qa.trygroove.app";
-
-/**
- * Whether a signed-in address belongs to the team or to a test account, so its
- * sessions count as internal traffic. Case-insensitive, like email addresses;
- * a missing address (a guest session, or signed out) is not internal.
- */
-export function isInternalAccount(email: string | null | undefined): boolean {
-  if (!email) return false;
-  const normalized = email.trim().toLowerCase();
-  if (normalized === PRODUCT_OWNER_EMAIL) return true;
-  if (TEST_ACCOUNT_PATTERN.test(normalized)) return true;
-  return normalized.endsWith(`@${QA_ACCOUNT_DOMAIN}`);
 }
 
 /**

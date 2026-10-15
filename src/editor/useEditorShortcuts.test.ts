@@ -1,9 +1,11 @@
 import { cleanup, renderHook } from "@solidjs/testing-library";
 import { createSignal, flush } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Analytics } from "../analytics/analytics";
+import { type Analytics, analytics as defaultAnalytics } from "../analytics/analytics";
 import type { Project } from "../domain/entities";
 import { createDrumMachineFixtureProject } from "../domain/fixtures";
+import { memoryStorage } from "../testing/storage";
+import { type AssistantPanel, useAssistantPanel } from "./assistant/useAssistantPanel";
 import type { EditorViewName } from "./editorViews";
 import { useEditingSurfaces } from "./useEditingSurfaces";
 import type { EditorNavigation } from "./useEditorNavigation";
@@ -14,7 +16,10 @@ import type { ProjectAudioControls } from "./useProjectAudio";
 import type { SongControls } from "./useSongControls";
 import { useTrackSelection } from "./useTrackSelection";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 /**
  * The editor's shortcut wiring over its hooks: a real selection and real
@@ -24,7 +29,10 @@ afterEach(() => cleanup());
 function setup(
   view: EditorViewName,
   ask: { readonly optionCount?: number; readonly pick?: (index: number) => boolean } = {},
+  /** A real assistant panel in place of the stand-in, made inside the root. */
+  makePanel?: () => AssistantPanel,
 ) {
+  let panel: AssistantPanel | undefined;
   const project = createDrumMachineFixtureProject();
   const [currentView] = createSignal<EditorViewName>(view);
   const dispatch = vi.fn(() => ({ ok: true }) as never);
@@ -51,6 +59,7 @@ function setup(
     resizeLoop: vi.fn(),
   } as unknown as SongControls;
   const { result } = renderHook(() => {
+    panel = makePanel?.();
     const projectAccessor = () => project as Project | null;
     const selection = useTrackSelection({ project: projectAccessor });
     const surfaces = useEditingSurfaces({ opened: selection.opened, audio, session });
@@ -70,10 +79,11 @@ function setup(
       guideOpen: () => false,
       setGuideOpen: vi.fn(),
       exportOpen: () => false,
-      assistant: {
+      assistant: panel ?? {
         toggle: vi.fn(),
         resizeBy: vi.fn(),
         dismissAction: () => undefined,
+        collapseVideo: () => undefined,
         edgeHasFocus: () => false,
         composerHasFocus: () => false,
         askTextHasFocus: () => false,
@@ -96,7 +106,7 @@ function setup(
   });
   flush();
   const [first, second] = project.song.tracks;
-  return { selection: result, dispatch, navigation, first, second };
+  return { selection: result, dispatch, navigation, first, second, panel };
 }
 
 function press(key: string): KeyboardEvent {
@@ -161,6 +171,36 @@ describe("useEditorShortcuts", () => {
     press("Escape");
     expect(selection.deletableTrackId()).toBeNull();
     expect(selection.selectedTrackId()).toBe(second.id);
+  });
+
+  it("puts back a full-screen video on Escape and nothing else, logging the key once (GRV-16)", () => {
+    // The shortcut controller logs to the shared instance.
+    const log = vi.spyOn(defaultAnalytics, "log").mockImplementation(() => {});
+    const { selection, second, panel } = setup("arrangement", {}, () =>
+      useAssistantPanel({ storage: memoryStorage() }),
+    );
+    if (!panel) throw new Error("no panel");
+    panel.toggle(null);
+    flush();
+    const opened = panel.layout();
+    selection.chooseTrack(second.id);
+    flush();
+    const collapse = vi.fn();
+    const release = panel.holdExpandedVideo(collapse);
+    flush();
+
+    press("Escape");
+    expect(collapse).toHaveBeenCalledOnce();
+    expect(panel.layout()).toEqual(opened);
+    expect(selection.deletableTrackId()).toBe(second.id);
+    expect(log.mock.calls.filter(([name]) => name === "shortcut_used")).toHaveLength(1);
+
+    // Put back, the next Escape is the editor's again.
+    release();
+    flush();
+    press("Escape");
+    expect(collapse).toHaveBeenCalledOnce();
+    expect(selection.deletableTrackId()).toBeNull();
   });
 
   it("switches views through the same path as the dock, as the keyboard", () => {

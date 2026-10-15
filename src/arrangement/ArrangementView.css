@@ -102,9 +102,12 @@
   overflow: hidden;
 }
 
+/* `--track-column-width` is set on `.arrangement-body` from `HEADER_WIDTH_PX`
+   (the instrument view's track rail reads the same number). */
 .arrangement-headers {
   position: relative;
   flex-shrink: 0;
+  width: var(--track-column-width);
   background: var(--color-background-well);
   border-right: 1px solid var(--color-background-tertiary);
   overflow: hidden;
@@ -128,6 +131,8 @@
 }
 
 .arrangement-header-row {
+  position: absolute;
+  width: 100%;
   display: flex;
   align-items: center;
   font-size: 12px;
@@ -183,6 +188,7 @@
    pointer and only the controls inside it are not. */
 .arrangement-below-tracks {
   position: absolute;
+  left: var(--track-column-width);
   right: 0;
   box-sizing: border-box;
   padding: 8px;
