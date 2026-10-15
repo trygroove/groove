@@ -512,7 +512,7 @@ export function runCaseCheck(
         : fail("The case names no action");
     case "nothingElse":
       return inputs.action
-        ? checkNothingElse(before, after, inputs.action.allows(before))
+        ? checkNothingElse(before, after, inputs.action.allows(before, after))
         : fail("The case names no action");
   }
 }

@@ -360,7 +360,7 @@ function judge(evalCase: EvalCase, after: Project) {
   if (!action) throw new Error(`${evalCase.id} has no action`);
   return {
     target: action.target(before, after).status,
-    nothingElse: checkNothingElse(before, after, action.allows(before)).status,
+    nothingElse: checkNothingElse(before, after, action.allows(before, after)).status,
   };
 }
 
@@ -386,6 +386,134 @@ describe("the basic production actions' checks", () => {
     },
   );
 
+  /**
+   * The right edit plus a change a model might plausibly slip in beside it:
+   * on another track, or reshuffling the tracks. Each must fail
+   * `nothingElse` while the edit itself still passes.
+   */
+  const STRAYS: readonly (readonly [
+    id: string,
+    what: string,
+    stray: (d: Draft) => void,
+  ])[] = [
+    [
+      "basic-add-synth",
+      "a placement of the Bassline on the Bass track",
+      (d) =>
+        d.song.placements.push({
+          ...placementOf(d, "Bass"),
+          id: "plc_x",
+          startTicks: bars(8),
+        }),
+    ],
+    ["basic-add-synth", "the vocals moved to the top", (d) => toTop(d, "Vocals")],
+    [
+      "basic-add-drum-machine",
+      "a new clip on the Kick track",
+      (d) => d.clips.push({ ...clip(d, "Kick beat"), id: "clp_x" }),
+    ],
+    ["basic-delete-pad", "the vocals moved to the top", (d) => toTop(d, "Vocals")],
+    [
+      "basic-duplicate-chorus",
+      "a second placement of the drums' Beat",
+      (d) =>
+        d.song.placements.push({
+          ...placementOfClip(d, "Beat"),
+          id: "plc_x",
+          startTicks: bars(16),
+        }),
+    ],
+    [
+      "basic-duplicate-chorus",
+      "a second copy of the chorus",
+      (d) =>
+        d.song.placements.push({
+          ...placementOfClip(d, "Chorus"),
+          id: "plc_x",
+          startTicks: bars(18),
+        }),
+    ],
+    [
+      "basic-trim-drums",
+      "the drums placement no longer looped",
+      (d) => {
+        placementOf(d, "Drums").looped = false;
+      },
+    ],
+    [
+      "basic-add-clap",
+      "the unused long kick taken out of the project",
+      (d) => {
+        d.song.assets = d.song.assets.filter(
+          (asset: Draft) => !asset.name.match(/rumble/i),
+        );
+      },
+    ],
+    [
+      "basic-add-reverb",
+      "a delay as well",
+      (d) => track(d, "Snare").devices.push(createDevice("dev_x" as never, "delay", 1)),
+    ],
+    [
+      "basic-reverb-send",
+      "a send from the bass too",
+      (d) =>
+        track(d, "Bass").sendConfig.push({
+          returnId: "rtn_new",
+          level: -12,
+          preFader: false,
+        }),
+    ],
+    [
+      "basic-double-speed",
+      "the clip renamed",
+      (d) => {
+        clip(d, "Bassline").name = "Fast";
+      },
+    ],
+  ];
+
+  it.each(STRAYS)("%s: fails the right edit plus %s", (id, _what, stray) => {
+    const evalCase = TABLED.find((entry) => entry.id === id);
+    if (!evalCase) throw new Error(`no case ${id}`);
+    const right = edited(evalCase.fixture(), EDITS[id].right);
+    expect(judge(evalCase, edited(right, stray))).toEqual({
+      target: "pass",
+      nothingElse: "fail",
+    });
+  });
+
+  it("passes a new track placed among the others without reshuffling them", () => {
+    const evalCase = TABLED.find((entry) => entry.id === "basic-add-synth");
+    if (!evalCase) throw new Error("no add-synth case");
+    const after = edited(evalCase.fixture(), (d) => {
+      for (const entry of d.song.tracks) if (entry.order >= 3) entry.order += 1;
+      d.song.tracks.push({ ...track(d, "Bass"), id: "trk_new", name: "Synth", order: 3 });
+      d.clips.push({ ...clip(d, "Bassline"), id: "clp_new", trackId: "trk_new" });
+      d.song.placements.push({
+        ...placementOf(d, "Bass"),
+        id: "plc_new",
+        clipId: "clp_new",
+        trackId: "trk_new",
+      });
+    });
+    expect(judge(evalCase, after)).toEqual({ target: "pass", nothingElse: "pass" });
+  });
+
+  it("passes the hats quantized only to their nearest 16th", () => {
+    const evalCase = TABLED.find((entry) => entry.id === "basic-quantize-hats");
+    if (!evalCase) throw new Error("no quantize case");
+    // Every note on the grid, but each a 16th later than its nearest.
+    const late = edited(evalCase.fixture(), (d) => {
+      for (const event of events(d, "Hats")) {
+        event.startTicks =
+          Math.round(event.startTicks / TICKS_PER_SIXTEENTH) * TICKS_PER_SIXTEENTH +
+          TICKS_PER_SIXTEENTH;
+      }
+    });
+    expect(judge(evalCase, late).target).toBe("fail");
+  });
+
   it("passes a doubled bassline repeated to fill its clip", () => {
     const before = createBasicNotesProject();
     const after = edited(before, (d) => {
@@ -409,6 +537,10 @@ describe("the basic production actions' checks", () => {
 
 describe("a longer kick sample (case 13)", () => {
   const before = createBasicKitProject();
+  const action = BASIC_ACTION_CASES.find(
+    (entry) => entry.id === "basic-longer-kick",
+  )?.action;
+  if (!action) throw new Error("no longer-kick case");
   const kickAsset = (project: Project) => {
     const drums = project.song.tracks[0].instrument;
     const pad = drums?.kind === "drumMachine" ? drums.pads[0] : null;
@@ -417,13 +549,18 @@ describe("a longer kick sample (case 13)", () => {
   const kick = kickAsset(before);
   const kickEntry = libraryEntryOf(kick);
   if (!kick || !kickEntry) throw new Error("The kit's kick is not a factory sound");
+  /** The factory kick in the project that no pad plays: longer than the Kick pad's. */
+  const longKick = before.song.assets.find(
+    (asset) => asset.id !== kick.id && libraryEntryOf(asset)?.role === "kick",
+  );
+  if (!longKick) throw new Error("The kit holds no second kick");
   /** A library with a second kick in it, `seconds` long. */
   const libraryWith = (role: string, seconds: number): FactoryLibraryEntry[] => [
     ...factoryLibrary(),
     {
       ...kickEntry,
-      key: "longKick",
-      storageRef: "fake/long-kick.wav",
+      key: "fakeKick",
+      storageRef: "fake/kick.wav",
       role,
       durationSeconds: seconds,
     },
@@ -433,23 +570,48 @@ describe("a longer kick sample (case 13)", () => {
     edited(before, (d) => {
       d.song.assets.push({
         ...kick,
-        id: "ast_long",
-        storageRef: "fake/long-kick.wav",
+        id: "ast_fake",
+        storageRef: "fake/kick.wav",
         durationSeconds: seconds,
       });
-      d.song.tracks[0].instrument.pads[0].assetId = "ast_long";
+      d.song.tracks[0].instrument.pads[0].assetId = "ast_fake";
     });
-  const status = (after: Project, library: FactoryLibraryEntry[]) =>
+  /** The kick pad on the long factory kick the project already holds. */
+  const onLongKick = edited(before, (d) => {
+    d.song.tracks[0].instrument.pads[0].assetId = longKick.id;
+  });
+  const status = (after: Project, library?: FactoryLibraryEntry[]) =>
     checkLongerSample(before, after, "Drums", "Kick", "kick", library).status;
+  const nothingElse = (after: Project) =>
+    checkNothingElse(before, after, action.allows(before, after)).status;
 
-  it("passes a different, longer kick and leaves the rest alone", () => {
+  it("holds a longer factory kick the Kick pad can point at", () => {
+    expect(longKick.durationSeconds ?? 0).toBeGreaterThan(
+      kick.durationSeconds ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
+  it("passes the pad pointed at the longer kick, and leaves the rest alone", () => {
+    expect(status(onLongKick)).toBe("pass");
+    expect(nothingElse(onLongKick)).toBe("pass");
     const after = swapped(0.9);
     expect(status(after, libraryWith("kick", 0.9))).toBe("pass");
-    const action = BASIC_ACTION_CASES.find(
-      (entry) => entry.id === "basic-longer-kick",
-    )?.action;
-    if (!action) throw new Error("no longer-kick case");
-    expect(checkNothingElse(before, after, action.allows(before)).status).toBe("pass");
+    expect(nothingElse(after)).toBe("pass");
+  });
+
+  it("lets the old kick go once no pad plays it, and nothing else in the sounds", () => {
+    const dropped = edited(onLongKick, (d) => {
+      d.song.assets = d.song.assets.filter((asset: Draft) => asset.id !== kick.id);
+    });
+    expect(nothingElse(dropped)).toBe("pass");
+    const clapGone = edited(onLongKick, (d) => {
+      d.song.assets = d.song.assets.filter((asset: Draft) => !asset.name.match(/clap/i));
+    });
+    expect(nothingElse(clapGone)).toBe("fail");
+    const unused = edited(onLongKick, (d) => {
+      d.song.assets.push({ ...kick, id: "ast_unused" });
+    });
+    expect(nothingElse(unused)).toBe("fail");
   });
 
   it("fails a longer decay on the same sample, a shorter kick, and a sample that is not a kick", () => {
@@ -462,10 +624,10 @@ describe("a longer kick sample (case 13)", () => {
   });
 
   it("fails a swap that changes another pad too", () => {
-    const after = edited(swapped(0.9), (d) => {
+    const after = edited(onLongKick, (d) => {
       d.song.tracks[0].instrument.pads[1].mixer.volume = -6;
     });
-    expect(status(after, libraryWith("kick", 0.9))).toBe("fail");
+    expect(status(after)).toBe("fail");
   });
 });
 

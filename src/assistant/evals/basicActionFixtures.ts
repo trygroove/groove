@@ -15,7 +15,8 @@
  *   optionally with the Hats muted or a Reverb on the Snare, the states the
  *   "undo" and "take it off again" cases follow.
  * - {@link createBasicKitProject}: one drum machine (Kick, Snare, Hat) on the
- *   factory kit, with the factory clap in the project but on no pad.
+ *   factory kit, with the factory clap and a longer factory kick in the
+ *   project but on no pad.
  * - {@link createBasicSynthProject}: a synth with a riff beside a drum track.
  * - {@link createBasicEffectsProject}: Vocals with a Reverb then a Delay.
  * - {@link createBasicNotesProject}: hats (on the grid or loose), a melody, a
@@ -327,19 +328,21 @@ export function createBasicMixProject(options: BasicMixOptions = {}): Project {
 
 /**
  * One drum machine, "Drums", with Kick, Snare and Hat pads playing a bar
- * placed for 4. The factory clap is in the project's sounds but on no pad,
- * so a clap pad can point at it.
+ * placed for 4. The factory clap and a kick longer than the Kick pad's are in
+ * the project's sounds but on no pad, so a clap pad or the Kick pad can point
+ * at them: the assistant can only reach a sound the project holds.
  */
 export function createBasicKitProject(): Project {
   const context = evalContext("eval-basic-kit");
   const assets = kitAssets(context);
   const drums = drumsPart(context, assets, 0, "Beat");
+  const longKick = createFactoryAsset(context, "longKick");
   return build(
     context,
     "Kit",
     120,
     [{ ...drums, clips: [drums.clip], placements: [placed(context, drums.clip, 0, 4)] }],
-    [assets.kick, assets.snare, assets.hat, assets.clap],
+    [assets.kick, assets.snare, assets.hat, assets.clap, longKick],
   );
 }
 

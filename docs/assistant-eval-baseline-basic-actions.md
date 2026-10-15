@@ -12,8 +12,9 @@
 
 ## What to expect on the first run
 
-Three cases ask for what the assistant's tools cannot do yet, so they should fail until it can, and are kept so the score shows it:
+Two cases ask for what the assistant's tools cannot do yet, so they should fail until it can, and are kept so the score shows it:
 
 - `basic-loop-bars` (case 5, "Loop bars 5–8"): no assistant tool sets the song's loop range.
 - `basic-key` (case 28, "Change the key to A minor"): no assistant tool sets the song's key.
-- `basic-longer-kick` (case 13): the assistant can only point a pad at a sound already in the project, and the bundled factory library holds a single kick, so no longer kick is within its reach.
+
+`basic-longer-kick` (case 13) is within reach: the assistant can only point a pad at a sound already in the project, so the kit fixture holds a second, longer factory kick (`longKick` in the factory library) on no pad.

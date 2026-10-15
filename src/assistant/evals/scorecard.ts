@@ -14,7 +14,8 @@
  *   musical capability evals, the basic production actions), so each set
  *   reads as its own score beside the run's.
  * - {@link compareScorecards} sets each number beside a baseline's, with its
- *   delta and whether that is better or worse.
+ *   delta and whether that is better or worse, set by set: a run of both sets
+ *   compared with a baseline of one compares like with like.
  *
  * Everything here is computed from a report's records and its check tallies,
  * so a saved report (a baseline, or a `--replay`) scores the same as the run
@@ -84,11 +85,15 @@ export interface Secondary {
   readonly refusalRate: number | null;
 }
 
-/** One set's score: how many of its cases ran, and its headline. */
+/** One set's score: how many of its cases ran, its headline, and what it cost. */
 export interface SetScore {
   readonly cases: number;
   readonly headline: Headline;
+  readonly secondary: Secondary;
 }
+
+/** What a set of numbers is read off: a whole scorecard, or one set's score. */
+export type ScoreView = Pick<Scorecard, "headline" | "secondary">;
 
 export interface Scorecard {
   readonly headline: Headline;
@@ -231,6 +236,7 @@ export function setScoresOf(
   model: string,
   records: readonly EvalRecord[],
 ): Record<string, SetScore> {
+  const profile = modelProfile(model);
   const sets: Record<string, SetScore> = {};
   for (const set of [...new Set(records.map(recordSet))]) {
     const own = records.filter((record) => recordSet(record) === set);
@@ -257,6 +263,7 @@ export function setScoresOf(
           errored: { total: own.filter((record) => record.error).length },
         },
       }),
+      secondary: secondaryOf(own, profile),
     };
   }
   return sets;
@@ -287,7 +294,7 @@ export interface Metric {
   readonly label: string;
   readonly kind: MetricKind;
   readonly higherIsBetter: boolean;
-  readonly value: (card: Scorecard) => number | null;
+  readonly value: (card: ScoreView) => number | null;
 }
 
 /** Every headline and secondary number, in the order the report prints them. */
@@ -387,6 +394,8 @@ export const SCORECARD_METRICS: readonly Metric[] = [
 export type Verdict = "better" | "worse" | "same" | "n/a";
 
 export interface Comparison {
+  /** The set the row compares, or absent for a scorecard without sets. */
+  readonly set?: string;
   readonly label: string;
   readonly kind: MetricKind;
   readonly current: number | null;
@@ -396,10 +405,36 @@ export interface Comparison {
   readonly verdict: Verdict;
 }
 
+/**
+ * A set's numbers in a baseline: its own score when the baseline has sets,
+ * the whole baseline when it has none and the set is the musical one (every
+ * case was musical before sets existed), and nothing otherwise.
+ */
+function baselineSet(baseline: Scorecard, set: string): ScoreView | null {
+  if (baseline.sets && Object.keys(baseline.sets).length > 0) {
+    return baseline.sets[set] ?? null;
+  }
+  return set === "musical" ? baseline : null;
+}
+
+/**
+ * Every number beside the baseline's. A scorecard with sets is compared set
+ * by set, each against the same set in the baseline, so a run of both sets
+ * against a musical-only baseline compares the musical cases with the
+ * musical cases, and the basic actions with nothing (n/a).
+ */
 export function compareScorecards(current: Scorecard, baseline: Scorecard): Comparison[] {
+  const sets = Object.entries(current.sets ?? {});
+  if (sets.length === 0) return compareViews(current, baseline);
+  return sets.flatMap(([set, score]) =>
+    compareViews(score, baselineSet(baseline, set)).map((row) => ({ set, ...row })),
+  );
+}
+
+function compareViews(current: ScoreView, baseline: ScoreView | null): Comparison[] {
   return SCORECARD_METRICS.map((metric) => {
     const now = metric.value(current);
-    const then = metric.value(baseline);
+    const then = baseline ? metric.value(baseline) : null;
     const delta = now === null || then === null ? null : now - then;
     const verdict: Verdict =
       delta === null

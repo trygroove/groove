@@ -104,29 +104,50 @@ export interface BaselineLabel {
   readonly promptVersion: string;
 }
 
+/** The rows grouped by set, in the order they come; one group with no set. */
+function bySet(
+  comparisons: readonly Comparison[],
+): { set: string | undefined; rows: Comparison[] }[] {
+  const groups: { set: string | undefined; rows: Comparison[] }[] = [];
+  for (const row of comparisons) {
+    const last = groups.at(-1);
+    if (last && last.set === row.set) last.rows.push(row);
+    else groups.push({ set: row.set, rows: [row] });
+  }
+  return groups;
+}
+
 export function comparisonLines(
   comparisons: readonly Comparison[],
   baseline: BaselineLabel,
 ): string[] {
-  return [
-    "## Against the baseline",
-    "",
-    `Baseline: \`${baseline.path}\` (run ${baseline.generatedAt}, model \`${baseline.model}\`, prompt \`${baseline.promptVersion}\`).`,
-    "",
+  const table = (rows: readonly Comparison[]) => [
     "| Number | This run | Baseline | Delta | |",
     "| --- | --- | --- | --- | --- |",
-    ...comparisons.map(
+    ...rows.map(
       (row) =>
         `| ${row.label} | ${formatMetric(row.kind, row.current)} | ${formatMetric(row.kind, row.baseline)} | ${formatDelta(row.kind, row.delta)} | ${row.verdict} |`,
     ),
     "",
   ];
+  return [
+    "## Against the baseline",
+    "",
+    `Baseline: \`${baseline.path}\` (run ${baseline.generatedAt}, model \`${baseline.model}\`, prompt \`${baseline.promptVersion}\`).`,
+    "",
+    ...bySet(comparisons).flatMap(({ set, rows }) =>
+      set === undefined ? table(rows) : [`### ${setLabel(set)}`, "", ...table(rows)],
+    ),
+  ];
 }
 
-/** The comparison as fixed-width console lines. */
+/** The comparison as fixed-width console lines, under each set's name. */
 export function comparisonConsoleLines(comparisons: readonly Comparison[]): string[] {
-  return comparisons.map(
-    (row) =>
-      `  ${row.label.padEnd(28)} ${formatMetric(row.kind, row.current).padStart(10)}  was ${formatMetric(row.kind, row.baseline).padStart(10)}  ${formatDelta(row.kind, row.delta).padStart(10)}  ${row.verdict}`,
-  );
+  return bySet(comparisons).flatMap(({ set, rows }) => [
+    ...(set === undefined ? [] : [`  ${setLabel(set)}:`]),
+    ...rows.map(
+      (row) =>
+        `  ${row.label.padEnd(28)} ${formatMetric(row.kind, row.current).padStart(10)}  was ${formatMetric(row.kind, row.baseline).padStart(10)}  ${formatDelta(row.kind, row.delta).padStart(10)}  ${row.verdict}`,
+    ),
+  ]);
 }

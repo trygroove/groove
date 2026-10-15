@@ -21,8 +21,11 @@ export type PathRule = (path: string) => boolean;
 /** One case's check: the edit asked for, and what it may touch to make it. */
 export interface BasicAction {
   readonly target: (before: Project, after: Project) => CheckResult;
-  /** Built from the fixture, so a rule can name what it holds by ID. */
-  readonly allows: (before: Project) => PathRule;
+  /**
+   * Built from the fixture and the result, so a rule can name what the
+   * fixture holds by ID and judge what the edit added by where it went.
+   */
+  readonly allows: (before: Project, after: Project) => PathRule;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,9 +99,6 @@ export function anyOf(...rules: readonly PathRule[]): PathRule {
 
 export const NOTHING: PathRule = () => false;
 
-/** Every track's `order`, which adding, removing or moving one may renumber. */
-export const TRACK_ORDERS: PathRule = (path) => /^song\.tracks\.[^.]+\.order$/.test(path);
-
 /** Anything under `collection` keyed by an ID `before` does not have there. */
 export function added(collection: string, existing: Iterable<string>): PathRule {
   const ids = new Set(existing);
@@ -106,6 +106,69 @@ export function added(collection: string, existing: Iterable<string>): PathRule 
     if (!path.startsWith(`${collection}.`)) return false;
     const id = path.slice(collection.length + 1).split(".")[0];
     return !ids.has(id) && !id.startsWith("#");
+  };
+}
+
+/** The ID a path under `collection` names, or `undefined` for another path. */
+function idUnder(collection: string, path: string): string | undefined {
+  return path.startsWith(`${collection}.`)
+    ? path.slice(collection.length + 1).split(".")[0]
+    : undefined;
+}
+
+/**
+ * Anything under `collection` keyed by an entry `now` has and `was` does
+ * not, as long as that new entry passes `keep`: a new placement on the one
+ * track the edit is about, say, and not on another.
+ */
+export function addedWhere<T extends { readonly id: string }>(
+  collection: string,
+  was: readonly T[],
+  now: readonly T[],
+  keep: (entry: T) => boolean,
+): PathRule {
+  const old = new Set(was.map((entry) => entry.id));
+  const ok = new Set(
+    now.filter((entry) => !old.has(entry.id) && keep(entry)).map((entry) => entry.id),
+  );
+  return (path) => {
+    const id = idUnder(collection, path);
+    return id !== undefined && ok.has(id);
+  };
+}
+
+interface Ordered {
+  readonly id: string;
+  readonly order: number;
+}
+
+/** The IDs in the order they are listed. */
+export const listed = (entries: readonly Ordered[]) =>
+  [...entries].sort((a, b) => a.order - b.order).map((entry) => entry.id);
+
+/**
+ * Every entry's `order` under `collection`, as long as the entries in both
+ * lists, `moving` aside, keep their order relative to each other. Adding,
+ * removing or moving one entry may renumber the rest; it may not reshuffle
+ * them. If they are reshuffled, no `order` is allowed, so each one that
+ * moved is a stray change.
+ */
+export function ordersKept(
+  collection: string,
+  was: readonly Ordered[],
+  now: readonly Ordered[],
+  moving: ReadonlySet<string> = new Set(),
+): PathRule {
+  const both = new Set(
+    was.map((entry) => entry.id).filter((id) => now.some((entry) => entry.id === id)),
+  );
+  const rest = (entries: readonly Ordered[]) =>
+    listed(entries).filter((id) => both.has(id) && !moving.has(id));
+  if (!same(rest(was), rest(now))) return NOTHING;
+  return (path) => {
+    if (!path.startsWith(`${collection}.`)) return false;
+    const segments = path.slice(collection.length + 1).split(".");
+    return segments.length === 2 && segments[1] === "order";
   };
 }
 

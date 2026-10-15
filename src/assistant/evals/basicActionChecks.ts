@@ -21,6 +21,7 @@ import type { ScaleId } from "../../domain/musicalKey";
 import { TICKS_PER_BAR } from "../../domain/time";
 import {
   added,
+  addedWhere,
   anyOf,
   type BasicAction,
   bar,
@@ -29,12 +30,13 @@ import {
   fixtureClip,
   fixtureTrack,
   leaves,
+  listed,
   NOTHING,
   notesOf,
+  ordersKept,
   pass,
   placementsOn,
   same,
-  TRACK_ORDERS,
   trackNamed,
   trackPath,
   under,
@@ -127,20 +129,20 @@ export function extendsLoop(clipName: string, bars: number): BasicAction {
         ? pass(`"${clipName}" repeats in all ${bars} bars`)
         : fail(`Bars ${off.map((index) => index + 1).join(", ")} do not repeat the loop`);
     },
-    allows: (before) => {
+    allows: (before, after) => {
       const clip = fixtureClip(before, clipName);
+      const onTrack = (entry: { trackId: string }) => entry.trackId === clip.trackId;
       return anyOf(
         under(`clips.${clip.id}`),
-        added(
-          "clips",
-          before.clips.map((entry) => entry.id),
-        ),
+        addedWhere("clips", before.clips, after.clips, onTrack),
         ...placementsOn(before, clip.trackId).map((p) =>
           under(`song.placements.${p.id}`),
         ),
-        added(
+        addedWhere(
           "song.placements",
-          before.song.placements.map((entry) => entry.id),
+          before.song.placements,
+          after.song.placements,
+          onTrack,
         ),
       );
     },
@@ -154,33 +156,45 @@ function onlyPlacementOf(project: Project, clipId: string) {
   return placements[0];
 }
 
+/**
+ * The copy of `clipName`'s one placement in `after`: a new placement of the
+ * clip that starts where the first ends and is as long, or failing that the
+ * first new placement of the clip on its track at all.
+ */
+function copyOf(before: Project, after: Project, clipName: string) {
+  const clip = fixtureClip(before, clipName);
+  const original = onlyPlacementOf(before, clip.id);
+  const end = original.startTicks + original.durationTicks;
+  const fresh = after.song.placements.filter(
+    (p) =>
+      p.clipId === clip.id &&
+      p.trackId === clip.trackId &&
+      !before.song.placements.some((entry) => entry.id === p.id),
+  );
+  const exact = fresh.find(
+    (p) => p.startTicks === end && p.durationTicks === original.durationTicks,
+  );
+  return { original, end, exact, copy: exact ?? fresh[0] };
+}
+
 /** A new placement of `clipName` starts where its one placement ends, as long. */
 export function duplicatesAfter(clipName: string): BasicAction {
   return {
     target: (before, after) => {
-      const clip = fixtureClip(before, clipName);
-      const original = onlyPlacementOf(before, clip.id);
+      const { original, end, exact } = copyOf(before, after, clipName);
       const kept = after.song.placements.find((p) => p.id === original.id);
       if (!same(kept, original)) return fail(`Moves or removes the first "${clipName}"`);
-      const end = original.startTicks + original.durationTicks;
-      const copy = after.song.placements.find(
-        (p) =>
-          p.id !== original.id &&
-          p.clipId === clip.id &&
-          p.startTicks === end &&
-          p.durationTicks === original.durationTicks,
-      );
-      return copy
+      return exact
         ? pass(`"${clipName}" plays again from bar ${bar(end)}`)
         : fail(
             `No placement of "${clipName}" starts at bar ${bar(end)}, as long as the first`,
           );
     },
-    allows: (before) =>
-      added(
-        "song.placements",
-        before.song.placements.map((p) => p.id),
-      ),
+    // The one copy, and no other new placement on any track.
+    allows: (before, after) => {
+      const { copy } = copyOf(before, after, clipName);
+      return copy ? under(`song.placements.${copy.id}`) : NOTHING;
+    },
   };
 }
 
@@ -207,7 +221,8 @@ export function trimsEnd(trackName: string, bars: number): BasicAction {
             `"${trackName}" ends at bar ${bar(now.startTicks + now.durationTicks) - 1}, not ${bar(was.startTicks + wanted) - 1}`,
           );
     },
-    allows: (before) => under(`song.placements.${onlyPlacementOn(before, trackName).id}`),
+    allows: (before) =>
+      under(`song.placements.${onlyPlacementOn(before, trackName).id}.durationTicks`),
   };
 }
 
@@ -278,10 +293,10 @@ export function deletesTrack(trackName: string): BasicAction {
         ? pass(`"${trackName}" is gone with its clips`)
         : fail(`"${trackName}" left ${left} clips or placements behind`);
     },
-    allows: (before) => {
+    allows: (before, after) => {
       const { track, clips, placements } = owned(before);
       return anyOf(
-        TRACK_ORDERS,
+        ordersKept("song.tracks", before.song.tracks, after.song.tracks),
         under(
           `song.tracks.${track.id}`,
           ...clips.map((clip) => `clips.${clip.id}`),
@@ -306,22 +321,23 @@ export function addsTrackOf(kind: "synth" | "drumMachine"): BasicAction {
             `Adds "${track.name}" with ${track.instrument?.kind ?? "no"} instrument, not a ${kind}`,
           );
     },
-    allows: (before) =>
-      anyOf(
-        TRACK_ORDERS,
-        added(
-          "song.tracks",
-          before.song.tracks.map((track) => track.id),
-        ),
-        added(
-          "clips",
-          before.clips.map((clip) => clip.id),
-        ),
-        added(
+    // The new track, and clips and placements on it; the tracks there were
+    // may be renumbered around it but keep their order.
+    allows: (before, after) => {
+      const existing = new Set<string>(before.song.tracks.map((track) => track.id));
+      const onNewTrack = (entry: { trackId: string }) => !existing.has(entry.trackId);
+      return anyOf(
+        ordersKept("song.tracks", before.song.tracks, after.song.tracks),
+        added("song.tracks", existing),
+        addedWhere("clips", before.clips, after.clips, onNewTrack),
+        addedWhere(
           "song.placements",
-          before.song.placements.map((p) => p.id),
+          before.song.placements,
+          after.song.placements,
+          onNewTrack,
         ),
-      ),
+      );
+    },
   };
 }
 
@@ -354,13 +370,11 @@ export function setsFlag(trackName: string, flag: "muted" | "soloed"): BasicActi
 
 /** The track is listed first, and the rest keep their order. */
 export function movesToTop(trackName: string): BasicAction {
-  const listed = (project: Project) =>
-    [...project.song.tracks].sort((a, b) => a.order - b.order).map((track) => track.id);
   return {
     target: (before, after) => {
       const id = fixtureTrack(before, trackName).id;
-      const was = listed(before);
-      const now = listed(after);
+      const was = listed(before.song.tracks);
+      const now = listed(after.song.tracks);
       const wanted = [id, ...was.filter((entry) => entry !== id)];
       return same(now, wanted)
         ? pass(`"${trackName}" is at the top; the rest keep their order`)
@@ -370,7 +384,13 @@ export function movesToTop(trackName: string): BasicAction {
               : `"${trackName}" is not at the top`,
           );
     },
-    allows: () => TRACK_ORDERS,
+    allows: (before, after) =>
+      ordersKept(
+        "song.tracks",
+        before.song.tracks,
+        after.song.tracks,
+        new Set([fixtureTrack(before, trackName).id]),
+      ),
   };
 }
 

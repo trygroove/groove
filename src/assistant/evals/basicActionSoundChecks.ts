@@ -11,15 +11,20 @@ import { TICKS_PER_SIXTEENTH } from "../../domain/time";
 import { type FactoryLibraryEntry, factoryLibrary } from "../../library/factoryLibrary";
 import {
   added,
+  addedWhere,
   anyOf,
   type BasicAction,
   clipPath,
   fail,
   fixtureClip,
   fixtureTrack,
+  NOTHING,
   notesOf,
+  ordersKept,
+  type PathRule,
   pass,
   placementsOn,
+  type Sound,
   same,
   soundKeys,
   trackNamed,
@@ -49,6 +54,31 @@ export function libraryEntryOf(
 
 function assetOf(project: Project, id: string | null) {
   return project.song.assets.find((asset) => asset.id === id);
+}
+
+/**
+ * The project's sounds a pad edit may touch: a sound added for one of
+ * `pads` to play, and an old one the edit `replaced` taken out once no pad
+ * plays it. Any other sound added, removed or changed is a stray change.
+ */
+function soundsFor(
+  before: Project,
+  after: Project,
+  pads: readonly { assetId: string | null }[],
+  replaced: string | null = null,
+): PathRule {
+  const played = new Set(pads.map((pad) => pad.assetId));
+  const fresh = addedWhere(
+    "song.assets",
+    before.song.assets,
+    after.song.assets,
+    (asset) => played.has(asset.id),
+  );
+  const dropped =
+    replaced !== null && !after.song.assets.some((asset) => asset.id === replaced)
+      ? under(`song.assets.${replaced}`)
+      : NOTHING;
+  return anyOf(fresh, dropped);
 }
 
 /**
@@ -93,13 +123,16 @@ export function swapsToLongerSample(
 ): BasicAction {
   return {
     target: (before, after) => checkLongerSample(before, after, trackName, padName, role),
-    allows: (before) => {
+    allows: (before, after) => {
       const pad = padsOf(fixtureTrack(before, trackName)).find(
         (entry) => entry.name === padName,
       );
+      const now = padsOf(trackNamed(after, trackName)).filter(
+        (entry) => entry.id === pad?.id,
+      );
       return anyOf(
         under(`${trackPath(before, trackName)}.instrument.pads.${pad?.id}.assetId`),
-        under("song.assets"),
+        soundsFor(before, after, now, pad?.assetId ?? null),
       );
     },
   };
@@ -121,11 +154,21 @@ export function addsPadWithRole(trackName: string, role: string): BasicAction {
         ? pass(`Adds the pad "${match.name}", a ${role}`)
         : fail(`Adds ${fresh.length} pads, none playing a ${role}`);
     },
-    allows: (before) =>
-      anyOf(
-        under(`${trackPath(before, trackName)}.instrument.pads`),
-        under("song.assets"),
-      ),
+    // New pads only, and the sounds they play.
+    allows: (before, after) => {
+      const was = padsOf(fixtureTrack(before, trackName));
+      const now = padsOf(trackNamed(after, trackName));
+      const fresh = now.filter((pad) => !was.some((entry) => entry.id === pad.id));
+      return anyOf(
+        addedWhere(
+          `${trackPath(before, trackName)}.instrument.pads`,
+          was,
+          now,
+          () => true,
+        ),
+        soundsFor(before, after, fresh),
+      );
+    },
   };
 }
 
@@ -199,6 +242,27 @@ const unordered = (devices: readonly Device[]) =>
     .map(({ order: _order, ...rest }) => rest)
     .sort((a, b) => (a.id < b.id ? -1 : 1));
 
+/**
+ * What adding or removing a device may touch: a new `addedType` device, the
+ * one `removed`, and the other devices' `order` so long as they keep their
+ * order.
+ */
+function chainEdit(
+  before: Project,
+  after: Project,
+  trackName: string,
+  change: { readonly addedType?: string; readonly removed?: string },
+): PathRule {
+  const path = `${trackPath(before, trackName)}.devices`;
+  const was = devicesOf(before, trackName);
+  const now = devicesOf(after, trackName);
+  return anyOf(
+    addedWhere(path, was, now, (device) => device.type === change.addedType),
+    change.removed ? under(`${path}.${change.removed}`) : NOTHING,
+    ordersKept(path, was, now),
+  );
+}
+
 /** A new `type` device on the track; the ones it had are as they were. */
 export function addsDevice(trackName: string, type: string): BasicAction {
   return {
@@ -213,7 +277,7 @@ export function addsDevice(trackName: string, type: string): BasicAction {
         ? pass(`"${trackName}" has a new ${type}`)
         : fail(`No new ${type} on "${trackName}"`);
     },
-    allows: (before) => under(`${trackPath(before, trackName)}.devices`),
+    allows: (before, after) => chainEdit(before, after, trackName, { addedType: type }),
   };
 }
 
@@ -237,7 +301,10 @@ export function removesDevice(trackName: string, type: string): BasicAction {
         ? pass(`The ${type} is off "${trackName}"`)
         : fail("Changes the other devices");
     },
-    allows: (before) => under(`${trackPath(before, trackName)}.devices`),
+    allows: (before, after) =>
+      chainEdit(before, after, trackName, {
+        removed: onlyDevice(before, trackName, type).id,
+      }),
   };
 }
 
@@ -311,14 +378,21 @@ export function setsUpSend(trackNames: readonly string[], type: string): BasicAc
         ? pass(`"${bus.name}" has a ${type}, fed by ${trackNames.join(" and ")}`)
         : fail(`No send to "${bus.name}" from ${missing.join(", ")}`);
     },
-    allows: (before) =>
-      anyOf(
-        added(
-          "song.returns",
-          before.song.returns.map((bus) => bus.id),
+    // New returns, and sends to them from the named tracks only.
+    allows: (before, after) => {
+      const existing = before.song.returns.map((bus) => bus.id);
+      const fresh = after.song.returns
+        .map((bus) => bus.id)
+        .filter((id) => !existing.includes(id));
+      return anyOf(
+        added("song.returns", existing),
+        under(
+          ...trackNames.flatMap((name) =>
+            fresh.map((id) => `${trackPath(before, name)}.sendConfig.${id}`),
+          ),
         ),
-        under(...trackNames.map((name) => `${trackPath(before, name)}.sendConfig`)),
-      ),
+      );
+    },
   };
 }
 
@@ -344,16 +418,31 @@ function noteEdit(
 
 const onGrid = (event: NoteEvent) => event.startTicks % TICKS_PER_SIXTEENTH === 0;
 
-/** As many notes, the same pads and pitches and velocities, every start on the 16th grid. */
+/** The 16th nearest a tick; one exactly between two goes to the later. */
+const nearestSixteenth = (ticks: number) =>
+  Math.round(ticks / TICKS_PER_SIXTEENTH) * TICKS_PER_SIXTEENTH;
+
+/**
+ * As many notes, the same pads and pitches and velocities, each start moved
+ * to its nearest 16th: not to any 16th, so shuffling the notes around the
+ * grid does not pass. Lengths may change.
+ */
 export function quantizes(clipName: string): BasicAction {
   return noteEdit(clipName, (was, now) => {
     const sounds = (events: readonly NoteEvent[]) =>
       soundKeys(events, (event) => [event.trigger, event.velocity]);
     if (sounds(was) !== sounds(now)) return fail("Adds, removes or changes notes");
     const off = now.filter((event) => !onGrid(event)).length;
-    return off === 0
-      ? pass(`All ${now.length} notes start on a 16th`)
-      : fail(`${off} of ${now.length} notes start off the 16th grid`);
+    if (off > 0) return fail(`${off} of ${now.length} notes start off the 16th grid`);
+    const placed = (events: readonly Sound[]) =>
+      soundKeys(events, (event) => [event.trigger, event.velocity, event.startTicks]);
+    const snapped = was.map((event) => ({
+      ...event,
+      startTicks: nearestSixteenth(event.startTicks),
+    }));
+    return placed(snapped) === placed(now)
+      ? pass(`All ${now.length} notes start on their nearest 16th`)
+      : fail("Notes land on the grid, but not on their nearest 16th");
   });
 }
 
@@ -418,7 +507,12 @@ export function doublesSpeed(clipName: string): BasicAction {
         return pass("Twice as fast, repeated to fill the clip");
       return fail("The notes do not start and end at half their ticks");
     },
-    allows: (before) => under(clipPath(before, clipName)),
+    // The notes, and the clip's length if the figure is halved to fit it.
+    allows: (before) =>
+      under(
+        `${clipPath(before, clipName)}.content.events`,
+        `${clipPath(before, clipName)}.lengthTicks`,
+      ),
   };
 }
 
