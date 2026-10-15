@@ -62,11 +62,6 @@ export const RUNTIME_SELECTION = [
     assetId: "sg-loop-drums-full-loop-0001",
     use: "An audio loop, so an audio-clip path has real bar-aligned material.",
   },
-  {
-    key: "longKick",
-    assetId: "sg-one-shot-drums-kick-0008",
-    use: "A kick longer than the starter kick, for the assistant eval's longer-kick swap (GRV-119).",
-  },
 ];
 
 /**

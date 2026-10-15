@@ -148,31 +148,4 @@ export const FACTORY_LIBRARY: readonly FactoryLibraryEntry[] = [
 		channelCount: 1,
 		licence: "solid-groove-owned",
 	},
-	{
-		/** A kick longer than the starter kick, for the assistant eval's longer-kick swap (GRV-119). */
-		key: "longKick",
-		assetId: "sg-one-shot-drums-kick-0008",
-		name: "Long Rumble Kick",
-		type: "one-shot",
-		role: "kick",
-		pack: {
-			id: "pak_SdlN_OazweXrwury0j27Y",
-			name: "Core Electronic Drums",
-			version: "1.1.0",
-			publisher: "Groove",
-			kind: "factory",
-			description: "The role-complete, lightly processed drum foundation the other synthesized packs build on: kicks, snares, claps, rims, closed and open hats, cymbals, toms, and percussion across every featured genre. Contains no bass, tonal, texture, or FX material.",
-			rights: {
-				licence: "solid-groove-owned",
-				rawRedistribution: true,
-				attributionRequired: false,
-			},
-		},
-		storageRef: "samples/starter-library/audio/sha256/e0/7d/e07dfa3e23c27837e4a217756b5e8898a15aa26d08a1d6f671bb4c42404d5a68.wav",
-		sha256: "e07dfa3e23c27837e4a217756b5e8898a15aa26d08a1d6f671bb4c42404d5a68",
-		durationSeconds: 1.0736,
-		sampleRate: 48000,
-		channelCount: 1,
-		licence: "solid-groove-owned",
-	},
 ];

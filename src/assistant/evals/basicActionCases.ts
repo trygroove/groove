@@ -11,9 +11,15 @@
  * be checked. Cases 10 and 12 ask two things each, so the set's 30 cases run
  * as 32 requests.
  *
- * Some ask for what the assistant's tools cannot do yet: there is no tool
- * for the song's loop range (5) or key (28), and it cannot bring a sound in
- * from the library (13). Those cases stay, and fail, until it can.
+ * Seven ask for what the assistant cannot do yet, and stay, failing, until
+ * it can (`docs/assistant-eval-baseline-basic-actions.md` lists them too):
+ * - 5 and 28: no tool sets the song's loop range or key.
+ * - 13: a pad can only point at a sound the project holds, the project
+ *   description (`buildAssistantPayload`) sends none of the project's sounds,
+ *   and the kit holds no longer kick.
+ * - 14: no tool adds a drum pad, and the clap's asset ID is not sent.
+ * - 18, 19 and 20: removing, setting and reordering a device need its ID,
+ *   and the description sends only each track's device count.
  */
 import type { Project } from "../../domain/entities";
 import { SYNTH_FILTER_CUTOFF } from "../../domain/parameters";

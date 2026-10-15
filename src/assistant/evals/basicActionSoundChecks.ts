@@ -488,6 +488,14 @@ export function doublesSpeed(clipName: string): BasicAction {
       const clip = fixtureClip(before, clipName);
       const kept = after.clips.find((entry) => entry.id === clip.id);
       if (!kept) return fail(`Removes the clip "${clipName}"`);
+      if (
+        kept.lengthTicks !== clip.lengthTicks &&
+        kept.lengthTicks !== clip.lengthTicks / 2
+      ) {
+        return fail(
+          `The clip is ${kept.lengthTicks} ticks long, neither its ${clip.lengthTicks} nor half that`,
+        );
+      }
       const now = notesOf(kept);
       const halved = notesOf(clip).map((event) => ({
         ...event,
@@ -507,7 +515,8 @@ export function doublesSpeed(clipName: string): BasicAction {
         return pass("Twice as fast, repeated to fill the clip");
       return fail("The notes do not start and end at half their ticks");
     },
-    // The notes, and the clip's length if the figure is halved to fit it.
+    // The notes, and the clip's length if the figure is halved to fit it
+    // (the target only passes a length that is unchanged or exactly half).
     allows: (before) =>
       under(
         `${clipPath(before, clipName)}.content.events`,

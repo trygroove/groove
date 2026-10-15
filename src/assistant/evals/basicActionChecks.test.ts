@@ -442,11 +442,10 @@ describe("the basic production actions' checks", () => {
     ],
     [
       "basic-add-clap",
-      "the unused long kick taken out of the project",
+      "the kit's snare taken out of the project",
       (d) => {
-        d.song.assets = d.song.assets.filter(
-          (asset: Draft) => !asset.name.match(/rumble/i),
-        );
+        const snare = track(d, "Drums").instrument.pads[1].assetId;
+        d.song.assets = d.song.assets.filter((asset: Draft) => asset.id !== snare);
       },
     ],
     [
@@ -533,6 +532,25 @@ describe("the basic production actions' checks", () => {
     });
     expect(doublesSpeed("Bassline").target(before, after).status).toBe("pass");
   });
+
+  it("passes a doubled bassline in a clip cut to half its length, and fails any other length", () => {
+    const before = createBasicNotesProject();
+    const length = clip(before, "Bassline").lengthTicks;
+    const doubled = (lengthTicks: number) =>
+      edited(before, (d) => {
+        for (const event of events(d, "Bassline")) {
+          event.startTicks /= 2;
+          event.durationTicks /= 2;
+        }
+        clip(d, "Bassline").lengthTicks = lengthTicks;
+      });
+    const status = (after: Project) =>
+      doublesSpeed("Bassline").target(before, after).status;
+    expect(status(doubled(length))).toBe("pass");
+    expect(status(doubled(length / 2))).toBe("pass");
+    expect(status(doubled(length * 2))).toBe("fail");
+    expect(status(doubled(length / 4))).toBe("fail");
+  });
 });
 
 describe("a longer kick sample (case 13)", () => {
@@ -549,12 +567,7 @@ describe("a longer kick sample (case 13)", () => {
   const kick = kickAsset(before);
   const kickEntry = libraryEntryOf(kick);
   if (!kick || !kickEntry) throw new Error("The kit's kick is not a factory sound");
-  /** The factory kick in the project that no pad plays: longer than the Kick pad's. */
-  const longKick = before.song.assets.find(
-    (asset) => asset.id !== kick.id && libraryEntryOf(asset)?.role === "kick",
-  );
-  if (!longKick) throw new Error("The kit holds no second kick");
-  /** A library with a second kick in it, `seconds` long. */
+  /** A library with a second kick in it, `seconds` long, under `role`. */
   const libraryWith = (role: string, seconds: number): FactoryLibraryEntry[] => [
     ...factoryLibrary(),
     {
@@ -576,39 +589,30 @@ describe("a longer kick sample (case 13)", () => {
       });
       d.song.tracks[0].instrument.pads[0].assetId = "ast_fake";
     });
-  /** The kick pad on the long factory kick the project already holds. */
-  const onLongKick = edited(before, (d) => {
-    d.song.tracks[0].instrument.pads[0].assetId = longKick.id;
-  });
-  const status = (after: Project, library?: FactoryLibraryEntry[]) =>
+  /** The kick pad on a longer kick, the test library's. */
+  const LONGER = (kick.durationSeconds ?? 0) + 0.5;
+  const longer = swapped(LONGER);
+  const longerLibrary = libraryWith("kick", LONGER);
+  const status = (after: Project, library: FactoryLibraryEntry[] = longerLibrary) =>
     checkLongerSample(before, after, "Drums", "Kick", "kick", library).status;
   const nothingElse = (after: Project) =>
     checkNothingElse(before, after, action.allows(before, after)).status;
 
-  it("holds a longer factory kick the Kick pad can point at", () => {
-    expect(longKick.durationSeconds ?? 0).toBeGreaterThan(
-      kick.durationSeconds ?? Number.POSITIVE_INFINITY,
-    );
-  });
-
-  it("passes the pad pointed at the longer kick, and leaves the rest alone", () => {
-    expect(status(onLongKick)).toBe("pass");
-    expect(nothingElse(onLongKick)).toBe("pass");
-    const after = swapped(0.9);
-    expect(status(after, libraryWith("kick", 0.9))).toBe("pass");
-    expect(nothingElse(after)).toBe("pass");
+  it("passes the pad pointed at a longer kick, and leaves the rest alone", () => {
+    expect(status(longer)).toBe("pass");
+    expect(nothingElse(longer)).toBe("pass");
   });
 
   it("lets the old kick go once no pad plays it, and nothing else in the sounds", () => {
-    const dropped = edited(onLongKick, (d) => {
+    const dropped = edited(longer, (d) => {
       d.song.assets = d.song.assets.filter((asset: Draft) => asset.id !== kick.id);
     });
     expect(nothingElse(dropped)).toBe("pass");
-    const clapGone = edited(onLongKick, (d) => {
+    const clapGone = edited(longer, (d) => {
       d.song.assets = d.song.assets.filter((asset: Draft) => !asset.name.match(/clap/i));
     });
     expect(nothingElse(clapGone)).toBe("fail");
-    const unused = edited(onLongKick, (d) => {
+    const unused = edited(longer, (d) => {
       d.song.assets.push({ ...kick, id: "ast_unused" });
     });
     expect(nothingElse(unused)).toBe("fail");
@@ -618,13 +622,13 @@ describe("a longer kick sample (case 13)", () => {
     const decayed = edited(before, (d) => {
       d.song.tracks[0].instrument.pads[0].parameters.decay = 2;
     });
-    expect(status(decayed, libraryWith("kick", 0.9))).toBe("fail");
-    expect(status(swapped(0.2), libraryWith("kick", 0.2))).toBe("fail");
-    expect(status(swapped(0.9), libraryWith("snare", 0.9))).toBe("fail");
+    expect(status(decayed)).toBe("fail");
+    expect(status(swapped(0.01), libraryWith("kick", 0.01))).toBe("fail");
+    expect(status(longer, libraryWith("snare", LONGER))).toBe("fail");
   });
 
   it("fails a swap that changes another pad too", () => {
-    const after = edited(onLongKick, (d) => {
+    const after = edited(longer, (d) => {
       d.song.tracks[0].instrument.pads[1].mixer.volume = -6;
     });
     expect(status(after)).toBe("fail");
