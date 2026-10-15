@@ -137,11 +137,17 @@ export function selectEvalCases(
 }
 
 /** The API key from the environment, or an error saying no model was called. */
-export function requireApiKey(env: Readonly<Record<string, string | undefined>>): string {
+export function requireApiKey(
+  env: Readonly<Record<string, string | undefined>>,
+  tool: { readonly name: string; readonly example: string } = {
+    name: "The assistant evals",
+    example: "bun run eval:assistant",
+  },
+): string {
   const apiKey = env[ASSISTANT_API_KEY_SECRET]?.trim();
   if (!apiKey) {
     throw new EvalUsageError(
-      `${ASSISTANT_API_KEY_SECRET} is not set (or is empty). The assistant evals run against the live model and need an API key in the environment, e.g.\n\n  ${ASSISTANT_API_KEY_SECRET}=sk-ant-... bun run eval:assistant\n\nNo model was called.`,
+      `${ASSISTANT_API_KEY_SECRET} is not set (or is empty). ${tool.name} run against the live model and need an API key in the environment, e.g.\n\n  ${ASSISTANT_API_KEY_SECRET}=sk-ant-... ${tool.example}\n\nNo model was called.`,
     );
   }
   return apiKey;
