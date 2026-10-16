@@ -413,6 +413,8 @@ describe("runCaseCheck", () => {
       endsAt: "fail",
       noEmptyClips: "pass",
       noNoOps: "pass",
+      // The fixture's pad clip is placed.
+      clipsPlaced: "pass",
     });
   });
 });

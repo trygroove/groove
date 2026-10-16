@@ -91,6 +91,7 @@ export const CHECK_LABELS: Record<CheckId, string> = {
   endsAt: "15. A parameter ends at the exact value",
   noEmptyClips: "16. No clip left without notes",
   noNoOps: "17. No command sets a value to what it already is",
+  clipsPlaced: "18. Every new clip is placed",
 };
 
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addClip,
+  addPlacement,
   addTrack,
   changeInstrument,
   executeTransaction,
@@ -14,6 +15,7 @@ import {
   createFactoryContext,
   createNoteClip,
   createNoteEvent,
+  createPlacement,
   createSynthInstrument,
   createTrack,
 } from "../../domain/factories";
@@ -22,6 +24,7 @@ import { TICKS_PER_BAR } from "../../domain/time";
 import { checkOutcome, runCaseCheck } from "./caseChecks";
 import {
   checkAddsTracks,
+  checkClipsPlaced,
   checkEndsAt,
   checkNoEmptyClips,
   checkNoNoOps,
@@ -156,6 +159,42 @@ describe("check 16: no clip left without notes", () => {
 
   it("leaves a clip the proposal did not touch alone", () => {
     expect(checkNoEmptyClips(before, before).status).toBe("pass");
+  });
+});
+
+describe("check 18: every new clip is placed", () => {
+  const before = createBdSketchProject();
+  const track = before.song.tracks[1];
+  const clip = createNoteClip(context, {
+    trackId: track.id,
+    name: "Lurch",
+    lengthTicks: TICKS_PER_BAR,
+    events: [createNoteEvent(context, { pitch: 40, startTicks: 0, durationTicks: 48 })],
+  });
+
+  it("fails a new clip on no timeline, naming it", () => {
+    const result = checkClipsPlaced(before, apply(before, [addClip(clip)]));
+    expect(result.status).toBe("fail");
+    expect(result.detail).toBe('Never placed: "Lurch"');
+  });
+
+  it("passes a new clip once a later command places it", () => {
+    // Far past the sketch's own placements, so nothing overlaps.
+    const placement = createPlacement(context, {
+      clipId: clip.id,
+      trackId: track.id,
+      startTicks: TICKS_PER_BAR * 64,
+      durationTicks: TICKS_PER_BAR,
+    });
+    const after = apply(before, [addClip(clip), addPlacement(placement)]);
+    expect(checkClipsPlaced(before, after)).toEqual({
+      status: "pass",
+      detail: "1 clips added, each placed",
+    });
+  });
+
+  it("passes a proposal that adds no clip", () => {
+    expect(checkClipsPlaced(before, before).detail).toBe("Adds no clip");
   });
 });
 

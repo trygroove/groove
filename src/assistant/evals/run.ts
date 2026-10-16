@@ -42,7 +42,7 @@ import { continuesTurn, type ProviderMessagesRequest } from "../providerRequest"
 import type { ProviderUsage } from "../streamEvents";
 import type { AssistantTurnLog } from "../telemetry";
 import { ASSISTANT_TOOLSET_VERSION } from "../tools";
-import { checkOutcome, runCaseCheck } from "./caseChecks";
+import { caseChecksFor, checkOutcome, runCaseCheck } from "./caseChecks";
 import {
   caseMessages,
   casePairs,
@@ -449,8 +449,8 @@ export function whyNoProposal(turn: EvalTurn): string {
 }
 
 /**
- * Checks 1 to 5, 7 and 8 and the case's own checks on one turn, and its
- * descriptive numbers. An errored turn is judged by no check. A case that
+ * Checks 1 to 5, 7 and 8, checks 16 and 18 (every case's), and the case's
+ * own checks on one turn, and its descriptive numbers. An errored turn is judged by no check. A case that
  * expects a question is judged by check 8 alone unless the turn proposed
  * something anyway, which every other check then judges too.
  */
@@ -473,7 +473,7 @@ export function evaluateTurn(
   if (evalCase.expect !== "proposal" && !proposed) {
     return { ...base, checks: { outcome }, stats: null, fingerprint: null };
   }
-  const caseChecks = evalCase.checks ?? [];
+  const caseChecks = caseChecksFor(evalCase.checks);
   const project = evalCase.fixture();
   const valid = checkValid(project, turn.proposal, whyNoProposal(turn));
   if (!valid.applied) {

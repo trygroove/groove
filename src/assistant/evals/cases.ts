@@ -460,7 +460,7 @@ export const TYPESCRIPT_CASES: readonly EvalCase[] = [
     fixture: createBdSketchProject,
     selection: null,
     scope: SKETCH_SCOPE,
-    checks: ["noEmptyClips", "noNoOps"],
+    checks: ["noNoOps"],
   },
   {
     id: "noop-bd-only",
