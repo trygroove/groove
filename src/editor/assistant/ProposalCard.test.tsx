@@ -8,8 +8,8 @@ import { createRecordingTransport } from "../../analytics/transport";
 import type { AssistantProposal } from "../../assistant/protocol";
 import {
   ASSISTANT_TOOLSET_VERSION,
+  CREATE_EXAMPLES,
   EXPLAIN_TOOL_NAME,
-  TRACK_CREATE_EXAMPLE,
 } from "../../assistant/tools";
 import {
   type ControlAddress,
@@ -210,9 +210,8 @@ async function setUp(options: { retention?: FakeRetentionClient } = {}) {
   };
 }
 
-const panel = () => screen.getByRole("region", { name: "Assistant" });
-const composer = () =>
-  within(panel()).getByRole("textbox", { name: "Message the assistant" });
+const panel = () => screen.getByRole("region", { name: "Cue" });
+const composer = () => within(panel()).getByRole("textbox", { name: "Message Cue" });
 const button = (name: string | RegExp) => within(panel()).getByRole("button", { name });
 const card = () => within(panel()).getByRole("region", { name: /^Proposal\b/ });
 const cardButton = (name: string) => within(card()).getByRole("button", { name });
@@ -500,14 +499,14 @@ describe("the proposal card (GRV-5)", () => {
   it("names a missing sound in plain words, and logs the rejection once with codes only (GRV-98)", async () => {
     const retention = createFakeRetentionClient({ answered: true });
     const { propose, client, events } = await setUp({ retention });
-    const input = structuredClone(TRACK_CREATE_EXAMPLE) as Record<string, unknown> & {
-      track: Record<string, unknown>;
-    };
-    input.track.name = "My secret pad";
-    input.track.instrument = {
-      kind: "sampler",
-      assetId: "ast_NoisePad0000000000001",
-      parameters: {},
+    const input = {
+      ...structuredClone(CREATE_EXAMPLES.track),
+      name: "My secret pad",
+      instrument: {
+        kind: "sampler",
+        assetId: "ast_NoisePad0000000000001",
+        parameters: {},
+      },
     };
     await propose([
       { id: "toolu_7", name: "track_create", input },

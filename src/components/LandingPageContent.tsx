@@ -1,6 +1,7 @@
 import type { JSX } from "@solidjs/web";
 import { For, Show } from "solid-js";
 import { requestAccessUrl } from "../../site.config.mjs";
+import { ViewIcon } from "../editor/viewIcons";
 import { AI_PRODUCER_ARRIVES, LANDING_FAQ } from "./landingCopy";
 import "./LandingPage.css";
 
@@ -241,7 +242,10 @@ export default function LandingPageContent(props: LandingPageContentProps) {
     <div class="landing">
       <header class="landing-header">
         <a class="landing-brand" href="/">
-          <span class="landing-brand-mark" aria-hidden="true" />
+          {/* The arrangement view's icon, which is also the favicon. */}
+          <span class="landing-brand-mark">
+            <ViewIcon view="arrangement" size={28} />
+          </span>
           <span>Groove</span>
         </a>
         <nav class="landing-nav" aria-label="Get started">

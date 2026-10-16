@@ -16,11 +16,19 @@
 // - It is **not loaded at all on the marketing landing page** (ADR 0001,
 //   `LOOP-001b`), which has no editing state to protect and the strictest
 //   first-impression budget.
-// - The PostHog SDK follows the same rules (ADR 0011, GRV-106): its own
-//   chunk, loaded after first paint and never on the landing page. Analytics
-//   is still *wired* there, because `landing_cta_click` is measured there:
-//   the transport queues it, and it is sent once the visitor reaches a
-//   surface that loads the SDK (sign-in is a popup, so the queue survives it).
+// - The PostHog SDK is its own chunk too (ADR 0011, GRV-106), loaded when the
+//   browser is idle after first paint, and never part of the prerendered
+//   shell or the entry chunk. Unlike Sentry it **does** load on the landing
+//   page (GRV-123), so a visitor who reads `/` and leaves is counted: its
+//   `$pageview`, `landing_cta_click` and `$pageleave` are sent from there,
+//   each event by beacon as it is logged rather than batched, because the
+//   visitor may be about to leave.
+//   On `/` it waits longer, until the page has loaded and settled
+//   (`afterLandingSettled`), so it costs the landing page's LCP and TBT
+//   nothing.
+//   On `/` it is analytics only. Replay, web vitals, network timing and the
+//   PostHog error sink start only once the session reaches an app surface
+//   (`PostHogLoader.startAppCollection`, and the sinks with Sentry's).
 //
 // - **Errors go to two sinks** while PostHog's error tracking is evaluated
 //   (ADR 0011 decision 3): Sentry's and PostHog's, attached to the reporting
@@ -38,9 +46,9 @@
 //
 // - **The vendor SDK.** A declined session never loads PostHog at all, and
 //   withdrawing consent at runtime calls its `opt_out_capturing()`
-//   (`setVendorAnalyticsCollection`). Withdrawn before the SDK has loaded (on
-//   the landing page, where it waits), the transport is disposed: its queue is
-//   dropped and its load never runs. Until the user has made a choice, the
+//   (`setVendorAnalyticsCollection`). Withdrawn before the SDK has loaded
+//   (while it waits for the browser to go idle), the transport is disposed:
+//   its queue is dropped and its load never runs. Until the user has made a choice, the
 //   SDK keeps its identity in memory; once they have granted it, in
 //   `localStorage` and a cookie.
 // - **The surface.** Navigation off the landing page is client-side, so
@@ -109,6 +117,12 @@ export interface InitTelemetryOptions {
   startErrorSink?: StartErrorSink;
   /** Schedules work for after first paint. */
   afterPaint?: (task: () => void) => void;
+  /**
+   * Schedules the analytics SDK's load on the landing page: later than
+   * `afterPaint`, once the page has loaded and settled (GRV-123). Returns a
+   * canceller, which `dispose` calls.
+   */
+  afterLandingSettled?: (task: () => void) => () => void;
   reporter?: ErrorReporter;
   consent?: ConsentStore;
   target?: Pick<Window, "addEventListener" | "removeEventListener">;
@@ -172,18 +186,28 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
   const postHog =
     options.postHogLoader !== undefined ? options.postHogLoader : defaultPostHogLoader();
 
-  // The analytics SDK waits for this: a non-landing surface, painted. It is a
-  // gate rather than a call so the transport can be created (and queue) from
-  // the first line, on the landing page included.
+  // The analytics SDK waits for this gate. On an app surface it opens after
+  // first paint and an idle main thread. On the landing page (GRV-123) it
+  // opens later still, once the page has loaded and settled
+  // (`afterLandingSettled`), so parsing the SDK lands outside the window that
+  // decides `/`'s LCP and TBT; if the visitor moves on into the app before
+  // then, reaching the app surface opens it on the app's timing instead. It
+  // is a gate rather than a call so the transport can be created (and queue)
+  // from the first line, and so a transport rebuilt after a re-grant waits on
+  // the same one.
   let openAnalyticsGate: () => void = () => {};
   const analyticsGate = new Promise<void>((resolve) => {
-    let opened = false;
-    openAnalyticsGate = () => {
-      if (opened || !postHog) return;
-      opened = true;
-      afterPaint(resolve);
-    };
+    openAnalyticsGate = resolve;
   });
+  let analyticsGateScheduledForApp = false;
+  /** The surface showing now: events logged on the landing page go at once. */
+  let currentSurface = options.surface;
+  let cancelLandingGate: () => void = () => {};
+  if (postHog && options.surface === "landing") {
+    cancelLandingGate = (options.afterLandingSettled ?? afterLandingSettled)(
+      openAnalyticsGate,
+    );
+  }
   const createTransport =
     options.createAnalyticsTransport ??
     (() =>
@@ -200,6 +224,10 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
                       sessionReplayAllowed: () => consent.sessionReplayAllowed,
                     }),
               ),
+            // A landing event is often the visitor's last, as when "Request an
+            // invite" takes the tab to another site: it is sent as it is
+            // logged rather than left in the batch for the unload to drain.
+            sendAtOnce: () => currentSurface === "landing",
           })
         : noopTransport);
   const setVendorCollection =
@@ -302,12 +330,22 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     // After `dispose` the wiring is gone; a late navigation must not resurrect
     // `app_opened` or a monitoring start the disposer has no handle on.
     if (disposed) return;
+    currentSurface = surface;
     analytics.setSurface(surface);
     // ADR 0001: the marketing landing page loads no monitoring SDK, and
-    // `app_opened` is not its event — `landing_cta_click` is.
+    // `app_opened` is not its event — `landing_cta_click` is. The analytics
+    // SDK loads there too, but collects analytics only (GRV-123).
     if (surface === "landing") return;
     monitoredSurfaceReached = true;
-    openAnalyticsGate();
+    if (postHog && !analyticsGateScheduledForApp) {
+      analyticsGateScheduledForApp = true;
+      afterPaint(openAnalyticsGate);
+    }
+    try {
+      postHog?.startAppCollection();
+    } catch {
+      // Telemetry never throws into navigation.
+    }
     if (!appOpenedLogged) {
       // PRD `OPS-02`: `app_opened` fires when "the editor or dashboard shell
       // becomes interactive". That is reaching a non-landing surface, whether
@@ -387,6 +425,7 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     startMonitoringIfAllowed,
     dispose: async () => {
       disposed = true;
+      cancelLandingGate();
       unsubscribeConsent();
       uninstallHandlers();
       const running = sink;
@@ -530,6 +569,60 @@ export function afterFirstPaint(task: () => void): void {
   // the tab may never be foregrounded, and monitoring that only starts if the
   // user happens to look at the page is not monitoring.
   whenIdle();
+}
+
+/**
+ * How long the landing page waits after its `load` event before it loads the
+ * analytics SDK (GRV-123). Long enough that the SDK's download and parse fall
+ * outside the window lab tools measure `/`'s LCP and TBT in; short enough
+ * that most visits, bounces included, still last until it loads.
+ */
+export const LANDING_ANALYTICS_DELAY_MS = 3_000;
+
+/**
+ * Runs a task once the landing page has loaded and settled: after the window
+ * `load` event, then `LANDING_ANALYTICS_DELAY_MS`, then `afterFirstPaint`'s
+ * frame and idle wait. Nothing the page needs to render or respond is still
+ * in flight by then, so the analytics SDK competes with none of it.
+ *
+ * Returns a canceller: the load listener and the delay are cleared, and a
+ * task already handed to `afterFirstPaint` does not run.
+ */
+export function afterLandingSettled(
+  task: () => void,
+  delayMs: number = LANDING_ANALYTICS_DELAY_MS,
+): () => void {
+  let cancelled = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const run = () => {
+    if (!cancelled) task();
+  };
+  const settle = () => {
+    if (cancelled) return;
+    timer = setTimeout(() => afterFirstPaint(run), delayMs);
+  };
+  let listening = false;
+  try {
+    if (typeof document === "undefined" || document.readyState === "complete") {
+      settle();
+    } else {
+      window.addEventListener("load", settle, { once: true });
+      listening = true;
+    }
+  } catch {
+    settle();
+  }
+  return () => {
+    cancelled = true;
+    if (timer !== undefined) clearTimeout(timer);
+    if (listening) {
+      try {
+        window.removeEventListener("load", settle);
+      } catch {
+        // Nothing left to cancel.
+      }
+    }
+  };
 }
 
 /**

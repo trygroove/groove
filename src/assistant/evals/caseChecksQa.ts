@@ -8,6 +8,11 @@
  * - {@link checkNoEmptyClips}: no clip the proposal adds or changes ends with
  *   zero notes.
  * - {@link checkNoNoOps}: no command sets a value to what it already is.
+ * - {@link checkClipsPlaced}: every clip the proposal adds is placed.
+ *
+ * `noEmptyClips` and `clipsPlaced` judge every case ({@link EVERY_CASE_CHECKS}
+ * in `caseChecks.ts`): a proposal that stops partway (notes cleared and never
+ * written, a clip made and never placed) applies cleanly, so only they see it.
  */
 import { CONTROL_PARTS } from "../../commands/controlAddress";
 import { executeCommand } from "../../commands/execute";
@@ -85,6 +90,29 @@ export function checkNoEmptyClips(before: Project, after: Project): CheckResult 
     return fail(`Ends with no notes in "${empty.map((clip) => clip.name).join('", "')}"`);
   }
   return pass(`${touched.length} clips added or changed, each with notes`);
+}
+
+// ---------------------------------------------------------------------------
+// Every new clip is placed
+// ---------------------------------------------------------------------------
+
+/**
+ * Every clip the proposal adds has a placement when it is done: a clip on no
+ * timeline never plays, so the part it was made for is missing.
+ */
+export function checkClipsPlaced(before: Project, after: Project): CheckResult {
+  const existing = new Set<string>(before.clips.map((clip) => clip.id));
+  const placed = new Set<string>(
+    after.song.placements.map((placement) => placement.clipId),
+  );
+  const added = after.clips.filter((clip) => !existing.has(clip.id));
+  const unplaced = added.filter((clip) => !placed.has(clip.id));
+  if (unplaced.length > 0) {
+    return fail(`Never placed: "${unplaced.map((clip) => clip.name).join('", "')}"`);
+  }
+  return pass(
+    added.length === 0 ? "Adds no clip" : `${added.length} clips added, each placed`,
+  );
 }
 
 // ---------------------------------------------------------------------------

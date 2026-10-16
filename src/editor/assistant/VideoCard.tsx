@@ -30,6 +30,7 @@
  */
 import type { JSX } from "@solidjs/web";
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import type { Analytics } from "../../analytics/analytics";
 import {
   type AssistantVideo,
@@ -147,7 +148,7 @@ export default function VideoCard(props: VideoCardProps): JSX.Element {
       <div class="assistant-video-stage">
         <Show when={expanded()}>
           <div class="assistant-video-overlay-bar">
-            <span class="assistant-video-tag">Recommended by the assistant</span>
+            <span class="assistant-video-tag">Recommended by {ASSISTANT_NAME}</span>
             <span class="assistant-video-overlay-title">{title()}</span>
             <button
               ref={overlayClose}

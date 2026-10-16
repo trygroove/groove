@@ -74,7 +74,7 @@ test.describe("CF-027", () => {
     await goToView(page, "Arrangement");
     await expect(arrangement(page)).toBeVisible();
 
-    // 2. Press the Assistant button in the header. The assistant opens
+    // 2. Press the Cue button in the header. The assistant opens
     //    floating over the bottom-right corner of the editor, ready to type
     //    into. It says its scope is the selected track, BD.
     await assistantButton(page).click();

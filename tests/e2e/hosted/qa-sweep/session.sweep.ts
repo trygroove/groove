@@ -21,8 +21,16 @@ test("sign this agent in as its QA account", async ({ page }) => {
   // The flag is kept in localStorage, which the saved session carries to every
   // spec the agent runs.
   await page.goto("/projects?internal=1");
-  await expect(page).toHaveURL(/\/projects(\?|$)/);
-  await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
+  // An account that has not been through onboarding (GRV-25) is taken to the
+  // welcome instead. The session is saved as it is, so the agent meets the
+  // product as a producer would; it is not skipped on the agent's behalf.
+  await expect(page).toHaveURL(/\/(projects|welcome)(\?|$)/);
+  await expect(
+    page
+      .getByRole("heading", { name: "Projects" })
+      .or(page.getByRole("button", { name: "Skip to the studio" }))
+      .first(),
+  ).toBeVisible();
 
   const sha = await page.locator("[data-release-sha]").getAttribute("data-release-sha");
   mkdirSync(dirname(BUILD_FILE), { recursive: true });

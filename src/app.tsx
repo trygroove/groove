@@ -96,7 +96,8 @@ export default function App() {
     // analytics transport. Monitoring itself is scheduled by `setSurface`,
     // which the tracker above drives, so a session that starts on the
     // marketing landing page and navigates into the app is still monitored
-    // while one that stays on the landing page loads no SDK (ADR 0001).
+    // while one that stays on the landing page loads no monitoring SDK
+    // (ADR 0001); there it loads only the analytics SDK (GRV-123).
     const instance = initTelemetry({
       surface: surfaceForPath(window.location.pathname),
     });

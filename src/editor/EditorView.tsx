@@ -37,7 +37,9 @@ import { type LibraryClient, sharedLibraryClient } from "../library/libraryClien
 import type { LibraryPackSummary } from "../library/manifest";
 import { ToneAuditionEngine } from "../library/toneAuditionEngine";
 import { useFavourites } from "../library/useFavourites";
+import { useProducerProfile } from "../memory/useProducerProfile";
 import type { FavouritesRepository } from "../persistence/favouritesRepository";
+import type { ProfileRepository } from "../persistence/profileRepository";
 import { getProjectRepository } from "../projectRepositoryClient";
 import type { ArrangementSelection } from "../selection";
 import { isInternalTraffic } from "../shared/internalTraffic";
@@ -136,6 +138,11 @@ export interface EditorViewProps {
   readonly userLibraryRepository?: () => Promise<UserLibraryRepository>;
   /** Injected in tests; Firestore (or memory) otherwise. */
   readonly favouritesRepository?: () => Promise<FavouritesRepository>;
+  /**
+   * Where the producer's profile is, for what Cue remembers (GRV-25).
+   * Injected in tests; Firestore (or memory) otherwise.
+   */
+  readonly profileRepository?: () => Promise<ProfileRepository>;
   /**
    * The assistant's way to the gateway (GRV-26). Injected in tests; the
    * app's composition root (`src/assistantClientProvider.ts`) otherwise.
@@ -434,9 +441,17 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
       }
     },
   });
+  // What Cue remembers about a signed-in producer (GRV-25), read once per
+  // editor and sent with every turn.
+  const producerProfile = useProducerProfile({
+    uid: () =>
+      props.libraryAccount?.registered ? (props.libraryAccount.uid ?? null) : null,
+    repository: props.profileRepository,
+  });
   // The conversation (GRV-26): one per editor, kept while the panel is
   // closed, and across a reload of the same project in this tab (GRV-42).
   const chat = useAssistantChat({
+    profile: producerProfile,
     project,
     conversationKey: () => {
       const uid = props.libraryAccount?.uid;

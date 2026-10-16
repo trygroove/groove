@@ -3,10 +3,14 @@
  * range, velocity, what was added, device and mixer values. Printed in the
  * report so we can see what a sensible threshold would be later; **nothing
  * gates on them**.
+ *
+ * {@link describeProject} is what `bun run assistant:try -- show` prints of a
+ * session's project (GRV-108): every track with its level, pan and devices,
+ * and every clip with its note count.
  */
 import { deviceTypeDefinition } from "../../domain/devices";
 import type { Clip, Device, NoteEvent, Project } from "../../domain/entities";
-import { TICKS_PER_SIXTEENTH } from "../../domain/time";
+import { TICKS_PER_BAR, TICKS_PER_SIXTEENTH } from "../../domain/time";
 
 export interface ProposalStats {
   readonly commandCount: number;
@@ -109,13 +113,93 @@ export function describeProposal(
     devicesAdded: count(devices(before), devices(after)),
     tempo: after.song.tempo,
     swing: after.song.swing,
-    deviceParameters: touchedDevices.map((device) => {
-      const label = deviceTypeDefinition(device.type)?.label ?? device.type;
-      const values = Object.entries(device.parameters)
-        .map(([key, value]) => `${key}=${round(value)}`)
-        .join(" ");
-      return `${label}${device.bypassed ? " (bypassed)" : ""}${values ? ` ${values}` : ""}`;
-    }),
+    deviceParameters: touchedDevices.map(deviceLine),
     mixer,
+  };
+}
+
+/** "Compressor threshold=-18 ratio=2": a device and its parameter values. */
+function deviceLine(device: Device): string {
+  const label = deviceTypeDefinition(device.type)?.label ?? device.type;
+  const values = Object.entries(device.parameters)
+    .map(([key, value]) => `${key}=${round(value)}`)
+    .join(" ");
+  return `${label}${device.bypassed ? " (bypassed)" : ""}${values ? ` ${values}` : ""}`;
+}
+
+/** One clip in {@link ProjectOverview}. */
+export interface ClipOverview {
+  readonly name: string;
+  readonly bars: number;
+  /** Notes and pad hits; null for an audio clip. */
+  readonly notes: number | null;
+  /** How many times the arrangement places it. */
+  readonly placements: number;
+}
+
+/** One track in {@link ProjectOverview}. */
+export interface TrackOverview {
+  readonly name: string;
+  readonly type: string;
+  readonly instrument: string | null;
+  /** Its fader, in dB. */
+  readonly volume: number;
+  readonly pan: number;
+  readonly muted: boolean;
+  readonly soloed: boolean;
+  readonly devices: readonly string[];
+  readonly clips: readonly ClipOverview[];
+}
+
+/** What a project holds, by name: the try-it CLI's `show`. */
+export interface ProjectOverview {
+  readonly name: string;
+  readonly tempo: number;
+  readonly swing: number;
+  readonly revision: number;
+  readonly tracks: readonly TrackOverview[];
+  readonly returns: readonly {
+    readonly name: string;
+    readonly devices: readonly string[];
+  }[];
+  readonly master: { readonly volume: number; readonly devices: readonly string[] };
+}
+
+export function describeProject(project: Project): ProjectOverview {
+  const { song } = project;
+  const ordered = <T extends { order: number }>(items: readonly T[]) =>
+    [...items].sort((a, b) => a.order - b.order);
+  return {
+    name: project.metadata.name,
+    tempo: song.tempo,
+    swing: song.swing,
+    revision: project.metadata.revision,
+    tracks: ordered(song.tracks).map((track) => ({
+      name: track.name,
+      type: track.type,
+      instrument: track.instrument?.kind ?? null,
+      volume: round(track.mixer.volume),
+      pan: round(track.mixer.pan),
+      muted: track.mixer.muted,
+      soloed: track.mixer.soloed,
+      devices: ordered(track.devices).map(deviceLine),
+      clips: project.clips
+        .filter((clip) => clip.trackId === track.id)
+        .map((clip) => ({
+          name: clip.name,
+          bars: round(clip.lengthTicks / TICKS_PER_BAR),
+          notes: clip.content.kind === "notes" ? clip.content.events.length : null,
+          placements: song.placements.filter((placement) => placement.clipId === clip.id)
+            .length,
+        })),
+    })),
+    returns: ordered(song.returns).map((bus) => ({
+      name: bus.name,
+      devices: ordered(bus.devices).map(deviceLine),
+    })),
+    master: {
+      volume: round(song.master.volume),
+      devices: ordered(song.master.devices).map(deviceLine),
+    },
   };
 }

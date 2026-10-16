@@ -20,6 +20,7 @@ import { z } from "zod";
 import { ESTIMATED_CHARS_PER_TOKEN } from "./config";
 import type { AssistantStopReason, AssistantToolCall } from "./protocol";
 import { ProviderFailure } from "./provider";
+import type { ProviderAssistantBlock } from "./providerRequest";
 
 const tokens = z.int().min(0);
 
@@ -58,6 +59,7 @@ const knownEventSchema = z.discriminatedUnion("type", [
       type: z.string(),
       text: z.string().optional(),
       thinking: z.string().optional(),
+      signature: z.string().optional(),
       partial_json: z.string().optional(),
     }),
   }),
@@ -88,6 +90,15 @@ const ACCEPTED_STOP_REASONS: ReadonlySet<string> = new Set<AssistantStopReason>(
   "refusal",
   "tool_use",
 ]);
+
+/**
+ * A thinking block as it streams: its text and the signature that lets it be
+ * sent back unchanged when the turn continues (the API refuses an edited one).
+ */
+interface PendingThinking {
+  thinking: string;
+  signature: string;
+}
 
 /** A tool call while its input is still arriving. */
 interface PendingToolCall {
@@ -135,11 +146,20 @@ const malformed = () => new ProviderFailure("malformed");
  * caller to forward.
  */
 export class StreamReader {
+  /**
+   * @param continuing a later step of a turn (`gateway.ts`), which may end
+   *   with nothing more to say: everything was said in the steps before it.
+   */
+  constructor(private readonly continuing = false) {}
+
   private started = false;
   private finished = false;
   private stopReason: AssistantStopReason | null = null;
   private readonly blocks = new Map<number, string>();
   private readonly toolCalls = new Map<number, PendingToolCall>();
+  private readonly thinking = new Map<number, PendingThinking>();
+  private readonly redacted = new Map<number, string>();
+  private readonly texts = new Map<number, string>();
   private text = "";
   private currentUsage: ProviderUsage = NO_USAGE;
   /** Characters of reply and thinking streamed so far. */
@@ -168,6 +188,15 @@ export class StreamReader {
       case "content_block_start":
         if (!ALLOWED_BLOCKS.has(event.content_block.type)) throw malformed();
         if (this.blocks.has(event.index)) throw malformed();
+        if (event.content_block.type === "thinking") {
+          this.thinking.set(event.index, { thinking: "", signature: "" });
+        }
+        if (event.content_block.type === "redacted_thinking") {
+          const data = (event.content_block as { data?: unknown }).data;
+          if (typeof data !== "string") throw malformed();
+          this.redacted.set(event.index, data);
+        }
+        if (event.content_block.type === "text") this.texts.set(event.index, "");
         if (event.content_block.type === "tool_use") {
           const start = toolUseStartSchema.safeParse(event.content_block);
           if (!start.success) throw malformed();
@@ -197,9 +226,23 @@ export class StreamReader {
           toolCall.json += event.delta.partial_json;
           return null;
         }
+        const thinking = this.thinking.get(event.index);
+        if (thinking) {
+          if (event.delta.type === "thinking_delta") {
+            thinking.thinking += event.delta.thinking ?? "";
+          }
+          if (event.delta.type === "signature_delta") {
+            thinking.signature += event.delta.signature ?? "";
+          }
+          return null;
+        }
         if (block !== "text" || event.delta.type !== "text_delta") return null;
         if (event.delta.text === undefined) throw malformed();
         this.text += event.delta.text;
+        this.texts.set(
+          event.index,
+          (this.texts.get(event.index) ?? "") + event.delta.text,
+        );
         return event.delta.text;
       }
       case "content_block_stop":
@@ -266,12 +309,17 @@ export class StreamReader {
     text: string;
     stopReason: AssistantStopReason;
     toolCalls: AssistantToolCall[];
+    content: ProviderAssistantBlock[];
   } {
     if (!this.finished || this.stopReason === null) throw malformed();
-    if (this.stopReason === "end_turn" && this.text.trim().length === 0)
+    if (
+      this.stopReason === "end_turn" &&
+      this.text.trim().length === 0 &&
+      !this.continuing
+    )
       throw malformed();
     if (this.stopReason !== "tool_use") {
-      return { text: this.text, stopReason: this.stopReason, toolCalls: [] };
+      return { text: this.text, stopReason: this.stopReason, toolCalls: [], content: [] };
     }
     if (this.toolCalls.size === 0) throw malformed();
     const toolCalls = [...this.toolCalls.entries()]
@@ -281,7 +329,44 @@ export class StreamReader {
         name: call.name,
         input: parseInput(call.json),
       }));
-    return { text: this.text, stopReason: this.stopReason, toolCalls };
+    return {
+      text: this.text,
+      stopReason: this.stopReason,
+      toolCalls,
+      content: this.content(toolCalls),
+    };
+  }
+
+  /**
+   * The reply's blocks in order, as the next request in the same turn sends
+   * them back: thinking unchanged, with its signature, and each tool call's
+   * input as an object (one that did not parse is sent as `{}`, and its result
+   * says it was refused).
+   */
+  private content(toolCalls: readonly AssistantToolCall[]): ProviderAssistantBlock[] {
+    const byId = new Map(toolCalls.map((call) => [call.id, call]));
+    return [...this.blocks.keys()]
+      .sort((a, b) => a - b)
+      .flatMap((index): ProviderAssistantBlock[] => {
+        const thinking = this.thinking.get(index);
+        if (thinking) return [{ type: "thinking", ...thinking }];
+        const redacted = this.redacted.get(index);
+        if (redacted !== undefined)
+          return [{ type: "redacted_thinking", data: redacted }];
+        const pending = this.toolCalls.get(index);
+        if (pending) {
+          const input = byId.get(pending.id)?.input;
+          const object =
+            input !== null && typeof input === "object" && !Array.isArray(input)
+              ? (input as Record<string, unknown>)
+              : {};
+          return [
+            { type: "tool_use", id: pending.id, name: pending.name, input: object },
+          ];
+        }
+        const text = this.texts.get(index);
+        return text ? [{ type: "text", text }] : [];
+      });
   }
 }
 

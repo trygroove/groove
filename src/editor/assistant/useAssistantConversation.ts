@@ -51,6 +51,12 @@ import {
   historyOf as historyOfEntries,
   MAX_MESSAGE_CHARS,
 } from "../../assistant/history";
+import {
+  type AssistantMemoryContext,
+  type MemoryProposal,
+  parseRememberCall,
+  splitMemoryProposals,
+} from "../../assistant/memory";
 import type {
   AssistantErrorDetails,
   AssistantLibraryContext,
@@ -141,6 +147,15 @@ export type ConversationEntry =
       readonly origin: TurnOrigin;
     }
   /**
+   * Something the reply proposes Cue remember about the producer (GRV-25):
+   * nothing is saved until they confirm it on its card.
+   */
+  | {
+      readonly kind: "memory";
+      readonly id: string;
+      readonly proposal: MemoryProposal;
+    }
+  /**
    * A tutorial video the reply recommends (GRV-16), checked with YouTube by
    * the gateway. A still card until the producer presses play.
    */
@@ -205,6 +220,18 @@ export interface UseAssistantConversationOptions {
    * assistant cannot recommend.
    */
   readonly library?: (project: Project) => Promise<AssistantLibraryContext | null>;
+  /**
+   * What Cue remembers about the producer, sent with every turn (GRV-25), or
+   * null when there is nothing to send. Without it turns carry no memory and
+   * Cue cannot propose adding to it.
+   */
+  readonly memory?: () => AssistantMemoryContext | null;
+  /** Hears each memory proposal as it arrives, under its entry's ID (GRV-25). */
+  readonly onMemoryProposal?: (entryId: string, proposal: MemoryProposal) => void;
+  /** Hears that Cue asked a question skipped in onboarding (GRV-25). */
+  readonly onMemoryQuestionAsked?: (
+    question: NonNullable<AssistantAsk["memoryQuestion"]>,
+  ) => void;
   /** Hears each recommendation as it arrives, under its entry's ID (GRV-23). */
   readonly onRecommendation?: (
     entryId: string,
@@ -368,9 +395,20 @@ export function useAssistantConversation(
           );
           return;
         case "proposal": {
-          // Recommendations come back among the proposal's calls (GRV-23):
-          // each is a card of its own, and the changes, if any, are one.
-          const split = splitRecommendations(event.proposal);
+          // Memory proposals (GRV-25) and recommendations (GRV-23) come back
+          // among the proposal's calls: each is a card of its own, and the
+          // changes, if any, are one. A memory proposal that does not parse
+          // is dropped: it would have changed nothing.
+          const remembered = splitMemoryProposals(event.proposal);
+          for (const call of remembered.memory) {
+            const proposal = parseRememberCall(call);
+            if (!proposal) continue;
+            const entryId = id();
+            append({ kind: "memory", id: entryId, proposal });
+            options.onMemoryProposal?.(entryId, proposal);
+          }
+          if (!remembered.proposal) return;
+          const split = splitRecommendations(remembered.proposal);
           if (split.proposal) {
             const entryId = id();
             append({ kind: "proposal", id: entryId, proposal: split.proposal, origin });
@@ -400,6 +438,9 @@ export function useAssistantConversation(
             replyId,
             asked: options.committedProject?.() ?? options.project(),
           });
+          if (event.ask.memoryQuestion) {
+            options.onMemoryQuestionAsked?.(event.ask.memoryQuestion);
+          }
           options.analytics().log("assistant_ask_shown", {
             option_count: event.ask.options.length,
             multi_select: event.ask.multiSelect,
@@ -467,6 +508,7 @@ export function useAssistantConversation(
     const project = options.project();
     if (!project) return;
     const said = message.wire ?? message.text;
+    const memory = options.memory?.() ?? null;
     const where = options.session?.();
     const turnId = where ? newId() : undefined;
     const request: AssistantTurnRequest = {
@@ -476,6 +518,7 @@ export function useAssistantConversation(
         { role: "user", text: said.slice(0, MAX_MESSAGE_CHARS) },
       ],
       context: scopedContext(project, scope),
+      ...(memory ? { memory } : {}),
       ...(where && turnId
         ? {
             session: {

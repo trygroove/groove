@@ -1,5 +1,6 @@
 import type { JSX } from "@solidjs/web";
 import { createEffect, For, onCleanup, Show, untrack } from "solid-js";
+import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import { ASK_LIMITS } from "../../assistant/ask";
 import { CloseIcon } from "../../components/icons";
 
@@ -28,10 +29,27 @@ export interface AssistantAskCardProps {
    * is in an empty composer, waiting, rather than writing something else.
    */
   takeFocus(): boolean;
+  /**
+   * What the "something else" box is called when a question means something
+   * more particular by it (onboarding's "Artists you love", GRV-25).
+   */
+  readonly textLabel?: string;
+  /**
+   * A worded way to put the question away, in place of the close icon
+   * (onboarding's "Skip this question", GRV-25).
+   */
+  readonly skipLabel?: string;
+  /**
+   * Whether the card offers its option keys: the chips' `1`-`8` badges, their
+   * `aria-keyshortcuts`, and the keys line under them. Only the editor's
+   * shortcut layer answers those keys, so the welcome (GRV-25), where only
+   * Enter in the text box works, leaves them all out.
+   */
+  readonly keyHint?: boolean;
 }
 
 /** The card's accessible name. */
-export const ASK_CARD_LABEL = "The assistant asks";
+export const ASK_CARD_LABEL = `${ASSISTANT_NAME} asks`;
 
 /** What the "something else" box is called, and says when empty. */
 export const ASK_TEXT_LABEL = "Something else";
@@ -61,6 +79,7 @@ export function askHint(count: number, multiSelect: boolean): string {
 export default function AssistantAskCard(props: AssistantAskCardProps): JSX.Element {
   const ask = () => props.pending.ask;
   const questionId = () => `assistant-ask-${ask().id}`;
+  const keyHint = () => props.keyHint ?? true;
   let card: HTMLElement | undefined;
   /** The chip a pointer went down on, so the focus that follows is known as a click's. */
   let pressed: number | null = null;
@@ -86,15 +105,31 @@ export default function AssistantAskCard(props: AssistantAskCardProps): JSX.Elem
     >
       <div class="assistant-ask-head">
         <span class="assistant-entry-label">{ask().context ?? "Question"}</span>
-        <button
-          type="button"
-          class="assistant-ask-dismiss"
-          aria-label="Dismiss the question"
-          title="Dismiss the question"
-          onClick={() => props.draft.dismiss()}
+        <Show
+          when={props.skipLabel}
+          fallback={
+            <button
+              type="button"
+              class="assistant-ask-dismiss"
+              aria-label="Dismiss the question"
+              title="Dismiss the question"
+              onClick={() => props.draft.dismiss()}
+            >
+              <CloseIcon size={12} />
+            </button>
+          }
         >
-          <CloseIcon size={12} />
-        </button>
+          {(label) => (
+            <button
+              type="button"
+              class="assistant-ask-skip"
+              disabled={props.streaming}
+              onClick={() => props.draft.dismiss()}
+            >
+              {label()}
+            </button>
+          )}
+        </Show>
       </div>
       <p id={questionId()} class="assistant-ask-question">
         {ask().question}
@@ -147,7 +182,7 @@ export default function AssistantAskCard(props: AssistantAskCardProps): JSX.Elem
                 aria-pressed={
                   ask().multiSelect ? (picked() ? "true" : "false") : undefined
                 }
-                aria-keyshortcuts={String(index() + 1)}
+                aria-keyshortcuts={keyHint() ? String(index() + 1) : undefined}
                 aria-labelledby={part("label")}
                 aria-describedby={described()}
                 disabled={props.streaming}
@@ -168,9 +203,11 @@ export default function AssistantAskCard(props: AssistantAskCardProps): JSX.Elem
                 }}
                 onBlur={() => props.draft.unfocus(index())}
               >
-                <span class="assistant-ask-key" aria-hidden="true">
-                  {index() + 1}
-                </span>
+                <Show when={keyHint()}>
+                  <span class="assistant-ask-key" aria-hidden="true">
+                    {index() + 1}
+                  </span>
+                </Show>
                 <span class="assistant-ask-text">
                   <span id={part("label")} class="assistant-ask-label">
                     {option.label}
@@ -228,8 +265,8 @@ export default function AssistantAskCard(props: AssistantAskCardProps): JSX.Elem
           ref={(element) => props.bindText(element)}
           type="text"
           class="assistant-ask-input"
-          aria-label={ASK_TEXT_LABEL}
-          placeholder={`${ASK_TEXT_LABEL}…`}
+          aria-label={props.textLabel ?? ASK_TEXT_LABEL}
+          placeholder={`${props.textLabel ?? ASK_TEXT_LABEL}…`}
           maxlength={ASK_LIMITS.answerChars}
           value={props.draft.text()}
           disabled={props.streaming}
@@ -245,9 +282,11 @@ export default function AssistantAskCard(props: AssistantAskCardProps): JSX.Elem
           Send
         </button>
       </div>
-      <span class="assistant-composer-hint assistant-ask-hint">
-        {askHint(ask().options.length, ask().multiSelect)}
-      </span>
+      <Show when={keyHint()}>
+        <span class="assistant-composer-hint assistant-ask-hint">
+          {askHint(ask().options.length, ask().multiSelect)}
+        </span>
+      </Show>
     </section>
   );
 }

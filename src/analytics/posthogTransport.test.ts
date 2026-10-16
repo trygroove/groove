@@ -18,7 +18,9 @@ import {
   createPostHogLoader,
   createPostHogTransport,
   INTERNAL_EVENT_PROPERTY,
+  POSTHOG_APP_PERFORMANCE,
   POSTHOG_DEFAULT_HOST,
+  POSTHOG_LANDING_PERFORMANCE,
   POSTHOG_SESSION_RECORDING,
   type PostHogClient,
   type PostHogSdk,
@@ -175,6 +177,24 @@ describe("init options", () => {
     );
   });
 
+  it("collects neither on the landing page, whatever the project says (GRV-123)", () => {
+    expect(
+      postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory", "landing").capture_performance,
+    ).toEqual({ web_vitals: false, network_timing: false });
+    // Everything else is the app's: $pageleave, scrubbing, recording disabled.
+    const { capture_performance: _app, ...app } = postHogInitOptions(
+      POSTHOG_DEFAULT_HOST,
+      "memory",
+      "app",
+    );
+    const { capture_performance: _landing, ...landing } = postHogInitOptions(
+      POSTHOG_DEFAULT_HOST,
+      "memory",
+      "landing",
+    );
+    expect(landing).toEqual(app);
+  });
+
   it("captures web vitals and network timing, with the small web-vitals build", () => {
     expect(
       postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory").capture_performance,
@@ -281,9 +301,10 @@ describe("createPostHogLoader", () => {
     expect(await loader.load("localStorage+cookie")).toBe(client);
 
     expect(init).toHaveBeenCalledTimes(1);
+    // Started before any app surface was reached: the landing page's options.
     expect(init).toHaveBeenCalledWith(
       "phc_test",
-      postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory"),
+      postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory", "landing"),
     );
   });
 
@@ -404,8 +425,10 @@ describe("createPostHogLoader", () => {
         },
       }),
     });
+    loader.startAppCollection();
     await loader.load("memory");
-    expect(order).toEqual(["web-vitals", "init"]);
+    expect(order[0]).toBe("web-vitals");
+    expect(order).toContain("init");
   });
 
   it("still starts the SDK when the web-vitals code cannot load", async () => {
@@ -419,7 +442,133 @@ describe("createPostHogLoader", () => {
       },
       importSdk: async () => sdk,
     });
+    loader.startAppCollection();
     expect(await loader.load("memory")).toBe(client);
+  });
+});
+
+describe("analytics only on the landing page (GRV-123)", () => {
+  function setup(sessionId = sessionIds().sampled) {
+    const client = fakeClient();
+    client.sessionId = sessionId;
+    const startIfEnabled = vi.fn();
+    client.webVitalsAutocapture = { startIfEnabled };
+    const { sdk, init } = fakeSdk(client);
+    const importRecorder = vi.fn(async () => {});
+    const importWebVitals = vi.fn(async () => {});
+    const loader = createPostHogLoader({
+      settings,
+      importSdk: async () => sdk,
+      importRecorder,
+      importWebVitals,
+    });
+    const load = () => loader.load("memory", { sessionReplayAllowed: () => true });
+    const methods = () => client.calls.map((call) => call.method);
+    return {
+      client,
+      init,
+      loader,
+      load,
+      methods,
+      importRecorder,
+      importWebVitals,
+      startIfEnabled,
+    };
+  }
+
+  it("starts a landing client with performance capture off and nothing recorded", async () => {
+    const { init, load, methods, importRecorder, importWebVitals } = setup();
+    await load();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(init.mock.calls[0][1]).toMatchObject({
+      capture_performance: POSTHOG_LANDING_PERFORMANCE,
+      capture_pageleave: true,
+      capture_exceptions: false,
+      disable_session_recording: true,
+    });
+    expect(importWebVitals).not.toHaveBeenCalled();
+    expect(importRecorder).not.toHaveBeenCalled();
+    expect(methods()).not.toContain("startSessionRecording");
+  });
+
+  it("turns vitals, network timing and replay on when the session reaches the app", async () => {
+    const { client, loader, load, methods, importWebVitals, startIfEnabled } = setup();
+    await load();
+
+    loader.startAppCollection();
+
+    await settled(() => expect(methods()).toContain("startSessionRecording"));
+    await settled(() => expect(startIfEnabled).toHaveBeenCalled());
+    expect(importWebVitals).toHaveBeenCalledTimes(1);
+    expect(client.calls).toContainEqual({
+      method: "set_config",
+      args: [{ capture_performance: POSTHOG_APP_PERFORMANCE }],
+    });
+  });
+
+  it("turns network timing on before the recording starts, without waiting for web vitals", async () => {
+    // The recorder reads `network_timing` when it starts; a reconfiguration
+    // after that leaves the recording without it.
+    const { loader, load, methods, importWebVitals, startIfEnabled } = setup();
+    importWebVitals.mockImplementation(() => new Promise(() => {}));
+    await load();
+
+    loader.startAppCollection();
+
+    await settled(() => expect(methods()).toContain("startSessionRecording"));
+    const order = methods();
+    expect(order.indexOf("set_config")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("set_config")).toBeLessThan(
+      order.indexOf("startSessionRecording"),
+    );
+    // Only the extension's start waits for its code.
+    expect(startIfEnabled).not.toHaveBeenCalled();
+  });
+
+  it("starts with the app's options when the app is reached before the SDK loads", async () => {
+    const { init, loader, load, methods } = setup();
+    loader.startAppCollection();
+    await load();
+
+    expect(init.mock.calls[0][1]).toMatchObject({
+      capture_performance: POSTHOG_APP_PERFORMANCE,
+    });
+    await settled(() => expect(methods()).toContain("startSessionRecording"));
+    expect(methods()).not.toContain("set_config");
+  });
+
+  it("starts app collection once, however often it is asked", async () => {
+    const { loader, load, methods, importWebVitals } = setup();
+    await load();
+    loader.startAppCollection();
+    loader.startAppCollection();
+    await settled(() => expect(methods()).toContain("startSessionRecording"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(importWebVitals).toHaveBeenCalledTimes(1);
+    expect(methods().filter((method) => method === "set_config")).toHaveLength(1);
+    expect(methods().filter((method) => method === "startSessionRecording")).toHaveLength(
+      1,
+    );
+  });
+
+  it("never loads the SDK just to start app collection", async () => {
+    const { init, loader } = setup();
+    loader.startAppCollection();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(init).not.toHaveBeenCalled();
+  });
+
+  it("keeps replay off in the app for a session that withdrew it on the landing page", async () => {
+    const { loader, load, methods, importRecorder } = setup();
+    await load();
+    loader.stopSessionRecording();
+    loader.startAppCollection();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(importRecorder).not.toHaveBeenCalled();
+    expect(methods()).not.toContain("startSessionRecording");
   });
 });
 
@@ -445,6 +594,8 @@ describe("session replay through the loader (ADR 0011 decision 2)", () => {
       importRecorder,
       importWebVitals: async () => {},
     });
+    // Replay only ever starts on an app surface (GRV-123).
+    loader.startAppCollection();
     const load = () =>
       loader.load("memory", { sessionReplayAllowed: () => replayAllowed.value });
     const methods = () => client.calls.map((call) => call.method);
@@ -616,6 +767,86 @@ describe("createPostHogTransport", () => {
     );
   });
 
+  it("sends an event at once by beacon while sendAtOnce says so (GRV-123)", async () => {
+    // A landing click that takes the tab to another site must leave before
+    // the navigation, not wait in the batch for the unload to drain it.
+    const client = fakeClient();
+    let landing = true;
+    const transport = createPostHogTransport({
+      load: async () => client,
+      sendAtOnce: () => landing,
+    });
+    await settled(() => expect(client.calls).toEqual([]));
+
+    transport.logEvent("landing_cta_click", {
+      cta_id: "request_invite",
+      surface: "landing",
+    });
+    transport.pageview();
+    landing = false;
+    transport.logEvent("app_opened", { surface: "dashboard" });
+
+    await settled(() =>
+      expect(client.calls.map((call) => [call.args[0], call.args[2]] as const)).toEqual([
+        ["landing_cta_click", { transport: "sendBeacon" }],
+        ["$pageview", { transport: "sendBeacon" }],
+        ["app_opened", undefined],
+      ]),
+    );
+  });
+
+  it("decides on the beacon when an event is logged, and keeps its time", async () => {
+    const client = fakeClient();
+    const clock = createManualClock(1_000);
+    let landing = true;
+    let resolve: (value: PostHogClient) => void = () => {};
+    const transport = createPostHogTransport({
+      clock,
+      sendAtOnce: () => landing,
+      load: () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    });
+
+    transport.logEvent("landing_cta_click", { cta_id: "log_in", surface: "landing" });
+    landing = false;
+    clock.advance(5_000);
+    resolve(client);
+
+    await settled(() =>
+      expect(client.calls).toEqual([
+        {
+          method: "capture",
+          args: [
+            "landing_cta_click",
+            { cta_id: "log_in", surface: "landing" },
+            { timestamp: new Date(1_000), transport: "sendBeacon" },
+          ],
+        },
+      ]),
+    );
+  });
+
+  it("batches as usual when sendAtOnce throws", async () => {
+    const client = fakeClient();
+    const transport = createPostHogTransport({
+      load: async () => client,
+      sendAtOnce: () => {
+        throw new Error("broken");
+      },
+    });
+    await settled(() => expect(client.calls).toEqual([]));
+
+    transport.logEvent("app_opened", { surface: "dashboard" });
+
+    await settled(() =>
+      expect(client.calls).toEqual([
+        { method: "capture", args: ["app_opened", { surface: "dashboard" }] },
+      ]),
+    );
+  });
+
   it("only registers the internal flag for an anonymous visitor (identified_only)", async () => {
     const client = fakeClient();
     const transport = createPostHogTransport({ load: async () => client });
@@ -714,6 +945,40 @@ describe("createPostHogTransport", () => {
     }
   });
 
+  it("keeps a queued $pageview's campaign, which the SDK would read from the URL it sends on (GRV-123)", async () => {
+    const client = fakeClient();
+    let resolve: (value: PostHogClient) => void = () => {};
+    const transport = createPostHogTransport({
+      load: () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    });
+    history.pushState(
+      null,
+      "",
+      "/?utm_source=newsletter&utm_medium=email&gclid=abc&ref=x",
+    );
+    transport.pageview();
+    history.pushState(null, "", "/projects");
+    try {
+      resolve(client);
+      await settled(() => expect(client.calls).toHaveLength(1));
+      const properties = client.calls[0]?.args[1] as Record<string, string>;
+      expect(properties).toMatchObject({
+        $pathname: "/",
+        utm_source: "newsletter",
+        utm_medium: "email",
+        gclid: "abc",
+      });
+      // Only PostHog's campaign parameters, and only those present.
+      expect(properties).not.toHaveProperty("ref");
+      expect(properties).not.toHaveProperty("utm_campaign");
+    } finally {
+      history.pushState(null, "", "/");
+    }
+  });
+
   it("drops its queue and aborts its load when disposed", async () => {
     const client = fakeClient();
     let resolve: (value: PostHogClient) => void = () => {};
@@ -799,6 +1064,31 @@ describe("createPostHogTransport", () => {
   });
 });
 
+describe("the landing client through the real SDK (GRV-123)", () => {
+  it("starts with web vitals off and turns them on when reconfigured for the app", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("{}", { status: 200 })) as unknown as typeof fetch;
+    try {
+      const { default: posthog } = await import("posthog-js");
+      const client = posthog.init(
+        "phc_landing_test",
+        postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory", "landing"),
+        // A named instance, so the default one stays free for the test below.
+        "landing_test",
+      );
+      if (!client?.webVitalsAutocapture) throw new Error("no web-vitals extension");
+      expect(client.webVitalsAutocapture.isEnabled).toBe(false);
+
+      // What the loader does once the session reaches an app surface.
+      client.set_config({ capture_performance: { ...POSTHOG_APP_PERFORMANCE } });
+      expect(client.webVitalsAutocapture.isEnabled).toBe(true);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});
+
 describe("$pageview through the real SDK (GRV-120, Web Analytics)", () => {
   // The real `posthog-js` client with the real init options, and a recorder
   // appended after the transport's own `before_send` that keeps what would
@@ -852,6 +1142,81 @@ describe("$pageview through the real SDK (GRV-120, Web Analytics)", () => {
         expect(view.properties.$session_id).toBe(client.get_session_id());
         expect(view.properties.$session_id).toEqual(expect.any(String));
       }
+    } finally {
+      globalThis.fetch = realFetch;
+      history.pushState({}, "", "/");
+    }
+  });
+});
+
+describe("a landing visit's attribution through the real SDK (GRV-123)", () => {
+  // A visitor arrives on a UTM-tagged `/` and clicks into the app before the
+  // landing page's deferred load, so the SDK starts on `/projects`. PostHog
+  // reads campaign parameters and the session's entry from the page as it is
+  // then; the landing view must still carry where the visit came in.
+  it("keeps the landing URL's campaign and the session's entry when the SDK starts in the app", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("{}", { status: 200 })) as unknown as typeof fetch;
+    const landing = "/?utm_source=newsletter&utm_campaign=launch";
+    history.pushState({}, "", landing);
+    const landingUrl = location.href;
+    try {
+      const { default: posthog } = await import("posthog-js");
+      const options = postHogInitOptions(POSTHOG_DEFAULT_HOST, "memory", "landing");
+      const sent: { event: string; properties: Record<string, unknown> }[] = [];
+      let openGate: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        openGate = resolve;
+      });
+      const transport = createPostHogTransport({
+        load: () =>
+          gate.then(
+            () =>
+              posthog.init(
+                "phc_entry_test",
+                {
+                  ...options,
+                  before_send: [
+                    options.before_send as never,
+                    (event) => {
+                      if (event) sent.push(event as never);
+                      return null;
+                    },
+                  ],
+                },
+                "entry_test",
+              ) ?? null,
+          ),
+      });
+
+      transport.pageview();
+      transport.logEvent("landing_cta_click", { cta_id: "request_access" });
+      history.pushState({}, "", "/projects");
+      transport.pageview();
+      openGate();
+
+      await settled(() =>
+        expect(sent.filter((event) => event.event === "$pageview")).toHaveLength(2),
+      );
+      const [landingView, appView] = sent.filter((event) => event.event === "$pageview");
+      expect(landingView.properties).toMatchObject({
+        $current_url: landingUrl,
+        $pathname: "/",
+        utm_source: "newsletter",
+        utm_campaign: "launch",
+        $session_entry_url: landingUrl,
+        $session_entry_pathname: "/",
+        $session_entry_utm_source: "newsletter",
+      });
+      // The app's view is on its own URL, in a session that entered on `/`.
+      expect(appView.properties).toMatchObject({
+        $pathname: "/projects",
+        $session_entry_url: landingUrl,
+        $session_entry_utm_campaign: "launch",
+      });
+      const click = sent.find((event) => event.event === "landing_cta_click");
+      expect(click?.properties.$session_entry_utm_source).toBe("newsletter");
     } finally {
       globalThis.fetch = realFetch;
       history.pushState({}, "", "/");

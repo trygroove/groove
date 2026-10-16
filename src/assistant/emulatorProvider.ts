@@ -38,6 +38,9 @@
  * - `[video]` (GRV-16): a short reply that recommends {@link EMULATOR_VIDEO},
  *   and a second video {@link emulatorVideoVerifier} refuses, so the turn shows
  *   one card and drops the other.
+ * - `[remember]`: a short reply that ends in `remember_producer` (GRV-25),
+ *   proposing {@link EMULATOR_REMEMBER}'s note. The gateway only lets it
+ *   through on a turn that carries the producer's memory.
  * - anything else: a short reply, streamed in pieces with a pause between.
  *
  * Like the rest of `src/assistant`, it imports no Firebase and no SDK.
@@ -45,11 +48,12 @@
 import { setParameter } from "../commands/definitions/parameters";
 import { SONG_TEMPO } from "../domain/parameters";
 import { ASK_PRODUCER_TOOL_NAME, type AskProducerInput } from "./ask";
+import { REMEMBER_TOOL_NAME } from "./memory";
 import { LIBRARY_BLOCK_HEADING, PROJECT_BLOCK_HEADING } from "./prompt";
 import type { AssistantLibraryContext } from "./protocol";
 import type { AssistantProvider } from "./provider";
 import { ProviderFailure } from "./provider";
-import type { ProviderMessagesRequest } from "./providerRequest";
+import { continuesTurn, type ProviderMessagesRequest } from "./providerRequest";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
 import { EXPLAIN_TOOL_NAME, toolNameFor } from "./tools";
 import { RECOMMEND_VIDEO_TOOL, type VideoFacts, type VideoVerifier } from "./video";
@@ -69,6 +73,26 @@ type Step =
   | { readonly wait: number }
   | { readonly hang: true }
   | { readonly fail: true };
+
+/** A later step that ends the turn with nothing more to say (`gateway.ts`). */
+function finishedReply(): Step[] {
+  return [
+    {
+      event: {
+        type: "message_start",
+        message: { id: "msg_emulator", usage: { input_tokens: 100, output_tokens: 1 } },
+      },
+    },
+    {
+      event: {
+        type: "message_delta",
+        delta: { stop_reason: "end_turn" },
+        usage: { output_tokens: 1 },
+      },
+    },
+    { event: { type: "message_stop" } },
+  ];
+}
 
 function textReply(chunks: readonly string[], stopReason = "end_turn"): Step[] {
   return [
@@ -173,19 +197,15 @@ function misfitProposal(request: ProviderMessagesRequest): Step[] {
     {
       name: "track_create",
       input: {
-        track: {
-          id: trackId,
-          name: "Noise pad",
-          color: "#808080",
-          order: contextTracks(request).length,
-          type: "instrument",
-          instrument: { kind: "sampler", assetId: MISFIT_ASSET_ID, parameters: {} },
-          devices: [],
-          sendConfig: [],
-          mixer: { volume: -6, pan: 0, muted: false, soloed: false },
-        },
-        clips: [],
-        placements: [],
+        id: trackId,
+        name: "Noise pad",
+        color: "#808080",
+        order: contextTracks(request).length,
+        type: "instrument",
+        instrument: { kind: "sampler", assetId: MISFIT_ASSET_ID, parameters: {} },
+        devices: [],
+        sendConfig: [],
+        mixer: { volume: -6, pan: 0, muted: false, soloed: false },
       },
     },
   ]);
@@ -440,10 +460,26 @@ function videoReply(): Step[] {
   );
 }
 
+/** What `[remember]` proposes remembering. */
+export const EMULATOR_REMEMBER = {
+  kind: "note",
+  text: "Making more trap lately",
+} as const;
+
+/** `[remember]`'s reply: one `remember_producer` call. */
+function rememberReply(): Step[] {
+  return proposalReply("Sounds like that will matter next time too.", [
+    { id: "toolu_remember", name: REMEMBER_TOOL_NAME, input: EMULATOR_REMEMBER },
+  ]);
+}
+
 function lastUserMessage(request: ProviderMessagesRequest): string {
   for (let index = request.messages.length - 1; index >= 0; index -= 1) {
     const message = request.messages[index];
-    if (message?.role === "user") return message.content;
+    // A continued turn's tool results are not the producer's words.
+    if (message?.role === "user" && typeof message.content === "string") {
+      return message.content;
+    }
   }
   return "";
 }
@@ -470,6 +506,8 @@ export function createEmulatorAssistantProvider(
   firstTime: FirstTimeCheck = inProcessFirstTime(),
 ): AssistantProvider {
   function scriptFor(request: ProviderMessagesRequest): Step[] {
+    // A scripted proposal is whole in one step; the step after it ends the turn.
+    if (continuesTurn(request)) return finishedReply();
     const message = lastUserMessage(request);
     if (message.includes("[hang]")) {
       return [...textReply([EMULATOR_REPLY_CHUNKS[0]]).slice(0, 3), { hang: true }];
@@ -484,6 +522,7 @@ export function createEmulatorAssistantProvider(
     if (message.includes("[ask-rich]")) return richAskReply(request);
     if (message.includes("[ask-multi]")) return askReply(true);
     if (message.includes("[ask]")) return askReply(false);
+    if (message.includes("[remember]")) return rememberReply();
     if (message.includes("[video]")) return videoReply();
     return textReply(EMULATOR_REPLY_CHUNKS);
   }

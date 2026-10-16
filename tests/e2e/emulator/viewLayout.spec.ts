@@ -163,8 +163,8 @@ test.describe("view layout", () => {
     // Docked, the assistant takes the right edge: the arrangement meets it
     // with no strip of the editor's black between them.
     await pressView(page, "Arrangement");
-    await page.getByRole("button", { name: "Assistant", exact: true }).click();
-    const panel = page.getByRole("region", { name: "Assistant", exact: true });
+    await page.getByRole("button", { name: "Cue", exact: true }).click();
+    const panel = page.getByRole("region", { name: "Cue", exact: true });
     await panel.getByRole("button", { name: "Dock to the right", exact: true }).click();
     await expect(panel).toHaveAttribute("data-mode", "docked");
     const arrangement = await boxOf(viewRoot(page), "the arrangement");
@@ -210,8 +210,8 @@ test.describe("view layout", () => {
     await page.goto("/projects");
     await page.getByRole("button", { name: "New Project" }).click();
     await page.getByTestId("arrangement-view-ready").waitFor();
-    await page.getByRole("button", { name: "Assistant", exact: true }).click();
-    const panel = page.getByRole("region", { name: "Assistant", exact: true });
+    await page.getByRole("button", { name: "Cue", exact: true }).click();
+    const panel = page.getByRole("region", { name: "Cue", exact: true });
     await panel.getByRole("button", { name: "Dock to the right", exact: true }).click();
     await expect(panel).toHaveAttribute("data-mode", "docked");
 

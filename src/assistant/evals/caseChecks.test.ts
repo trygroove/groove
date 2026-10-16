@@ -413,6 +413,11 @@ describe("runCaseCheck", () => {
       endsAt: "fail",
       noEmptyClips: "pass",
       noNoOps: "pass",
+      // GRV-119's: no action named, so neither can judge.
+      exactEdit: "fail",
+      nothingElse: "fail",
+      // The fixture's pad clip is placed.
+      clipsPlaced: "pass",
     });
   });
 });
