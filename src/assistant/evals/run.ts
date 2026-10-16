@@ -477,7 +477,7 @@ export function evaluateTurn(
   if (evalCase.expect !== "proposal" && !proposed) {
     return { ...base, checks: { outcome }, stats: null, fingerprint: null };
   }
-  const caseChecks = caseChecksFor(evalCase.checks);
+  const caseChecks = caseChecksFor(evalCase.checks, evalCase.exempt);
   const project = evalCase.fixture();
   const valid = checkValid(project, turn.proposal, whyNoProposal(turn));
   if (!valid.applied) {

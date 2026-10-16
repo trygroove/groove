@@ -291,6 +291,13 @@ describe("the cases from GRV-6's QA findings", () => {
       "noNoOps",
       "clipsPlaced",
     ]);
+    // "Clear the notes in this clip" asks for the empty clip check 16 fails.
+    const clear = byId("basic-clear-clip");
+    expect(caseChecksFor(clear.checks, clear.exempt)).toEqual([
+      "exactEdit",
+      "nothingElse",
+      "clipsPlaced",
+    ]);
     expect(byId("noop-bd-only").request).toBe(resketch.request);
     expect(byId("noop-bd-only").checks).toEqual(["noNoOps"]);
   });

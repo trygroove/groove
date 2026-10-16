@@ -78,9 +78,16 @@ export type CaseCheckId = (typeof CASE_CHECK_IDS)[number];
  */
 export const EVERY_CASE_CHECKS: readonly CaseCheckId[] = ["noEmptyClips", "clipsPlaced"];
 
-/** The case checks `named` adds to {@link EVERY_CASE_CHECKS}, in registry order. */
-export function caseChecksFor(named: readonly CaseCheckId[] = []): CaseCheckId[] {
+/**
+ * The case checks `named` adds to {@link EVERY_CASE_CHECKS}, less those the
+ * case is `exempt` from, in registry order.
+ */
+export function caseChecksFor(
+  named: readonly CaseCheckId[] = [],
+  exempt: readonly CaseCheckId[] = [],
+): CaseCheckId[] {
   const wanted = new Set([...EVERY_CASE_CHECKS, ...named]);
+  for (const id of exempt) wanted.delete(id);
   return CASE_CHECK_IDS.filter((id) => wanted.has(id));
 }
 
