@@ -15,6 +15,11 @@
  * GRV-108 adds cases saved from `bun run assistant:try`: one JSON file per
  * case in `cases/`, run against a named fixture (`namedFixtures.ts`), loaded
  * after the TypeScript ones into {@link EVAL_CASES}.
+ *
+ * GRV-119 adds a second set beside the musical one: the basic production
+ * actions (`basicActionCases.ts`), simple exact edits each judged by checks 18
+ * and 19. A case names its set (`set`, the musical one when it does not), and
+ * the scorecard scores each set on its own as well as the run as a whole.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -23,6 +28,8 @@ import type { Project } from "../../domain/entities";
 import type { SelectionScope, SelectionState } from "../../selection/types";
 import { type AskAnswer, type AssistantAsk, answerMessage, askTranscript } from "../ask";
 import { type AssistantMessage, assistantMessageSchema } from "../protocol";
+import { BASIC_ACTION_CASES } from "./basicActionCases";
+import type { BasicAction } from "./basicActionChecks";
 import { CASE_CHECK_IDS, type CaseCheckId, type EvalExpectation } from "./caseChecks";
 import type { ExpectedValue } from "./caseChecksQa";
 import {
@@ -35,6 +42,7 @@ import {
   createTechnoLoopProject,
 } from "./fixtures";
 import { FIXTURE_NAME, jsonFixturesDir, namedFixture } from "./namedFixtures";
+import type { EvalSetId } from "./sets";
 import type { ExportedTranscriptCase, TranscriptCaseFixture } from "./transcriptCase";
 
 /** The capabilities asked once conventionally and once at an extreme (check 6). */
@@ -56,6 +64,8 @@ export const EVAL_CAPABILITIES = [
   "sketchScope",
   "relativeLevel",
   "resketch",
+  // GRV-119's basic production actions.
+  "basicAction",
 ] as const;
 export type EvalCapability = (typeof EVAL_CAPABILITIES)[number];
 
@@ -93,6 +103,8 @@ export type EvalSelection =
 export interface EvalCase {
   /** Stable and short: `bun run eval:assistant -- <id>` runs just this case. */
   readonly id: string;
+  /** The set the scorecard scores it in; the musical one when absent. */
+  readonly set?: EvalSetId;
   readonly capability: EvalCapability;
   readonly axis: EvalAxis;
   /** The producer's words, sent as the turn's last message. */
@@ -111,8 +123,16 @@ export interface EvalCase {
   readonly expect: EvalExpectation;
   /** Checks of its own, judged on an applied proposal beside the shared ones. */
   readonly checks?: readonly CaseCheckId[];
+  /**
+   * Checks every case is judged by (`EVERY_CASE_CHECKS`) that this one's
+   * request makes wrong: "clear this clip" asks for the empty clip check 16
+   * fails.
+   */
+  readonly exempt?: readonly CaseCheckId[];
   /** What the `endsAt` check holds a parameter to. */
   readonly expectedValue?: ExpectedValue;
+  /** The edit `exactEdit` and `nothingElse` judge (GRV-119). */
+  readonly action?: BasicAction;
   readonly fixture: () => Project;
   readonly selection: EvalSelection;
   readonly scope: EvalScope;
@@ -460,7 +480,7 @@ export const TYPESCRIPT_CASES: readonly EvalCase[] = [
     fixture: createBdSketchProject,
     selection: null,
     scope: SKETCH_SCOPE,
-    checks: ["noEmptyClips", "noNoOps"],
+    checks: ["noNoOps"],
   },
   {
     id: "noop-bd-only",
@@ -473,6 +493,8 @@ export const TYPESCRIPT_CASES: readonly EvalCase[] = [
     scope: SKETCH_SCOPE,
     checks: ["noNoOps"],
   },
+  // GRV-119: the basic production actions, a set of their own.
+  ...BASIC_ACTION_CASES,
 ];
 
 // ---------------------------------------------------------------------------
@@ -505,8 +527,9 @@ export const jsonEvalCaseSchema = z.strictObject({
   axis: z.enum(["conventional", "extreme"]),
   request: z.string().min(1),
   history: z.array(assistantMessageSchema).optional(),
-  expect: z.enum(["proposal", "ask", "either"]),
+  expect: z.enum(["proposal", "ask", "either", "explain"]),
   checks: z.array(z.enum(CASE_CHECK_IDS)).optional(),
+  exempt: z.array(z.enum(CASE_CHECK_IDS)).optional(),
   expectedValue: z
     .strictObject({
       track: z.string().min(1),

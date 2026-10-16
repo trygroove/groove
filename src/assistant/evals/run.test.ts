@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDevice, setParameter } from "../../commands";
+import { addDevice, setParameter, setTrackFlag } from "../../commands";
 import { createDevice } from "../../domain/devices";
 import { createFactoryContext } from "../../domain/factories";
 import { createSeededIdFactory } from "../../domain/ids";
@@ -14,6 +14,7 @@ import {
   createIdStem,
   newId,
 } from "../prompt";
+import { continuesTurn } from "../providerRequest";
 import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { createHouseLoopProject } from "./fixtures";
@@ -26,6 +27,7 @@ import {
 import {
   AUTH_ABORT_REASON,
   buildReport,
+  CREDIT_ABORT_REASON,
   evalExitCode,
   evaluateRecords,
   evaluateTurn,
@@ -84,7 +86,8 @@ describe("runEvals", () => {
       now: fixedNow,
     });
 
-    expect(provider.requests).toHaveLength(4);
+    // One request opens each turn; each then ends in a step of its own.
+    expect(provider.requests.filter((sent) => !continuesTurn(sent))).toHaveLength(4);
     expect(provider.requests[0].system[0].text).toBe(ASSISTANT_SYSTEM_PROMPT);
     expect(provider.requests[0].tools.length).toBeGreaterThan(0);
     expect(provider.requests[0].messages).toEqual([
@@ -151,7 +154,7 @@ describe("runEvals", () => {
     const markdown = renderMarkdown(report);
     expect(markdown).toContain("**Errored turns: 1 of 2**");
     expect(markdown).toContain(
-      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | - | - | 1 |",
+      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | 0/0 | - | - | - | 0/0 | 1 |",
     );
     expect(markdown).toContain(
       "**Run 2** (0 s): errored, not judged: provider_error: The assistant could not take that request. (provider: rejected, HTTP 400)",
@@ -246,6 +249,26 @@ describe("runEvals", () => {
     expect(markdown).toContain("1 of them because the provider rejected the API key");
   });
 
+  it("stops starting turns, even mid-run, once the account is out of API credit", async () => {
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("A Compressor on the master.", [compressorCall("a", -18)]),
+      [{ fail: "rejected", status: 400, outOfCredit: true }],
+    ]);
+    const report = await runEvals({
+      provider,
+      cases: [glue, crushed],
+      runs: 3,
+      now: fixedNow,
+    });
+    // The first turn replied; the second ran out of credit, and none came after.
+    expect(report.records).toHaveLength(2);
+    expect(report.records[0].error).toBeNull();
+    expect(report.records[1].turnError?.outOfCredit).toBe(true);
+    expect(report.records[1].error).toContain("The account is out of API credit.");
+    expect(report.aborted).toBe(CREDIT_ABORT_REASON);
+    expect(evalExitCode(report)).toBe(1);
+  });
+
   it("exits 1 when every turn errored, for any reason", async () => {
     const provider = createScriptedAssistantProvider([
       [{ fail: "rejected", status: 400 }],
@@ -309,7 +332,7 @@ describe("runEvals", () => {
     expect(replayed.records[0].checks).toEqual(report.records[0].checks);
     expect(replayed.scorecard).toEqual(report.scorecard);
     expect(replayed.scorecard.headline.applies).toEqual({ pass: 1, judged: 1, rate: 1 });
-    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests.filter((sent) => !continuesTurn(sent))).toHaveLength(1);
   });
 
   it("records each turn's token usage and time to first streamed text (GRV-102)", async () => {
@@ -372,6 +395,78 @@ describe("evaluateTurn for GRV-107's cases", () => {
   });
 });
 
+describe("evaluateTurn for the basic production actions (GRV-119)", () => {
+  const find = (id: string) => EVAL_CASES.find((entry) => entry.id === id) as EvalCase;
+  const base = { durationMs: 1, error: null, stopReason: null, text: "" };
+
+  it("judges the exact edit and nothing else on an applied proposal, in its own set", () => {
+    const evalCase = find("basic-mute-hats");
+    const project = evalCase.fixture();
+    const hats = project.song.tracks.find((track) => track.name === "Hats");
+    if (!hats) throw new Error("no Hats track");
+    const call = (command: ReturnType<typeof setTrackFlag>) => ({
+      name: toolNameFor(command.type),
+      input: command.payload,
+    });
+    const proposal = (calls: ReturnType<typeof call>[]) => ({
+      baseRevision: project.metadata.revision,
+      toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+      calls,
+    });
+    const muted = evaluateTurn(evalCase, 1, {
+      ...base,
+      proposal: proposal([call(setTrackFlag(hats.id, "muted", true))]),
+    } as never);
+    expect(muted.set).toBe("basicActions");
+    for (const id of [
+      "valid",
+      "inScope",
+      "exactEdit",
+      "nothingElse",
+      "outcome",
+    ] as const) {
+      expect(muted.checks[id]?.status, id).toBe("pass");
+    }
+    const bass = project.song.tracks.find((track) => track.name === "Bass");
+    if (!bass) throw new Error("no Bass track");
+    const both = evaluateTurn(evalCase, 1, {
+      ...base,
+      proposal: proposal([
+        call(setTrackFlag(hats.id, "muted", true)),
+        call(setTrackFlag(bass.id, "muted", true)),
+      ]),
+    } as never);
+    expect(both.checks.exactEdit?.status).toBe("pass");
+    expect(both.checks.nothingElse?.status).toBe("fail");
+  });
+
+  it("passes the missing track on an explanation and no proposal", () => {
+    const record = evaluateTurn(find("basic-missing-track"), 1, {
+      ...base,
+      text: "This project has no strings track, so there is nothing to delete.",
+      proposal: null,
+    } as never);
+    expect(record.checks).toEqual({
+      outcome: expect.objectContaining({ status: "pass" }),
+    });
+  });
+
+  it("puts each set in the report's own table", () => {
+    const record = evaluateTurn(find("basic-tempo"), 1, {
+      ...base,
+      proposal: null,
+    } as never);
+    const report = buildReport([record], [find("basic-tempo")], {
+      generatedAt: "2026-10-15T00:00:00Z",
+      model: "claude-sonnet-5",
+      runsPerCase: 1,
+    });
+    const markdown = renderSummaryMarkdown(summaryOf(report));
+    expect(markdown).toContain("## By set");
+    expect(markdown).toContain("| Basic production actions | 1 | 0.0% (0/1) |");
+  });
+});
+
 // GRV-6's first live run failed check 1 on every proposal that created
 // anything. Reproduced here: a device ID counted out by hand one character
 // short is refused as a schema failure; the same proposal built from the
@@ -392,7 +487,14 @@ describe("check 1 and new IDs", () => {
         deviceCall("dev_glue0000000000000001"),
       ]),
     ]);
-    const report = await runEvals({ provider, cases: [glue], runs: 1, now: fixedNow });
+    // A turn of one call: the browser sees the call as the model made it.
+    const report = await runEvals({
+      provider,
+      cases: [glue],
+      runs: 1,
+      now: fixedNow,
+      maxSteps: 1,
+    });
     const [record] = report.records;
     expect(record.checks.valid?.kind).toBe("schema");
     expect(validFailureLine(record)).toMatch(
@@ -426,10 +528,35 @@ describe("check 1 and new IDs", () => {
         ),
     );
     const provider = createScriptedAssistantProvider([truncated]);
-    const report = await runEvals({ provider, cases: [glue], runs: 1, now: fixedNow });
+    const report = await runEvals({
+      provider,
+      cases: [glue],
+      runs: 1,
+      now: fixedNow,
+      maxSteps: 1,
+    });
     const [record] = report.records;
     expect(record.error).toBeNull();
     expect(record.checks.valid?.kind).toBe("schema");
+  });
+
+  it("records a call refused back to the model mid-turn, and the calls the turn took", async () => {
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("A Compressor on the master.", [
+        deviceCall("dev_glue0000000000000001"),
+      ]),
+    ]);
+    const report = await runEvals({ provider, cases: [glue], runs: 1, now: fixedNow });
+    const [record] = report.records;
+    expect(record.steps?.calls).toBe(2);
+    expect(record.steps?.refused).toEqual([
+      {
+        name: "device_add",
+        reason: expect.stringContaining('device.id: Expected a "dev_" prefixed id'),
+      },
+    ]);
+    // The model ended without resending it, so nothing was proposed.
+    expect(record.checks.valid?.kind).toBe("no proposal");
   });
 
   it("records where a turn's output tokens went and prints them", async () => {

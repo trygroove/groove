@@ -17,6 +17,8 @@ import type { ProviderUsage } from "../assistant/streamEvents";
 
 export interface TestRecordOptions {
   readonly caseId?: string;
+  /** The set its case is scored in; left out, as a record saved before sets was. */
+  readonly set?: EvalRecord["set"];
   readonly run?: number;
   readonly durationMs?: number;
   readonly firstTextMs?: number | null;
@@ -57,6 +59,7 @@ export function testRecord(options: TestRecordOptions = {}): EvalRecord {
       };
   return {
     caseId: options.caseId ?? "case-a",
+    ...(options.set ? { set: options.set } : {}),
     capability: "loopSketch",
     axis: "conventional",
     request: "Make a loop.",

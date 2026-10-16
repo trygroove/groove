@@ -37,11 +37,12 @@ import {
   type AssistantProposal,
   type AssistantStopReason,
 } from "../protocol";
-import type { AssistantProvider } from "../provider";
+import { type AssistantProvider, ProviderFailure } from "../provider";
+import { continuesTurn, type ProviderMessagesRequest } from "../providerRequest";
 import type { ProviderUsage } from "../streamEvents";
 import type { AssistantTurnLog } from "../telemetry";
 import { ASSISTANT_TOOLSET_VERSION } from "../tools";
-import { checkOutcome, runCaseCheck } from "./caseChecks";
+import { caseChecksFor, checkOutcome, runCaseCheck } from "./caseChecks";
 import {
   caseMessages,
   casePairs,
@@ -65,6 +66,7 @@ import {
 } from "./checks";
 import { describeProposal, type ProposalStats } from "./describe";
 import { type Scorecard, scorecardOf } from "./scorecard";
+import { caseSet, type EvalSetId } from "./sets";
 
 /** Why a turn errored, as far as the gateway and the provider said. */
 export interface EvalTurnError {
@@ -79,6 +81,11 @@ export interface EvalTurnError {
   readonly providerStatus: number | null;
   /** Why each failed provider attempt failed, in order (`rejected`, `rate_limited`, ...). */
   readonly providerFailures: readonly string[];
+  /**
+   * The provider refused a call because the account is out of API credit.
+   * Absent from reports saved before the evals told it apart.
+   */
+  readonly outOfCredit?: boolean;
 }
 
 /**
@@ -93,6 +100,17 @@ export interface EvalTokens {
   readonly thinkingChars: number;
   readonly toolInputChars: number;
   readonly textChars: number;
+}
+
+/** A call the gateway refused back to the model mid-turn (`steps.ts`). */
+export interface EvalRefusedCall {
+  readonly name: string;
+  readonly reason: string;
+}
+
+export interface EvalSteps {
+  readonly calls: number;
+  readonly refused: readonly EvalRefusedCall[];
 }
 
 /** What one turn came back with, or how it failed. */
@@ -113,6 +131,12 @@ export interface EvalTurn {
   /** Where the output tokens went. Absent from reports saved before it existed. */
   readonly tokens?: EvalTokens;
   /**
+   * The turn's steps (`steps.ts`): provider calls made, retries included, and
+   * every call the gateway refused back to the model. Absent from reports
+   * saved before turns took steps.
+   */
+  readonly steps?: EvalSteps;
+  /**
    * The provider's token counts summed over the turn's calls, retries
    * included (GRV-102); null when the turn ended before the gateway logged
    * them (an eval timeout). Absent from reports saved before it existed.
@@ -129,6 +153,8 @@ export interface EvalTurn {
 /** One run of one case: the request, everything the model returned, every check. */
 export interface EvalRecord extends EvalTurn {
   readonly caseId: string;
+  /** The set its case is scored in (GRV-119). Absent from older reports: the musical one. */
+  readonly set?: EvalSetId;
   readonly capability: EvalCase["capability"];
   readonly axis: EvalCase["axis"];
   readonly request: string;
@@ -190,7 +216,11 @@ export function describeTurnError(error: EvalTurnError): string {
     error.providerFailures.length > 0 ? error.providerFailures.join(", ") : null,
     error.providerStatus === null ? null : `HTTP ${error.providerStatus}`,
   ].filter((part): part is string => part !== null);
-  const auth = isAuthError(error) ? " The provider rejected the API key." : "";
+  const auth = isAuthError(error)
+    ? " The provider rejected the API key."
+    : error.outOfCredit
+      ? " The account is out of API credit."
+      : "";
   return `${error.code}: ${error.message}${provider.length > 0 ? ` (provider: ${provider.join(", ")})` : ""}${auth}`;
 }
 
@@ -221,6 +251,8 @@ export interface RunTurnOptions {
   readonly now?: () => number;
   /** Aborts a turn that runs longer, as an errored turn. Default {@link DEFAULT_TURN_TIMEOUT_MS}. */
   readonly turnTimeoutMs?: number;
+  /** The most steps a turn may take; 1 is a turn of one call. Default production's. */
+  readonly maxSteps?: number;
 }
 
 class EvalTimeout extends Error {}
@@ -229,7 +261,13 @@ class EvalTimeout extends Error {}
 function measureProvider(provider: AssistantProvider): {
   provider: AssistantProvider;
   tokens: () => EvalTokens;
+  steps: () => EvalSteps;
+  /** Whether a call was refused because the account is out of API credit. */
+  outOfCredit: () => boolean;
 } {
+  let calls = 0;
+  let outOfCredit = false;
+  const refused: EvalRefusedCall[] = [];
   let outputTokens: number | null = null;
   let thinkingChars = 0;
   let toolInputChars = 0;
@@ -237,28 +275,63 @@ function measureProvider(provider: AssistantProvider): {
   return {
     provider: {
       async *stream(request, signal) {
-        for await (const raw of provider.stream(request, signal)) {
-          const event = raw as {
-            type?: string;
-            delta?: { text?: string; thinking?: string; partial_json?: string };
-            usage?: { output_tokens?: number };
-          } | null;
-          if (event?.type === "content_block_delta") {
-            thinkingChars += event.delta?.thinking?.length ?? 0;
-            toolInputChars += event.delta?.partial_json?.length ?? 0;
-            textChars += event.delta?.text?.length ?? 0;
-          } else if (
-            event?.type === "message_delta" &&
-            typeof event.usage?.output_tokens === "number"
-          ) {
-            outputTokens = event.usage.output_tokens;
+        calls += 1;
+        refused.push(...refusalsIn(request));
+        try {
+          for await (const raw of provider.stream(request, signal)) {
+            const event = raw as {
+              type?: string;
+              delta?: { text?: string; thinking?: string; partial_json?: string };
+              usage?: { output_tokens?: number };
+            } | null;
+            if (event?.type === "content_block_delta") {
+              thinkingChars += event.delta?.thinking?.length ?? 0;
+              toolInputChars += event.delta?.partial_json?.length ?? 0;
+              textChars += event.delta?.text?.length ?? 0;
+            } else if (
+              event?.type === "message_delta" &&
+              typeof event.usage?.output_tokens === "number"
+            ) {
+              outputTokens = event.usage.output_tokens;
+            }
+            yield raw;
           }
-          yield raw;
+        } catch (error) {
+          if (error instanceof ProviderFailure && error.outOfCredit) outOfCredit = true;
+          throw error;
         }
       },
     },
     tokens: () => ({ outputTokens, thinkingChars, toolInputChars, textChars }),
+    steps: () => ({ calls, refused: [...refused] }),
+    outOfCredit: () => outOfCredit,
   };
+}
+
+/**
+ * The calls a continued request tells the model were refused: its last
+ * message's error results, each named by the tool call it answers. A retry
+ * resends the same request, so a refusal already counted is not counted again.
+ */
+function refusalsIn(request: ProviderMessagesRequest): EvalRefusedCall[] {
+  if (!continuesTurn(request)) return [];
+  const { messages } = request;
+  const last = messages[messages.length - 1];
+  const before = messages[messages.length - 2];
+  if (last?.role !== "user" || typeof last.content === "string") return [];
+  const asked =
+    before?.role === "assistant" && typeof before.content !== "string"
+      ? before.content
+      : [];
+  const names = new Map(
+    asked.flatMap((block) => (block.type === "tool_use" ? [[block.id, block.name]] : [])),
+  );
+  return last.content
+    .filter((answer) => answer.is_error)
+    .map((answer) => ({
+      name: names.get(answer.tool_use_id) ?? "unknown",
+      reason: answer.content,
+    }));
 }
 
 /** Runs one case once through the gateway's own turn. Never throws for a failed turn. */
@@ -301,6 +374,9 @@ export async function runCaseTurn(
           now,
           model: options.model,
           guardLimits: EVAL_GUARD_LIMITS,
+          ...(options.maxSteps === undefined
+            ? {}
+            : { limits: { ...ASSISTANT_CALL_LIMITS, maxSteps: options.maxSteps } }),
         },
         EVAL_CALLER,
         {
@@ -328,6 +404,7 @@ export async function runCaseTurn(
       proposal: result.proposal,
       ask: result.ask,
       tokens: measured.tokens(),
+      steps: measured.steps(),
       ...timing(),
     };
   } catch (error) {
@@ -335,6 +412,7 @@ export async function runCaseTurn(
     const provider = {
       providerStatus: log?.providerStatus ?? null,
       providerFailures: log?.failures ?? [],
+      ...(measured.outOfCredit() ? { outOfCredit: true } : {}),
     };
     const turnError: EvalTurnError =
       error instanceof EvalTimeout || controller.signal.aborted
@@ -353,6 +431,7 @@ export async function runCaseTurn(
     return {
       ...erroredTurn(now() - startedAt, turnError),
       tokens: measured.tokens(),
+      steps: measured.steps(),
       ...timing(),
     };
   } finally {
@@ -392,8 +471,8 @@ export function whyNoProposal(turn: EvalTurn): string {
 }
 
 /**
- * Checks 1 to 5, 7 and 8 and the case's own checks on one turn, and its
- * descriptive numbers. An errored turn is judged by no check. A case that
+ * Checks 1 to 5, 7 and 8, checks 16 and 18 (every case's), and the case's
+ * own checks on one turn, and its descriptive numbers. An errored turn is judged by no check. A case that
  * expects a question is judged by check 8 alone unless the turn proposed
  * something anyway, which every other check then judges too.
  */
@@ -405,6 +484,7 @@ export function evaluateTurn(
   const base = {
     ...turn,
     caseId: evalCase.id,
+    set: caseSet(evalCase),
     capability: evalCase.capability,
     axis: evalCase.axis,
     request: evalCase.request,
@@ -416,7 +496,7 @@ export function evaluateTurn(
   if (evalCase.expect !== "proposal" && !proposed) {
     return { ...base, checks: { outcome }, stats: null, fingerprint: null };
   }
-  const caseChecks = evalCase.checks ?? [];
+  const caseChecks = caseChecksFor(evalCase.checks, evalCase.exempt);
   const project = evalCase.fixture();
   const valid = checkValid(project, turn.proposal, whyNoProposal(turn));
   if (!valid.applied) {
@@ -454,6 +534,7 @@ export function evaluateTurn(
           runCaseCheck(id, project, after, turn.text, {
             commands: proposal.commands,
             expectedValue: evalCase.expectedValue,
+            action: evalCase.action,
           }),
         ]),
       ),
@@ -591,6 +672,7 @@ export function evaluateTurnSafely(
       error: describeTurnError(judged),
       turnError: judged,
       caseId: evalCase.id,
+      set: caseSet(evalCase),
       capability: evalCase.capability,
       axis: evalCase.axis,
       request: evalCase.request,
@@ -613,9 +695,13 @@ export interface RunEvalsOptions extends RunTurnOptions {
 export const AUTH_ABORT_REASON =
   "The provider rejected the API key (HTTP 401/403), so no further turns were run.";
 
+export const CREDIT_ABORT_REASON =
+  "The account ran out of API credit (HTTP 400, credit balance too low), so no further turns were run. Top it up and rerun the cases that errored.";
+
 /**
  * Runs every case `runs` times and builds the report. If the provider rejects
- * the API key before any turn has come back with a reply, it stops starting
+ * the API key before any turn has come back with a reply, or refuses a call
+ * at any point because the account is out of credit, it stops starting
  * turns: every one would be refused, and the report says so in `aborted`.
  */
 export async function runEvals(options: RunEvalsOptions): Promise<EvalReport> {
@@ -638,6 +724,8 @@ export async function runEvals(options: RunEvalsOptions): Promise<EvalReport> {
       records[index] = record;
       if (!turn.error) replied = true;
       else if (!replied && isAuthError(turn.turnError)) aborted = AUTH_ABORT_REASON;
+      // Credit can run out mid-run: every later turn would be refused too.
+      if (turn.turnError?.outOfCredit) aborted ??= CREDIT_ABORT_REASON;
       options.onRecord?.(record);
     }
   };

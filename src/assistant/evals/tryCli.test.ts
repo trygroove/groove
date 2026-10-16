@@ -5,7 +5,7 @@ import {
   type ScriptedAssistantProvider,
   toolUseEvents,
 } from "../../testing/scriptedAssistantProvider";
-import { TRACK_CREATE_EXAMPLE, toolNameFor } from "../tools";
+import { CREATE_EXAMPLES, EXPLAIN_TOOL_NAME, toolNameFor } from "../tools";
 import { createHouseLoopProject } from "./fixtures";
 import { parseTryArgs, runTryCommand, splitCommandLine, type TryIo } from "./tryCli";
 import type { TrySession } from "./trySession";
@@ -95,7 +95,8 @@ describe("bun run assistant:try", () => {
     );
     const asked = await runTryCommand(["ask", "Tuck", "the", "bass", "in"], io);
     expect(asked.exitCode).toBe(0);
-    expect(asked.output).toContain("Response: stop tool_use");
+    // The turn goes on after its change call, and ends in a step of its own.
+    expect(asked.output).toContain("Response (call 1 of 2): stop tool_use");
     expect(asked.output).toContain("  [text]\n    The Bass down to -6 dB.");
     const call = bassDown();
     expect(asked.output).toContain(`  [tool call] ${call.name} (toolu_1)`);
@@ -139,10 +140,16 @@ describe("bun run assistant:try", () => {
   });
 
   it("spells out a refused payload field by field, under the call it blames", async () => {
-    // GRV-90's failure: the whole payload wrapped in a second `track` key.
-    const nested = { name: "track_create", input: { track: TRACK_CREATE_EXAMPLE } };
+    // GRV-90's failure: the track wrapped in a `track` key.
+    const nested = { name: "track_create", input: { track: CREATE_EXAMPLES.track } };
+    // Explained in the same reply, so it is the turn's one step and its calls
+    // reach the browser as they came.
+    const explain = {
+      name: EXPLAIN_TOOL_NAME,
+      input: { goal: "A bass", technique: "A synth track" },
+    };
     const provider = createScriptedAssistantProvider([
-      toolUseEvents("A bass.", [bassDown(), nested]),
+      toolUseEvents("A bass.", [bassDown(), nested, explain]),
     ]);
     const { io } = memoryIo(provider, KEY);
     await runTryCommand(["new", "house-loop"], io);
@@ -150,15 +157,12 @@ describe("bun run assistant:try", () => {
     const refusal = asked.output.slice(asked.output.indexOf("The proposal was refused"));
     expect(refusal).toContain("The proposal was refused (1 issue):");
     expect(refusal).toContain("  invalid_payload in call 2 of 2, track_create (toolu_2)");
-    expect(refusal).toMatch(/^ {4}track\.id +missing, expected string$/m);
+    expect(refusal).toMatch(/^ {4}id +missing, expected string$/m);
     expect(refusal).toMatch(
-      /^ {4}track\.type +missing, expected one of "instrument" \| "audio"$/m,
-    );
-    expect(refusal).toMatch(
-      /^ {4}track +unexpected keys "track", "clips", "placements"$/m,
+      /^ {4}type +missing, expected one of "instrument" \| "audio"$/m,
     );
     expect(refusal).toContain(
-      'Hint: "track" holds another "track": the model nested the payload one level too deep.',
+      'Hint: "track" wraps the whole input: the model nested it one level too deep.',
     );
     expect(asked.output).toContain("FAIL  1. Valid: the proposal was refused, as above");
   });

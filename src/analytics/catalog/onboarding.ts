@@ -122,4 +122,25 @@ export const ONBOARDING_EVENTS = {
     owners: ["GRV-25"],
     params: { kind: enumParam(MEMORY_PROPOSAL_KINDS) },
   },
+
+  // Something forgotten on the Memory page: a field, a note, or everything.
+  memory_forgotten: {
+    phase: 3,
+    owners: ["GRV-25"],
+    params: { what: enumParam(["field", "note", "everything"]) },
+  },
+
+  // Cue's one nudge a day (GRV-25), offered as a returning producer opens a
+  // project with its panel open, and what they did with it.
+  cue_nudge_shown: {
+    phase: 3,
+    owners: ["GRV-25"],
+    params: {},
+  },
+
+  cue_nudge_answered: {
+    phase: 3,
+    owners: ["GRV-25"],
+    params: { how: enumParam(["tried", "dismissed"]) },
+  },
 } as const satisfies Record<string, AnalyticsEventDefinition>;

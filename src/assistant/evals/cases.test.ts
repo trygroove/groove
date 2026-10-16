@@ -7,7 +7,7 @@ import { serializeProject, stringifyProject } from "../../domain/serialize";
 import { TICKS_PER_BAR } from "../../domain/time";
 import { buildAssistantPayload } from "../payload";
 import { assistantContextPayloadSchema, assistantTurnRequestSchema } from "../protocol";
-import { CASE_CHECK_IDS } from "./caseChecks";
+import { CASE_CHECK_IDS, caseChecksFor } from "./caseChecks";
 import {
   caseMessages,
   casePairs,
@@ -203,6 +203,30 @@ describe("the eval cases", () => {
 });
 
 // GRV-107: cases from GRV-6's QA findings.
+describe("the basic production actions (GRV-119)", () => {
+  const basic = TYPESCRIPT_CASES.filter((entry) => entry.set === "basicActions");
+
+  it("ask the issue's 30 cases as 32 requests, each judged by checks 18 and 19", () => {
+    expect(basic).toHaveLength(32);
+    for (const entry of basic) {
+      expect(entry.capability).toBe("basicAction");
+      expect(entry.checks).toEqual(["exactEdit", "nothingElse"]);
+      expect(entry.action).toBeDefined();
+    }
+    // Only the missing track expects anything but a proposal.
+    expect(
+      basic.filter((entry) => entry.expect !== "proposal").map((entry) => entry.id),
+    ).toEqual(["basic-missing-track"]);
+  });
+
+  it("are the only cases in their set, and every other case is a musical one", () => {
+    expect(EVAL_CASES.filter((entry) => entry.set === "basicActions")).toEqual(basic);
+    expect(
+      EVAL_CASES.filter((entry) => !basic.includes(entry)).every((entry) => !entry.set),
+    ).toBe(true);
+  });
+});
+
 describe("the cases from GRV-6's QA findings", () => {
   const byId = (id: string) => {
     const found = EVAL_CASES.find((entry) => entry.id === id);
@@ -260,7 +284,20 @@ describe("the cases from GRV-6's QA findings", () => {
       "Melody",
       "Texture",
     ]);
-    expect(resketch.checks).toEqual(["noEmptyClips", "noNoOps"]);
+    // Check 16 judges every case now; the case names only its own.
+    expect(resketch.checks).toEqual(["noNoOps"]);
+    expect(caseChecksFor(resketch.checks)).toEqual([
+      "noEmptyClips",
+      "noNoOps",
+      "clipsPlaced",
+    ]);
+    // "Clear the notes in this clip" asks for the empty clip check 16 fails.
+    const clear = byId("basic-clear-clip");
+    expect(caseChecksFor(clear.checks, clear.exempt)).toEqual([
+      "exactEdit",
+      "nothingElse",
+      "clipsPlaced",
+    ]);
     expect(byId("noop-bd-only").request).toBe(resketch.request);
     expect(byId("noop-bd-only").checks).toEqual(["noNoOps"]);
   });

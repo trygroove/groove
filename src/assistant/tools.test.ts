@@ -6,6 +6,7 @@ import {
   ASSISTANT_COMMAND_TYPES,
   ASSISTANT_TOOLSET_VERSION,
   assistantTools,
+  CREATE_EXAMPLES,
   EXPLAIN_TOOL,
   EXPLAIN_TOOL_NAME,
   NON_ASSISTANT_COMMANDS,
@@ -13,13 +14,13 @@ import {
   proposalCapability,
   proposalExplanationSchema,
   resolveToolCall,
-  TRACK_CREATE_EXAMPLE,
+  toolCallsFor,
   toolNameFor,
 } from "./tools";
 
 describe("the assistant's tool set", () => {
   it("is versioned", () => {
-    expect(ASSISTANT_TOOLSET_VERSION).toBe(7);
+    expect(ASSISTANT_TOOLSET_VERSION).toBe(8);
   });
 
   it("maps every Appendix A family the PRD named", () => {
@@ -153,25 +154,89 @@ describe("the assistant's tool set", () => {
   });
 });
 
-describe("track_create input (GRV-90)", () => {
-  it("accepts the shape its description shows", () => {
-    expect(resolveToolCall("track_create", TRACK_CREATE_EXAMPLE)).toMatchObject({
-      ok: true,
-      commandType: "track.create",
+describe("flat create tools (GRV-90)", () => {
+  const CASES = [
+    ["track_create", "track.create", CREATE_EXAMPLES.track],
+    ["clip_create", "clip.create", CREATE_EXAMPLES.clip],
+    ["placement_create", "placement.create", CREATE_EXAMPLES.placement],
+  ] as const;
+
+  it.each(CASES)(
+    "%s accepts the flat input its description shows",
+    (name, type, example) => {
+      expect(resolveToolCall(name, example)).toMatchObject({
+        ok: true,
+        commandType: type,
+      });
+      const tool = assistantTools().find((entry) => entry.name === name);
+      expect(tool?.description).toContain(JSON.stringify(example));
+    },
+  );
+
+  it("offers the entity's own fields at the top level of each schema", () => {
+    const keys = (name: string) =>
+      Object.keys(
+        (assistantTools().find((tool) => tool.name === name)?.inputSchema.properties ??
+          {}) as object,
+      );
+    expect(keys("track_create")).toEqual(Object.keys(CREATE_EXAMPLES.track));
+    expect(keys("clip_create")).toEqual(Object.keys(CREATE_EXAMPLES.clip));
+    expect(keys("placement_create")).toEqual(Object.keys(CREATE_EXAMPLES.placement));
+  });
+
+  it("turns each into its command's payload, with nothing nested", () => {
+    expect(resolveToolCall("track_create", CREATE_EXAMPLES.track)).toMatchObject({
+      payload: {
+        track: CREATE_EXAMPLES.track,
+        clips: [],
+        placements: [],
+        automation: [],
+      },
+    });
+    expect(resolveToolCall("clip_create", CREATE_EXAMPLES.clip)).toMatchObject({
+      payload: { clip: CREATE_EXAMPLES.clip, placements: [] },
+    });
+    expect(resolveToolCall("placement_create", CREATE_EXAMPLES.placement)).toMatchObject({
+      payload: { placement: CREATE_EXAMPLES.placement },
     });
   });
 
-  it("states the top-level shape and an example in the description", () => {
-    const description = assistantTools().find(
-      (tool) => tool.name === "track_create",
-    )?.description;
-    expect(description).toContain(JSON.stringify(TRACK_CREATE_EXAMPLE));
-    expect(description).toContain("never another");
+  it("cannot carry automation lanes on a new track", () => {
+    const lane = { id: "aut_Lane00000000000000001", interpolation: "linear", points: [] };
+    const resolution = resolveToolCall("track_create", {
+      ...CREATE_EXAMPLES.track,
+      automation: [lane],
+    });
+    expect(resolution).toMatchObject({ ok: false, code: "invalid_payload" });
   });
 
-  it("still refuses the payload wrapped in an extra track key, as the eval report showed", () => {
-    const resolution = resolveToolCall("track_create", { track: TRACK_CREATE_EXAMPLE });
+  it("makes a create command that carries its children into one call each, in order", () => {
+    const calls = toolCallsFor({
+      type: "track.create",
+      payload: {
+        track: CREATE_EXAMPLES.track,
+        clips: [CREATE_EXAMPLES.clip],
+        placements: [CREATE_EXAMPLES.placement],
+      },
+    });
+    expect(calls).toEqual([
+      { name: "track_create", input: CREATE_EXAMPLES.track },
+      { name: "clip_create", input: CREATE_EXAMPLES.clip },
+      { name: "placement_create", input: CREATE_EXAMPLES.placement },
+    ]);
+    expect(calls.every((call) => resolveToolCall(call.name, call.input).ok)).toBe(true);
+    expect(toolCallsFor({ type: "track.delete", payload: { trackId: "x" } })).toEqual([
+      { name: "track_delete", input: { trackId: "x" } },
+    ]);
+  });
+
+  it("refuses the old nested payload, naming the flat fields it lacks", () => {
+    const resolution = resolveToolCall("track_create", {
+      track: CREATE_EXAMPLES.track,
+      clips: [CREATE_EXAMPLES.clip],
+    });
     expect(resolution).toMatchObject({ ok: false, code: "invalid_payload" });
+    expect(resolution.ok ? "" : resolution.message).toContain("id:");
     expect(resolution.ok ? "" : resolution.message).toContain("Unrecognized keys");
   });
 });

@@ -53,7 +53,7 @@ import { LIBRARY_BLOCK_HEADING, PROJECT_BLOCK_HEADING } from "./prompt";
 import type { AssistantLibraryContext } from "./protocol";
 import type { AssistantProvider } from "./provider";
 import { ProviderFailure } from "./provider";
-import type { ProviderMessagesRequest } from "./providerRequest";
+import { continuesTurn, type ProviderMessagesRequest } from "./providerRequest";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
 import { EXPLAIN_TOOL_NAME, toolNameFor } from "./tools";
 import { type FoundVideo, RECOMMEND_VIDEO_TOOL, type VideoFinder } from "./video";
@@ -73,6 +73,26 @@ type Step =
   | { readonly wait: number }
   | { readonly hang: true }
   | { readonly fail: true };
+
+/** A later step that ends the turn with nothing more to say (`gateway.ts`). */
+function finishedReply(): Step[] {
+  return [
+    {
+      event: {
+        type: "message_start",
+        message: { id: "msg_emulator", usage: { input_tokens: 100, output_tokens: 1 } },
+      },
+    },
+    {
+      event: {
+        type: "message_delta",
+        delta: { stop_reason: "end_turn" },
+        usage: { output_tokens: 1 },
+      },
+    },
+    { event: { type: "message_stop" } },
+  ];
+}
 
 function textReply(chunks: readonly string[], stopReason = "end_turn"): Step[] {
   return [
@@ -177,19 +197,15 @@ function misfitProposal(request: ProviderMessagesRequest): Step[] {
     {
       name: "track_create",
       input: {
-        track: {
-          id: trackId,
-          name: "Noise pad",
-          color: "#808080",
-          order: contextTracks(request).length,
-          type: "instrument",
-          instrument: { kind: "sampler", assetId: MISFIT_ASSET_ID, parameters: {} },
-          devices: [],
-          sendConfig: [],
-          mixer: { volume: -6, pan: 0, muted: false, soloed: false },
-        },
-        clips: [],
-        placements: [],
+        id: trackId,
+        name: "Noise pad",
+        color: "#808080",
+        order: contextTracks(request).length,
+        type: "instrument",
+        instrument: { kind: "sampler", assetId: MISFIT_ASSET_ID, parameters: {} },
+        devices: [],
+        sendConfig: [],
+        mixer: { volume: -6, pan: 0, muted: false, soloed: false },
       },
     },
   ]);
@@ -463,7 +479,10 @@ function rememberReply(): Step[] {
 function lastUserMessage(request: ProviderMessagesRequest): string {
   for (let index = request.messages.length - 1; index >= 0; index -= 1) {
     const message = request.messages[index];
-    if (message?.role === "user") return message.content;
+    // A continued turn's tool results are not the producer's words.
+    if (message?.role === "user" && typeof message.content === "string") {
+      return message.content;
+    }
   }
   return "";
 }
@@ -490,6 +509,8 @@ export function createEmulatorAssistantProvider(
   firstTime: FirstTimeCheck = inProcessFirstTime(),
 ): AssistantProvider {
   function scriptFor(request: ProviderMessagesRequest): Step[] {
+    // A scripted proposal is whole in one step; the step after it ends the turn.
+    if (continuesTurn(request)) return finishedReply();
     const message = lastUserMessage(request);
     if (message.includes("[hang]")) {
       return [...textReply([EMULATOR_REPLY_CHUNKS[0]]).slice(0, 3), { hang: true }];

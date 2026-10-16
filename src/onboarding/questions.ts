@@ -155,7 +155,7 @@ export function typedItems(text: string): string[] {
 }
 
 /** `items` without repeats (ignoring case), at most the list cap. */
-function uniqueItems(items: readonly string[]): string[] {
+export function uniqueItems(items: readonly string[]): string[] {
   const seen = new Set<string>();
   const kept: string[] = [];
   for (const item of items) {
