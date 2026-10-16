@@ -27,6 +27,7 @@ import {
 import {
   AUTH_ABORT_REASON,
   buildReport,
+  CREDIT_ABORT_REASON,
   evalExitCode,
   evaluateRecords,
   evaluateTurn,
@@ -246,6 +247,26 @@ describe("runEvals", () => {
     const markdown = renderMarkdown(report);
     expect(markdown).toContain(`**The run stopped early.** ${AUTH_ABORT_REASON}`);
     expect(markdown).toContain("1 of them because the provider rejected the API key");
+  });
+
+  it("stops starting turns, even mid-run, once the account is out of API credit", async () => {
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("A Compressor on the master.", [compressorCall("a", -18)]),
+      [{ fail: "rejected", status: 400, outOfCredit: true }],
+    ]);
+    const report = await runEvals({
+      provider,
+      cases: [glue, crushed],
+      runs: 3,
+      now: fixedNow,
+    });
+    // The first turn replied; the second ran out of credit, and none came after.
+    expect(report.records).toHaveLength(2);
+    expect(report.records[0].error).toBeNull();
+    expect(report.records[1].turnError?.outOfCredit).toBe(true);
+    expect(report.records[1].error).toContain("The account is out of API credit.");
+    expect(report.aborted).toBe(CREDIT_ABORT_REASON);
+    expect(evalExitCode(report)).toBe(1);
   });
 
   it("exits 1 when every turn errored, for any reason", async () => {

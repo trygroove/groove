@@ -14,7 +14,12 @@ import {
 
 export type ScriptStep =
   | { readonly event: unknown }
-  | { readonly fail: ProviderFailureKind; readonly status?: number }
+  | {
+      readonly fail: ProviderFailureKind;
+      readonly status?: number;
+      /** The account is out of API credit (`ProviderFailure.outOfCredit`). */
+      readonly outOfCredit?: boolean;
+    }
   /** Never yields again until the call is aborted. */
   | { readonly hang: true }
   /** Pauses this long (real milliseconds) before the next step. */
@@ -198,7 +203,9 @@ export function createScriptedAssistantProvider(
             await Promise.resolve();
             yield step.event;
           } else if ("fail" in step) {
-            throw new ProviderFailure(step.fail, step.status ?? null);
+            throw new ProviderFailure(step.fail, step.status ?? null, {
+              outOfCredit: step.outOfCredit,
+            });
           } else if ("wait" in step) {
             await new Promise<void>((resolve) => setTimeout(resolve, step.wait));
           } else if ("hang" in step) {

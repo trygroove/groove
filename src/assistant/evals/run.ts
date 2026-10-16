@@ -37,7 +37,7 @@ import {
   type AssistantProposal,
   type AssistantStopReason,
 } from "../protocol";
-import type { AssistantProvider } from "../provider";
+import { type AssistantProvider, ProviderFailure } from "../provider";
 import { continuesTurn, type ProviderMessagesRequest } from "../providerRequest";
 import type { ProviderUsage } from "../streamEvents";
 import type { AssistantTurnLog } from "../telemetry";
@@ -81,6 +81,11 @@ export interface EvalTurnError {
   readonly providerStatus: number | null;
   /** Why each failed provider attempt failed, in order (`rejected`, `rate_limited`, ...). */
   readonly providerFailures: readonly string[];
+  /**
+   * The provider refused a call because the account is out of API credit.
+   * Absent from reports saved before the evals told it apart.
+   */
+  readonly outOfCredit?: boolean;
 }
 
 /**
@@ -211,7 +216,11 @@ export function describeTurnError(error: EvalTurnError): string {
     error.providerFailures.length > 0 ? error.providerFailures.join(", ") : null,
     error.providerStatus === null ? null : `HTTP ${error.providerStatus}`,
   ].filter((part): part is string => part !== null);
-  const auth = isAuthError(error) ? " The provider rejected the API key." : "";
+  const auth = isAuthError(error)
+    ? " The provider rejected the API key."
+    : error.outOfCredit
+      ? " The account is out of API credit."
+      : "";
   return `${error.code}: ${error.message}${provider.length > 0 ? ` (provider: ${provider.join(", ")})` : ""}${auth}`;
 }
 
@@ -253,8 +262,11 @@ function measureProvider(provider: AssistantProvider): {
   provider: AssistantProvider;
   tokens: () => EvalTokens;
   steps: () => EvalSteps;
+  /** Whether a call was refused because the account is out of API credit. */
+  outOfCredit: () => boolean;
 } {
   let calls = 0;
+  let outOfCredit = false;
   const refused: EvalRefusedCall[] = [];
   let outputTokens: number | null = null;
   let thinkingChars = 0;
@@ -265,28 +277,34 @@ function measureProvider(provider: AssistantProvider): {
       async *stream(request, signal) {
         calls += 1;
         refused.push(...refusalsIn(request));
-        for await (const raw of provider.stream(request, signal)) {
-          const event = raw as {
-            type?: string;
-            delta?: { text?: string; thinking?: string; partial_json?: string };
-            usage?: { output_tokens?: number };
-          } | null;
-          if (event?.type === "content_block_delta") {
-            thinkingChars += event.delta?.thinking?.length ?? 0;
-            toolInputChars += event.delta?.partial_json?.length ?? 0;
-            textChars += event.delta?.text?.length ?? 0;
-          } else if (
-            event?.type === "message_delta" &&
-            typeof event.usage?.output_tokens === "number"
-          ) {
-            outputTokens = event.usage.output_tokens;
+        try {
+          for await (const raw of provider.stream(request, signal)) {
+            const event = raw as {
+              type?: string;
+              delta?: { text?: string; thinking?: string; partial_json?: string };
+              usage?: { output_tokens?: number };
+            } | null;
+            if (event?.type === "content_block_delta") {
+              thinkingChars += event.delta?.thinking?.length ?? 0;
+              toolInputChars += event.delta?.partial_json?.length ?? 0;
+              textChars += event.delta?.text?.length ?? 0;
+            } else if (
+              event?.type === "message_delta" &&
+              typeof event.usage?.output_tokens === "number"
+            ) {
+              outputTokens = event.usage.output_tokens;
+            }
+            yield raw;
           }
-          yield raw;
+        } catch (error) {
+          if (error instanceof ProviderFailure && error.outOfCredit) outOfCredit = true;
+          throw error;
         }
       },
     },
     tokens: () => ({ outputTokens, thinkingChars, toolInputChars, textChars }),
     steps: () => ({ calls, refused: [...refused] }),
+    outOfCredit: () => outOfCredit,
   };
 }
 
@@ -394,6 +412,7 @@ export async function runCaseTurn(
     const provider = {
       providerStatus: log?.providerStatus ?? null,
       providerFailures: log?.failures ?? [],
+      ...(measured.outOfCredit() ? { outOfCredit: true } : {}),
     };
     const turnError: EvalTurnError =
       error instanceof EvalTimeout || controller.signal.aborted
@@ -676,9 +695,13 @@ export interface RunEvalsOptions extends RunTurnOptions {
 export const AUTH_ABORT_REASON =
   "The provider rejected the API key (HTTP 401/403), so no further turns were run.";
 
+export const CREDIT_ABORT_REASON =
+  "The account ran out of API credit (HTTP 400, credit balance too low), so no further turns were run. Top it up and rerun the cases that errored.";
+
 /**
  * Runs every case `runs` times and builds the report. If the provider rejects
- * the API key before any turn has come back with a reply, it stops starting
+ * the API key before any turn has come back with a reply, or refuses a call
+ * at any point because the account is out of credit, it stops starting
  * turns: every one would be refused, and the report says so in `aborted`.
  */
 export async function runEvals(options: RunEvalsOptions): Promise<EvalReport> {
@@ -701,6 +724,8 @@ export async function runEvals(options: RunEvalsOptions): Promise<EvalReport> {
       records[index] = record;
       if (!turn.error) replied = true;
       else if (!replied && isAuthError(turn.turnError)) aborted = AUTH_ABORT_REASON;
+      // Credit can run out mid-run: every later turn would be refused too.
+      if (turn.turnError?.outOfCredit) aborted ??= CREDIT_ABORT_REASON;
       options.onRecord?.(record);
     }
   };

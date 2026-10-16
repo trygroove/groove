@@ -60,6 +60,18 @@ function toSdkMessage(message: ProviderMessage): MessageParam {
   };
 }
 
+/** What the API says, with a 400, when the account's credit balance has run out. */
+const OUT_OF_CREDIT = /credit balance is too low/i;
+
+/** Whether `error` is the API refusing a call because the account has no credit. */
+function isOutOfCredit(error: InstanceType<typeof Anthropic.APIError>): boolean {
+  const body = error.error as { error?: { message?: unknown } } | undefined;
+  const message = body?.error?.message;
+  return (
+    error.status === 400 && typeof message === "string" && OUT_OF_CREDIT.test(message)
+  );
+}
+
 /** The failure an error thrown by the SDK, or while reading its stream, means. */
 export function classifySdkError(error: unknown): ProviderFailure {
   if (error instanceof ProviderFailure) return error;
@@ -67,7 +79,9 @@ export function classifySdkError(error: unknown): ProviderFailure {
     return new ProviderFailure("network");
   if (error instanceof Anthropic.APIError) {
     if (typeof error.status === "number") {
-      return new ProviderFailure(failureKindForStatus(error.status), error.status);
+      return new ProviderFailure(failureKindForStatus(error.status), error.status, {
+        outOfCredit: isOutOfCredit(error),
+      });
     }
     // An `error` event inside an open stream carries a type, not a status.
     const type = (error.error as { error?: { type?: unknown } } | undefined)?.error?.type;
