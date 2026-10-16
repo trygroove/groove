@@ -10,6 +10,7 @@
  *
  *   bun run eval:assistant                       every case, 3 runs each
  *   bun run eval:assistant -- sketch-house       one case (or several)
+ *   bun run eval:assistant -- --set basicActions the basic production actions (GRV-119) alone
  *   bun run eval:assistant -- --runs 5           N runs per case
  *   bun run eval:assistant -- --model claude-haiku-4-5
  *   bun run eval:assistant -- --out tmp/evals    where the report goes
@@ -71,6 +72,7 @@ import {
   comparisonConsoleLines,
   formatRate,
 } from "../src/assistant/evals/scorecardMarkdown";
+import { setLabel } from "../src/assistant/evals/sets";
 import { parseTranscriptCase } from "../src/assistant/evals/transcriptCase";
 
 async function readBaseline(path: string | null): Promise<LoadedBaseline | null> {
@@ -126,6 +128,11 @@ function printSummary(
   console.log(
     `\nHeadline: applies ${formatRate(headline.applies)}, overall ${formatRate(headline.overall)}, expected outcome ${formatRate(headline.expectMatch)}`,
   );
+  for (const [set, score] of Object.entries(report.scorecard.sets ?? {})) {
+    console.log(
+      `  ${setLabel(set)} (${score.cases} cases): applies ${formatRate(score.headline.applies)}, overall ${formatRate(score.headline.overall)}, expected outcome ${formatRate(score.headline.expectMatch)}`,
+    );
+  }
   for (const id of CHECK_IDS) {
     console.log(
       `  ${CHECK_LABELS[id].padEnd(36)} ${formatTally(report.summary.checks[id])}`,
@@ -183,7 +190,9 @@ async function replay(path: string, options: EvalCliOptions): Promise<EvalReport
 
 /** The cases to run: the transcript file's one case, or the named ones. */
 async function casesFor(options: EvalCliOptions) {
-  if (!options.fromTranscript) return selectEvalCases(options.caseIds);
+  if (!options.fromTranscript) {
+    return selectEvalCases(options.caseIds, undefined, options.set);
+  }
   let raw: unknown;
   try {
     raw = JSON.parse(await readFile(options.fromTranscript, "utf8"));

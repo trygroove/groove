@@ -90,11 +90,13 @@ import {
  *    proposal's goal and technique (GRV-5).
  * 6: a turn that carries the library is offered `recommend_sounds`
  *    (`recommendation.ts`, GRV-23).
- * 7: `track_create`, `clip_create` and `placement_create` take the entity
+ * 7: a turn that carries the producer's memory is offered `remember_producer`
+ *    (`memory.ts`), and `ask_producer` takes a `memoryQuestion` (GRV-25).
+ * 8: `track_create`, `clip_create` and `placement_create` take the entity
  *    itself, flat, and create only it: a track's clips and their placements
  *    are calls of their own (GRV-90).
  */
-export const ASSISTANT_TOOLSET_VERSION = 7;
+export const ASSISTANT_TOOLSET_VERSION = 8;
 
 /** The song's own parameters the assistant may set: its tempo and its swing. */
 const SONG_PARAMETER_IDS: readonly string[] = [SONG_TEMPO.id, SONG_SWING.id];
@@ -625,6 +627,16 @@ const { $schema: _explainDialect, ...explainInputSchema } = z.toJSONSchema(
   proposalExplanationSchema,
   { io: "input" },
 ) as JsonSchema;
+
+/**
+ * Whether `calls` change anything: an explanation on its own does not, so
+ * calls that are only `explain_change` are no proposal. Whatever takes other
+ * calls out of a proposal (asks, videos, recommendations, memory) asks this of
+ * what is left.
+ */
+export function makesChanges(calls: readonly { readonly name: string }[]): boolean {
+  return calls.some((call) => call.name !== EXPLAIN_TOOL_NAME);
+}
 
 /** `explain_change` as it is offered to the model, beside the command tools. */
 export const EXPLAIN_TOOL: Pick<

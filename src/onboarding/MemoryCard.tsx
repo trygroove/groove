@@ -47,6 +47,9 @@ export function MemoryCard(props: MemoryCardProps): JSX.Element {
           </dl>
         </Match>
       </Switch>
+      <a class="memory-card-link" href="/memory">
+        See or change it on the Memory page
+      </a>
       <label class="memory-card-consent">
         <input
           type="checkbox"

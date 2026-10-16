@@ -203,6 +203,30 @@ describe("the eval cases", () => {
 });
 
 // GRV-107: cases from GRV-6's QA findings.
+describe("the basic production actions (GRV-119)", () => {
+  const basic = TYPESCRIPT_CASES.filter((entry) => entry.set === "basicActions");
+
+  it("ask the issue's 30 cases as 32 requests, each judged by checks 18 and 19", () => {
+    expect(basic).toHaveLength(32);
+    for (const entry of basic) {
+      expect(entry.capability).toBe("basicAction");
+      expect(entry.checks).toEqual(["exactEdit", "nothingElse"]);
+      expect(entry.action).toBeDefined();
+    }
+    // Only the missing track expects anything but a proposal.
+    expect(
+      basic.filter((entry) => entry.expect !== "proposal").map((entry) => entry.id),
+    ).toEqual(["basic-missing-track"]);
+  });
+
+  it("are the only cases in their set, and every other case is a musical one", () => {
+    expect(EVAL_CASES.filter((entry) => entry.set === "basicActions")).toEqual(basic);
+    expect(
+      EVAL_CASES.filter((entry) => !basic.includes(entry)).every((entry) => !entry.set),
+    ).toBe(true);
+  });
+});
+
 describe("the cases from GRV-6's QA findings", () => {
   const byId = (id: string) => {
     const found = EVAL_CASES.find((entry) => entry.id === id);

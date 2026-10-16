@@ -20,7 +20,7 @@ import {
 
 describe("the assistant's tool set", () => {
   it("is versioned", () => {
-    expect(ASSISTANT_TOOLSET_VERSION).toBe(7);
+    expect(ASSISTANT_TOOLSET_VERSION).toBe(8);
   });
 
   it("maps every Appendix A family the PRD named", () => {

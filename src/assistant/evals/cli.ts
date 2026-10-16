@@ -15,9 +15,12 @@ import { EVAL_CASES, type EvalCase } from "./cases";
 import { DEFAULT_TURN_TIMEOUT_MS, type EvalRecord } from "./run";
 import { type Scorecard, type ScorecardSource, scorecardOf } from "./scorecard";
 import type { BaselineLabel } from "./scorecardMarkdown";
+import { caseSet, EVAL_SETS, type EvalSetId } from "./sets";
 
 export interface EvalCliOptions {
   readonly caseIds: string[];
+  /** Only the cases of this set (GRV-119), or every set when null. */
+  readonly set: EvalSetId | null;
   readonly runs: number;
   readonly model: AssistantModelId;
   readonly out: string | null;
@@ -45,8 +48,7 @@ export class EvalUsageError extends Error {
   }
 }
 
-export const EVAL_USAGE =
-  "Usage: bun run eval:assistant -- [case ...] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS] [--steps N]";
+export const EVAL_USAGE = `Usage: bun run eval:assistant -- [case ...] [--set ${EVAL_SETS.join("|")}] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS] [--steps N]`;
 
 const DEFAULT_TURN_TIMEOUT_SECONDS = DEFAULT_TURN_TIMEOUT_MS / 1000;
 
@@ -66,6 +68,7 @@ export function parseEvalArgs(
   env: Readonly<Record<string, string | undefined>> = {},
 ): ParsedEvalArgs {
   const caseIds: string[] = [];
+  let set: string | null = null;
   let runs = Number(env.EVAL_RUNS ?? 3);
   let model: string = ASSISTANT_MODEL_ID;
   let out: string | null = null;
@@ -84,6 +87,7 @@ export function parseEvalArgs(
       return next;
     };
     if (arg === "--runs") runs = Number(value());
+    else if (arg === "--set") set = value();
     else if (arg === "--model") model = value();
     else if (arg === "--out") out = value();
     else if (arg === "--replay") replay = value();
@@ -105,6 +109,9 @@ export function parseEvalArgs(
       "--from-transcript runs the transcript's case alone: drop --replay and the case names",
     );
   }
+  if (set !== null && !(EVAL_SETS as readonly string[]).includes(set)) {
+    throw new EvalUsageError(`Unknown set "${set}". Sets: ${EVAL_SETS.join(", ")}`);
+  }
   if (!(model in ASSISTANT_MODELS)) {
     throw new EvalUsageError(
       `Unknown model "${model}". Configured: ${Object.keys(ASSISTANT_MODELS).join(", ")}`,
@@ -114,6 +121,7 @@ export function parseEvalArgs(
     kind: "run",
     options: {
       caseIds,
+      set: set as EvalSetId | null,
       runs,
       model: model as AssistantModelId,
       out,
@@ -127,11 +135,16 @@ export function parseEvalArgs(
   };
 }
 
-/** The named cases in the order given, or every case when none is named. */
+/**
+ * The named cases in the order given, or every case when none is named; with
+ * a set, only that set's cases.
+ */
 export function selectEvalCases(
   ids: readonly string[],
-  cases: readonly EvalCase[] = EVAL_CASES,
+  all: readonly EvalCase[] = EVAL_CASES,
+  set: EvalSetId | null = null,
 ): EvalCase[] {
+  const cases = set === null ? all : all.filter((entry) => caseSet(entry) === set);
   if (ids.length === 0) return [...cases];
   return ids.map((id) => {
     const found = cases.find((entry) => entry.id === id);

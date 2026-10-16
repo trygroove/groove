@@ -66,6 +66,7 @@ import {
 } from "./checks";
 import { describeProposal, type ProposalStats } from "./describe";
 import { type Scorecard, scorecardOf } from "./scorecard";
+import { caseSet, type EvalSetId } from "./sets";
 
 /** Why a turn errored, as far as the gateway and the provider said. */
 export interface EvalTurnError {
@@ -147,6 +148,8 @@ export interface EvalTurn {
 /** One run of one case: the request, everything the model returned, every check. */
 export interface EvalRecord extends EvalTurn {
   readonly caseId: string;
+  /** The set its case is scored in (GRV-119). Absent from older reports: the musical one. */
+  readonly set?: EvalSetId;
   readonly capability: EvalCase["capability"];
   readonly axis: EvalCase["axis"];
   readonly request: string;
@@ -462,6 +465,7 @@ export function evaluateTurn(
   const base = {
     ...turn,
     caseId: evalCase.id,
+    set: caseSet(evalCase),
     capability: evalCase.capability,
     axis: evalCase.axis,
     request: evalCase.request,
@@ -511,6 +515,7 @@ export function evaluateTurn(
           runCaseCheck(id, project, after, turn.text, {
             commands: proposal.commands,
             expectedValue: evalCase.expectedValue,
+            action: evalCase.action,
           }),
         ]),
       ),
@@ -648,6 +653,7 @@ export function evaluateTurnSafely(
       error: describeTurnError(judged),
       turnError: judged,
       caseId: evalCase.id,
+      set: caseSet(evalCase),
       capability: evalCase.capability,
       axis: evalCase.axis,
       request: evalCase.request,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDevice, setParameter } from "../../commands";
+import { addDevice, setParameter, setTrackFlag } from "../../commands";
 import { createDevice } from "../../domain/devices";
 import { createFactoryContext } from "../../domain/factories";
 import { createSeededIdFactory } from "../../domain/ids";
@@ -153,7 +153,7 @@ describe("runEvals", () => {
     const markdown = renderMarkdown(report);
     expect(markdown).toContain("**Errored turns: 1 of 2**");
     expect(markdown).toContain(
-      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | 0/0 | - | 0/0 | 1 |",
+      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | 0/0 | - | - | - | 0/0 | 1 |",
     );
     expect(markdown).toContain(
       "**Run 2** (0 s): errored, not judged: provider_error: The assistant could not take that request. (provider: rejected, HTTP 400)",
@@ -371,6 +371,78 @@ describe("evaluateTurn for GRV-107's cases", () => {
     expect(record.checks).toEqual({
       outcome: expect.objectContaining({ status: "pass" }),
     });
+  });
+});
+
+describe("evaluateTurn for the basic production actions (GRV-119)", () => {
+  const find = (id: string) => EVAL_CASES.find((entry) => entry.id === id) as EvalCase;
+  const base = { durationMs: 1, error: null, stopReason: null, text: "" };
+
+  it("judges the exact edit and nothing else on an applied proposal, in its own set", () => {
+    const evalCase = find("basic-mute-hats");
+    const project = evalCase.fixture();
+    const hats = project.song.tracks.find((track) => track.name === "Hats");
+    if (!hats) throw new Error("no Hats track");
+    const call = (command: ReturnType<typeof setTrackFlag>) => ({
+      name: toolNameFor(command.type),
+      input: command.payload,
+    });
+    const proposal = (calls: ReturnType<typeof call>[]) => ({
+      baseRevision: project.metadata.revision,
+      toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+      calls,
+    });
+    const muted = evaluateTurn(evalCase, 1, {
+      ...base,
+      proposal: proposal([call(setTrackFlag(hats.id, "muted", true))]),
+    } as never);
+    expect(muted.set).toBe("basicActions");
+    for (const id of [
+      "valid",
+      "inScope",
+      "exactEdit",
+      "nothingElse",
+      "outcome",
+    ] as const) {
+      expect(muted.checks[id]?.status, id).toBe("pass");
+    }
+    const bass = project.song.tracks.find((track) => track.name === "Bass");
+    if (!bass) throw new Error("no Bass track");
+    const both = evaluateTurn(evalCase, 1, {
+      ...base,
+      proposal: proposal([
+        call(setTrackFlag(hats.id, "muted", true)),
+        call(setTrackFlag(bass.id, "muted", true)),
+      ]),
+    } as never);
+    expect(both.checks.exactEdit?.status).toBe("pass");
+    expect(both.checks.nothingElse?.status).toBe("fail");
+  });
+
+  it("passes the missing track on an explanation and no proposal", () => {
+    const record = evaluateTurn(find("basic-missing-track"), 1, {
+      ...base,
+      text: "This project has no strings track, so there is nothing to delete.",
+      proposal: null,
+    } as never);
+    expect(record.checks).toEqual({
+      outcome: expect.objectContaining({ status: "pass" }),
+    });
+  });
+
+  it("puts each set in the report's own table", () => {
+    const record = evaluateTurn(find("basic-tempo"), 1, {
+      ...base,
+      proposal: null,
+    } as never);
+    const report = buildReport([record], [find("basic-tempo")], {
+      generatedAt: "2026-10-15T00:00:00Z",
+      model: "claude-sonnet-5",
+      runsPerCase: 1,
+    });
+    const markdown = renderSummaryMarkdown(summaryOf(report));
+    expect(markdown).toContain("## By set");
+    expect(markdown).toContain("| Basic production actions | 1 | 0.0% (0/1) |");
   });
 });
 

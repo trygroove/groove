@@ -59,6 +59,7 @@ import {
 } from "./config";
 import type { AssistantGuardStores } from "./guards";
 import { type BoundedHistory, boundHistory, estimateTokens } from "./history";
+import { rememberTool } from "./memory";
 import { ASSISTANT_PROMPT_VERSION, buildSystemBlocks, createIdStem } from "./prompt";
 import {
   AssistantGatewayError,
@@ -89,7 +90,7 @@ import {
   ASSISTANT_TOOLSET_VERSION,
   assistantTools,
   EXPLAIN_TOOL,
-  EXPLAIN_TOOL_NAME,
+  makesChanges,
 } from "./tools";
 import type { TranscriptStore } from "./transcripts";
 import {
@@ -235,13 +236,15 @@ async function prepare(
   idStem: string,
   videos: boolean,
 ): Promise<PreparedTurn> {
-  const system = buildSystemBlocks(turn.context, turn.library, idStem);
-  // A turn that carries the library may also recommend from it (GRV-23), and
-  // one whose videos can be checked may recommend a tutorial (GRV-16).
+  const system = buildSystemBlocks(turn.context, turn.library, idStem, turn.memory);
+  // A turn that carries the library may also recommend from it (GRV-23), one
+  // whose videos can be checked may recommend a tutorial (GRV-16), and one that
+  // carries the producer's memory may propose adding to it (GRV-25).
   const tools = [
     ...providerTools([...assistantTools(), EXPLAIN_TOOL, askProducerTool()]),
     ...(turn.library ? [recommendationTool()] : []),
     ...(videos ? [videoRecommendationTool()] : []),
+    ...(turn.memory ? providerTools([rememberTool()]) : []),
   ];
   // The tool definitions take room in the window just as the prompt does.
   const systemTokens =
@@ -443,7 +446,7 @@ function proposalOf(
   allCalls: readonly AssistantToolCall[],
 ): AssistantProposal | null {
   const calls = allCalls.filter((call) => !isAskCall(call) && !isVideoCall(call));
-  if (calls.every((call) => call.name === EXPLAIN_TOOL_NAME)) return null;
+  if (!makesChanges(calls)) return null;
   return {
     baseRevision: turn.projectRevision,
     toolsetVersion: ASSISTANT_TOOLSET_VERSION,

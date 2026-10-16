@@ -25,7 +25,7 @@ export type HistoryEntry =
       readonly ask?: AssistantAsk;
     }
   | { readonly kind: "video"; readonly video: { readonly videoId: string } }
-  | { readonly kind: "proposal" | "recommendation" | "error" };
+  | { readonly kind: "proposal" | "recommendation" | "memory" | "error" };
 
 /** The most one message may say, as the gateway counts it. */
 export const MAX_MESSAGE_CHARS = ASSISTANT_REQUEST_LIMITS.maxMessageChars;

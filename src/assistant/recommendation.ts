@@ -28,6 +28,7 @@ import type {
   AssistantToolCall,
 } from "./protocol";
 import type { ProviderTool, ProviderToolInputSchema } from "./providerRequest";
+import { makesChanges } from "./tools";
 
 /** The tool's name, as the model calls it. */
 export const RECOMMEND_SOUNDS_TOOL = "recommend_sounds";
@@ -99,7 +100,7 @@ export function splitRecommendations(proposal: AssistantProposal): SplitProposal
   );
   const changes = proposal.calls.filter((call) => call.name !== RECOMMEND_SOUNDS_TOOL);
   return {
-    proposal: changes.length > 0 ? { ...proposal, calls: changes } : null,
+    proposal: makesChanges(changes) ? { ...proposal, calls: changes } : null,
     recommendations,
   };
 }

@@ -16,6 +16,7 @@
  * (whether an ID exists in the open project) is still the browser's to refuse.
  */
 import { isAskCall } from "./ask";
+import { isRememberCall } from "./memory";
 import type { AssistantStopReason, AssistantToolCall } from "./protocol";
 import type { ProviderToolResultBlock } from "./providerRequest";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
@@ -30,13 +31,17 @@ export const ADDED_RESULT =
 
 const NOTED_RESULT = "Noted.";
 
-/** Whether `call` changes the song, rather than explaining, asking or recommending. */
+/**
+ * Whether `call` changes the song, rather than explaining, asking,
+ * recommending or proposing something to remember (GRV-25).
+ */
 function isChangeCall(call: AssistantToolCall): boolean {
   return (
     call.name !== EXPLAIN_TOOL_NAME &&
     call.name !== RECOMMEND_SOUNDS_TOOL &&
     !isAskCall(call) &&
-    !isVideoCall(call)
+    !isVideoCall(call) &&
+    !isRememberCall(call)
   );
 }
 
