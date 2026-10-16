@@ -18,6 +18,13 @@
  * set's version is not on the wire (the Messages API has nowhere to put it);
  * the gateway stamps it on the proposal it returns instead.
  *
+ * Two prompt-cache breakpoints (the pattern the Messages API recommends for a
+ * tool loop): one on the static system prompt, so the tools and the prompt
+ * are read from the cache on every turn after the first in five minutes,
+ * and the request's top-level `cache_control`, which caches up to the last
+ * block and moves forward as a turn takes its steps (`gateway.ts`), so each
+ * step reads everything the step before it sent.
+ *
  * Two settings keep a long turn audible to the gateway's inactivity timeout
  * (GRV-6's first live run went silent for a minute on its largest proposals):
  *
@@ -33,9 +40,15 @@
 import type { AssistantModelProfile } from "./config";
 import type { AssistantToolDefinition } from "./tools";
 
+/** A prompt-cache breakpoint: the prefix up to and including its block is cached. */
+export interface ProviderCacheControl {
+  readonly type: "ephemeral";
+}
+
 export interface ProviderTextBlock {
   readonly type: "text";
   readonly text: string;
+  readonly cache_control?: ProviderCacheControl;
 }
 
 /**
@@ -103,6 +116,8 @@ export interface ProviderMessagesRequest {
   readonly tools: ProviderTool[];
   readonly thinking: ProviderThinking;
   readonly output_config?: { readonly effort: "low" | "medium" | "high" };
+  /** Automatic caching: a breakpoint on the last cacheable block, moving with the turn. */
+  readonly cache_control: ProviderCacheControl;
   /** A pseudonymous ID for the account, for the provider's abuse detection. */
   readonly metadata: { readonly user_id: string };
 }
@@ -144,8 +159,9 @@ export function buildProviderRequest(
     model: model.id,
     max_tokens: model.maxOutputTokens,
     stream: true as const,
-    system: parts.system,
+    system: withStaticBreakpoint(parts.system),
     messages: parts.messages,
+    cache_control: CACHE,
     tools: [...parts.tools],
     metadata: { user_id: parts.pseudonymousUserId },
   };
@@ -162,6 +178,22 @@ export function buildProviderRequest(
         thinking: { type: "enabled", budget_tokens: model.thinking.budgetTokens },
       };
   }
+}
+
+const CACHE: ProviderCacheControl = { type: "ephemeral" };
+
+/**
+ * The system blocks with a cache breakpoint on the first, the prompt itself,
+ * which is the same for every turn and every account. The tools render
+ * before it, so the one breakpoint caches both: about 30k tokens that every
+ * turn would otherwise pay for in full. The project, the library and the
+ * turn's ID stem after it change from turn to turn.
+ */
+function withStaticBreakpoint(
+  system: readonly ProviderTextBlock[],
+): readonly ProviderTextBlock[] {
+  const [first, ...rest] = system;
+  return first ? [{ ...first, cache_control: CACHE }, ...rest] : system;
 }
 
 /**
