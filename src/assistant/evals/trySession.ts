@@ -69,7 +69,13 @@ import { EvalUsageError } from "./cli";
 import { describeProject, type ProjectOverview } from "./describe";
 import { FIXTURE_NAME, namedFixture, TS_FIXTURES } from "./namedFixtures";
 import { describeRefusal, type RefusalDetail } from "./refusal";
-import { type EvalTurn, evaluateTurn, runCaseTurn, whyNoProposal } from "./run";
+import {
+  type EvalRefusedCall,
+  type EvalTurn,
+  evaluateTurn,
+  runCaseTurn,
+  whyNoProposal,
+} from "./run";
 import { turnCostUsd } from "./scorecard";
 
 export const TRY_SESSION_KIND = "groove-assistant-try-session";
@@ -236,6 +242,8 @@ export type TryResult =
       } | null;
       /** Why the proposal was refused, as the card would say, when it was. */
       readonly rejected: readonly RefusalDetail[] | null;
+      /** Calls the gateway refused back to the model mid-turn (`steps.ts`). */
+      readonly refusedBack: readonly EvalRefusedCall[];
       /** Sounds the reply recommends, which the CLI does not show. */
       readonly recommendations: number;
       readonly question: AssistantAsk | null;
@@ -490,6 +498,7 @@ export async function ask(
           : null,
       recommendations: split?.recommendations.length ?? 0,
       question: turn.ask ?? null,
+      refusedBack: turn.steps?.refused ?? [],
       checks,
       noProposal: turn.error || turn.proposal ? null : whyNoProposal(turn),
       usage: turn.usage ?? null,

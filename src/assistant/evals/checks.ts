@@ -93,6 +93,7 @@ export const CHECK_LABELS: Record<CheckId, string> = {
   noNoOps: "17. No command sets a value to what it already is",
   exactEdit: "18. Makes the exact edit asked for",
   nothingElse: "19. Nothing else changed",
+  clipsPlaced: "20. Every new clip is placed",
 };
 
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });

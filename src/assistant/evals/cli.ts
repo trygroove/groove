@@ -32,6 +32,8 @@ export interface EvalCliOptions {
   readonly concurrency: number;
   /** Per-turn limit, retries included. */
   readonly turnTimeoutMs: number;
+  /** The most steps a turn may take (`steps.ts`); null for production's. */
+  readonly maxSteps: number | null;
 }
 
 export type ParsedEvalArgs =
@@ -46,7 +48,7 @@ export class EvalUsageError extends Error {
   }
 }
 
-export const EVAL_USAGE = `Usage: bun run eval:assistant -- [case ...] [--set ${EVAL_SETS.join("|")}] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS]`;
+export const EVAL_USAGE = `Usage: bun run eval:assistant -- [case ...] [--set ${EVAL_SETS.join("|")}] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS] [--steps N]`;
 
 const DEFAULT_TURN_TIMEOUT_SECONDS = DEFAULT_TURN_TIMEOUT_MS / 1000;
 
@@ -75,6 +77,7 @@ export function parseEvalArgs(
   let fromTranscript: string | null = null;
   let concurrency = 3;
   let timeoutSeconds = DEFAULT_TURN_TIMEOUT_SECONDS;
+  let maxSteps: number | null = null;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const value = (): string => {
@@ -92,6 +95,7 @@ export function parseEvalArgs(
     else if (arg === "--from-transcript") fromTranscript = value();
     else if (arg === "--concurrency") concurrency = Number(value());
     else if (arg === "--timeout") timeoutSeconds = Number(value());
+    else if (arg === "--steps") maxSteps = wholeNumber(Number(value()), "--steps");
     else if (arg === "--help" || arg === "-h") {
       return { kind: "help", text: `${EVAL_USAGE}\n\nCases: ${caseList(EVAL_CASES)}` };
     } else if (arg.startsWith("--")) throw new EvalUsageError(`Unknown option ${arg}`);
@@ -126,6 +130,7 @@ export function parseEvalArgs(
       fromTranscript,
       concurrency,
       turnTimeoutMs: timeoutSeconds * 1000,
+      maxSteps,
     },
   };
 }

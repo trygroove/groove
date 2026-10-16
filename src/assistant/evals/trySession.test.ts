@@ -11,6 +11,7 @@ import {
 } from "../../testing/scriptedAssistantProvider";
 import { askTranscript } from "../ask";
 import type { AssistantProvider } from "../provider";
+import { continuesTurn, type ProviderMessagesRequest } from "../providerRequest";
 import { toolNameFor } from "../tools";
 import { EVAL_CASES, loadJsonCases } from "./cases";
 import { canonicalSongState } from "./checks";
@@ -65,6 +66,11 @@ function started(): TrySession {
 
 function deps(provider: AssistantProvider) {
   return { provider, now: fixedNow };
+}
+
+/** The requests that open a turn: each continued step is left out. */
+function opened(provider: { readonly requests: readonly ProviderMessagesRequest[] }) {
+  return provider.requests.filter((request) => !continuesTurn(request));
 }
 
 describe("an assistant:try session", () => {
@@ -146,7 +152,7 @@ describe("an assistant:try session", () => {
     const second = await ask(cancelled.session, { text: "Lead down" }, deps(provider));
     const undone = undo(apply(second.session).session).session;
     await ask(undone, { text: "Thanks" }, deps(provider));
-    expect(provider.requests[2].messages).toEqual([
+    expect(opened(provider)[2].messages).toEqual([
       { role: "user", content: "Bass down" },
       { role: "assistant", content: "The Bass down to -6 dB." },
       { role: "user", content: "Lead down" },
@@ -163,9 +169,7 @@ describe("an assistant:try session", () => {
     ]);
     const first = await ask(session, { text: "Bass down" }, deps(provider));
     await ask(first.session, { text: "And now?" }, deps(provider));
-    expect(provider.requests[1].messages).toEqual([
-      { role: "user", content: "And now?" },
-    ]);
+    expect(opened(provider)[1].messages).toEqual([{ role: "user", content: "And now?" }]);
   });
 
   it("refuses to apply a proposal the song moved under, which can still be cancelled", async () => {
@@ -201,7 +205,7 @@ describe("an assistant:try session", () => {
 
     const answered = await answer(asked.session, "2", deps(provider));
     expect(answered.session.pendingAsk).toBeNull();
-    expect(provider.requests[1].messages).toEqual([
+    expect(opened(provider)[1].messages).toEqual([
       { role: "user", content: "Busier hats" },
       {
         role: "assistant",
@@ -282,9 +286,7 @@ describe("an assistant:try session", () => {
     if (result.kind !== "ask") throw new Error("not an ask");
     expect(result.error).toMatch(/provider_error/);
     await ask(failed.session, { text: "Hi again" }, deps(provider));
-    expect(provider.requests[1].messages).toEqual([
-      { role: "user", content: "Hi again" },
-    ]);
+    expect(opened(provider)[1].messages).toEqual([{ role: "user", content: "Hi again" }]);
   });
 
   it("survives its file: what is written reads back the same", async () => {

@@ -7,11 +7,19 @@
 import type { AssistantContextPayload } from "../assistant/protocol";
 import type { AssistantProvider } from "../assistant/provider";
 import { ProviderFailure, type ProviderFailureKind } from "../assistant/provider";
-import type { ProviderMessagesRequest } from "../assistant/providerRequest";
+import {
+  continuesTurn,
+  type ProviderMessagesRequest,
+} from "../assistant/providerRequest";
 
 export type ScriptStep =
   | { readonly event: unknown }
-  | { readonly fail: ProviderFailureKind; readonly status?: number }
+  | {
+      readonly fail: ProviderFailureKind;
+      readonly status?: number;
+      /** The account is out of API credit (`ProviderFailure.outOfCredit`). */
+      readonly outOfCredit?: boolean;
+    }
   /** Never yields again until the call is aborted. */
   | { readonly hang: true }
   /** Pauses this long (real milliseconds) before the next step. */
@@ -95,6 +103,29 @@ export function replyEvents(
 }
 
 /**
+ * The wire events of a later step that ends the turn with nothing more to say.
+ * It reports no tokens, so a test's totals are those of the replies it scripted.
+ */
+export function finishedEvents(): ScriptStep[] {
+  return [
+    {
+      event: {
+        type: "message_start",
+        message: { id: "msg_scripted", usage: { input_tokens: 0, output_tokens: 0 } },
+      },
+    },
+    {
+      event: {
+        type: "message_delta",
+        delta: { stop_reason: "end_turn" },
+        usage: { output_tokens: 0 },
+      },
+    },
+    { event: { type: "message_stop" } },
+  ];
+}
+
+/**
  * The wire events of a reply that says `text` and then calls tools, each
  * call's input streamed as JSON in two pieces, ending in `tool_use`.
  */
@@ -136,10 +167,17 @@ export function toolUseEvents(
 
 export function createScriptedAssistantProvider(
   scripts: readonly CallScript[],
+  /**
+   * What each call that continues a turn after its tool calls gets
+   * (`gateway.ts`), in order; once they run out, a reply that ends the turn.
+   * They are apart from `scripts`, which a test numbers one per turn.
+   */
+  continuations: readonly CallScript[] = [],
 ): ScriptedAssistantProvider {
   const requests: ProviderMessagesRequest[] = [];
   let aborted = 0;
   let call = 0;
+  let continued = 0;
   return {
     requests,
     get aborted() {
@@ -147,8 +185,14 @@ export function createScriptedAssistantProvider(
     },
     stream(request, signal) {
       requests.push(request);
-      const script = scripts[call] ?? scripts[scripts.length - 1] ?? [];
-      call += 1;
+      let script: CallScript;
+      if (continuesTurn(request)) {
+        script = continuations[continued] ?? finishedEvents();
+        continued += 1;
+      } else {
+        script = scripts[call] ?? scripts[scripts.length - 1] ?? [];
+        call += 1;
+      }
       return (async function* () {
         for (const step of script) {
           if (signal.aborted) {
@@ -159,7 +203,9 @@ export function createScriptedAssistantProvider(
             await Promise.resolve();
             yield step.event;
           } else if ("fail" in step) {
-            throw new ProviderFailure(step.fail, step.status ?? null);
+            throw new ProviderFailure(step.fail, step.status ?? null, {
+              outOfCredit: step.outOfCredit,
+            });
           } else if ("wait" in step) {
             await new Promise<void>((resolve) => setTimeout(resolve, step.wait));
           } else if ("hang" in step) {

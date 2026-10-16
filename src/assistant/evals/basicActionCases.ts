@@ -89,6 +89,7 @@ interface BasicCaseOptions {
   readonly selection?: EvalSelection;
   readonly history?: readonly AssistantMessage[];
   readonly expect?: EvalCase["expect"];
+  readonly exempt?: EvalCase["exempt"];
 }
 
 function basicCase(
@@ -108,6 +109,7 @@ function basicCase(
     history: options.history,
     expect: options.expect ?? "proposal",
     checks: ["exactEdit", "nothingElse"],
+    exempt: options.exempt,
     action,
     fixture,
     selection: options.selection ?? null,
@@ -313,7 +315,8 @@ export const BASIC_ACTION_CASES: readonly EvalCase[] = [
     notes,
     clearsClip("Chords"),
     tracks("Chords"),
-    { selection: { clips: ["Chords"] } },
+    // The empty clip is the edit asked for, which check 16 would fail.
+    { selection: { clips: ["Chords"] }, exempt: ["noEmptyClips"] },
   ),
   // Song-wide (27, 28)
   basicCase(

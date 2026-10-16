@@ -106,14 +106,11 @@ function scriptedFetch(respond: (sent: Sent) => Response) {
 const streamResponse = (body: string | ReadableStream<Uint8Array>) =>
   new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
 
-const errorResponse = (status: number, type: string) =>
-  new Response(
-    JSON.stringify({ type: "error", error: { type, message: "echo of the request" } }),
-    {
-      status,
-      headers: { "content-type": "application/json" },
-    },
-  );
+const errorResponse = (status: number, type: string, message = "echo of the request") =>
+  new Response(JSON.stringify({ type: "error", error: { type, message } }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 
 async function drain(stream: AsyncIterable<unknown>): Promise<unknown[]> {
   const events: unknown[] = [];
@@ -162,6 +159,37 @@ describe("createAnthropicProvider", () => {
       expect(sent).toHaveLength(1);
     },
   );
+
+  it("tells an account out of credit apart from any other refusal", async () => {
+    const credit = scriptedFetch(() =>
+      errorResponse(
+        400,
+        "invalid_request_error",
+        "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+      ),
+    );
+    const out = await failureOf(
+      drain(
+        createAnthropicProvider({ apiKey: "k", fetch: credit.fetchImpl }).stream(
+          request,
+          new AbortController().signal,
+        ),
+      ),
+    );
+    expect(out).toMatchObject({ kind: "rejected", status: 400, outOfCredit: true });
+    expect(out.message).not.toContain("credit");
+
+    const other = scriptedFetch(() => errorResponse(400, "invalid_request_error"));
+    const refused = await failureOf(
+      drain(
+        createAnthropicProvider({ apiKey: "k", fetch: other.fetchImpl }).stream(
+          request,
+          new AbortController().signal,
+        ),
+      ),
+    );
+    expect(refused.outOfCredit).toBe(false);
+  });
 
   it("maps an error event inside an open stream", async () => {
     const body =

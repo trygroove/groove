@@ -162,18 +162,23 @@ describe("the assistant's system prompt", () => {
       "Always start the reply with a sentence saying what you are proposing or asking, before any tool call",
     );
     expect(ASSISTANT_SYSTEM_PROMPT).toContain(
-      "a reply that runs out of it is lost whole",
+      "a step that runs out of it loses the whole reply",
     );
     expect(ASSISTANT_SYSTEM_PROMPT).toContain("looped: true to fill its length");
     expect(ASSISTANT_SYSTEM_PROMPT).toContain("never the whole part you would propose");
   });
 
   // GRV-6 QA: a "broken" re-sketch proposed only notes_clear on the kick and
-  // bass clips, meaning to write the new notes once the calls came back.
-  it("says no tool answers back, so a replacement is cleared and written in one reply", () => {
-    expect(ASSISTANT_SYSTEM_PROMPT).toContain("No tool ever answers back");
+  // bass clips, meaning to write the new notes once the calls came back. A
+  // turn now goes on in steps (steps.ts), but a replacement still stays in one.
+  it("builds a proposal in narrated steps, ended by explain_change", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("No tool ever answers back");
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("each step starts with one short sentence");
     expect(ASSISTANT_SYSTEM_PROMPT).toContain(
-      "to replace a clip's notes, clear them and add the new ones (note_add) in the same reply",
+      "to replace a clip's notes, clear them and add the new ones (note_add) in the same step",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "call explain_change once, as your last call",
     );
   });
 

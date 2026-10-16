@@ -30,7 +30,7 @@ import { createSeededIdFactory } from "../../domain/ids";
 import { TICKS_PER_BAR, TICKS_PER_SIXTEENTH } from "../../domain/time";
 import { factoryLibraryEntry, factoryPack } from "../../library/factoryLibrary";
 import { historyProposalTarget } from "../historyProposalTarget";
-import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
+import { ASSISTANT_TOOLSET_VERSION, toolCallsFor } from "../tools";
 import { EVAL_PARTS, type EvalScope, resolveScope } from "./cases";
 import {
   checkAtomicUndo,
@@ -61,10 +61,7 @@ function proposalOf(commands: readonly CommandInput<unknown>[], base = project) 
   return {
     baseRevision: base.metadata.revision,
     toolsetVersion: ASSISTANT_TOOLSET_VERSION,
-    calls: commands.map((command) => ({
-      name: toolNameFor(command.type),
-      input: command.payload,
-    })),
+    calls: commands.flatMap((command) => toolCallsFor(command)),
   };
 }
 
@@ -334,7 +331,7 @@ describe("check 4: atomic undo", () => {
       }),
     );
     expect(result.status).toBe("fail");
-    expect(result.detail).toContain("2 history entries");
+    expect(result.detail).toContain("4 history entries");
   });
 
   it("fails when one undo does not restore the song", () => {

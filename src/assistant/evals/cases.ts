@@ -123,6 +123,12 @@ export interface EvalCase {
   readonly expect: EvalExpectation;
   /** Checks of its own, judged on an applied proposal beside the shared ones. */
   readonly checks?: readonly CaseCheckId[];
+  /**
+   * Checks every case is judged by (`EVERY_CASE_CHECKS`) that this one's
+   * request makes wrong: "clear this clip" asks for the empty clip check 16
+   * fails.
+   */
+  readonly exempt?: readonly CaseCheckId[];
   /** What the `endsAt` check holds a parameter to. */
   readonly expectedValue?: ExpectedValue;
   /** The edit `exactEdit` and `nothingElse` judge (GRV-119). */
@@ -474,7 +480,7 @@ export const TYPESCRIPT_CASES: readonly EvalCase[] = [
     fixture: createBdSketchProject,
     selection: null,
     scope: SKETCH_SCOPE,
-    checks: ["noEmptyClips", "noNoOps"],
+    checks: ["noNoOps"],
   },
   {
     id: "noop-bd-only",
@@ -523,6 +529,7 @@ export const jsonEvalCaseSchema = z.strictObject({
   history: z.array(assistantMessageSchema).optional(),
   expect: z.enum(["proposal", "ask", "either", "explain"]),
   checks: z.array(z.enum(CASE_CHECK_IDS)).optional(),
+  exempt: z.array(z.enum(CASE_CHECK_IDS)).optional(),
   expectedValue: z
     .strictObject({
       track: z.string().min(1),

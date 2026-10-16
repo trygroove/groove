@@ -543,6 +543,10 @@ export function formatResult(result: TryResult): string {
       }
       const lines = [
         ...callLines(result.calls),
+        ...result.refusedBack.map(
+          (call) => `Refused back to the model: ${call.name}: ${call.reason}`,
+        ),
+        ...(result.refusedBack.length > 0 ? [""] : []),
         "Reply:",
         result.reply.trim() || "(no text)",
       ];

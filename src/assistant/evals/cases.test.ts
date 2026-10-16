@@ -7,7 +7,7 @@ import { serializeProject, stringifyProject } from "../../domain/serialize";
 import { TICKS_PER_BAR } from "../../domain/time";
 import { buildAssistantPayload } from "../payload";
 import { assistantContextPayloadSchema, assistantTurnRequestSchema } from "../protocol";
-import { CASE_CHECK_IDS } from "./caseChecks";
+import { CASE_CHECK_IDS, caseChecksFor } from "./caseChecks";
 import {
   caseMessages,
   casePairs,
@@ -284,7 +284,20 @@ describe("the cases from GRV-6's QA findings", () => {
       "Melody",
       "Texture",
     ]);
-    expect(resketch.checks).toEqual(["noEmptyClips", "noNoOps"]);
+    // Check 16 judges every case now; the case names only its own.
+    expect(resketch.checks).toEqual(["noNoOps"]);
+    expect(caseChecksFor(resketch.checks)).toEqual([
+      "noEmptyClips",
+      "noNoOps",
+      "clipsPlaced",
+    ]);
+    // "Clear the notes in this clip" asks for the empty clip check 16 fails.
+    const clear = byId("basic-clear-clip");
+    expect(caseChecksFor(clear.checks, clear.exempt)).toEqual([
+      "exactEdit",
+      "nothingElse",
+      "clipsPlaced",
+    ]);
     expect(byId("noop-bd-only").request).toBe(resketch.request);
     expect(byId("noop-bd-only").checks).toEqual(["noNoOps"]);
   });

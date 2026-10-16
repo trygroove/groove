@@ -176,7 +176,10 @@ describe("the assistant with retention on, off, or never answered", () => {
     const provider = createScriptedAssistantProvider([
       replyEvents(["Here is ", "one idea."]),
       toolUseEvents("Try this.", [
-        { name: "set_track_volume", input: { trackId: "trk_1", value: -6 } },
+        {
+          name: "track_setFlag",
+          input: { trackId: "trk_Bass00000000000000001", flag: "muted", value: true },
+        },
       ]),
       replyEvents(["Refused."], { stopReason: "refusal" }),
     ]);

@@ -16,9 +16,10 @@
  * - {@link checkDissonant}: a chord on the new synth track holds a minor 2nd,
  *   a major 7th or a tritone.
  *
- * GRV-107's four (`addsTracks`, `endsAt`, `noEmptyClips`, `noNoOps`) are in
- * `caseChecksQa.ts`; GRV-119's two (`exactEdit`, `nothingElse`), which judge
+ * GRV-107's four (`addsTracks`, `endsAt`, `noEmptyClips`, `noNoOps`) and
+ * `clipsPlaced` are in `caseChecksQa.ts`; GRV-119's two (`exactEdit`, `nothingElse`), which judge
  * a basic production action, are in `basicActionChecks.ts`.
+ * `noEmptyClips` and `clipsPlaced` judge every case ({@link EVERY_CASE_CHECKS}).
  */
 
 import type { RawCommandInput } from "../../commands/types";
@@ -32,6 +33,7 @@ import { TICKS_PER_BAR } from "../../domain/time";
 import { type BasicAction, checkNothingElse } from "./basicActionChecks";
 import {
   checkAddsTracks,
+  checkClipsPlaced,
   checkEndsAt,
   checkNoEmptyClips,
   checkNoNoOps,
@@ -64,8 +66,30 @@ export const CASE_CHECK_IDS = [
   // GRV-119: the basic production actions.
   "exactEdit",
   "nothingElse",
+  // A proposal that stops partway: a clip made and never placed.
+  "clipsPlaced",
 ] as const;
 export type CaseCheckId = (typeof CASE_CHECK_IDS)[number];
+
+/**
+ * The case checks every case is judged by, whatever it names: a proposal that
+ * stops partway applies cleanly and passes checks 1 to 5, so only these see
+ * it (notes cleared and never written, a clip made and never placed).
+ */
+export const EVERY_CASE_CHECKS: readonly CaseCheckId[] = ["noEmptyClips", "clipsPlaced"];
+
+/**
+ * The case checks `named` adds to {@link EVERY_CASE_CHECKS}, less those the
+ * case is `exempt` from, in registry order.
+ */
+export function caseChecksFor(
+  named: readonly CaseCheckId[] = [],
+  exempt: readonly CaseCheckId[] = [],
+): CaseCheckId[] {
+  const wanted = new Set([...EVERY_CASE_CHECKS, ...named]);
+  for (const id of exempt) wanted.delete(id);
+  return CASE_CHECK_IDS.filter((id) => wanted.has(id));
+}
 
 // ---------------------------------------------------------------------------
 // Expected outcome
@@ -514,5 +538,7 @@ export function runCaseCheck(
       return inputs.action
         ? checkNothingElse(before, after, inputs.action.allows(before, after))
         : fail("The case names no action");
+    case "clipsPlaced":
+      return checkClipsPlaced(before, after);
   }
 }

@@ -65,10 +65,25 @@ function problemOf(issue: z.core.$ZodIssue, value: unknown): string {
 }
 
 /** What the fields suggest went wrong, in words. */
-function hintsFor(issues: readonly z.core.$ZodIssue[]): string[] {
+function hintsFor(
+  issues: readonly z.core.$ZodIssue[],
+  schema: z.ZodType<unknown>,
+  input: unknown,
+): string[] {
   const hints: string[] = [];
   for (const issue of issues) {
-    if (issue.code !== "unrecognized_keys" || issue.path.length === 0) continue;
+    if (issue.code !== "unrecognized_keys") continue;
+    if (issue.path.length === 0) {
+      // The whole input under one key: `{"track": {...}}` to a tool that takes the track.
+      const [key] = issue.keys;
+      const inner = (input as Record<string, unknown> | null)?.[key];
+      if (issue.keys.length === 1 && schema.safeParse(inner).success) {
+        hints.push(
+          `"${key}" wraps the whole input: the model nested it one level too deep. Its fields belong at the top level.`,
+        );
+      }
+      continue;
+    }
     const at = issue.path.map(String).join(".");
     const last = String(issue.path[issue.path.length - 1]);
     if (issue.keys.includes(last)) {
@@ -87,15 +102,16 @@ function fieldsOf(
   fields: FieldIssue[];
   hints: string[];
 } | null {
-  const parsed = toolPayloadSchema(name)?.safeParse(input);
-  if (!parsed || parsed.success) return null;
+  const schema = toolPayloadSchema(name);
+  const parsed = schema?.safeParse(input);
+  if (!schema || !parsed || parsed.success) return null;
   const issues = parsed.error.issues;
   return {
     fields: issues.map((issue) => ({
       path: issue.path.map(String).join(".") || "(input)",
       problem: problemOf(issue, valueAt(input, issue.path)),
     })),
-    hints: hintsFor(issues),
+    hints: hintsFor(issues, schema, input),
   };
 }
 
