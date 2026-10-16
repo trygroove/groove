@@ -42,6 +42,7 @@ import {
   type AssistantTurnRequest,
 } from "./protocol";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
+import { ADDED_RESULT } from "./steps";
 import { type AssistantTurnLog, TURN_LOG_KEYS } from "./telemetry";
 import {
   ASSISTANT_TOOLSET_VERSION,
@@ -83,8 +84,9 @@ interface Harness {
 function harness(
   scripts: readonly CallScript[],
   limits: Partial<AssistantCallLimits> = {},
+  continuations: readonly CallScript[] = [],
 ): Harness {
-  const provider = createScriptedAssistantProvider(scripts);
+  const provider = createScriptedAssistantProvider(scripts, continuations);
   const logs: AssistantTurnLog[] = [];
   const sleeps: number[] = [];
   const guards = createInMemoryGuardStores();
@@ -536,21 +538,26 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
     expect(validation.ok ? null : validation.issues[0].code).toBe("stale_revision");
   });
 
+  // A turn of one call (maxSteps 1), whose calls go to the browser as they
+  // came; a stepped turn refuses them back to the model instead (below).
   it("returns a tool call with no input as an empty object", async () => {
     const events = toolUseEvents("Clearing it.", [{ name: "notes_clear", input: {} }]);
-    const h = harness([
-      events.map((step) =>
-        "event" in step &&
-        (step.event as { delta?: { type?: string } }).delta?.type === "input_json_delta"
-          ? {
-              event: {
-                ...(step.event as object),
-                delta: { type: "input_json_delta", partial_json: "" },
-              },
-            }
-          : step,
-      ),
-    ]);
+    const h = harness(
+      [
+        events.map((step) =>
+          "event" in step &&
+          (step.event as { delta?: { type?: string } }).delta?.type === "input_json_delta"
+            ? {
+                event: {
+                  ...(step.event as object),
+                  delta: { type: "input_json_delta", partial_json: "" },
+                },
+              }
+            : step,
+        ),
+      ],
+      { maxSteps: 1 },
+    );
     const result = await run(h);
     expect(result.proposal?.calls).toEqual([
       { id: "toolu_1", name: "notes_clear", input: {} },
@@ -583,27 +590,30 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
     ["input that is not an object", "[1, 2]", [1, 2]],
   ])("returns %s as a proposal the browser refuses", async (_label, json, input) => {
     const events = toolUseEvents("Muting it.", [muteCall]);
-    const h = harness([
-      events.map((step, index) =>
-        "event" in step &&
-        (step.event as { delta?: { type?: string } }).delta?.type === "input_json_delta"
-          ? {
-              event: {
-                ...(step.event as object),
-                delta: {
-                  type: "input_json_delta",
-                  // The whole input in the first piece, nothing in the second.
-                  partial_json:
-                    (events[index - 1] as { event: { type: string } }).event.type ===
-                    "content_block_start"
-                      ? json
-                      : "",
+    const h = harness(
+      [
+        events.map((step, index) =>
+          "event" in step &&
+          (step.event as { delta?: { type?: string } }).delta?.type === "input_json_delta"
+            ? {
+                event: {
+                  ...(step.event as object),
+                  delta: {
+                    type: "input_json_delta",
+                    // The whole input in the first piece, nothing in the second.
+                    partial_json:
+                      (events[index - 1] as { event: { type: string } }).event.type ===
+                      "content_block_start"
+                        ? json
+                        : "",
+                  },
                 },
-              },
-            }
-          : step,
-      ),
-    ]);
+              }
+            : step,
+        ),
+      ],
+      { maxSteps: 1 },
+    );
     const result = await run(h);
     expect(result.proposal?.calls).toEqual([
       { id: "toolu_1", name: muteCall.name, input },
@@ -803,7 +813,7 @@ describe("runAssistantTurn: timeout", () => {
             ...rest,
           ],
         ],
-        { inactivityTimeoutMs: 40 },
+        { inactivityTimeoutMs: 40, maxSteps: 1 },
       );
       const started = Date.now();
       const result = await run(h);
@@ -1038,5 +1048,148 @@ describe("runAssistantTurn: redacted telemetry", () => {
     ]);
     await run(h);
     expect(h.logs[0]).toMatchObject({ inputTokens: 120, outputTokens: 10 });
+  });
+});
+
+describe("runAssistantTurn: a turn in steps", () => {
+  const project = createReferenceProject();
+  const [track] = project.song.tracks;
+  const muteCall = call(setTrackFlag(track.id, "muted", !track.mixer.muted));
+  const volumeCall = call(
+    setParameter({ scope: "track", trackId: track.id, parameterId: TRACK_VOLUME.id }, -9),
+  );
+  const explainCall = {
+    name: EXPLAIN_TOOL_NAME,
+    input: { goal: "A quieter track", technique: "Pull the fader down" },
+  };
+
+  /** `script` with a signed thinking block before its stop. */
+  function withThinking(script: CallScript): CallScript {
+    const thinking = [
+      {
+        event: {
+          type: "content_block_start",
+          index: 9,
+          content_block: { type: "thinking" },
+        },
+      },
+      {
+        event: {
+          type: "content_block_delta",
+          index: 9,
+          delta: { type: "thinking_delta", thinking: "Mute first." },
+        },
+      },
+      {
+        event: {
+          type: "content_block_delta",
+          index: 9,
+          delta: { type: "signature_delta", signature: "sig-1" },
+        },
+      },
+      { event: { type: "content_block_stop", index: 9 } },
+    ];
+    return [script[0], ...thinking, ...script.slice(1)];
+  }
+
+  it("goes on after change calls until the proposal is explained, one paragraph a step", async () => {
+    const h = harness([toolUseEvents("First I'll mute the track.", [muteCall])], {}, [
+      toolUseEvents("Next, its volume.", [volumeCall, explainCall]),
+    ]);
+    const result = await run(h);
+    expect(h.provider.requests).toHaveLength(2);
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([
+      muteCall.name,
+      volumeCall.name,
+      EXPLAIN_TOOL_NAME,
+    ]);
+    expect(result.text).toBe("First I'll mute the track.\n\nNext, its volume.");
+    expect(
+      h.chunks.map((chunk) => (chunk.type === "text" ? chunk.text : "")).join(""),
+    ).toBe(result.text);
+    expect(result.stopReason).toBe("tool_use");
+    expect(h.logs[0]).toMatchObject({ outcome: "completed", attempts: 2 });
+  });
+
+  it("sends the step back, thinking unchanged, and answers each call", async () => {
+    const h = harness(
+      [withThinking(toolUseEvents("First I'll mute the track.", [muteCall]))],
+      {},
+      [toolUseEvents("Done.", [explainCall])],
+    );
+    await run(h);
+    const [assistant, answers] = h.provider.requests[1].messages.slice(-2);
+    expect(assistant).toEqual({
+      role: "assistant",
+      content: [
+        { type: "text", text: "First I'll mute the track." },
+        { type: "tool_use", id: "toolu_1", name: muteCall.name, input: muteCall.input },
+        { type: "thinking", thinking: "Mute first.", signature: "sig-1" },
+      ],
+    });
+    expect(answers).toEqual({
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "toolu_1", content: ADDED_RESULT }],
+    });
+  });
+
+  it("ends the turn when a later step has nothing more to say", async () => {
+    // The scripted provider ends a continued turn once its script runs out.
+    const h = harness([toolUseEvents("Muting it.", [muteCall])]);
+    const result = await run(h);
+    expect(h.provider.requests).toHaveLength(2);
+    expect(result.text).toBe("Muting it.");
+    expect(result.proposal?.calls).toEqual([{ id: "toolu_1", ...muteCall }]);
+  });
+
+  it("takes one step when the reply explains, asks or changes nothing", async () => {
+    const explained = harness([toolUseEvents("Muting it.", [muteCall, explainCall])]);
+    await run(explained);
+    expect(explained.provider.requests).toHaveLength(1);
+    const plain = harness([replyEvents(["Nothing to change."])]);
+    await run(plain);
+    expect(plain.provider.requests).toHaveLength(1);
+  });
+
+  it("refuses a call that does not fit its tool back to the model, and keeps the corrected one", async () => {
+    const h = harness(
+      [toolUseEvents("Muting it.", [{ name: muteCall.name, input: { flag: "muted" } }])],
+      {},
+      [toolUseEvents("Fixed.", [muteCall, explainCall])],
+    );
+    const result = await run(h);
+    const answers = h.provider.requests[1].messages.at(-1);
+    expect(answers?.content).toEqual([
+      expect.objectContaining({ tool_use_id: "toolu_1", is_error: true }),
+    ]);
+    expect(JSON.stringify(answers?.content)).toContain(
+      "Refused, not added to the proposal",
+    );
+    expect(result.proposal?.calls.map((entry) => entry.input)).toEqual([
+      muteCall.input,
+      explainCall.input,
+    ]);
+  });
+
+  it("hands the last step allowed on as it came", async () => {
+    const h = harness([toolUseEvents("First.", [muteCall])], { maxSteps: 2 }, [
+      toolUseEvents("Second.", [volumeCall]),
+      toolUseEvents("Third.", [muteCall]),
+    ]);
+    const result = await run(h);
+    expect(h.provider.requests).toHaveLength(2);
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([
+      muteCall.name,
+      volumeCall.name,
+    ]);
+  });
+
+  it("counts every step against the account's requests", async () => {
+    const h = harness([toolUseEvents("First.", [muteCall])], {}, [
+      toolUseEvents("Done.", [explainCall]),
+    ]);
+    const before = await run(harness([replyEvents(["ok"])]));
+    const after = await run(h);
+    expect(after.requestsRemaining).toBe((before.requestsRemaining ?? 0) - 1);
   });
 });

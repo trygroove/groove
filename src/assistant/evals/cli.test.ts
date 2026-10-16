@@ -29,7 +29,13 @@ describe("parseEvalArgs", () => {
       fromTranscript: null,
       concurrency: 3,
       turnTimeoutMs: 540_000,
+      maxSteps: null,
     });
+  });
+
+  it("takes the most steps a turn may take, 1 for a turn of one call", () => {
+    expect(options(["--steps", "1"]).maxSteps).toBe(1);
+    expect(() => options(["--steps", "0"])).toThrow("--steps must be a whole number");
   });
 
   it("reads a transcript case file, alone (GRV-98)", () => {

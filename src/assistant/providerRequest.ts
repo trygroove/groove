@@ -38,10 +38,38 @@ export interface ProviderTextBlock {
   readonly text: string;
 }
 
-export interface ProviderMessage {
-  readonly role: "user" | "assistant";
+/**
+ * A block of the assistant's own reply, sent back unchanged when a turn
+ * continues after its tool calls (`gateway.ts`). Thinking keeps its signature.
+ */
+export type ProviderAssistantBlock =
+  | ProviderTextBlock
+  | { readonly type: "thinking"; readonly thinking: string; readonly signature: string }
+  | { readonly type: "redacted_thinking"; readonly data: string }
+  | {
+      readonly type: "tool_use";
+      readonly id: string;
+      readonly name: string;
+      readonly input: Record<string, unknown>;
+    };
+
+/** What the gateway answers one tool call with when the turn continues. */
+export interface ProviderToolResultBlock {
+  readonly type: "tool_result";
+  readonly tool_use_id: string;
   readonly content: string;
+  readonly is_error?: boolean;
 }
+
+export type ProviderMessage =
+  | {
+      readonly role: "user";
+      readonly content: string | readonly ProviderToolResultBlock[];
+    }
+  | {
+      readonly role: "assistant";
+      readonly content: string | readonly ProviderAssistantBlock[];
+    };
 
 /** A tool's input schema: a JSON Schema object, as the API requires. */
 export interface ProviderToolInputSchema {
@@ -134,4 +162,15 @@ export function buildProviderRequest(
         thinking: { type: "enabled", budget_tokens: model.thinking.budgetTokens },
       };
   }
+}
+
+/**
+ * Whether `request` continues a turn after its tool calls (`gateway.ts`):
+ * its last message answers them rather than being the producer's words.
+ */
+export function continuesTurn(
+  request: Pick<ProviderMessagesRequest, "messages">,
+): boolean {
+  const last = request.messages[request.messages.length - 1];
+  return last?.role === "user" && typeof last.content !== "string";
 }

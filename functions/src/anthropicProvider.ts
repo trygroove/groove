@@ -14,13 +14,19 @@
  *   which is the model's reply; the gateway logs only its redacted record.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import type { MessageCreateParamsStreaming } from "@anthropic-ai/sdk/resources/messages";
+import type {
+  MessageCreateParamsStreaming,
+  MessageParam,
+} from "@anthropic-ai/sdk/resources/messages";
 import {
   type AssistantProvider,
   failureKindForStatus,
   ProviderFailure,
 } from "../../src/assistant/provider";
-import type { ProviderMessagesRequest } from "../../src/assistant/providerRequest";
+import type {
+  ProviderMessage,
+  ProviderMessagesRequest,
+} from "../../src/assistant/providerRequest";
 
 export interface AnthropicProviderOptions {
   readonly apiKey: string;
@@ -34,7 +40,23 @@ function toSdkParams(request: ProviderMessagesRequest): MessageCreateParamsStrea
   return {
     ...request,
     system: [...request.system],
-    messages: [...request.messages],
+    messages: request.messages.map(toSdkMessage),
+  };
+}
+
+/** One message; a continued turn (`gateway.ts`) carries blocks, not just text. */
+function toSdkMessage(message: ProviderMessage): MessageParam {
+  if (message.role === "user") {
+    const { content } = message;
+    return {
+      role: "user",
+      content: typeof content === "string" ? content : [...content],
+    };
+  }
+  const { content } = message;
+  return {
+    role: "assistant",
+    content: typeof content === "string" ? content : [...content],
   };
 }
 

@@ -14,6 +14,7 @@ import {
   createIdStem,
   newId,
 } from "../prompt";
+import { continuesTurn } from "../providerRequest";
 import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { createHouseLoopProject } from "./fixtures";
@@ -84,7 +85,8 @@ describe("runEvals", () => {
       now: fixedNow,
     });
 
-    expect(provider.requests).toHaveLength(4);
+    // One request opens each turn; each then ends in a step of its own.
+    expect(provider.requests.filter((sent) => !continuesTurn(sent))).toHaveLength(4);
     expect(provider.requests[0].system[0].text).toBe(ASSISTANT_SYSTEM_PROMPT);
     expect(provider.requests[0].tools.length).toBeGreaterThan(0);
     expect(provider.requests[0].messages).toEqual([
@@ -309,7 +311,7 @@ describe("runEvals", () => {
     expect(replayed.records[0].checks).toEqual(report.records[0].checks);
     expect(replayed.scorecard).toEqual(report.scorecard);
     expect(replayed.scorecard.headline.applies).toEqual({ pass: 1, judged: 1, rate: 1 });
-    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests.filter((sent) => !continuesTurn(sent))).toHaveLength(1);
   });
 
   it("records each turn's token usage and time to first streamed text (GRV-102)", async () => {
@@ -392,7 +394,14 @@ describe("check 1 and new IDs", () => {
         deviceCall("dev_glue0000000000000001"),
       ]),
     ]);
-    const report = await runEvals({ provider, cases: [glue], runs: 1, now: fixedNow });
+    // A turn of one call: the browser sees the call as the model made it.
+    const report = await runEvals({
+      provider,
+      cases: [glue],
+      runs: 1,
+      now: fixedNow,
+      maxSteps: 1,
+    });
     const [record] = report.records;
     expect(record.checks.valid?.kind).toBe("schema");
     expect(validFailureLine(record)).toMatch(
@@ -426,10 +435,35 @@ describe("check 1 and new IDs", () => {
         ),
     );
     const provider = createScriptedAssistantProvider([truncated]);
-    const report = await runEvals({ provider, cases: [glue], runs: 1, now: fixedNow });
+    const report = await runEvals({
+      provider,
+      cases: [glue],
+      runs: 1,
+      now: fixedNow,
+      maxSteps: 1,
+    });
     const [record] = report.records;
     expect(record.error).toBeNull();
     expect(record.checks.valid?.kind).toBe("schema");
+  });
+
+  it("records a call refused back to the model mid-turn, and the calls the turn took", async () => {
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("A Compressor on the master.", [
+        deviceCall("dev_glue0000000000000001"),
+      ]),
+    ]);
+    const report = await runEvals({ provider, cases: [glue], runs: 1, now: fixedNow });
+    const [record] = report.records;
+    expect(record.steps?.calls).toBe(2);
+    expect(record.steps?.refused).toEqual([
+      {
+        name: "device_add",
+        reason: expect.stringContaining('device.id: Expected a "dev_" prefixed id'),
+      },
+    ]);
+    // The model ended without resending it, so nothing was proposed.
+    expect(record.checks.valid?.kind).toBe("no proposal");
   });
 
   it("records where a turn's output tokens went and prints them", async () => {

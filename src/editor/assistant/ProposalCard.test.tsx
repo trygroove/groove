@@ -8,8 +8,8 @@ import { createRecordingTransport } from "../../analytics/transport";
 import type { AssistantProposal } from "../../assistant/protocol";
 import {
   ASSISTANT_TOOLSET_VERSION,
+  CREATE_EXAMPLES,
   EXPLAIN_TOOL_NAME,
-  TRACK_CREATE_EXAMPLE,
 } from "../../assistant/tools";
 import {
   type ControlAddress,
@@ -499,14 +499,14 @@ describe("the proposal card (GRV-5)", () => {
   it("names a missing sound in plain words, and logs the rejection once with codes only (GRV-98)", async () => {
     const retention = createFakeRetentionClient({ answered: true });
     const { propose, client, events } = await setUp({ retention });
-    const input = structuredClone(TRACK_CREATE_EXAMPLE) as Record<string, unknown> & {
-      track: Record<string, unknown>;
-    };
-    input.track.name = "My secret pad";
-    input.track.instrument = {
-      kind: "sampler",
-      assetId: "ast_NoisePad0000000000001",
-      parameters: {},
+    const input = {
+      ...structuredClone(CREATE_EXAMPLES.track),
+      name: "My secret pad",
+      instrument: {
+        kind: "sampler",
+        assetId: "ast_NoisePad0000000000001",
+        parameters: {},
+      },
     };
     await propose([
       { id: "toolu_7", name: "track_create", input },

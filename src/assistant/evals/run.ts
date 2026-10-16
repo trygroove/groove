@@ -38,6 +38,7 @@ import {
   type AssistantStopReason,
 } from "../protocol";
 import type { AssistantProvider } from "../provider";
+import { continuesTurn, type ProviderMessagesRequest } from "../providerRequest";
 import type { ProviderUsage } from "../streamEvents";
 import type { AssistantTurnLog } from "../telemetry";
 import { ASSISTANT_TOOLSET_VERSION } from "../tools";
@@ -95,6 +96,17 @@ export interface EvalTokens {
   readonly textChars: number;
 }
 
+/** A call the gateway refused back to the model mid-turn (`steps.ts`). */
+export interface EvalRefusedCall {
+  readonly name: string;
+  readonly reason: string;
+}
+
+export interface EvalSteps {
+  readonly calls: number;
+  readonly refused: readonly EvalRefusedCall[];
+}
+
 /** What one turn came back with, or how it failed. */
 export interface EvalTurn {
   readonly durationMs: number;
@@ -112,6 +124,12 @@ export interface EvalTurn {
   readonly ask?: AssistantAsk | null;
   /** Where the output tokens went. Absent from reports saved before it existed. */
   readonly tokens?: EvalTokens;
+  /**
+   * The turn's steps (`steps.ts`): provider calls made, retries included, and
+   * every call the gateway refused back to the model. Absent from reports
+   * saved before turns took steps.
+   */
+  readonly steps?: EvalSteps;
   /**
    * The provider's token counts summed over the turn's calls, retries
    * included (GRV-102); null when the turn ended before the gateway logged
@@ -221,6 +239,8 @@ export interface RunTurnOptions {
   readonly now?: () => number;
   /** Aborts a turn that runs longer, as an errored turn. Default {@link DEFAULT_TURN_TIMEOUT_MS}. */
   readonly turnTimeoutMs?: number;
+  /** The most steps a turn may take; 1 is a turn of one call. Default production's. */
+  readonly maxSteps?: number;
 }
 
 class EvalTimeout extends Error {}
@@ -229,7 +249,10 @@ class EvalTimeout extends Error {}
 function measureProvider(provider: AssistantProvider): {
   provider: AssistantProvider;
   tokens: () => EvalTokens;
+  steps: () => EvalSteps;
 } {
+  let calls = 0;
+  const refused: EvalRefusedCall[] = [];
   let outputTokens: number | null = null;
   let thinkingChars = 0;
   let toolInputChars = 0;
@@ -237,6 +260,8 @@ function measureProvider(provider: AssistantProvider): {
   return {
     provider: {
       async *stream(request, signal) {
+        calls += 1;
+        refused.push(...refusalsIn(request));
         for await (const raw of provider.stream(request, signal)) {
           const event = raw as {
             type?: string;
@@ -258,7 +283,34 @@ function measureProvider(provider: AssistantProvider): {
       },
     },
     tokens: () => ({ outputTokens, thinkingChars, toolInputChars, textChars }),
+    steps: () => ({ calls, refused: [...refused] }),
   };
+}
+
+/**
+ * The calls a continued request tells the model were refused: its last
+ * message's error results, each named by the tool call it answers. A retry
+ * resends the same request, so a refusal already counted is not counted again.
+ */
+function refusalsIn(request: ProviderMessagesRequest): EvalRefusedCall[] {
+  if (!continuesTurn(request)) return [];
+  const { messages } = request;
+  const last = messages[messages.length - 1];
+  const before = messages[messages.length - 2];
+  if (last?.role !== "user" || typeof last.content === "string") return [];
+  const asked =
+    before?.role === "assistant" && typeof before.content !== "string"
+      ? before.content
+      : [];
+  const names = new Map(
+    asked.flatMap((block) => (block.type === "tool_use" ? [[block.id, block.name]] : [])),
+  );
+  return last.content
+    .filter((answer) => answer.is_error)
+    .map((answer) => ({
+      name: names.get(answer.tool_use_id) ?? "unknown",
+      reason: answer.content,
+    }));
 }
 
 /** Runs one case once through the gateway's own turn. Never throws for a failed turn. */
@@ -301,6 +353,9 @@ export async function runCaseTurn(
           now,
           model: options.model,
           guardLimits: EVAL_GUARD_LIMITS,
+          ...(options.maxSteps === undefined
+            ? {}
+            : { limits: { ...ASSISTANT_CALL_LIMITS, maxSteps: options.maxSteps } }),
         },
         EVAL_CALLER,
         {
@@ -328,6 +383,7 @@ export async function runCaseTurn(
       proposal: result.proposal,
       ask: result.ask,
       tokens: measured.tokens(),
+      steps: measured.steps(),
       ...timing(),
     };
   } catch (error) {
@@ -353,6 +409,7 @@ export async function runCaseTurn(
     return {
       ...erroredTurn(now() - startedAt, turnError),
       tokens: measured.tokens(),
+      steps: measured.steps(),
       ...timing(),
     };
   } finally {

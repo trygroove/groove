@@ -14,6 +14,7 @@
  *   bun run eval:assistant -- --model claude-haiku-4-5
  *   bun run eval:assistant -- --out tmp/evals    where the report goes
  *   bun run eval:assistant -- --timeout 180      per-turn limit in seconds (default 540, production's)
+ *   bun run eval:assistant -- --steps 1          steps a turn may take (default production's; 1 is one call)
  *   bun run eval:assistant -- --replay <report.json>
  *       re-judge a saved report's proposals with the current checks (no model call)
  *   bun run eval:assistant -- --baseline docs/assistant-eval-baseline.json
@@ -37,7 +38,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createAnthropicProvider } from "../functions/src/anthropicProvider";
-import { ASSISTANT_MODELS } from "../src/assistant/config";
+import { ASSISTANT_MAX_STEPS, ASSISTANT_MODELS } from "../src/assistant/config";
 import { evalCaseFromTranscript } from "../src/assistant/evals/cases";
 import { CHECK_IDS, CHECK_LABELS } from "../src/assistant/evals/checks";
 import {
@@ -49,12 +50,12 @@ import {
   requireApiKey,
   selectEvalCases,
 } from "../src/assistant/evals/cli";
+import { failureDigestLines, recordLines } from "../src/assistant/evals/consoleOutput";
 import {
   formatTally,
   type MarkdownBaseline,
   renderMarkdown,
   renderSummaryMarkdown,
-  validFailureLine,
 } from "../src/assistant/evals/markdown";
 import {
   buildReport,
@@ -141,6 +142,7 @@ function printSummary(
       `\nLatency p50 ${secondary.latencyMs.p50 ?? "n/a"} ms, p95 ${secondary.latencyMs.p95 ?? "n/a"} ms; cost ${cost === null ? "n/a" : `$${cost.toFixed(4)}`}`,
     );
   }
+  for (const line of failureDigestLines(report)) console.log(line);
   if (errored.total > 0) {
     console.log(
       `\n${errored.total} of ${report.records.length} turns errored and were judged by no check.`,
@@ -155,22 +157,9 @@ function printSummary(
   console.log(`\nReport: ${join(dir, "report.md")} and ${join(dir, "report.json")}`);
 }
 
-/** One line per run: a mark per check, and why it errored or failed check 1. */
+/** One line per run naming its calls, then a line per check it failed. */
 function printRecord(record: EvalRecord): void {
-  const marks = CHECK_IDS.map((id) => {
-    const status = record.checks[id]?.status;
-    return status === "pass"
-      ? "+"
-      : status === "fail"
-        ? "x"
-        : status === "skip"
-          ? "."
-          : " ";
-  }).join("");
-  const valid = validFailureLine(record);
-  console.log(
-    `  [${record.error ? "errored" : marks}] ${record.caseId} run ${record.run}${record.error ? ` (${record.error})` : ""}${valid ? ` (check 1: ${valid})` : ""}`,
-  );
+  for (const line of recordLines(record)) console.log(line);
 }
 
 async function replay(path: string, options: EvalCliOptions): Promise<EvalReport> {
@@ -224,7 +213,7 @@ async function live(options: EvalCliOptions): Promise<EvalReport> {
   const baseline = await readBaseline(options.baseline);
   const model = ASSISTANT_MODELS[options.model];
   console.log(
-    `Running ${cases.length} cases x ${options.runs} runs against ${model.id} (the live model)...`,
+    `Running ${cases.length} cases x ${options.runs} runs against ${model.id} (the live model), up to ${options.maxSteps ?? ASSISTANT_MAX_STEPS} steps a turn...`,
   );
   const report = await runEvals({
     provider: createAnthropicProvider({ apiKey }),
@@ -233,6 +222,7 @@ async function live(options: EvalCliOptions): Promise<EvalReport> {
     runs: options.runs,
     concurrency: options.concurrency,
     turnTimeoutMs: options.turnTimeoutMs,
+    ...(options.maxSteps === null ? {} : { maxSteps: options.maxSteps }),
     onRecord: printRecord,
   });
   const compared = comparedTo(report, baseline);
