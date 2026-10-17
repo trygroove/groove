@@ -1223,3 +1223,19 @@ describe("a landing visit's attribution through the real SDK (GRV-123)", () => {
     }
   });
 });
+
+describe("the session a server-side trace joins (GRV-126)", () => {
+  it("is null until the client loads, then the client's session", async () => {
+    const client = fakeClient();
+    let resolve: (value: PostHogClient) => void = () => {};
+    const transport = createPostHogTransport({
+      load: () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    });
+    expect(transport.sessionId?.()).toBeNull();
+    resolve(client);
+    await settled(() => expect(transport.sessionId?.()).toBe("session-1"));
+  });
+});

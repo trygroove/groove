@@ -22,6 +22,13 @@
  * says inputs and outputs are deleted "within 30 days of receipt or
  * generation", and kept "for up to 2 years" when flagged by its trust and
  * safety systems. Re-read them whenever this copy ships again.
+ *
+ * GRV-126 adds the fourth paragraph: a kept conversation, with what was sent
+ * to Anthropic for it, also goes to PostHog (ADR 0003 and ADR 0011 decision
+ * 4, as amended), and only while product analytics is allowed. Turning
+ * keeping off stops new ones going there but does not delete PostHog's
+ * copies, which expire under PostHog's own data retention, so nothing here
+ * may promise that turning it off deletes everything.
  */
 import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import { TRANSCRIPT_RETENTION_DAYS } from "../../assistant/transcripts";
@@ -32,11 +39,15 @@ const DAYS = `${TRANSCRIPT_RETENTION_DAYS} days`;
 
 export const DISCLOSURE_TITLE = `About ${ASSISTANT_NAME}`;
 
-/** The disclosure's paragraphs, in order: what is sent, the provider, what Groove keeps. */
+/**
+ * The disclosure's paragraphs, in order: what is sent, the provider, what
+ * Groove keeps, and where else a kept conversation goes.
+ */
 export const DISCLOSURE_PARAGRAPHS: readonly string[] = [
   `Groove sends Anthropic — the AI service behind ${ASSISTANT_NAME} — your message along with a description of the project you're working in: its name, your track and section names, the tempo and structure, your mixer settings, and the notes in whatever you currently have selected. It does not send your audio, and it does not send the rest of your project.`,
   "Anthropic does not use anything we send it to train their AI models, and they delete it within 30 days — unless their automated safety systems flag something, in which case they can keep it for up to two years.",
   `Separately, unless you tell it not to, Groove keeps your conversations — your messages, ${ASSISTANT_NAME}'s replies, and the changes it proposes, including any notes it writes for you — for ${DAYS}. Our goal is to make ${ASSISTANT_NAME} better. The team may read them. After ${DAYS} they are deleted.`,
+  `While Groove keeps your conversations, each one — together with what is sent to Anthropic for it — also goes to PostHog, our analytics service, so we can see where ${ASSISTANT_NAME} goes wrong. This happens only if you allow product analytics. Copies in PostHog are not deleted after ${DAYS}: they expire under PostHog's data retention.`,
 ];
 
 /** The control's label, in the dialog and in the setting. */
@@ -47,7 +58,7 @@ export const RETENTION_LABEL = `Keep my conversations with ${ASSISTANT_NAME} for
  * decision 8), so a producer who reads only the setting still reads it.
  */
 export const RETENTION_SCOPE =
-  "This controls Groove's own copy only. It does not take back anything already sent to Anthropic.";
+  "This controls what Groove keeps and sends to PostHog from now on. It does not take back anything already sent to Anthropic or PostHog.";
 
 export const DISCLOSURE_CLOSING = `${ASSISTANT_NAME} behaves exactly the same either way, and every other part of Groove works without it — if you would rather nothing was sent, you can simply not use ${ASSISTANT_NAME}.`;
 
@@ -55,7 +66,7 @@ export const DISCLOSURE_CLOSING = `${ASSISTANT_NAME} behaves exactly the same ei
 export const NOTICE_HEADING = `Groove keeps your conversations for ${DAYS}`;
 
 /** Where the answer can be changed later, and what turning it off does. */
-export const NOTICE_CHANGE = `You can change this at any time in ${SETTINGS_TITLE}. Turning it off deletes every conversation Groove has kept.`;
+export const NOTICE_CHANGE = `You can change this at any time in ${SETTINGS_TITLE}. Turning it off deletes the conversations Groove itself has kept and stops new ones going to PostHog.`;
 
 /** The two answers in the first-run notice, side by side and equal in size. */
 export const ACCEPT_ANSWER = "OK";
@@ -63,7 +74,7 @@ export const DECLINE_ANSWER = "Don't keep them";
 
 /** What turning the setting off does, said as it happens. */
 export const OPTED_OUT_CONFIRMATION =
-  "Groove has stopped keeping your conversations and deleted the ones it kept. This does not take back anything already sent to Anthropic.";
+  "Groove has stopped keeping your conversations and deleted the ones it kept. This does not take back anything already sent to Anthropic or PostHog.";
 
 /**
  * What turning the setting on does, with the control's scope, so a producer

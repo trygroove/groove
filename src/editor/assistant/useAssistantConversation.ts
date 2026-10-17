@@ -57,13 +57,14 @@ import {
   parseRememberCall,
   splitMemoryProposals,
 } from "../../assistant/memory";
-import type {
-  AssistantErrorDetails,
-  AssistantLibraryContext,
-  AssistantMessage,
-  AssistantProposal,
-  AssistantToolCall,
-  AssistantTurnRequest,
+import {
+  type AssistantErrorDetails,
+  type AssistantLibraryContext,
+  type AssistantMessage,
+  type AssistantProposal,
+  type AssistantToolCall,
+  type AssistantTurnRequest,
+  turnAnalytics,
 } from "../../assistant/protocol";
 import { splitRecommendations } from "../../assistant/recommendation";
 import type { SessionHealth, SessionTurn } from "../../assistant/sessionHealth";
@@ -557,6 +558,7 @@ export function useAssistantConversation(
     const memory = options.memory?.() ?? null;
     const where = options.session?.();
     const turnId = where ? newId() : undefined;
+    const analytics = options.analytics();
     const request: AssistantTurnRequest = {
       projectRevision: project.metadata.revision,
       messages: [
@@ -575,10 +577,12 @@ export function useAssistantConversation(
             },
           }
         : {}),
+      // Whether the gateway may trace the turn, and the session it joins
+      // (GRV-126). Never sent to the provider.
+      analytics: turnAnalytics(analytics.productAnalyticsAllowed, analytics.sessionId()),
     };
     append({ kind: "message", id: id(), scopeLabel: scope.label, ...message });
     const sessionTurn = options.health?.messageSent();
-    const analytics = options.analytics();
     analytics.log("assistant_message_sent", { scope: scope.catalogScope });
     analytics.logFeatureFirstUse("assistant_message");
     startTurn(request, {

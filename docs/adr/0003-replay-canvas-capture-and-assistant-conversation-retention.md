@@ -42,6 +42,8 @@ Assistant prompts and replies are retained in our own Firestore, under the proje
 
 This keeps the third-party surface exactly where ADR 0001 and ADR 0002 left it, and it puts the more sensitive data in the store where we control retention, deletion, access, and region.
 
+*Amended by GRV-126 ([ADR 0011](./0011-posthog-for-product-analytics-and-replay.md) decision 4).* A kept conversation now also goes to one third-party processor, PostHog, as the content of the assistant gateway's `$ai_generation` events: the request sent to the provider (system prompt, project context, tools and messages) and the reply. Debugging the assistant means reading a conversation beside the calls, tokens, latency and session that produced it, which our own store cannot show. It goes only for an account that lets Groove keep its conversations **and** allows product analytics, and only in those `$ai_*` events from `functions/`: it is still never an `OPS-02` catalog parameter, never in a replay payload, and never sent to Sentry. Turning keeping off stops new conversations going there; what PostHog already holds is not deleted but expires under PostHog's data retention, and the disclosure says so.
+
 ### 3. First-party retention carries its own obligations, which are not weaker than the third-party ones
 
 Retention in our own database is not a privacy-neutral move; it is a different set of duties, and all of them are load-bearing:
