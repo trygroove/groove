@@ -52,6 +52,16 @@ export interface UserLibraryAccount {
   readonly uid: string;
   /** False for a guest (an anonymous Firebase identity). */
   readonly registered: boolean;
+  /**
+   * An internal or admin account (GRV-112), held to no allowance: its usage
+   * is still shown, but nothing is refused or warned about for its size.
+   */
+  readonly unlimited?: boolean;
+}
+
+/** The allowance an account is held to: none for an unlimited one. */
+export function capBytesFor(account: UserLibraryAccount | null): number {
+  return account?.unlimited ? Number.POSITIVE_INFINITY : USER_DATA_CAP_BYTES;
 }
 
 /** One file being imported, shown as its own row until it lands. */
@@ -263,7 +273,7 @@ export function useUserLibrary(options: UseUserLibraryOptions): UserLibrary {
 
   const usage = createMemo<UserDataUsage>(() => ({
     usedBytes: usedBytes(),
-    capBytes: USER_DATA_CAP_BYTES,
+    capBytes: capBytesFor(options.account()),
   }));
   const assets = createMemo(() => packs().flatMap(userPackAssets));
   const summaries = createMemo(() => packs().map(userPackSummary));
@@ -520,7 +530,7 @@ export function useUserLibrary(options: UseUserLibraryOptions): UserLibrary {
     // past the allowance one file at a time.
     const before = {
       usedBytes: latestUsed + uncountedBytes(),
-      capBytes: USER_DATA_CAP_BYTES,
+      capBytes: capBytesFor(options.account()),
     };
     // Every sound already in the pack or on its way there, so a drop of many
     // files is refused at the pack's limit before the extra ones upload.

@@ -11,7 +11,7 @@ import {
   type FunctionsErrorCode,
   HttpsError,
 } from "firebase-functions/v2/https";
-import { hasInternalClaim } from "../../src/access/claims";
+import { hasInternalClaim, hasUnlimitedClaim } from "../../src/access/claims";
 import { type AssistantGatewayDeps, runAssistantTurn } from "../../src/assistant/gateway";
 import {
   type AssistantErrorCode,
@@ -88,6 +88,8 @@ export function createAssistantHandler(
           signInProvider: typeof signInProvider === "string" ? signInProvider : null,
           // The verified token's `internal` claim (GRV-113), never its address.
           internalAccount: hasInternalClaim(token),
+          // An internal or admin account has no quota or ceiling (GRV-112).
+          unlimited: hasUnlimitedClaim(token),
         },
         request.data,
         {

@@ -49,3 +49,16 @@ export function withInternalClaim(
   }
   return next;
 }
+
+/** The `admin` claim's name in an ID token (#854). */
+export const ADMIN_CLAIM = "admin";
+
+/**
+ * Whether the claims lift the account's limits (GRV-112): an internal or an
+ * admin account is not held to the assistant's request quota or spend
+ * ceiling, nor to the user-data allowance, so the team and the QA pool can
+ * test without running into them. Only the boolean `true` of either counts.
+ */
+export function hasUnlimitedClaim(claims: Claims): boolean {
+  return hasInternalClaim(claims) || claims?.[ADMIN_CLAIM] === true;
+}
