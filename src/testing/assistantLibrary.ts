@@ -1,8 +1,8 @@
 /**
  * A small library, as an assistant turn carries it (GRV-23), for tests of the
  * recommendation tool, its validation and the emulator's script. Two packs: a
- * drum pack the project uses, with kicks of every kind of dustiness, and an FX
- * pack it does not.
+ * drum pack the project uses, with kicks of every kind of dustiness, a snare
+ * and a hat, and an FX pack it does not.
  */
 import type {
   AssistantLibraryContext,
@@ -37,7 +37,7 @@ const DRUMS: AssistantLibraryPack = {
   publisher: "Groove",
   version: "1.1.0",
   description: "Kicks, snares and hats.",
-  soundCount: 5,
+  soundCount: 6,
   inProject: true,
   sounds: [
     sound("kick-clean", "Clean Club Kick", "kick", ["house", "clean"], {
@@ -47,6 +47,7 @@ const DRUMS: AssistantLibraryPack = {
     sound("kick-warm", "Warm Kick", "kick", ["lofi", "warm"]),
     sound("kick-dusty", "Dusty Kick", "kick", ["lofi", "gritty", "warm"]),
     sound("snare-dusty", "Dusty Snare", "snare", ["lofi", "gritty"]),
+    sound("hat-closed", "Closed Hat", "closed-hat", ["tight"]),
   ],
 };
 

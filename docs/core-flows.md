@@ -1522,3 +1522,49 @@ the memory well, which `AI-005` evaluates. Skipping the whole welcome, the
 Memory page, proposing and undoing a memory note, the daily nudge, and the
 consented validation event, which are tested at the component and unit layers.
 Starting the lesson itself (GRV-43).
+
+### CF-036 — A producer builds a first beat with Cue, one card at a time
+
+**Issue:** GRV-129 · **Suite:** `tests/e2e/emulator/flows/CF-036.spec.ts` · **Entrypoint:**
+the project dashboard
+
+**Preconditions:** signed in with no projects, having answered the notice about
+Groove keeping conversations (GRV-8). The assistant is answered by the suite's
+scripted provider (#69). Asked for the first-beat lesson, it does in one turn
+what a model does: it proposes a new drum machine, "Snare & Hat", with a Snare
+and a Hat pad and no sounds on them yet, and a one-bar backbeat for them; and
+it recommends a kick for BD's pad, a snare for the Snare pad and a hat for the
+Hat pad, in that order. The library holds a kick, a snare and a hat.
+
+1. Create a new project. It opens on the arrangement, with the starter kick on
+   the drum machine's "BD" pad.
+2. Press the Cue button, type "Let's build my first beat [first-beat]" and
+   press Enter. Your message appears in the conversation, and the assistant's
+   reply follows it.
+3. Only the proposal is shown. It says there are 3 more after this. No
+   recommended pack is on screen yet.
+4. Press Apply. The proposal says it was applied. Then the first recommended
+   pack appears, on its own: its header names BD's track and pad (BD · BD), it
+   offers to try its sound on BD, and it says there are 2 more after this.
+5. Press Try on BD, then Keep. The card says the sound was kept, and BD's
+   sample slot names it. The next recommended pack appears: its header names
+   the new track and its Snare pad (Snare & Hat · Snare), and it offers to try
+   its sound on Snare.
+6. Press Try on Snare, then Keep. Snare's sample slot names the kept snare.
+   The last recommended pack appears, naming Snare & Hat · Hat and offering to
+   try its sound on Hat. Nothing more is held after it.
+7. Press Try on Hat, then Keep. Hat's sample slot names the kept hat.
+8. Press Play. The song plays. Every pad that has notes has a sound: BD's slot
+   still names the kick kept in step 5, Snare's the snare and Hat's the hat.
+
+**Outcome:** a producer who asked for a first beat met one decision at a time,
+and every sound the assistant suggested landed on the pad it was meant for, so
+the kick, the snare and the hat all play.
+
+**Out of scope:** what the assistant says, and whether a real model builds a
+beat that fits, which the live-model evals judge. Declining the proposal (the
+recommendations for its track are skipped), dismissing a recommendation, a
+recommendation naming a pad that is not in the song, and the gateway refusing a
+recommendation for a track that neither the project nor the turn has, which
+are tested at the component and unit layers. That the beat is *audible*: no
+headless browser records audio.
