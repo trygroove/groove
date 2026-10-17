@@ -14,6 +14,7 @@ import {
   caseSecondaryLines,
   comparisonLines,
   headlineLines,
+  heavySetLines,
   secondaryLines,
   setLines,
 } from "./scorecardMarkdown";
@@ -22,6 +23,8 @@ import {
 export interface MarkdownBaseline {
   readonly label: BaselineLabel;
   readonly comparisons: readonly Comparison[];
+  /** The heavy set beside the baseline's (GRV-131); null when the run has no heavy case. */
+  readonly heavy?: readonly Comparison[] | null;
 }
 
 /** "7/9 (78%)" over the proposals the check could judge; skips said apart. */
@@ -164,6 +167,7 @@ function numberLines(
     ...erroredLines(report),
     ...headlineLines(report.scorecard),
     ...setLines(report.scorecard),
+    ...heavySetLines(report.scorecard, baseline?.heavy),
     ...(baseline ? comparisonLines(baseline.comparisons, baseline.label) : []),
     ...secondaryLines(report.scorecard),
     "## Pass rate per check",

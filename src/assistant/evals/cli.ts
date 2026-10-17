@@ -15,12 +15,15 @@ import { EVAL_CASES, type EvalCase } from "./cases";
 import { DEFAULT_TURN_TIMEOUT_MS, type EvalRecord } from "./run";
 import { type Scorecard, type ScorecardSource, scorecardOf } from "./scorecard";
 import type { BaselineLabel } from "./scorecardMarkdown";
-import { caseSet, EVAL_SETS, type EvalSetId } from "./sets";
+import { EVAL_SELECTIONS, type EvalSelection, inSelection } from "./sets";
 
 export interface EvalCliOptions {
   readonly caseIds: string[];
-  /** Only the cases of this set (GRV-119), or every set when null. */
-  readonly set: EvalSetId | null;
+  /**
+   * Only the cases of this set (GRV-119) or group (GRV-131), or every case
+   * when null.
+   */
+  readonly set: EvalSelection | null;
   readonly runs: number;
   readonly model: AssistantModelId;
   readonly out: string | null;
@@ -48,7 +51,7 @@ export class EvalUsageError extends Error {
   }
 }
 
-export const EVAL_USAGE = `Usage: bun run assistant:eval -- [case ...] [--set ${EVAL_SETS.join("|")}] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS] [--steps N]`;
+export const EVAL_USAGE = `Usage: bun run assistant:eval -- [case ...] [--set ${EVAL_SELECTIONS.join("|")}] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS] [--steps N]`;
 
 const DEFAULT_TURN_TIMEOUT_SECONDS = DEFAULT_TURN_TIMEOUT_MS / 1000;
 
@@ -109,8 +112,8 @@ export function parseEvalArgs(
       "--from-transcript runs the transcript's case alone: drop --replay and the case names",
     );
   }
-  if (set !== null && !(EVAL_SETS as readonly string[]).includes(set)) {
-    throw new EvalUsageError(`Unknown set "${set}". Sets: ${EVAL_SETS.join(", ")}`);
+  if (set !== null && !(EVAL_SELECTIONS as readonly string[]).includes(set)) {
+    throw new EvalUsageError(`Unknown set "${set}". Sets: ${EVAL_SELECTIONS.join(", ")}`);
   }
   if (!(model in ASSISTANT_MODELS)) {
     throw new EvalUsageError(
@@ -121,7 +124,7 @@ export function parseEvalArgs(
     kind: "run",
     options: {
       caseIds,
-      set: set as EvalSetId | null,
+      set: set as EvalSelection | null,
       runs,
       model: model as AssistantModelId,
       out,
@@ -137,14 +140,14 @@ export function parseEvalArgs(
 
 /**
  * The named cases in the order given, or every case when none is named; with
- * a set, only that set's cases.
+ * a set or group, only its cases.
  */
 export function selectEvalCases(
   ids: readonly string[],
   all: readonly EvalCase[] = EVAL_CASES,
-  set: EvalSetId | null = null,
+  set: EvalSelection | null = null,
 ): EvalCase[] {
-  const cases = set === null ? all : all.filter((entry) => caseSet(entry) === set);
+  const cases = set === null ? all : all.filter((entry) => inSelection(entry, set));
   if (ids.length === 0) return [...cases];
   return ids.map((id) => {
     const found = cases.find((entry) => entry.id === id);

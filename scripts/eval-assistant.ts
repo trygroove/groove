@@ -11,6 +11,7 @@
  *   bun run assistant:eval                       every case, 3 runs each
  *   bun run assistant:eval -- sketch-house       one case (or several)
  *   bun run assistant:eval -- --set basicActions the basic production actions (GRV-119) alone
+ *   bun run assistant:eval -- --set heavyOutput  the heavy-output sketches and arrangements (GRV-131)
  *   bun run assistant:eval -- --runs 5           N runs per case
  *   bun run assistant:eval -- --model claude-haiku-4-5
  *   bun run assistant:eval -- --out tmp/evals    where the report goes
@@ -67,10 +68,17 @@ import {
   runEvals,
   summaryOf,
 } from "../src/assistant/evals/run";
-import { compareScorecards } from "../src/assistant/evals/scorecard";
+import {
+  compareHeavySets,
+  compareScorecards,
+  formatMetric,
+  HEAVY_SET_METRICS,
+  heavySetOf,
+} from "../src/assistant/evals/scorecard";
 import {
   comparisonConsoleLines,
   formatRate,
+  heavySetConsoleLines,
 } from "../src/assistant/evals/scorecardMarkdown";
 import { setLabel } from "../src/assistant/evals/sets";
 import { parseTranscriptCase } from "../src/assistant/evals/transcriptCase";
@@ -96,6 +104,7 @@ function comparedTo(
   return {
     label: baseline.label,
     comparisons: compareScorecards(report.scorecard, baseline.scorecard),
+    heavy: compareHeavySets(report.scorecard, baseline.scorecard),
   };
 }
 
@@ -143,11 +152,20 @@ function printSummary(
       `\nAgainst ${baseline.label.path} (${baseline.label.model}, prompt ${baseline.label.promptVersion}):`,
     );
     for (const line of comparisonConsoleLines(baseline.comparisons)) console.log(line);
+    if (baseline.heavy) {
+      for (const line of heavySetConsoleLines(baseline.heavy)) console.log(line);
+    }
   } else {
     const cost = secondary.costUsd.total;
     console.log(
       `\nLatency p50 ${secondary.latencyMs.p50 ?? "n/a"} ms, p95 ${secondary.latencyMs.p95 ?? "n/a"} ms; cost ${cost === null ? "n/a" : `$${cost.toFixed(4)}`}`,
     );
+    const heavy = heavySetOf(report.scorecard);
+    if (heavy) {
+      console.log(
+        `Heavy set (${heavy.caseIds.length} cases): ${HEAVY_SET_METRICS.map((metric) => `${metric.label.toLowerCase()} ${formatMetric(metric.kind, metric.value(heavy))}`).join(", ")}`,
+      );
+    }
   }
   for (const line of failureDigestLines(report)) console.log(line);
   if (errored.total > 0) {

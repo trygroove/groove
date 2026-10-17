@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-10-12T16:37:30.868Z",
+  "generatedAt": "2026-10-17T19:48:14.049Z",
   "model": "claude-sonnet-5",
-  "promptVersion": "2026-10-12.5",
-  "toolsetVersion": 6,
+  "promptVersion": "2026-10-16.2",
+  "toolsetVersion": 8,
   "runsPerCase": 3,
   "caseIds": [
     "sketch-house",
@@ -29,62 +29,210 @@
     "db-stale-cancelled",
     "db-stale-undone",
     "resketch-extreme",
-    "noop-bd-only"
+    "noop-bd-only",
+    "basic-extend-loop",
+    "basic-duplicate-chorus",
+    "basic-trim-drums",
+    "basic-move-bass",
+    "basic-loop-bars",
+    "basic-delete-pad",
+    "basic-add-synth",
+    "basic-add-drum-machine",
+    "basic-rename-track",
+    "basic-mute-hats",
+    "basic-solo-bass",
+    "basic-vocals-to-top",
+    "basic-kick-down",
+    "basic-pan-guitar",
+    "basic-longer-kick",
+    "basic-add-clap",
+    "basic-synth-to-sampler",
+    "basic-lower-cutoff",
+    "basic-add-reverb",
+    "basic-remove-reverb",
+    "basic-wetter-reverb",
+    "basic-delay-before-reverb",
+    "basic-reverb-send",
+    "basic-quantize-hats",
+    "basic-transpose-melody",
+    "basic-humanize-hats",
+    "basic-double-speed",
+    "basic-clear-clip",
+    "basic-tempo",
+    "basic-key",
+    "basic-undo",
+    "basic-missing-track"
   ],
   "aborted": null,
   "scorecard": {
     "headline": {
       "applies": {
-        "pass": 56,
-        "judged": 70,
-        "rate": 0.8
+        "pass": 136,
+        "judged": 166,
+        "rate": 0.8192771084337349
       },
       "overall": {
-        "pass": 388,
-        "judged": 417,
-        "rate": 0.9304556354916067
+        "pass": 1260,
+        "judged": 1346,
+        "rate": 0.9361069836552749
       },
       "expectMatch": {
-        "pass": 70,
-        "judged": 73,
-        "rate": 0.958904109589041
+        "pass": 138,
+        "judged": 171,
+        "rate": 0.8070175438596491
       },
-      "turns": 75,
-      "errored": 2
+      "turns": 171,
+      "errored": 0
+    },
+    "sets": {
+      "musical": {
+        "cases": 25,
+        "headline": {
+          "applies": {
+            "pass": 70,
+            "judged": 73,
+            "rate": 0.958904109589041
+          },
+          "overall": {
+            "pass": 610,
+            "judged": 632,
+            "rate": 0.9651898734177216
+          },
+          "expectMatch": {
+            "pass": 69,
+            "judged": 75,
+            "rate": 0.92
+          },
+          "turns": 75,
+          "errored": 0
+        },
+        "secondary": {
+          "turns": 75,
+          "latencyMs": {
+            "count": 75,
+            "p50": 23248,
+            "p95": 116259
+          },
+          "firstTextMs": {
+            "count": 74,
+            "p50": 9953,
+            "p95": 57241
+          },
+          "tokens": {
+            "turns": 75,
+            "input": 386,
+            "output": 318608,
+            "cacheRead": 5944269,
+            "cacheWrite": 510209
+          },
+          "meanTokens": {
+            "input": 5.1466666666666665,
+            "output": 4248.106666666667,
+            "cacheRead": 79256.92
+          },
+          "costUsd": {
+            "total": 5.651266,
+            "perTurn": 0.07535021333333333
+          },
+          "stopReasons": {
+            "tool_use": 74,
+            "end_turn": 1
+          },
+          "maxTokensRate": 0,
+          "refusalRate": 0
+        }
+      },
+      "basicActions": {
+        "cases": 32,
+        "headline": {
+          "applies": {
+            "pass": 66,
+            "judged": 93,
+            "rate": 0.7096774193548387
+          },
+          "overall": {
+            "pass": 650,
+            "judged": 714,
+            "rate": 0.9103641456582633
+          },
+          "expectMatch": {
+            "pass": 69,
+            "judged": 96,
+            "rate": 0.71875
+          },
+          "turns": 96,
+          "errored": 0
+        },
+        "secondary": {
+          "turns": 96,
+          "latencyMs": {
+            "count": 96,
+            "p50": 5114,
+            "p95": 15762
+          },
+          "firstTextMs": {
+            "count": 96,
+            "p50": 3117,
+            "p95": 14701
+          },
+          "tokens": {
+            "turns": 96,
+            "input": 278,
+            "output": 53945,
+            "cacheRead": 3987147,
+            "cacheWrite": 230735
+          },
+          "meanTokens": {
+            "input": 2.8958333333333335,
+            "output": 561.9270833333334,
+            "cacheRead": 41532.78125
+          },
+          "costUsd": {
+            "total": 1.9143190000000008,
+            "perTurn": 0.019940822916666674
+          },
+          "stopReasons": {
+            "tool_use": 80,
+            "end_turn": 16
+          },
+          "maxTokensRate": 0,
+          "refusalRate": 0
+        }
+      }
     },
     "secondary": {
-      "turns": 75,
+      "turns": 171,
       "latencyMs": {
-        "count": 73,
-        "p50": 18417,
-        "p95": 96730
+        "count": 171,
+        "p50": 6230,
+        "p95": 107877
       },
       "firstTextMs": {
-        "count": 75,
-        "p50": 10932,
-        "p95": 54720
+        "count": 170,
+        "p50": 3514,
+        "p95": 50286
       },
       "tokens": {
-        "turns": 75,
-        "input": 2366043,
-        "output": 237675,
-        "cacheRead": 0,
-        "cacheWrite": 0
+        "turns": 171,
+        "input": 664,
+        "output": 372553,
+        "cacheRead": 9931416,
+        "cacheWrite": 740944
       },
       "meanTokens": {
-        "input": 31547.24,
-        "output": 3169,
-        "cacheRead": 0
+        "input": 3.8830409356725144,
+        "output": 2178.6725146198833,
+        "cacheRead": 58078.45614035088
       },
       "costUsd": {
-        "total": 7.108836000000002,
-        "perTurn": 0.09478448000000003
+        "total": 7.565585,
+        "perTurn": 0.04424318713450292
       },
       "stopReasons": {
-        "tool_use": 73,
-        "max_tokens": 2
+        "tool_use": 154,
+        "end_turn": 17
       },
-      "maxTokensRate": 0.02666666666666667,
+      "maxTokensRate": 0,
       "refusalRate": 0
     },
     "cases": {
@@ -92,29 +240,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 44193,
-          "p95": 54826
+          "p50": 107877,
+          "p95": 108162
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 43644,
-          "p95": 54720
+          "p50": 50286,
+          "p95": 54277
         },
         "tokens": {
           "turns": 3,
-          "input": 93253,
-          "output": 12040,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 36,
+          "output": 36923,
+          "cacheRead": 528130,
+          "cacheWrite": 122728
         },
         "meanTokens": {
-          "input": 31084.333333333332,
-          "output": 4013.3333333333335,
-          "cacheRead": 0
+          "input": 12,
+          "output": 12307.666666666666,
+          "cacheRead": 176043.33333333334
         },
         "costUsd": {
-          "total": 0.306906,
-          "perTurn": 0.102302
+          "total": 0.78175,
+          "perTurn": 0.26058333333333333
         },
         "stopReasons": {
           "tool_use": 3
@@ -126,29 +274,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 100699,
-          "p95": 101196
+          "p50": 116259,
+          "p95": 132218
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 46733,
-          "p95": 53847
+          "p50": 52417,
+          "p95": 55958
         },
         "tokens": {
           "turns": 3,
-          "input": 93314,
-          "output": 37410,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 28,
+          "output": 44418,
+          "cacheRead": 493432,
+          "cacheWrite": 49232
         },
         "meanTokens": {
-          "input": 31104.666666666668,
-          "output": 12470,
-          "cacheRead": 0
+          "input": 9.333333333333334,
+          "output": 14806,
+          "cacheRead": 164477.33333333334
         },
         "costUsd": {
-          "total": 0.560728,
-          "perTurn": 0.18690933333333334
+          "total": 0.666004,
+          "perTurn": 0.22200133333333336
         },
         "stopReasons": {
           "tool_use": 3
@@ -160,29 +308,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 33543,
-          "p95": 45310
+          "p50": 35896,
+          "p95": 35956
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 17118,
-          "p95": 29139
+          "p50": 19228,
+          "p95": 19437
         },
         "tokens": {
           "turns": 3,
-          "input": 98277,
-          "output": 12540,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 10,
+          "output": 9428,
+          "cacheRead": 146030,
+          "cacheWrite": 16662
         },
         "meanTokens": {
-          "input": 32759,
-          "output": 4180,
-          "cacheRead": 0
+          "input": 3.3333333333333335,
+          "output": 3142.6666666666665,
+          "cacheRead": 48676.666666666664
         },
         "costUsd": {
-          "total": 0.321954,
-          "perTurn": 0.10731800000000001
+          "total": 0.165163,
+          "perTurn": 0.05505433333333334
         },
         "stopReasons": {
           "tool_use": 3
@@ -194,29 +342,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 29847,
-          "p95": 35397
+          "p50": 33297,
+          "p95": 34511
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 17014,
-          "p95": 21441
+          "p50": 15818,
+          "p95": 16300
         },
         "tokens": {
           "turns": 3,
-          "input": 98244,
-          "output": 9950,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 14,
+          "output": 10573,
+          "cacheRead": 209995,
+          "cacheWrite": 20020
         },
         "meanTokens": {
-          "input": 32748,
-          "output": 3316.6666666666665,
-          "cacheRead": 0
+          "input": 4.666666666666667,
+          "output": 3524.3333333333335,
+          "cacheRead": 69998.33333333333
         },
         "costUsd": {
-          "total": 0.29598800000000003,
-          "perTurn": 0.09866266666666668
+          "total": 0.19780799999999998,
+          "perTurn": 0.065936
         },
         "stopReasons": {
           "tool_use": 3
@@ -228,29 +376,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 51935,
-          "p95": 60829
+          "p50": 64501,
+          "p95": 74665
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 40986,
-          "p95": 50716
+          "p50": 43105,
+          "p95": 47622
         },
         "tokens": {
           "turns": 3,
-          "input": 103484,
-          "output": 15455,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 26,
+          "output": 20727,
+          "cacheRead": 450491,
+          "cacheWrite": 37243
         },
         "meanTokens": {
-          "input": 34494.666666666664,
-          "output": 5151.666666666667,
-          "cacheRead": 0
+          "input": 8.666666666666666,
+          "output": 6909,
+          "cacheRead": 150163.66666666666
         },
         "costUsd": {
-          "total": 0.361518,
-          "perTurn": 0.120506
+          "total": 0.390529,
+          "perTurn": 0.13017633333333334
         },
         "stopReasons": {
           "tool_use": 3
@@ -262,29 +410,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 48197,
-          "p95": 49814
+          "p50": 59793,
+          "p95": 60173
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 30350,
-          "p95": 34117
+          "p50": 34611,
+          "p95": 35175
         },
         "tokens": {
           "turns": 3,
-          "input": 103503,
-          "output": 16211,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 8,
+          "output": 19764,
+          "cacheRead": 116727,
+          "cacheWrite": 21681
         },
         "meanTokens": {
-          "input": 34501,
-          "output": 5403.666666666667,
-          "cacheRead": 0
+          "input": 2.6666666666666665,
+          "output": 6588,
+          "cacheRead": 38909
         },
         "costUsd": {
-          "total": 0.369116,
-          "perTurn": 0.12303866666666667
+          "total": 0.275206,
+          "perTurn": 0.09173533333333334
         },
         "stopReasons": {
           "tool_use": 3
@@ -296,29 +444,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 11637,
-          "p95": 15527
+          "p50": 13595,
+          "p95": 15452
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 4554,
-          "p95": 9969
+          "p50": 7213,
+          "p95": 7622
         },
         "tokens": {
           "turns": 3,
-          "input": 94767,
-          "output": 3921,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 8,
+          "output": 4109,
+          "cacheRead": 113820,
+          "cacheWrite": 6698
         },
         "meanTokens": {
-          "input": 31589,
-          "output": 1307,
-          "cacheRead": 0
+          "input": 2.6666666666666665,
+          "output": 1369.6666666666667,
+          "cacheRead": 37940
         },
         "costUsd": {
-          "total": 0.228744,
-          "perTurn": 0.076248
+          "total": 0.08061600000000001,
+          "perTurn": 0.026872000000000004
         },
         "stopReasons": {
           "tool_use": 3
@@ -330,29 +478,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 7864,
-          "p95": 8409
+          "p50": 6612,
+          "p95": 6697
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 2801,
-          "p95": 3489
+          "p50": 693,
+          "p95": 748
         },
         "tokens": {
           "turns": 3,
-          "input": 94735,
-          "output": 2333,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 6,
+          "output": 2140,
+          "cacheRead": 83922,
+          "cacheWrite": 5737
         },
         "meanTokens": {
-          "input": 31578.333333333332,
-          "output": 777.6666666666666,
-          "cacheRead": 0
+          "input": 2,
+          "output": 713.3333333333334,
+          "cacheRead": 27974
         },
         "costUsd": {
-          "total": 0.2128,
-          "perTurn": 0.07093333333333333
+          "total": 0.05254,
+          "perTurn": 0.017513333333333336
         },
         "stopReasons": {
           "tool_use": 3
@@ -364,29 +512,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 4734,
-          "p95": 4748
+          "p50": 5249,
+          "p95": 5279
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 796,
-          "p95": 823
+          "p50": 679,
+          "p95": 798
         },
         "tokens": {
           "turns": 3,
-          "input": 94685,
-          "output": 1227,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 10,
+          "output": 1259,
+          "cacheRead": 143656,
+          "cacheWrite": 6267
         },
         "meanTokens": {
-          "input": 31561.666666666668,
-          "output": 409,
-          "cacheRead": 0
+          "input": 3.3333333333333335,
+          "output": 419.6666666666667,
+          "cacheRead": 47885.333333333336
         },
         "costUsd": {
-          "total": 0.20163999999999999,
-          "perTurn": 0.06721333333333333
+          "total": 0.05701,
+          "perTurn": 0.019003333333333334
         },
         "stopReasons": {
           "tool_use": 3
@@ -398,29 +546,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 8394,
-          "p95": 9289
+          "p50": 6438,
+          "p95": 6577
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 3850,
-          "p95": 6280
+          "p50": 665,
+          "p95": 2188
         },
         "tokens": {
           "turns": 3,
-          "input": 94715,
-          "output": 2139,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 8,
+          "output": 1783,
+          "cacheRead": 113799,
+          "cacheWrite": 6245
         },
         "meanTokens": {
-          "input": 31571.666666666668,
-          "output": 713,
-          "cacheRead": 0
+          "input": 2.6666666666666665,
+          "output": 594.3333333333334,
+          "cacheRead": 37933
         },
         "costUsd": {
-          "total": 0.21082,
-          "perTurn": 0.07027333333333334
+          "total": 0.056220000000000006,
+          "perTurn": 0.018740000000000003
         },
         "stopReasons": {
           "tool_use": 3
@@ -432,29 +580,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 23760,
-          "p95": 25281
+          "p50": 56703,
+          "p95": 59150
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 12340,
-          "p95": 14284
+          "p50": 23534,
+          "p95": 35031
         },
         "tokens": {
           "turns": 3,
-          "input": 106314,
-          "output": 8134,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 12,
+          "output": 17338,
+          "cacheRead": 185156,
+          "cacheWrite": 34825
         },
         "meanTokens": {
-          "input": 35438,
-          "output": 2711.3333333333335,
-          "cacheRead": 0
+          "input": 4,
+          "output": 5779.333333333333,
+          "cacheRead": 61718.666666666664
         },
         "costUsd": {
-          "total": 0.293968,
-          "perTurn": 0.09798933333333333
+          "total": 0.297499,
+          "perTurn": 0.09916633333333334
         },
         "stopReasons": {
           "tool_use": 3
@@ -466,29 +614,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 10441,
-          "p95": 14843
+          "p50": 7045,
+          "p95": 72940
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 5300,
-          "p95": 10932
+          "p50": 770,
+          "p95": 40569
         },
         "tokens": {
           "turns": 3,
-          "input": 92870,
-          "output": 2516,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 18,
+          "output": 8266,
+          "cacheRead": 283642,
+          "cacheWrite": 11197
         },
         "meanTokens": {
-          "input": 30956.666666666668,
-          "output": 838.6666666666666,
-          "cacheRead": 0
+          "input": 6,
+          "output": 2755.3333333333335,
+          "cacheRead": 94547.33333333333
         },
         "costUsd": {
-          "total": 0.21089999999999998,
-          "perTurn": 0.07029999999999999
+          "total": 0.167418,
+          "perTurn": 0.055806
         },
         "stopReasons": {
           "tool_use": 3
@@ -499,65 +647,65 @@
       "develop-track-arrange": {
         "turns": 3,
         "latencyMs": {
-          "count": 1,
-          "p50": 84882,
-          "p95": 84882
+          "count": 3,
+          "p50": 125169,
+          "p95": 158185
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 128382,
-          "p95": 132674
+          "p50": 85794,
+          "p95": 97459
         },
         "tokens": {
           "turns": 3,
-          "input": 93663,
-          "output": 41176,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 14,
+          "output": 34203,
+          "cacheRead": 225740,
+          "cacheWrite": 31567
         },
         "meanTokens": {
-          "input": 31221,
-          "output": 13725.333333333334,
-          "cacheRead": 0
+          "input": 4.666666666666667,
+          "output": 11401,
+          "cacheRead": 75246.66666666667
         },
         "costUsd": {
-          "total": 0.599086,
-          "perTurn": 0.19969533333333334
+          "total": 0.466125,
+          "perTurn": 0.155375
         },
         "stopReasons": {
-          "tool_use": 1,
-          "max_tokens": 2
+          "end_turn": 1,
+          "tool_use": 2
         },
-        "maxTokensRate": 0.6666666666666666,
+        "maxTokensRate": 0,
         "refusalRate": 0
       },
       "pad-genre-known": {
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 15887,
-          "p95": 24962
+          "p50": 19741,
+          "p95": 24858
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 9234,
-          "p95": 16932
+          "p50": 9108,
+          "p95": 9953
         },
         "tokens": {
           "turns": 3,
-          "input": 92990,
-          "output": 5069,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 18,
+          "output": 6581,
+          "cacheRead": 264226,
+          "cacheWrite": 10496
         },
         "meanTokens": {
-          "input": 30996.666666666668,
-          "output": 1689.6666666666667,
-          "cacheRead": 0
+          "input": 6,
+          "output": 2193.6666666666665,
+          "cacheRead": 88075.33333333333
         },
         "costUsd": {
-          "total": 0.23667,
-          "perTurn": 0.07889
+          "total": 0.144933,
+          "perTurn": 0.048311
         },
         "stopReasons": {
           "tool_use": 3
@@ -569,29 +717,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 18742,
-          "p95": 23493
+          "p50": 16961,
+          "p95": 23248
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 10334,
-          "p95": 13443
+          "p50": 700,
+          "p95": 8084
         },
         "tokens": {
           "turns": 3,
-          "input": 92832,
-          "output": 5685,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 22,
+          "output": 5376,
+          "cacheRead": 322933,
+          "cacheWrite": 9386
         },
         "meanTokens": {
-          "input": 30944,
-          "output": 1895,
-          "cacheRead": 0
+          "input": 7.333333333333333,
+          "output": 1792,
+          "cacheRead": 107644.33333333333
         },
         "costUsd": {
-          "total": 0.242514,
-          "perTurn": 0.08083800000000001
+          "total": 0.141857,
+          "perTurn": 0.04728566666666667
         },
         "stopReasons": {
           "tool_use": 3
@@ -603,29 +751,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 52105,
-          "p95": 71902
+          "p50": 96503,
+          "p95": 114810
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 39233,
-          "p95": 52094
+          "p50": 42004,
+          "p95": 63222
         },
         "tokens": {
           "turns": 3,
-          "input": 91224,
-          "output": 16205,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 30,
+          "output": 32578,
+          "cacheRead": 492494,
+          "cacheWrite": 34093
         },
         "meanTokens": {
-          "input": 30408,
-          "output": 5401.666666666667,
-          "cacheRead": 0
+          "input": 10,
+          "output": 10859.333333333334,
+          "cacheRead": 164164.66666666666
         },
         "costUsd": {
-          "total": 0.34449799999999997,
-          "perTurn": 0.11483266666666665
+          "total": 0.5095729999999999,
+          "perTurn": 0.16985766666666666
         },
         "stopReasons": {
           "tool_use": 3
@@ -637,29 +785,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 55380,
-          "p95": 96730
+          "p50": 88203,
+          "p95": 114618
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 31931,
-          "p95": 56871
+          "p50": 44129,
+          "p95": 57241
         },
         "tokens": {
           "turns": 3,
-          "input": 92836,
-          "output": 22939,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 26,
+          "output": 30810,
+          "cacheRead": 425923,
+          "cacheWrite": 33177
         },
         "meanTokens": {
-          "input": 30945.333333333332,
-          "output": 7646.333333333333,
-          "cacheRead": 0
+          "input": 8.666666666666666,
+          "output": 10270,
+          "cacheRead": 141974.33333333334
         },
         "costUsd": {
-          "total": 0.415062,
-          "perTurn": 0.138354
+          "total": 0.47628099999999995,
+          "perTurn": 0.1587603333333333
         },
         "stopReasons": {
           "tool_use": 3
@@ -671,29 +819,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 3136,
-          "p95": 4672
+          "p50": 3074,
+          "p95": 3105
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 1840,
-          "p95": 4659
+          "p50": 1725,
+          "p95": 1832
         },
         "tokens": {
           "turns": 3,
-          "input": 91201,
-          "output": 864,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 6,
+          "output": 874,
+          "cacheRead": 83922,
+          "cacheWrite": 2165
         },
         "meanTokens": {
-          "input": 30400.333333333332,
-          "output": 288,
-          "cacheRead": 0
+          "input": 2,
+          "output": 291.3333333333333,
+          "cacheRead": 27974
         },
         "costUsd": {
-          "total": 0.191042,
-          "perTurn": 0.06368066666666666
+          "total": 0.03095,
+          "perTurn": 0.010316666666666667
         },
         "stopReasons": {
           "tool_use": 3
@@ -705,29 +853,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 3037,
-          "p95": 3220
+          "p50": 3335,
+          "p95": 3812
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 1674,
-          "p95": 1801
+          "p50": 1889,
+          "p95": 1946
         },
         "tokens": {
           "turns": 3,
-          "input": 91190,
-          "output": 842,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 8,
+          "output": 851,
+          "cacheRead": 112631,
+          "cacheWrite": 2384
         },
         "meanTokens": {
-          "input": 30396.666666666668,
-          "output": 280.6666666666667,
-          "cacheRead": 0
+          "input": 2.6666666666666665,
+          "output": 283.6666666666667,
+          "cacheRead": 37543.666666666664
         },
         "costUsd": {
-          "total": 0.19080000000000003,
-          "perTurn": 0.0636
+          "total": 0.037014,
+          "perTurn": 0.012338
         },
         "stopReasons": {
           "tool_use": 3
@@ -739,29 +887,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 2850,
-          "p95": 3026
+          "p50": 2940,
+          "p95": 3300
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 1463,
-          "p95": 1562
+          "p50": 707,
+          "p95": 727
         },
         "tokens": {
           "turns": 3,
-          "input": 91212,
-          "output": 824,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 8,
+          "output": 780,
+          "cacheRead": 112620,
+          "cacheWrite": 2363
         },
         "meanTokens": {
-          "input": 30404,
-          "output": 274.6666666666667,
-          "cacheRead": 0
+          "input": 2.6666666666666665,
+          "output": 260,
+          "cacheRead": 37540
         },
         "costUsd": {
-          "total": 0.190664,
-          "perTurn": 0.06355466666666666
+          "total": 0.036249,
+          "perTurn": 0.012083000000000002
         },
         "stopReasons": {
           "tool_use": 3
@@ -773,29 +921,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 3298,
-          "p95": 6234
+          "p50": 3148,
+          "p95": 3831
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 1940,
-          "p95": 4687
+          "p50": 1712,
+          "p95": 2472
         },
         "tokens": {
           "turns": 3,
-          "input": 91187,
-          "output": 858,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 8,
+          "output": 850,
+          "cacheRead": 112631,
+          "cacheWrite": 2370
         },
         "meanTokens": {
-          "input": 30395.666666666668,
-          "output": 286,
-          "cacheRead": 0
+          "input": 2.6666666666666665,
+          "output": 283.3333333333333,
+          "cacheRead": 37543.666666666664
         },
         "costUsd": {
-          "total": 0.190954,
-          "perTurn": 0.06365133333333334
+          "total": 0.036969,
+          "perTurn": 0.012323
         },
         "stopReasons": {
           "tool_use": 3
@@ -807,29 +955,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 3580,
-          "p95": 3925
+          "p50": 3882,
+          "p95": 4604
         },
         "firstTextMs": {
-          "count": 3,
-          "p50": 1868,
-          "p95": 2708
+          "count": 2,
+          "p50": 1978,
+          "p95": 2800
         },
         "tokens": {
           "turns": 3,
-          "input": 91333,
-          "output": 937,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 10,
+          "output": 900,
+          "cacheRead": 141424,
+          "cacheWrite": 2800
         },
         "meanTokens": {
-          "input": 30444.333333333332,
-          "output": 312.3333333333333,
-          "cacheRead": 0
+          "input": 3.3333333333333335,
+          "output": 300,
+          "cacheRead": 47141.333333333336
         },
         "costUsd": {
-          "total": 0.192036,
-          "perTurn": 0.064012
+          "total": 0.044306,
+          "perTurn": 0.014768666666666666
         },
         "stopReasons": {
           "tool_use": 3
@@ -841,29 +989,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 3728,
-          "p95": 4116
+          "p50": 6133,
+          "p95": 7015
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 2267,
-          "p95": 3075
+          "p50": 4333,
+          "p95": 5549
         },
         "tokens": {
           "turns": 3,
-          "input": 91316,
-          "output": 872,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 10,
+          "output": 1058,
+          "cacheRead": 141421,
+          "cacheWrite": 2865
         },
         "meanTokens": {
-          "input": 30438.666666666668,
-          "output": 290.6666666666667,
-          "cacheRead": 0
+          "input": 3.3333333333333335,
+          "output": 352.6666666666667,
+          "cacheRead": 47140.333333333336
         },
         "costUsd": {
-          "total": 0.19135200000000002,
-          "perTurn": 0.06378400000000001
+          "total": 0.046048,
+          "perTurn": 0.015349333333333333
         },
         "stopReasons": {
           "tool_use": 3
@@ -875,29 +1023,29 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 25695,
-          "p95": 44460
+          "p50": 49826,
+          "p95": 53045
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 24131,
-          "p95": 43391
+          "p50": 27506,
+          "p95": 28326
         },
         "tokens": {
           "turns": 3,
-          "input": 95670,
-          "output": 7532,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 22,
+          "output": 14553,
+          "cacheRead": 342405,
+          "cacheWrite": 22829
         },
         "meanTokens": {
-          "input": 31890,
-          "output": 2510.6666666666665,
-          "cacheRead": 0
+          "input": 7.333333333333333,
+          "output": 4851,
+          "cacheRead": 114135
         },
         "costUsd": {
-          "total": 0.26666,
-          "perTurn": 0.08888666666666667
+          "total": 0.271129,
+          "perTurn": 0.09037633333333334
         },
         "stopReasons": {
           "tool_use": 3
@@ -909,32 +1057,1124 @@
         "turns": 3,
         "latencyMs": {
           "count": 3,
-          "p50": 36916,
-          "p95": 55530
+          "p50": 38558,
+          "p95": 58558
         },
         "firstTextMs": {
           "count": 3,
-          "p50": 35845,
-          "p95": 39623
+          "p50": 26351,
+          "p95": 32798
         },
         "tokens": {
           "turns": 3,
-          "input": 91228,
-          "output": 9996,
-          "cacheRead": 0,
-          "cacheWrite": 0
+          "input": 20,
+          "output": 12466,
+          "cacheRead": 297099,
+          "cacheWrite": 15179
         },
         "meanTokens": {
-          "input": 30409.333333333332,
-          "output": 3332,
-          "cacheRead": 0
+          "input": 6.666666666666667,
+          "output": 4155.333333333333,
+          "cacheRead": 99033
         },
         "costUsd": {
-          "total": 0.282416,
-          "perTurn": 0.09413866666666666
+          "total": 0.22206900000000002,
+          "perTurn": 0.074023
         },
         "stopReasons": {
           "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-extend-loop": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 4622,
+          "p95": 5562
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 3119,
+          "p95": 3232
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 8,
+          "output": 1275,
+          "cacheRead": 113654,
+          "cacheWrite": 5645
+        },
+        "meanTokens": {
+          "input": 2.6666666666666665,
+          "output": 425,
+          "cacheRead": 37884.666666666664
+        },
+        "costUsd": {
+          "total": 0.049610999999999995,
+          "perTurn": 0.016537
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-duplicate-chorus": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 30519,
+          "p95": 36552
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 24123,
+          "p95": 31613
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 10,
+          "output": 7212,
+          "cacheRead": 143762,
+          "cacheWrite": 12438
+        },
+        "meanTokens": {
+          "input": 3.3333333333333335,
+          "output": 2404,
+          "cacheRead": 47920.666666666664
+        },
+        "costUsd": {
+          "total": 0.131988,
+          "perTurn": 0.043996
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-trim-drums": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 5873,
+          "p95": 6230
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 3909,
+          "p95": 4219
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 10,
+          "output": 1439,
+          "cacheRead": 143772,
+          "cacheWrite": 6615
+        },
+        "meanTokens": {
+          "input": 3.3333333333333335,
+          "output": 479.6666666666667,
+          "cacheRead": 47924
+        },
+        "costUsd": {
+          "total": 0.059703,
+          "perTurn": 0.019901
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-move-bass": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 5331,
+          "p95": 6109
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 3317,
+          "p95": 4341
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 10,
+          "output": 1317,
+          "cacheRead": 143772,
+          "cacheWrite": 6572
+        },
+        "meanTokens": {
+          "input": 3.3333333333333335,
+          "output": 439,
+          "cacheRead": 47924
+        },
+        "costUsd": {
+          "total": 0.058374999999999996,
+          "perTurn": 0.01945833333333333
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-loop-bars": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 5917,
+          "p95": 6787
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 3988,
+          "p95": 4742
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 6,
+          "output": 1677,
+          "cacheRead": 83922,
+          "cacheWrite": 5830
+        },
+        "meanTokens": {
+          "input": 2,
+          "output": 559,
+          "cacheRead": 27974
+        },
+        "costUsd": {
+          "total": 0.048143,
+          "perTurn": 0.016047666666666665
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-delete-pad": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 3259,
+          "p95": 4526
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 1941,
+          "p95": 2362
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 8,
+          "output": 838,
+          "cacheRead": 114710,
+          "cacheWrite": 8649
+        },
+        "meanTokens": {
+          "input": 2.6666666666666665,
+          "output": 279.3333333333333,
+          "cacheRead": 38236.666666666664
+        },
+        "costUsd": {
+          "total": 0.052962,
+          "perTurn": 0.017654
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-add-synth": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 5801,
+          "p95": 5874
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 938,
+          "p95": 4144
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 10,
+          "output": 1454,
+          "cacheRead": 145506,
+          "cacheWrite": 9257
+        },
+        "meanTokens": {
+          "input": 3.3333333333333335,
+          "output": 484.6666666666667,
+          "cacheRead": 48502
+        },
+        "costUsd": {
+          "total": 0.066805,
+          "perTurn": 0.022268333333333334
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-add-drum-machine": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 15305,
+          "p95": 15320
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 6935,
+          "p95": 7913
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 12,
+          "output": 4425,
+          "cacheRead": 176286,
+          "cacheWrite": 12469
+        },
+        "meanTokens": {
+          "input": 4,
+          "output": 1475,
+          "cacheRead": 58762
+        },
+        "costUsd": {
+          "total": 0.110705,
+          "perTurn": 0.036901666666666666
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-rename-track": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 6364,
+          "p95": 9119
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 4598,
+          "p95": 6248
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 10,
+          "output": 1654,
+          "cacheRead": 145507,
+          "cacheWrite": 9143
+        },
+        "meanTokens": {
+          "input": 3.3333333333333335,
+          "output": 551.3333333333334,
+          "cacheRead": 48502.333333333336
+        },
+        "costUsd": {
+          "total": 0.068521,
+          "perTurn": 0.022840333333333334
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-mute-hats": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 2939,
+          "p95": 3603
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 950,
+          "p95": 1426
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 8,
+          "output": 760,
+          "cacheRead": 114699,
+          "cacheWrite": 8602
+        },
+        "meanTokens": {
+          "input": 2.6666666666666665,
+          "output": 253.33333333333334,
+          "cacheRead": 38233
+        },
+        "costUsd": {
+          "total": 0.052063000000000005,
+          "perTurn": 0.017354333333333336
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-solo-bass": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 3172,
+          "p95": 3234
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 1795,
+          "p95": 1907
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 6,
+          "output": 856,
+          "cacheRead": 83922,
+          "cacheWrite": 8437
+        },
+        "meanTokens": {
+          "input": 2,
+          "output": 285.3333333333333,
+          "cacheRead": 27974
+        },
+        "costUsd": {
+          "total": 0.04645,
+          "perTurn": 0.015483333333333333
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-vocals-to-top": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 3822,
+          "p95": 3836
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 1810,
+          "p95": 1923
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 12,
+          "output": 805,
+          "cacheRead": 176278,
+          "cacheWrite": 9003
+        },
+        "meanTokens": {
+          "input": 4,
+          "output": 268.3333333333333,
+          "cacheRead": 58759.333333333336
+        },
+        "costUsd": {
+          "total": 0.06583800000000001,
+          "perTurn": 0.021946000000000004
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-kick-down": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 3272,
+          "p95": 4337
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 1785,
+          "p95": 1817
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 8,
+          "output": 893,
+          "cacheRead": 114710,
+          "cacheWrite": 8672
+        },
+        "meanTokens": {
+          "input": 2.6666666666666665,
+          "output": 297.6666666666667,
+          "cacheRead": 38236.666666666664
+        },
+        "costUsd": {
+          "total": 0.05356899999999999,
+          "perTurn": 0.01785633333333333
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-pan-guitar": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 3882,
+          "p95": 4119
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 2312,
+          "p95": 2635
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 6,
+          "output": 1006,
+          "cacheRead": 83922,
+          "cacheWrite": 8408
+        },
+        "meanTokens": {
+          "input": 2,
+          "output": 335.3333333333333,
+          "cacheRead": 27974
+        },
+        "costUsd": {
+          "total": 0.047877,
+          "perTurn": 0.015959
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-longer-kick": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 2104,
+          "p95": 2205
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 700,
+          "p95": 741
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 6,
+          "output": 265,
+          "cacheRead": 83922,
+          "cacheWrite": 5257
+        },
+        "meanTokens": {
+          "input": 2,
+          "output": 88.33333333333333,
+          "cacheRead": 27974
+        },
+        "costUsd": {
+          "total": 0.032591,
+          "perTurn": 0.010863666666666667
+        },
+        "stopReasons": {
+          "end_turn": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-add-clap": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 13013,
+          "p95": 15762
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 12813,
+          "p95": 14701
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 6,
+          "output": 2531,
+          "cacheRead": 83922,
+          "cacheWrite": 2371
+        },
+        "meanTokens": {
+          "input": 2,
+          "output": 843.6666666666666,
+          "cacheRead": 27974
+        },
+        "costUsd": {
+          "total": 0.048035999999999995,
+          "perTurn": 0.016012
+        },
+        "stopReasons": {
+          "tool_use": 1,
+          "end_turn": 2
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-synth-to-sampler": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 7096,
+          "p95": 7103
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 4107,
+          "p95": 4333
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 12,
+          "output": 1590,
+          "cacheRead": 172722,
+          "cacheWrite": 6143
+        },
+        "meanTokens": {
+          "input": 4,
+          "output": 530,
+          "cacheRead": 57574
+        },
+        "costUsd": {
+          "total": 0.065828,
+          "perTurn": 0.021942666666666666
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-lower-cutoff": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 4756,
+          "p95": 5188
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 3199,
+          "p95": 4183
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 8,
+          "output": 1221,
+          "cacheRead": 113066,
+          "cacheWrite": 3780
+        },
+        "meanTokens": {
+          "input": 2.6666666666666665,
+          "output": 407,
+          "cacheRead": 37688.666666666664
+        },
+        "costUsd": {
+          "total": 0.044291000000000004,
+          "perTurn": 0.014763666666666668
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-add-reverb": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 5114,
+          "p95": 5358
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 984,
+          "p95": 1597
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 12,
+          "output": 1224,
+          "cacheRead": 176280,
+          "cacheWrite": 9405
+        },
+        "meanTokens": {
+          "input": 4,
+          "output": 408,
+          "cacheRead": 58760
+        },
+        "costUsd": {
+          "total": 0.071033,
+          "perTurn": 0.023677666666666666
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-remove-reverb": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 9516,
+          "p95": 11887
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 8639,
+          "p95": 11069
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 6,
+          "output": 2392,
+          "cacheRead": 83922,
+          "cacheWrite": 8538
+        },
+        "meanTokens": {
+          "input": 2,
+          "output": 797.3333333333334,
+          "cacheRead": 27974
+        },
+        "costUsd": {
+          "total": 0.06206300000000001,
+          "perTurn": 0.02068766666666667
+        },
+        "stopReasons": {
+          "tool_use": 2,
+          "end_turn": 1
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-wetter-reverb": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 9310,
+          "p95": 11906
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 6777,
+          "p95": 8648
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 6,
+          "output": 2288,
+          "cacheRead": 83922,
+          "cacheWrite": 3532
+        },
+        "meanTokens": {
+          "input": 2,
+          "output": 762.6666666666666,
+          "cacheRead": 27974
+        },
+        "costUsd": {
+          "total": 0.048508,
+          "perTurn": 0.016169333333333334
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-delay-before-reverb": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 5809,
+          "p95": 7395
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 4135,
+          "p95": 6495
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 6,
+          "output": 1280,
+          "cacheRead": 83922,
+          "cacheWrite": 3517
+        },
+        "meanTokens": {
+          "input": 2,
+          "output": 426.6666666666667,
+          "cacheRead": 27974
+        },
+        "costUsd": {
+          "total": 0.03839,
+          "perTurn": 0.012796666666666666
+        },
+        "stopReasons": {
+          "tool_use": 1,
+          "end_turn": 2
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-reverb-send": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 8438,
+          "p95": 9103
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 3514,
+          "p95": 3652
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 12,
+          "output": 2522,
+          "cacheRead": 174011,
+          "cacheWrite": 7543
+        },
+        "meanTokens": {
+          "input": 4,
+          "output": 840.6666666666666,
+          "cacheRead": 58003.666666666664
+        },
+        "costUsd": {
+          "total": 0.078906,
+          "perTurn": 0.026302000000000002
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-quantize-hats": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 4601,
+          "p95": 4977
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 2190,
+          "p95": 3208
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 12,
+          "output": 1135,
+          "cacheRead": 173164,
+          "cacheWrite": 6199
+        },
+        "meanTokens": {
+          "input": 4,
+          "output": 378.3333333333333,
+          "cacheRead": 57721.333333333336
+        },
+        "costUsd": {
+          "total": 0.06150599999999999,
+          "perTurn": 0.020501999999999996
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-transpose-melody": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 4410,
+          "p95": 5535
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 3604,
+          "p95": 3707
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 8,
+          "output": 1238,
+          "cacheRead": 113669,
+          "cacheWrite": 5612
+        },
+        "meanTokens": {
+          "input": 2.6666666666666665,
+          "output": 412.6666666666667,
+          "cacheRead": 37889.666666666664
+        },
+        "costUsd": {
+          "total": 0.049161,
+          "perTurn": 0.016387000000000002
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-humanize-hats": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 7686,
+          "p95": 8703
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 3946,
+          "p95": 5813
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 12,
+          "output": 1960,
+          "cacheRead": 173173,
+          "cacheWrite": 6948
+        },
+        "meanTokens": {
+          "input": 4,
+          "output": 653.3333333333334,
+          "cacheRead": 57724.333333333336
+        },
+        "costUsd": {
+          "total": 0.07163,
+          "perTurn": 0.023876666666666668
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-double-speed": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 11282,
+          "p95": 11825
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 11221,
+          "p95": 11269
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 6,
+          "output": 1813,
+          "cacheRead": 83922,
+          "cacheWrite": 5302
+        },
+        "meanTokens": {
+          "input": 2,
+          "output": 604.3333333333334,
+          "cacheRead": 27974
+        },
+        "costUsd": {
+          "total": 0.048183,
+          "perTurn": 0.016061
+        },
+        "stopReasons": {
+          "end_turn": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-clear-clip": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 3322,
+          "p95": 3682
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 755,
+          "p95": 1020
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 12,
+          "output": 694,
+          "cacheRead": 175015,
+          "cacheWrite": 7622
+        },
+        "meanTokens": {
+          "input": 4,
+          "output": 231.33333333333334,
+          "cacheRead": 58338.333333333336
+        },
+        "costUsd": {
+          "total": 0.06102400000000001,
+          "perTurn": 0.020341333333333336
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-tempo": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 3032,
+          "p95": 3054
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 1483,
+          "p95": 1617
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 6,
+          "output": 759,
+          "cacheRead": 83922,
+          "cacheWrite": 5837
+        },
+        "meanTokens": {
+          "input": 2,
+          "output": 253,
+          "cacheRead": 27974
+        },
+        "costUsd": {
+          "total": 0.03898,
+          "perTurn": 0.012993333333333334
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-key": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 16832,
+          "p95": 21875
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 16498,
+          "p95": 20065
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 6,
+          "output": 3795,
+          "cacheRead": 83922,
+          "cacheWrite": 5836
+        },
+        "meanTokens": {
+          "input": 2,
+          "output": 1265,
+          "cacheRead": 27974
+        },
+        "costUsd": {
+          "total": 0.069338,
+          "perTurn": 0.023112666666666667
+        },
+        "stopReasons": {
+          "tool_use": 1,
+          "end_turn": 2
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-undo": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 3751,
+          "p95": 7503
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 1764,
+          "p95": 1878
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 12,
+          "output": 1179,
+          "cacheRead": 176327,
+          "cacheWrite": 9120
+        },
+        "meanTokens": {
+          "input": 4,
+          "output": 393,
+          "cacheRead": 58775.666666666664
+        },
+        "costUsd": {
+          "total": 0.069881,
+          "perTurn": 0.023293666666666667
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "basic-missing-track": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 2274,
+          "p95": 2679
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 2260,
+          "p95": 2667
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 6,
+          "output": 448,
+          "cacheRead": 83922,
+          "cacheWrite": 8433
+        },
+        "meanTokens": {
+          "input": 2,
+          "output": 149.33333333333334,
+          "cacheRead": 27974
+        },
+        "costUsd": {
+          "total": 0.04236,
+          "perTurn": 0.01412
+        },
+        "stopReasons": {
+          "end_turn": 3
         },
         "maxTokensRate": 0,
         "refusalRate": 0
@@ -944,43 +2184,43 @@
   "summary": {
     "checks": {
       "valid": {
-        "pass": 56,
-        "fail": 14,
+        "pass": 136,
+        "fail": 30,
         "skip": 0
       },
       "bundled": {
-        "pass": 56,
+        "pass": 136,
         "fail": 0,
-        "skip": 14
+        "skip": 30
       },
       "inScope": {
-        "pass": 56,
-        "fail": 0,
-        "skip": 14
+        "pass": 133,
+        "fail": 3,
+        "skip": 30
       },
       "atomicUndo": {
-        "pass": 56,
-        "fail": 0,
-        "skip": 14
+        "pass": 131,
+        "fail": 5,
+        "skip": 30
       },
       "grounded": {
-        "pass": 56,
+        "pass": 136,
         "fail": 0,
-        "skip": 14
+        "skip": 30
       },
       "notFlattened": {
-        "pass": 11,
+        "pass": 15,
         "fail": 0,
-        "skip": 4
+        "skip": 0
       },
       "coverage": {
-        "pass": 0,
-        "fail": 3,
-        "skip": 67
+        "pass": 6,
+        "fail": 0,
+        "skip": 160
       },
       "outcome": {
-        "pass": 70,
-        "fail": 3,
+        "pass": 138,
+        "fail": 33,
         "skip": 0
       },
       "hatDensity": {
@@ -995,23 +2235,23 @@
       },
       "developsTrack": {
         "pass": 0,
-        "fail": 1,
-        "skip": 0
+        "fail": 2,
+        "skip": 1
       },
       "padSound": {
-        "pass": 0,
-        "fail": 0,
-        "skip": 3
+        "pass": 1,
+        "fail": 2,
+        "skip": 0
       },
       "dissonant": {
         "pass": 0,
-        "fail": 0,
-        "skip": 3
+        "fail": 3,
+        "skip": 0
       },
       "addsTracks": {
-        "pass": 1,
-        "fail": 2,
-        "skip": 3
+        "pass": 6,
+        "fail": 0,
+        "skip": 0
       },
       "endsAt": {
         "pass": 18,
@@ -1019,14 +2259,29 @@
         "skip": 0
       },
       "noEmptyClips": {
-        "pass": 0,
-        "fail": 3,
-        "skip": 0
+        "pass": 133,
+        "fail": 0,
+        "skip": 30
       },
       "noNoOps": {
-        "pass": 5,
-        "fail": 0,
+        "pass": 4,
+        "fail": 1,
         "skip": 1
+      },
+      "exactEdit": {
+        "pass": 65,
+        "fail": 1,
+        "skip": 27
+      },
+      "nothingElse": {
+        "pass": 63,
+        "fail": 3,
+        "skip": 27
+      },
+      "clipsPlaced": {
+        "pass": 136,
+        "fail": 0,
+        "skip": 30
       }
     },
     "cases": {
@@ -1057,11 +2312,21 @@
           "skip": 0
         },
         "coverage": {
-          "pass": 0,
-          "fail": 3,
+          "pass": 3,
+          "fail": 0,
           "skip": 0
         },
         "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
           "pass": 3,
           "fail": 0,
           "skip": 0
@@ -1069,321 +2334,57 @@
       },
       "sketch-broken": {
         "valid": {
-          "pass": 0,
-          "fail": 3,
+          "pass": 3,
+          "fail": 0,
           "skip": 0
         },
         "bundled": {
-          "pass": 0,
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
         },
         "inScope": {
-          "pass": 0,
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
         },
         "atomicUndo": {
-          "pass": 0,
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
         },
         "grounded": {
-          "pass": 0,
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
         },
         "notFlattened": {
-          "pass": 0,
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
         },
         "coverage": {
-          "pass": 0,
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
         },
         "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
           "pass": 3,
           "fail": 0,
           "skip": 0
         }
       },
       "variation-fill": {
-        "valid": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "bundled": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "inScope": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "atomicUndo": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "grounded": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "coverage": {
-          "pass": 0,
-          "fail": 0,
-          "skip": 3
-        },
-        "outcome": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        }
-      },
-      "variation-mangled": {
-        "valid": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "bundled": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "inScope": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "atomicUndo": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "grounded": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "notFlattened": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "coverage": {
-          "pass": 0,
-          "fail": 0,
-          "skip": 3
-        },
-        "outcome": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        }
-      },
-      "arrange-build-drop": {
-        "valid": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "bundled": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "inScope": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "atomicUndo": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "grounded": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "coverage": {
-          "pass": 0,
-          "fail": 0,
-          "skip": 3
-        },
-        "outcome": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        }
-      },
-      "arrange-no-build": {
-        "valid": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "bundled": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "inScope": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "atomicUndo": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "grounded": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "notFlattened": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "coverage": {
-          "pass": 0,
-          "fail": 0,
-          "skip": 3
-        },
-        "outcome": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        }
-      },
-      "balance-clean": {
-        "valid": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "bundled": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "inScope": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "atomicUndo": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "grounded": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "coverage": {
-          "pass": 0,
-          "fail": 0,
-          "skip": 3
-        },
-        "outcome": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        }
-      },
-      "balance-lopsided": {
-        "valid": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "bundled": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "inScope": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "atomicUndo": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "grounded": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "notFlattened": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "coverage": {
-          "pass": 0,
-          "fail": 0,
-          "skip": 3
-        },
-        "outcome": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        }
-      },
-      "process-glue": {
-        "valid": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "bundled": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "inScope": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "atomicUndo": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "grounded": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        },
-        "coverage": {
-          "pass": 0,
-          "fail": 0,
-          "skip": 3
-        },
-        "outcome": {
-          "pass": 3,
-          "fail": 0,
-          "skip": 0
-        }
-      },
-      "process-crushed": {
         "valid": {
           "pass": 2,
           "fail": 1,
@@ -1409,10 +2410,57 @@
           "fail": 0,
           "skip": 1
         },
-        "notFlattened": {
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 2,
+          "fail": 1,
+          "skip": 0
+        },
+        "noEmptyClips": {
           "pass": 2,
           "fail": 0,
           "skip": 1
+        },
+        "clipsPlaced": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        }
+      },
+      "variation-mangled": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "notFlattened": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
         },
         "coverage": {
           "pass": 0,
@@ -1420,6 +2468,313 @@
           "skip": 3
         },
         "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "arrange-build-drop": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "arrange-no-build": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "notFlattened": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "balance-clean": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "balance-lopsided": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "notFlattened": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "process-glue": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "process-crushed": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "notFlattened": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
           "pass": 3,
           "fail": 0,
           "skip": 0
@@ -1470,16 +2825,24 @@
           "pass": 0,
           "fail": 3,
           "skip": 0
-        }
-      },
-      "develop-track-ask": {
-        "outcome": {
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
           "pass": 3,
           "fail": 0,
           "skip": 0
         }
       },
-      "develop-track-arrange": {
+      "develop-track-ask": {
+        "outcome": {
+          "pass": 2,
+          "fail": 1,
+          "skip": 0
+        },
         "valid": {
           "pass": 1,
           "fail": 0,
@@ -1510,42 +2873,94 @@
           "fail": 0,
           "skip": 1
         },
-        "outcome": {
+        "noEmptyClips": {
           "pass": 1,
           "fail": 0,
           "skip": 0
         },
-        "developsTrack": {
-          "pass": 0,
+        "clipsPlaced": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "develop-track-arrange": {
+        "valid": {
+          "pass": 2,
           "fail": 1,
           "skip": 0
+        },
+        "bundled": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "inScope": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "atomicUndo": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "grounded": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 2,
+          "fail": 1,
+          "skip": 0
+        },
+        "developsTrack": {
+          "pass": 0,
+          "fail": 2,
+          "skip": 1
+        },
+        "noEmptyClips": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "clipsPlaced": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
         }
       },
       "pad-genre-known": {
         "valid": {
-          "pass": 0,
-          "fail": 3,
+          "pass": 3,
+          "fail": 0,
           "skip": 0
         },
         "bundled": {
-          "pass": 0,
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
         },
         "inScope": {
-          "pass": 0,
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
         },
         "atomicUndo": {
-          "pass": 0,
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
         },
         "grounded": {
-          "pass": 0,
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
         },
         "coverage": {
           "pass": 0,
@@ -1558,41 +2973,51 @@
           "skip": 0
         },
         "padSound": {
-          "pass": 0,
-          "fail": 0,
-          "skip": 3
+          "pass": 1,
+          "fail": 2,
+          "skip": 0
         },
         "dissonant": {
-          "pass": 0,
-          "fail": 0,
-          "skip": 3
-        }
-      },
-      "pad-genre-unknown": {
-        "valid": {
           "pass": 0,
           "fail": 3,
           "skip": 0
         },
-        "bundled": {
-          "pass": 0,
+        "noEmptyClips": {
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "pad-genre-unknown": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
         },
         "inScope": {
-          "pass": 0,
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
         },
         "atomicUndo": {
-          "pass": 0,
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
         },
         "grounded": {
-          "pass": 0,
+          "pass": 3,
           "fail": 0,
-          "skip": 3
+          "skip": 0
         },
         "coverage": {
           "pass": 0,
@@ -1602,34 +3027,44 @@
         "outcome": {
           "pass": 0,
           "fail": 3,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
           "skip": 0
         }
       },
       "sketch-whole-song": {
         "valid": {
-          "pass": 2,
-          "fail": 1,
+          "pass": 3,
+          "fail": 0,
           "skip": 0
         },
         "bundled": {
-          "pass": 2,
+          "pass": 3,
           "fail": 0,
-          "skip": 1
+          "skip": 0
         },
         "inScope": {
-          "pass": 2,
+          "pass": 3,
           "fail": 0,
-          "skip": 1
+          "skip": 0
         },
         "atomicUndo": {
-          "pass": 2,
+          "pass": 3,
           "fail": 0,
-          "skip": 1
+          "skip": 0
         },
         "grounded": {
-          "pass": 2,
+          "pass": 3,
           "fail": 0,
-          "skip": 1
+          "skip": 0
         },
         "coverage": {
           "pass": 0,
@@ -1642,36 +3077,46 @@
           "skip": 0
         },
         "addsTracks": {
-          "pass": 0,
-          "fail": 2,
-          "skip": 1
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
         }
       },
       "sketch-track-scope": {
         "valid": {
-          "pass": 1,
-          "fail": 2,
+          "pass": 3,
+          "fail": 0,
           "skip": 0
         },
         "bundled": {
-          "pass": 1,
+          "pass": 3,
           "fail": 0,
-          "skip": 2
+          "skip": 0
         },
         "inScope": {
-          "pass": 1,
+          "pass": 3,
           "fail": 0,
-          "skip": 2
+          "skip": 0
         },
         "atomicUndo": {
-          "pass": 1,
+          "pass": 3,
           "fail": 0,
-          "skip": 2
+          "skip": 0
         },
         "grounded": {
-          "pass": 1,
+          "pass": 3,
           "fail": 0,
-          "skip": 2
+          "skip": 0
         },
         "coverage": {
           "pass": 0,
@@ -1684,9 +3129,19 @@
           "skip": 0
         },
         "addsTracks": {
-          "pass": 1,
+          "pass": 3,
           "fail": 0,
-          "skip": 2
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
         }
       },
       "db-nudge-down": {
@@ -1726,6 +3181,16 @@
           "skip": 0
         },
         "endsAt": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
           "pass": 3,
           "fail": 0,
           "skip": 0
@@ -1771,6 +3236,16 @@
           "pass": 3,
           "fail": 0,
           "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
         }
       },
       "db-lower": {
@@ -1810,6 +3285,16 @@
           "skip": 0
         },
         "endsAt": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
           "pass": 3,
           "fail": 0,
           "skip": 0
@@ -1855,6 +3340,16 @@
           "pass": 3,
           "fail": 0,
           "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
         }
       },
       "db-stale-cancelled": {
@@ -1894,6 +3389,16 @@
           "skip": 0
         },
         "endsAt": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
           "pass": 3,
           "fail": 0,
           "skip": 0
@@ -1939,9 +3444,71 @@
           "pass": 3,
           "fail": 0,
           "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
         }
       },
       "resketch-extreme": {
+        "valid": {
+          "pass": 2,
+          "fail": 1,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "inScope": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "atomicUndo": {
+          "pass": 0,
+          "fail": 2,
+          "skip": 1
+        },
+        "grounded": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "noNoOps": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "clipsPlaced": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        }
+      },
+      "noop-bd-only": {
         "valid": {
           "pass": 3,
           "fail": 0,
@@ -1978,17 +3545,364 @@
           "skip": 0
         },
         "noEmptyClips": {
-          "pass": 0,
-          "fail": 3,
+          "pass": 3,
+          "fail": 0,
           "skip": 0
         },
         "noNoOps": {
+          "pass": 2,
+          "fail": 1,
+          "skip": 0
+        },
+        "clipsPlaced": {
           "pass": 3,
           "fail": 0,
           "skip": 0
         }
       },
-      "noop-bd-only": {
+      "basic-extend-loop": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-duplicate-chorus": {
+        "valid": {
+          "pass": 2,
+          "fail": 1,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "inScope": {
+          "pass": 0,
+          "fail": 2,
+          "skip": 1
+        },
+        "atomicUndo": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "grounded": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 2,
+          "fail": 1,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "exactEdit": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "nothingElse": {
+          "pass": 0,
+          "fail": 2,
+          "skip": 1
+        },
+        "clipsPlaced": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        }
+      },
+      "basic-trim-drums": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-move-bass": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-loop-bars": {
+        "valid": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "inScope": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "atomicUndo": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "grounded": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "exactEdit": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "nothingElse": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "clipsPlaced": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        }
+      },
+      "basic-delete-pad": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-add-synth": {
         "valid": {
           "pass": 2,
           "fail": 1,
@@ -2020,19 +3934,1404 @@
           "skip": 3
         },
         "outcome": {
-          "pass": 3,
-          "fail": 0,
+          "pass": 2,
+          "fail": 1,
           "skip": 0
         },
-        "noNoOps": {
+        "noEmptyClips": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "exactEdit": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "nothingElse": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "clipsPlaced": {
           "pass": 2,
           "fail": 0,
           "skip": 1
         }
+      },
+      "basic-add-drum-machine": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-rename-track": {
+        "valid": {
+          "pass": 2,
+          "fail": 1,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "inScope": {
+          "pass": 1,
+          "fail": 1,
+          "skip": 1
+        },
+        "atomicUndo": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "grounded": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 2,
+          "fail": 1,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "exactEdit": {
+          "pass": 1,
+          "fail": 1,
+          "skip": 1
+        },
+        "nothingElse": {
+          "pass": 1,
+          "fail": 1,
+          "skip": 1
+        },
+        "clipsPlaced": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        }
+      },
+      "basic-mute-hats": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-solo-bass": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-vocals-to-top": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-kick-down": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-pan-guitar": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-longer-kick": {
+        "valid": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "inScope": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "atomicUndo": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "grounded": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "exactEdit": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "nothingElse": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "clipsPlaced": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        }
+      },
+      "basic-add-clap": {
+        "valid": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "inScope": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "atomicUndo": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "grounded": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "exactEdit": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "nothingElse": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "clipsPlaced": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        }
+      },
+      "basic-synth-to-sampler": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-lower-cutoff": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-add-reverb": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-remove-reverb": {
+        "valid": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "inScope": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "atomicUndo": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "grounded": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "exactEdit": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "nothingElse": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "clipsPlaced": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        }
+      },
+      "basic-wetter-reverb": {
+        "valid": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "inScope": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "atomicUndo": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "grounded": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "exactEdit": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "nothingElse": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "clipsPlaced": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        }
+      },
+      "basic-delay-before-reverb": {
+        "valid": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "inScope": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "atomicUndo": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "grounded": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "exactEdit": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "nothingElse": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "clipsPlaced": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        }
+      },
+      "basic-reverb-send": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-quantize-hats": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-transpose-melody": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-humanize-hats": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-double-speed": {
+        "valid": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "inScope": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "atomicUndo": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "grounded": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "exactEdit": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "nothingElse": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "clipsPlaced": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        }
+      },
+      "basic-clear-clip": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-tempo": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-key": {
+        "valid": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "inScope": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "atomicUndo": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "grounded": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "exactEdit": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "nothingElse": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "clipsPlaced": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        }
+      },
+      "basic-undo": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "exactEdit": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "nothingElse": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "clipsPlaced": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "basic-missing-track": {
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
       }
     },
     "errored": {
-      "total": 2,
+      "total": 0,
       "auth": 0,
       "cases": {
         "sketch-house": 0,
@@ -2047,7 +5346,7 @@
         "process-crushed": 0,
         "density-hats": 0,
         "develop-track-ask": 0,
-        "develop-track-arrange": 2,
+        "develop-track-arrange": 0,
         "pad-genre-known": 0,
         "pad-genre-unknown": 0,
         "sketch-whole-song": 0,
@@ -2059,7 +5358,39 @@
         "db-stale-cancelled": 0,
         "db-stale-undone": 0,
         "resketch-extreme": 0,
-        "noop-bd-only": 0
+        "noop-bd-only": 0,
+        "basic-extend-loop": 0,
+        "basic-duplicate-chorus": 0,
+        "basic-trim-drums": 0,
+        "basic-move-bass": 0,
+        "basic-loop-bars": 0,
+        "basic-delete-pad": 0,
+        "basic-add-synth": 0,
+        "basic-add-drum-machine": 0,
+        "basic-rename-track": 0,
+        "basic-mute-hats": 0,
+        "basic-solo-bass": 0,
+        "basic-vocals-to-top": 0,
+        "basic-kick-down": 0,
+        "basic-pan-guitar": 0,
+        "basic-longer-kick": 0,
+        "basic-add-clap": 0,
+        "basic-synth-to-sampler": 0,
+        "basic-lower-cutoff": 0,
+        "basic-add-reverb": 0,
+        "basic-remove-reverb": 0,
+        "basic-wetter-reverb": 0,
+        "basic-delay-before-reverb": 0,
+        "basic-reverb-send": 0,
+        "basic-quantize-hats": 0,
+        "basic-transpose-melody": 0,
+        "basic-humanize-hats": 0,
+        "basic-double-speed": 0,
+        "basic-clear-clip": 0,
+        "basic-tempo": 0,
+        "basic-key": 0,
+        "basic-undo": 0,
+        "basic-missing-track": 0
       }
     }
   }

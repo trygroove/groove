@@ -13,9 +13,14 @@
  * - The **sets** (GRV-119): the headline again for each set of cases (the
  *   musical capability evals, the basic production actions), so each set
  *   reads as its own score beside the run's.
+ * - The **heavy set** (GRV-131): the mean, over the heavy-output cases the
+ *   run has, of each case's output tokens per turn, latency p50 and cost per
+ *   turn: the three numbers an output-token lever is judged by.
  * - {@link compareScorecards} sets each number beside a baseline's, with its
  *   delta and whether that is better or worse, set by set: a run of both sets
  *   compared with a baseline of one compares like with like.
+ *   {@link compareHeavySets} does the same for the heavy set, over the heavy
+ *   cases both runs have.
  *
  * Everything here is computed from a report's records and its check tallies,
  * so a saved report (a baseline, or a `--replay`) scores the same as the run
@@ -27,6 +32,7 @@ import { costMicroUsd } from "../spend";
 import type { ProviderUsage } from "../streamEvents";
 import { CHECK_IDS, type CheckId } from "./checks";
 import type { EvalRecord, Tally } from "./run";
+import { HEAVY_OUTPUT_CASE_IDS } from "./sets";
 
 /** A pass rate over the turns a check could judge. */
 export interface Rate {
@@ -290,11 +296,11 @@ export function scorecardOf(source: ScorecardSource): Scorecard {
 /** How a number is read, and which way is better. */
 export type MetricKind = "rate" | "ms" | "tokens" | "usd" | "count";
 
-export interface Metric {
+export interface Metric<View = ScoreView> {
   readonly label: string;
   readonly kind: MetricKind;
   readonly higherIsBetter: boolean;
-  readonly value: (card: ScoreView) => number | null;
+  readonly value: (card: View) => number | null;
 }
 
 /** Every headline and secondary number, in the order the report prints them. */
@@ -432,7 +438,15 @@ export function compareScorecards(current: Scorecard, baseline: Scorecard): Comp
 }
 
 function compareViews(current: ScoreView, baseline: ScoreView | null): Comparison[] {
-  return SCORECARD_METRICS.map((metric) => {
+  return compareMetrics(SCORECARD_METRICS, current, baseline);
+}
+
+function compareMetrics<View>(
+  metrics: readonly Metric<View>[],
+  current: View,
+  baseline: View | null,
+): Comparison[] {
+  return metrics.map((metric) => {
     const now = metric.value(current);
     const then = baseline ? metric.value(baseline) : null;
     const delta = now === null || then === null ? null : now - then;
@@ -453,6 +467,80 @@ function compareViews(current: ScoreView, baseline: ScoreView | null): Compariso
       verdict,
     };
   });
+}
+
+/**
+ * The heavy set's three numbers (GRV-131), each the plain mean of the
+ * per-case figure over the heavy cases scored, so every case weighs the same
+ * however many of its turns errored.
+ */
+export interface HeavySet {
+  /** The heavy cases these numbers are over, in the group's order. */
+  readonly caseIds: readonly string[];
+  readonly outputTokens: number | null;
+  readonly latencyP50Ms: number | null;
+  readonly costPerTurnUsd: number | null;
+}
+
+function meanOf(values: readonly (number | null)[]): number | null {
+  const known = values.filter((value): value is number => value !== null);
+  return known.length === 0 ? null : known.reduce((a, b) => a + b, 0) / known.length;
+}
+
+/**
+ * The heavy set of a scorecard, over the heavy cases it scored (or only
+ * those of `caseIds`); null when it scored none of them.
+ */
+export function heavySetOf(
+  card: Pick<Scorecard, "cases">,
+  caseIds: readonly string[] = HEAVY_OUTPUT_CASE_IDS,
+): HeavySet | null {
+  const ids = HEAVY_OUTPUT_CASE_IDS.filter(
+    (id) => caseIds.includes(id) && card.cases[id] !== undefined,
+  );
+  if (ids.length === 0) return null;
+  const cases = ids.map((id) => card.cases[id]);
+  return {
+    caseIds: ids,
+    outputTokens: meanOf(cases.map((s) => s.meanTokens.output)),
+    latencyP50Ms: meanOf(cases.map((s) => s.latencyMs.p50)),
+    costPerTurnUsd: meanOf(cases.map((s) => s.costUsd.perTurn)),
+  };
+}
+
+export const HEAVY_SET_METRICS: readonly Metric<HeavySet>[] = [
+  {
+    label: "Mean output tokens per turn",
+    kind: "tokens",
+    higherIsBetter: false,
+    value: (h) => h.outputTokens,
+  },
+  {
+    label: "Mean latency p50",
+    kind: "ms",
+    higherIsBetter: false,
+    value: (h) => h.latencyP50Ms,
+  },
+  {
+    label: "Mean cost per turn",
+    kind: "usd",
+    higherIsBetter: false,
+    value: (h) => h.costPerTurnUsd,
+  },
+];
+
+/**
+ * The heavy set beside the baseline's, the baseline taken over the same
+ * heavy cases this run scored (n/a when it has none of them); null when this
+ * run scored no heavy case.
+ */
+export function compareHeavySets(
+  current: Scorecard,
+  baseline: Scorecard,
+): Comparison[] | null {
+  const now = heavySetOf(current);
+  if (!now) return null;
+  return compareMetrics(HEAVY_SET_METRICS, now, heavySetOf(baseline, now.caseIds));
 }
 
 /** One number as the report prints it: "72.5%", "4.3 s", "1,204", "$0.0123". */

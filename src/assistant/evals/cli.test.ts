@@ -10,6 +10,7 @@ import {
   selectEvalCases,
 } from "./cli";
 import { summaryOf } from "./run";
+import { HEAVY_OUTPUT_CASE_IDS } from "./sets";
 
 function options(argv: string[], env: Record<string, string | undefined> = {}) {
   const parsed = parseEvalArgs(argv, env);
@@ -84,6 +85,7 @@ describe("parseEvalArgs", () => {
 
   it("reads the set to run", () => {
     expect(options(["--set", "basicActions"]).set).toBe("basicActions");
+    expect(options(["--set", "heavyOutput"]).set).toBe("heavyOutput");
   });
 
   it("takes the run count from EVAL_RUNS unless --runs says otherwise", () => {
@@ -105,7 +107,7 @@ describe("parseEvalArgs", () => {
     [["--runs"], "--runs needs a value"],
     [["--wat"], "Unknown option --wat"],
     [["--model", "gpt-4"], 'Unknown model "gpt-4"'],
-    [["--set", "vibes"], 'Unknown set "vibes". Sets: musical, basicActions'],
+    [["--set", "vibes"], 'Unknown set "vibes". Sets: musical, basicActions, heavyOutput'],
   ])("refuses %j", (argv, message) => {
     expect(() => parseEvalArgs(argv)).toThrow(EvalUsageError);
     expect(() => parseEvalArgs(argv)).toThrow(message);
@@ -131,6 +133,18 @@ describe("selectEvalCases", () => {
     expect(musical.length + basic.length).toBe(EVAL_CASES.length);
     expect(() => selectEvalCases(["sketch-house"], EVAL_CASES, "basicActions")).toThrow(
       'No eval case "sketch-house"',
+    );
+  });
+
+  it("runs the heavy-output group's eight cases, each a real one (GRV-131)", () => {
+    const heavy = selectEvalCases([], EVAL_CASES, "heavyOutput");
+    expect(heavy.map((entry) => entry.id).sort()).toEqual(
+      [...HEAVY_OUTPUT_CASE_IDS].sort(),
+    );
+    expect(heavy).toHaveLength(8);
+    expect(selectEvalCases(["density-hats"], EVAL_CASES, "heavyOutput")).toHaveLength(1);
+    expect(() => selectEvalCases(["basic-mute-hats"], EVAL_CASES, "heavyOutput")).toThrow(
+      'No eval case "basic-mute-hats"',
     );
   });
 });
