@@ -1326,7 +1326,7 @@ describe("runAssistantTurn: compact notes (GRV-131)", () => {
       clipId: noteClip.id,
       notes: [
         {
-          id: "evt_Stem00000000000000001",
+          id: "evt_Stem0000000000000n001",
           trigger: { kind: "pitch", pitch: 40 },
           startTicks: 0,
           durationTicks: 96,
@@ -1339,8 +1339,8 @@ describe("runAssistantTurn: compact notes (GRV-131)", () => {
       (created.input as { content: { events: { id: string; probability: unknown }[] } })
         .content.events,
     ).toMatchObject([
-      { id: "evt_Stem00000000000000002", probability: null },
-      { id: "evt_Stem00000000000000003", probability: 0.5 },
+      { id: "evt_Stem0000000000000n002", probability: null },
+      { id: "evt_Stem0000000000000n003", probability: 0.5 },
     ]);
     // What the browser receives is ordinary payloads, and it applies.
     const validation = validateProposal(project, result.proposal);
@@ -1350,6 +1350,87 @@ describe("runAssistantTurn: compact notes (GRV-131)", () => {
     expect(JSON.stringify(offered?.input_schema)).toContain("prefixItems");
     const [assistant] = h.provider.requests[1].messages.slice(-2);
     expect(JSON.stringify(assistant)).toContain("[0,40,96,0.8]");
+  });
+
+  it("keeps the notes it numbers apart from the note IDs the model makes, so the turn applies", async () => {
+    // A turn that writes notes in two clips and then duplicates them: the
+    // gateway numbers the notes it writes out, and notes_duplicate's newIds
+    // are the model's own, from the same stem, in its counter of digits.
+    const stem = "Stem0000000000000";
+    const clipId = "clp_Stem00000000000000001";
+    const addCall = {
+      name: "note_add",
+      input: {
+        clipId: noteClip.id,
+        notes: [
+          [0, 40, 96, 0.8],
+          [96, 43, 96, 0.8],
+        ],
+      },
+    };
+    const clipCall = {
+      name: "clip_create",
+      input: {
+        id: clipId,
+        trackId: noteClip.trackId,
+        name: "Answer",
+        color: "#808080",
+        lengthTicks: 768,
+        content: { kind: "notes", events: [[0, 43, 192, 0.7]] },
+      },
+    };
+    const added = ["evt_Stem0000000000000n001", "evt_Stem0000000000000n002"];
+    const duplicateAdded = {
+      name: "notes_duplicate",
+      input: {
+        clipId: noteClip.id,
+        eventIds: added,
+        offsetTicks: 192,
+        newIds: ["evt_Stem00000000000000001", "evt_Stem00000000000000002"],
+      },
+    };
+    const duplicateClip = {
+      name: "notes_duplicate",
+      input: {
+        clipId,
+        eventIds: null,
+        offsetTicks: 384,
+        newIds: ["evt_Stem00000000000000003"],
+      },
+    };
+    const h = harness([toolUseEvents("Notes first.", [addCall, clipCall])], {}, [
+      toolUseEvents("Then twice.", [duplicateAdded, duplicateClip, explainCall]),
+    ]);
+    const result = await runAssistantTurn(
+      { ...h.deps, idStem: () => stem },
+      SIGNED_IN,
+      request(),
+      { signal: new AbortController().signal, onChunk: () => {} },
+    );
+    // The model was told the IDs its new notes were given.
+    const answers = JSON.stringify(h.provider.requests[1].messages.at(-1));
+    expect(answers).toContain(`count up from ${added[0]} to ${added[1]}`);
+    expect(answers).toContain("Its note's ID is evt_Stem0000000000000n003.");
+
+    const history = createCommandHistory(project);
+    const executor = createProposalExecutor({
+      target: historyProposalTarget(history),
+      analytics: { log() {} },
+    });
+    const proposed = executor.propose(result.proposal);
+    if (!proposed.ok) throw new Error(JSON.stringify(proposed.issues));
+    expect(proposed.handle.apply().ok).toBe(true);
+    const idsIn = (id: string) => {
+      const clip = history.project.clips.find((entry) => entry.id === id);
+      return clip?.content.kind === "notes" ? clip.content.events.map((e) => e.id) : [];
+    };
+    expect(idsIn(noteClip.id)).toEqual(
+      expect.arrayContaining([...added, ...duplicateAdded.input.newIds]),
+    );
+    expect(idsIn(clipId)).toEqual([
+      "evt_Stem0000000000000n003",
+      "evt_Stem00000000000000003",
+    ]);
   });
 
   it("refuses a malformed note back to the model, which sends it again", async () => {

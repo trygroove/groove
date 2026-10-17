@@ -33,6 +33,23 @@ export const ADDED_RESULT =
 const NOTED_RESULT = "Noted.";
 
 /**
+ * What a change call that joined the proposal is told: {@link ADDED_RESULT},
+ * and the IDs its new notes were given (GRV-131), so a later step can update,
+ * remove or duplicate them. They count up from the first, so the first and
+ * the last say them all.
+ */
+export function addedResult(noteIds: readonly string[]): string {
+  const [first] = noteIds;
+  const last = noteIds.at(-1);
+  if (first === undefined || last === undefined) return ADDED_RESULT;
+  const ids =
+    noteIds.length === 1
+      ? `Its note's ID is ${first}.`
+      : `Its ${noteIds.length} notes' IDs, in the order you gave them, count up from ${first} to ${last}.`;
+  return `${ADDED_RESULT} ${ids}`;
+}
+
+/**
  * Whether `call` changes the song, rather than explaining, asking,
  * recommending or proposing something to remember (GRV-25).
  */
@@ -109,7 +126,10 @@ export function answerStep(
       kept.push(call);
       return { type: "tool_result", tool_use_id: call.id, content: NOTED_RESULT };
     }
-    const expanded = notes.expand(call);
+    const expanded = notes.expand(call, (written) => {
+      const resolution = resolveToolCall(written.name, written.input);
+      return resolution.ok ? null : resolution.message;
+    });
     if (!expanded.ok) {
       return {
         type: "tool_result",
@@ -118,17 +138,12 @@ export function answerStep(
         is_error: true,
       };
     }
-    const resolution = resolveToolCall(expanded.call.name, expanded.call.input);
-    if (!resolution.ok) {
-      return {
-        type: "tool_result",
-        tool_use_id: call.id,
-        content: refusal(resolution.message),
-        is_error: true,
-      };
-    }
     kept.push(expanded.call);
-    return { type: "tool_result", tool_use_id: call.id, content: ADDED_RESULT };
+    return {
+      type: "tool_result",
+      tool_use_id: call.id,
+      content: addedResult(expanded.noteIds),
+    };
   });
   return { kept, results };
 }

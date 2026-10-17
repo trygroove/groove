@@ -380,7 +380,10 @@ const placementCalls = (placements: readonly unknown[]): AssistantToolInvocation
 
 /**
  * The flat inputs the create tools take, each accepted as it stands. The
- * clip's is the one a compact clip ({@link OFFERED_CLIP_EXAMPLE}) expands to.
+ * track's and the placement's are shown to the model in their tools'
+ * descriptions; the clip's is not, since its notes are written out: it is
+ * what the gateway makes of {@link OFFERED_CLIP_EXAMPLE}, which is shown, in a
+ * turn whose stem is `BassNote000000000` (`compactNotes.ts`).
  */
 export const CREATE_EXAMPLES = {
   track: {
@@ -404,7 +407,7 @@ export const CREATE_EXAMPLES = {
       kind: "notes",
       events: [
         {
-          id: "evt_BassNote0000000000001",
+          id: "evt_BassNote000000000n001",
           trigger: { kind: "pitch", pitch: 36 },
           startTicks: 0,
           durationTicks: 192,
@@ -526,7 +529,11 @@ const TOOL_RULES: readonly ToolRule[] = [
   rule("notes.scaleVelocity", "notes", "Scale the velocity of a clip's notes."),
   rule("notes.quantize", "notes", "Quantize a clip's notes to a grid."),
   rule("notes.quantizeToScale", "notes", "Move a clip's notes onto a scale."),
-  rule("notes.duplicate", "notes", "Repeat a clip's notes later in the clip."),
+  rule(
+    "notes.duplicate",
+    "notes",
+    "Repeat a clip's notes later in the clip. newIds holds one new note ID per note copied (every note in the clip when eventIds is null), in order, made from this turn's stem.",
+  ),
   rule("notes.clear", "notes", "Remove every note from a clip."),
   rule("notes.vary", "notes", "Vary a clip's notes deterministically from a seed."),
   flatRule(

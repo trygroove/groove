@@ -181,6 +181,11 @@ describe("flat create tools (GRV-90)", () => {
     },
   );
 
+  it("never shows the model the written-out clip, whose note carries an ID", () => {
+    const shown = JSON.stringify(assistantTools());
+    expect(shown).not.toContain(CREATE_EXAMPLES.clip.content.events[0].id);
+  });
+
   it("offers the entity's own fields at the top level of each schema", () => {
     const keys = (name: string) =>
       Object.keys(
