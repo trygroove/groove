@@ -64,8 +64,18 @@ export interface AskDraft {
   about(index: number): string | null;
 }
 
+/**
+ * What a draft needs of a conversation: its pending question, whether a reply
+ * is on its way, and the two ways to settle the question. The editor's
+ * conversation is one; onboarding's scripted questions (GRV-25) are another.
+ */
+export type AskConversation = Pick<
+  AssistantConversation,
+  "pendingAsk" | "streaming" | "answerAsk" | "dismissAsk"
+>;
+
 export interface UseAskDraftOptions {
-  readonly conversation: AssistantConversation;
+  readonly conversation: AskConversation;
   readonly project: Accessor<Project | null>;
   /** The committed project, never a preview of it: where an edit left the song. */
   readonly committedProject?: () => Project | null;

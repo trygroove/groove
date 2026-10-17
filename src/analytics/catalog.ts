@@ -40,7 +40,7 @@
 // ## Changing this file
 //
 // Event names, parameter names, and parameter values are a published contract:
-// they appear in Google Analytics reports and saved explorations, and renaming
+// they appear in PostHog insights and saved dashboards, and renaming
 // one splits a metric across two values for the same behavior. Adding is
 // routine; renaming or removing is a task of its own.
 
@@ -82,6 +82,7 @@ import {
   NAVIGATION_FEATURE_KEYS,
   NAVIGATION_SHORTCUT_ACTION_IDS,
 } from "./catalog/navigation";
+import { ONBOARDING_EVENTS, ONBOARDING_FEATURE_KEYS } from "./catalog/onboarding";
 import {
   type AnalyticsEventDefinition,
   type AnalyticsParamValue,
@@ -110,6 +111,7 @@ export {
 } from "./catalog/app";
 export {
   ASSISTANT_PROPOSAL_CAPABILITIES,
+  ASSISTANT_PROPOSAL_ISSUE_CODES,
   ASSISTANT_RECOMMENDATION_REFUSALS,
   ASSISTANT_SUGGESTION_IDS,
 } from "./catalog/assistant";
@@ -153,7 +155,7 @@ export {
 /**
  * `feature_first_use` keys (PRD `OPS-02`). One low-cardinality key rather than
  * an event name per feature, so first-use is comparable across features in one
- * report and the catalog stays well inside GA4's distinct-event-name limit.
+ * report and the catalog's event list stays short and readable.
  * A feature task adds its key to its own area's list under `./catalog/` with
  * the feature.
  */
@@ -167,6 +169,7 @@ export const FEATURE_KEYS = [
   ...LIBRARY_FEATURE_KEYS,
   ...EXPORT_FEATURE_KEYS,
   ...ASSISTANT_FEATURE_KEYS,
+  ...ONBOARDING_FEATURE_KEYS,
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -209,25 +212,16 @@ export const AUTOMATIC_PARAMS = {
 } as const;
 
 /**
- * GA4 user properties (PRD `OPS-02`: "limited to coarse, non-identifying
- * facts: account type and whether the session is internal").
+ * Person properties (PRD `OPS-02`: "limited to coarse, non-identifying
+ * facts: account type and whether the session is internal"). The PostHog
+ * transport also sends `internal` as an event property on every event, which
+ * is what the project's internal-traffic filter excludes on.
  */
 export const USER_PROPERTIES = {
   account_type: "account_type",
-  /** `"true"`/`"false"` — GA4 user property values are strings. */
+  /** `"true"`/`"false"`, as strings. */
   internal: "internal",
 } as const;
-
-/**
- * GA4's reserved `traffic_type` parameter, which its *Internal Traffic* data
- * filter matches on (Admin → Data streams → Configure tag settings → Define
- * internal traffic; the filter under Data settings → Data filters). The
- * `internal` user property above is a custom dimension for *reading* reports;
- * this is what lets the property *exclude* the sessions. The transport sets it
- * as a default parameter on every event, automatic collection included, for a
- * browser `isInternalTraffic()` is true in.
- */
-export const INTERNAL_TRAFFIC_EVENT_PARAMS = { traffic_type: "internal" } as const;
 
 // ---------------------------------------------------------------------------
 // The event catalog
@@ -253,6 +247,7 @@ export const ANALYTICS_EVENTS = {
   ...LIBRARY_EVENTS,
   ...EXPORT_EVENTS,
   ...ASSISTANT_EVENTS,
+  ...ONBOARDING_EVENTS,
 
   feature_first_use: {
     phase: 0,

@@ -26,6 +26,9 @@ import { backToArrangement, expectView, sequenceView } from "../support/views";
  * start is retired, and only an invited (allowlisted) Google address can sign
  * in, so steps 2 and 3 are now signing in with Google from the landing page and
  * arriving signed in. Everything from creating a project onwards is unchanged.
+ *
+ * **Revised for onboarding (GRV-25).** A new account is taken to the welcome
+ * before the dashboard, so step 3 passes through it with "Skip to the studio".
  * The precondition, an address on the list, is set up the way an admin would
  * (`../support/access`), and the sign-in goes through the Auth emulator's own
  * account chooser, so the blocking `beforeSignIn` function decides it exactly
@@ -89,7 +92,13 @@ test.describe("CF-001", { tag: "@sanity" }, () => {
       page.getByRole("button", { name: "Sign in", exact: true }).first().click(),
     );
 
-    // 3. You arrive at the dashboard, signed in, with no projects yet.
+    // 3. You arrive signed in at the welcome, where Cue introduces itself.
+    //    Choose Skip to the studio: you are on the dashboard, with no projects
+    //    yet. (Revised for GRV-25: a new account meets Cue first; the welcome
+    //    is CF-035's subject.)
+    await expect(page).toHaveURL(/\/welcome$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Cue" })).toBeVisible();
+    await page.getByRole("button", { name: "Skip to the studio" }).click();
     await expect(page).toHaveURL(/\/projects$/);
     await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();

@@ -19,6 +19,10 @@
  *   playing one 4-bar clip, placed looped.
  * - {@link createTechnoLoopProject} (GRV-99): that beat plus one synth track
  *   with a 4-bar riff: the loop a producer wants to develop into a track.
+ * - {@link createBdOnlyProject} (GRV-107): only the "BD" drum-machine track, as
+ *   GRV-6's QA used it, at a chosen volume.
+ * - {@link createBdSketchProject} (GRV-107): that track after an applied
+ *   sketch: BD plus bass, chords, melody and texture tracks, each with a clip.
  */
 import type {
   Clip,
@@ -422,3 +426,126 @@ export function createTechnoLoopProject(): Project {
   };
   return project(context, "Warehouse", song, [drums.clip, riff]);
 }
+
+/** The one-pad drum machine track QA used, named "BD". */
+function bdTrack(context: DomainFactoryContext, volume: number) {
+  const kick = createFactoryAsset(context, "starterKick");
+  const pad = createDrumPad(context, { name: "BD", assetId: kick.id });
+  const track = createTrack(context, {
+    name: "BD",
+    order: 0,
+    volume,
+    instrument: createDrumMachineInstrument([pad]),
+  });
+  const clip = createNoteClip(context, {
+    trackId: track.id,
+    name: "BD hit",
+    lengthTicks: TICKS_PER_BAR,
+    events: hits(context, pad.id, [0, 4, 8, 12], 0.9),
+  });
+  return { track, pad, clip, asset: kick };
+}
+
+/**
+ * Only the BD drum-machine track, at `volumeDb` (0 dB unless said), with a
+ * bar of kicks placed for four bars: what QA sent its requests against.
+ */
+export function createBdOnlyProject(volumeDb = 0): Project {
+  const context = evalContext("eval-bd-only");
+  const bd = bdTrack(context, volumeDb);
+  const song: Song = {
+    ...createEmptySong(120),
+    master: createNewProjectMaster(context),
+    tracks: [bd.track],
+    placements: [
+      createPlacement(context, {
+        clipId: bd.clip.id,
+        trackId: bd.track.id,
+        startTicks: 0,
+        durationTicks: 4 * TICKS_PER_BAR,
+        looped: true,
+      }),
+    ],
+    assets: [bd.asset],
+  };
+  return project(context, "BD only", song, [bd.clip]);
+}
+
+/**
+ * The BD track after an applied house sketch: bass, chords, melody and
+ * texture synth tracks beside it, each with a one-bar clip placed for four.
+ */
+export function createBdSketchProject(): Project {
+  const context = evalContext("eval-bd-sketch");
+  const bd = bdTrack(context, 0);
+  const parts: readonly (readonly [
+    name: string,
+    events: readonly (readonly [pitch: number, start: number, duration: number])[],
+  ])[] = [
+    [
+      "Bass",
+      [
+        [33, EIGHTH, EIGHTH],
+        [33, 3 * EIGHTH, EIGHTH],
+        [36, 5 * EIGHTH, EIGHTH],
+      ],
+    ],
+    [
+      "Chords",
+      [
+        [57, 0, 2 * QUARTER],
+        [60, 0, 2 * QUARTER],
+        [64, 0, 2 * QUARTER],
+      ],
+    ],
+    [
+      "Melody",
+      [
+        [72, 0, EIGHTH],
+        [76, QUARTER, EIGHTH],
+        [74, 2 * QUARTER, QUARTER],
+      ],
+    ],
+    [
+      "Texture",
+      [
+        [81, 0, 4 * QUARTER],
+        [84, 0, 4 * QUARTER],
+      ],
+    ],
+  ];
+  const synths = parts.map(([name, events], index) => {
+    const track = createTrack(context, {
+      name,
+      order: index + 1,
+      instrument: createSynthInstrument(),
+    });
+    const clip = createNoteClip(context, {
+      trackId: track.id,
+      name,
+      lengthTicks: TICKS_PER_BAR,
+      events: notes(context, events),
+    });
+    return { track, clip };
+  });
+  const clips = [bd.clip, ...synths.map((part) => part.clip)];
+  const song: Song = {
+    ...createEmptySong(124),
+    master: createNewProjectMaster(context),
+    tracks: [bd.track, ...synths.map((part) => part.track)],
+    placements: clips.map((clip) =>
+      createPlacement(context, {
+        clipId: clip.id,
+        trackId: clip.trackId,
+        startTicks: 0,
+        durationTicks: 4 * TICKS_PER_BAR,
+        looped: true,
+      }),
+    ),
+    assets: [bd.asset],
+  };
+  return project(context, "House sketch", song, clips);
+}
+
+// The helpers the basic production actions fixtures (GRV-119) build with too.
+export { evalContext, hits, notes, project as evalProject };

@@ -1,7 +1,10 @@
 import { execSync } from "node:child_process";
+import { readdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import posthogRollupPlugin from "@posthog/rollup-plugin";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import solid from "@solidjs/vite-plugin";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 // PRD `OPS-01`: every build stamps the git commit SHA into the client so the
 // deployed revision is identifiable and every analytics/error event can carry
@@ -51,6 +54,10 @@ const releaseSha = resolveReleaseSha();
 //
 // Inactive unless all three values are present, so a local `bun run build` and
 // the always-on CI `build` job neither need credentials nor contact Sentry.
+//
+// When PostHog uploads the maps too (`postHogBuildPlugins` below), PostHog's
+// plugin runs after this one and deletes them once both uploads are done, so
+// this one must not delete them first.
 function sentryBuildPlugins() {
   const authToken = process.env.SENTRY_AUTH_TOKEN;
   const org = process.env.SENTRY_ORG;
@@ -72,12 +79,94 @@ function sentryBuildPlugins() {
         // prerendered `index.html`, so there is no separate assembled
         // Hosting directory for a map to be copied into afterwards the way
         // vinxi's `.vinxi/build` -> `.output/public` hand-off produced.
-        filesToDeleteAfterUpload: ["dist/client/**/*.map"],
+        filesToDeleteAfterUpload: postHogUploadConfigured()
+          ? undefined
+          : ["dist/client/**/*.map"],
       },
       // No build-time telemetry to the vendor beyond the upload itself.
       telemetry: false,
     }),
   ];
+}
+
+/**
+ * Whether the PostHog source-map upload is configured: a personal API key
+ * with error-tracking write access, and the project it belongs to. Both live
+ * only in the deploy job (`POSTHOG_PERSONAL_API_KEY` is a secret).
+ */
+function postHogUploadConfigured(): boolean {
+  return Boolean(process.env.POSTHOG_PERSONAL_API_KEY && process.env.POSTHOG_PROJECT_ID);
+}
+
+// GRV-120 (ADR 0011 decision 3): source maps are uploaded to PostHog as well
+// as Sentry, per release, and never published, so PostHog error tracking can
+// symbolicate the stacks `src/monitoring/posthogSink.ts` sends it.
+//
+// The same three clauses as Sentry's, by the same means:
+//
+//  1. **Produced.** The same hidden maps.
+//  2. **Uploaded authenticated.** `@posthog/rollup-plugin` injects a chunk ID
+//     into each chunk and its map while the bundle renders (so both vendors'
+//     injections are in the maps both upload), then uploads them with
+//     `posthog-cli` under the personal API key, as release `groove`, version `<sha>`.
+//     The CLI binary is fetched on first use, in the deploy job only.
+//  3. **Never served.** Its `writeBundle` runs after Sentry's (it is
+//     sequential and listed after it), uploads, and then deletes the maps. If
+//     the upload fails, the deploy goes on unsymbolicated in PostHog and the
+//     maps are deleted anyway; `firebase.json` refuses `**/*.map` regardless.
+//
+// Inactive unless both values are present, like Sentry's.
+function postHogBuildPlugins(): Plugin[] {
+  if (!postHogUploadConfigured()) return [];
+  const plugin = posthogRollupPlugin({
+    personalApiKey: process.env.POSTHOG_PERSONAL_API_KEY ?? "",
+    projectId: process.env.POSTHOG_PROJECT_ID,
+    // The API host, not the ingestion host: EU Cloud unless set otherwise.
+    host: process.env.POSTHOG_HOST || "https://eu.posthog.com",
+    sourcemaps: {
+      enabled: true,
+      releaseName: "groove",
+      releaseVersion: releaseSha,
+      // Binds the uploaded maps to the release, with no CLI call while the
+      // bundle renders.
+      releaseMode: "symbol-set",
+      deleteAfterUpload: true,
+    },
+  }) as Plugin;
+  return [failOpenUpload(plugin)];
+}
+
+/**
+ * Wraps the PostHog plugin's upload so a failed upload never fails the
+ * deploy (Sentry's plugin behaves the same), and the maps are deleted
+ * whether or not it succeeded.
+ */
+function failOpenUpload(plugin: Plugin): Plugin {
+  const hook = plugin.writeBundle;
+  if (!hook || typeof hook === "function") return plugin;
+  return {
+    ...plugin,
+    writeBundle: {
+      ...hook,
+      async handler(options, bundle) {
+        try {
+          await hook.handler.call(this, options, bundle);
+        } catch (error) {
+          this.warn(`PostHog source-map upload failed, continuing: ${String(error)}`);
+        } finally {
+          if (options.dir) deleteSourceMaps(options.dir);
+        }
+      },
+    },
+  };
+}
+
+function deleteSourceMaps(directory: string): void {
+  for (const entry of readdirSync(directory, { recursive: true, withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith(".map")) {
+      rmSync(join(entry.parentPath, entry.name), { force: true });
+    }
+  }
 }
 
 export default defineConfig({
@@ -107,6 +196,8 @@ export default defineConfig({
     // landing page that throws fails the build rather than prerendering empty.
     solid({ start: { errorBoundary: false } }),
     ...sentryBuildPlugins(),
+    // After Sentry's: see `postHogBuildPlugins`.
+    ...postHogBuildPlugins(),
   ],
   define: {
     "import.meta.env.VITE_RELEASE_SHA": JSON.stringify(releaseSha),
@@ -141,10 +232,10 @@ export default defineConfig({
   optimizeDeps: {
     include: [
       "firebase/app",
-      "firebase/analytics",
       "firebase/auth",
       "firebase/firestore",
       "@sentry/browser",
+      "posthog-js",
       "tone",
       "nanoid",
       "zod",
@@ -153,7 +244,8 @@ export default defineConfig({
   },
   build: {
     // "hidden": maps are emitted but not referenced from the bundle. See
-    // `sentryBuildPlugins` above for why they are still usable in Sentry.
+    // `sentryBuildPlugins` and `postHogBuildPlugins` above for why they are
+    // still usable in Sentry and PostHog.
     sourcemap: "hidden",
   },
   // Port 3000, not Vite's default 5173. vinxi served on 3000, and both

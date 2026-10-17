@@ -11,6 +11,7 @@ import {
   type FunctionsErrorCode,
   HttpsError,
 } from "firebase-functions/v2/https";
+import { hasInternalClaim, hasUnlimitedClaim } from "../../src/access/claims";
 import { type AssistantGatewayDeps, runAssistantTurn } from "../../src/assistant/gateway";
 import {
   type AssistantErrorCode,
@@ -18,7 +19,6 @@ import {
   type AssistantStreamChunk,
   type AssistantTurnResult,
 } from "../../src/assistant/protocol";
-import { isInternalAccount } from "../../src/shared/internalTraffic";
 
 /** How each gateway failure reaches the browser. */
 const HTTPS_CODES: Record<AssistantErrorCode, FunctionsErrorCode> = {
@@ -71,7 +71,7 @@ export function createAssistantHandler(
 ) => Promise<AssistantTurnResult> {
   return async (request, response) => {
     const token = request.auth?.token as
-      | { firebase?: { sign_in_provider?: unknown }; email?: unknown }
+      | ({ firebase?: { sign_in_provider?: unknown } } & Record<string, unknown>)
       | undefined;
     const signInProvider = token?.firebase?.sign_in_provider;
     try {
@@ -86,9 +86,10 @@ export function createAssistantHandler(
         {
           uid: request.auth?.uid ?? null,
           signInProvider: typeof signInProvider === "string" ? signInProvider : null,
-          internalAccount: isInternalAccount(
-            typeof token?.email === "string" ? token.email : null,
-          ),
+          // The verified token's `internal` claim (GRV-113), never its address.
+          internalAccount: hasInternalClaim(token),
+          // An internal or admin account has no quota or ceiling (GRV-112).
+          unlimited: hasUnlimitedClaim(token),
         },
         request.data,
         {

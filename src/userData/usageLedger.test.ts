@@ -172,6 +172,48 @@ describe("the usage ledger", () => {
       });
     });
 
+    it("counts a write over the allowance for an internal or admin account (GRV-112)", async () => {
+      const store = await nearlyFull();
+      const asked: string[] = [];
+      const outcome = await recordObjectWritten(
+        store.tx,
+        { path: PATH, generation: "1", size: 101 },
+        2,
+        {
+          isUnlimited: async (uid) => {
+            asked.push(uid);
+            return true;
+          },
+        },
+      );
+      expect(outcome).toEqual({ applied: true, uid: "u1", deltaBytes: 101 });
+      expect(store.total("u1")).toBe(USER_DATA_CAP_BYTES + 1);
+      expect(asked).toEqual(["u1"]);
+    });
+
+    it("refuses an account the lookup says is limited", async () => {
+      const store = await nearlyFull();
+      const outcome = await recordObjectWritten(
+        store.tx,
+        { path: PATH, generation: "1", size: 101 },
+        2,
+        { isUnlimited: async () => false },
+      );
+      expect(outcome).toEqual({ applied: false, reason: "over_allowance", uid: "u1" });
+    });
+
+    it("asks about the account only for a write that would go over", async () => {
+      const store = await nearlyFull();
+      let asked = 0;
+      await recordObjectWritten(store.tx, { path: PATH, generation: "1", size: 100 }, 2, {
+        isUnlimited: async () => {
+          asked += 1;
+          return true;
+        },
+      });
+      expect(asked).toBe(0);
+    });
+
     it("counts a write that lands exactly on the allowance", async () => {
       const store = await nearlyFull();
       const outcome = await recordObjectWritten(

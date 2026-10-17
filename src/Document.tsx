@@ -69,6 +69,11 @@ export default function Document() {
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        {/* The arrangement view's icon (`editor/viewIcons.tsx`), on every page:
+            no `data-landing`, so deep links keep it. */}
+        <link rel="icon" href="/favicon.ico" sizes="32x32" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <title data-landing="true">{SITE_TITLE}</title>
         <meta data-landing="true" name="description" content={SITE_DESCRIPTION} />
         <link data-landing="true" rel="canonical" href={`${SITE_ORIGIN}/`} />

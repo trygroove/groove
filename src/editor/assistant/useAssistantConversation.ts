@@ -40,7 +40,6 @@ import {
   type AssistantAsk,
   answerIsEmpty,
   answerMessage,
-  askTranscript,
   pickedLabels,
 } from "../../assistant/ask";
 import type {
@@ -48,7 +47,16 @@ import type {
   AssistantStreamEvent,
   AssistantTurnHandle,
 } from "../../assistant/assistantClient";
-import { ASSISTANT_REQUEST_LIMITS } from "../../assistant/config";
+import {
+  historyOf as historyOfEntries,
+  MAX_MESSAGE_CHARS,
+} from "../../assistant/history";
+import {
+  type AssistantMemoryContext,
+  type MemoryProposal,
+  parseRememberCall,
+  splitMemoryProposals,
+} from "../../assistant/memory";
 import type {
   AssistantErrorDetails,
   AssistantLibraryContext,
@@ -139,6 +147,15 @@ export type ConversationEntry =
       readonly origin: TurnOrigin;
     }
   /**
+   * Something the reply proposes Cue remember about the producer (GRV-25):
+   * nothing is saved until they confirm it on its card.
+   */
+  | {
+      readonly kind: "memory";
+      readonly id: string;
+      readonly proposal: MemoryProposal;
+    }
+  /**
    * A tutorial video the reply recommends (GRV-16), checked with YouTube by
    * the gateway. A still card until the producer presses play.
    */
@@ -203,6 +220,18 @@ export interface UseAssistantConversationOptions {
    * assistant cannot recommend.
    */
   readonly library?: (project: Project) => Promise<AssistantLibraryContext | null>;
+  /**
+   * What Cue remembers about the producer, sent with every turn (GRV-25), or
+   * null when there is nothing to send. Without it turns carry no memory and
+   * Cue cannot propose adding to it.
+   */
+  readonly memory?: () => AssistantMemoryContext | null;
+  /** Hears each memory proposal as it arrives, under its entry's ID (GRV-25). */
+  readonly onMemoryProposal?: (entryId: string, proposal: MemoryProposal) => void;
+  /** Hears that Cue asked a question skipped in onboarding (GRV-25). */
+  readonly onMemoryQuestionAsked?: (
+    question: NonNullable<AssistantAsk["memoryQuestion"]>,
+  ) => void;
   /** Hears each recommendation as it arrives, under its entry's ID (GRV-23). */
   readonly onRecommendation?: (
     entryId: string,
@@ -267,52 +296,13 @@ export interface AssistantConversation {
   dismissAsk(): void;
 }
 
-/** The most one message may say, as the gateway counts it. */
-export const MAX_MESSAGE_CHARS = ASSISTANT_REQUEST_LIMITS.maxMessageChars;
+// What a turn resends is built in `src/assistant/history.ts`, so that
+// code outside the editor (GRV-108) builds it the same way.
+export { MAX_MESSAGE_CHARS };
 
-/**
- * The conversation so far, as the next turn resends it: every message that
- * got a reply, with that reply. A message whose turn failed is left out,
- * along with whatever its reply wrote before failing, so the roles always
- * alternate and a broken answer is never passed off as the assistant's; the
- * retry resends the message, and its reply is the one that counts.
- */
-export function historyOf(entries: readonly ConversationEntry[]): AssistantMessage[] {
-  const history: AssistantMessage[] = [];
-  let pending: string | null = null;
-  for (const entry of entries) {
-    // A video the reply recommended (GRV-16) is part of what it said, by the
-    // ID the model itself named, so "more like that" has something to go on.
-    const last = history.at(-1);
-    if (entry.kind === "video" && pending === null && last?.role === "assistant") {
-      history[history.length - 1] = {
-        role: "assistant",
-        text: `${last.text}\n\n[I recommended the YouTube video ${entry.video.videoId}.]`.slice(
-          0,
-          MAX_MESSAGE_CHARS,
-        ),
-      };
-      continue;
-    }
-    if (entry.kind === "message") pending = entry.wire ?? entry.text;
-    if (entry.kind !== "reply" || pending === null || entry.failed) continue;
-    // A question the reply asked is part of what it said (GRV-42), so the
-    // model reads its question back beside the answer.
-    const said = [entry.text.trim(), entry.ask ? askTranscript(entry.ask) : ""]
-      .filter((part) => part.length > 0)
-      .join("\n\n");
-    if (said.length === 0) continue;
-    history.push(
-      { role: "user", text: pending.slice(0, MAX_MESSAGE_CHARS) },
-      { role: "assistant", text: said.slice(0, MAX_MESSAGE_CHARS) },
-    );
-    pending = null;
-  }
-  // Room for the new message; whole pairs only, so it still starts with the user.
-  const room = ASSISTANT_REQUEST_LIMITS.maxMessages - 1;
-  const keep = room - (room % 2);
-  return history.length > keep ? history.slice(history.length - keep) : history;
-}
+/** The conversation so far, as the next turn resends it (`historyOf` in `src/assistant/history.ts`). */
+export const historyOf: (entries: readonly ConversationEntry[]) => AssistantMessage[] =
+  historyOfEntries;
 
 export function useAssistantConversation(
   options: UseAssistantConversationOptions,
@@ -405,9 +395,20 @@ export function useAssistantConversation(
           );
           return;
         case "proposal": {
-          // Recommendations come back among the proposal's calls (GRV-23):
-          // each is a card of its own, and the changes, if any, are one.
-          const split = splitRecommendations(event.proposal);
+          // Memory proposals (GRV-25) and recommendations (GRV-23) come back
+          // among the proposal's calls: each is a card of its own, and the
+          // changes, if any, are one. A memory proposal that does not parse
+          // is dropped: it would have changed nothing.
+          const remembered = splitMemoryProposals(event.proposal);
+          for (const call of remembered.memory) {
+            const proposal = parseRememberCall(call);
+            if (!proposal) continue;
+            const entryId = id();
+            append({ kind: "memory", id: entryId, proposal });
+            options.onMemoryProposal?.(entryId, proposal);
+          }
+          if (!remembered.proposal) return;
+          const split = splitRecommendations(remembered.proposal);
           if (split.proposal) {
             const entryId = id();
             append({ kind: "proposal", id: entryId, proposal: split.proposal, origin });
@@ -437,6 +438,9 @@ export function useAssistantConversation(
             replyId,
             asked: options.committedProject?.() ?? options.project(),
           });
+          if (event.ask.memoryQuestion) {
+            options.onMemoryQuestionAsked?.(event.ask.memoryQuestion);
+          }
           options.analytics().log("assistant_ask_shown", {
             option_count: event.ask.options.length,
             multi_select: event.ask.multiSelect,
@@ -504,6 +508,7 @@ export function useAssistantConversation(
     const project = options.project();
     if (!project) return;
     const said = message.wire ?? message.text;
+    const memory = options.memory?.() ?? null;
     const where = options.session?.();
     const turnId = where ? newId() : undefined;
     const request: AssistantTurnRequest = {
@@ -513,6 +518,7 @@ export function useAssistantConversation(
         { role: "user", text: said.slice(0, MAX_MESSAGE_CHARS) },
       ],
       context: scopedContext(project, scope),
+      ...(memory ? { memory } : {}),
       ...(where && turnId
         ? {
             session: {

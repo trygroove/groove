@@ -14,13 +14,19 @@
  *   which is the model's reply; the gateway logs only its redacted record.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import type { MessageCreateParamsStreaming } from "@anthropic-ai/sdk/resources/messages";
+import type {
+  MessageCreateParamsStreaming,
+  MessageParam,
+} from "@anthropic-ai/sdk/resources/messages";
 import {
   type AssistantProvider,
   failureKindForStatus,
   ProviderFailure,
 } from "../../src/assistant/provider";
-import type { ProviderMessagesRequest } from "../../src/assistant/providerRequest";
+import type {
+  ProviderMessage,
+  ProviderMessagesRequest,
+} from "../../src/assistant/providerRequest";
 
 export interface AnthropicProviderOptions {
   readonly apiKey: string;
@@ -34,8 +40,36 @@ function toSdkParams(request: ProviderMessagesRequest): MessageCreateParamsStrea
   return {
     ...request,
     system: [...request.system],
-    messages: [...request.messages],
+    messages: request.messages.map(toSdkMessage),
   };
+}
+
+/** One message; a continued turn (`gateway.ts`) carries blocks, not just text. */
+function toSdkMessage(message: ProviderMessage): MessageParam {
+  if (message.role === "user") {
+    const { content } = message;
+    return {
+      role: "user",
+      content: typeof content === "string" ? content : [...content],
+    };
+  }
+  const { content } = message;
+  return {
+    role: "assistant",
+    content: typeof content === "string" ? content : [...content],
+  };
+}
+
+/** What the API says, with a 400, when the account's credit balance has run out. */
+const OUT_OF_CREDIT = /credit balance is too low/i;
+
+/** Whether `error` is the API refusing a call because the account has no credit. */
+function isOutOfCredit(error: InstanceType<typeof Anthropic.APIError>): boolean {
+  const body = error.error as { error?: { message?: unknown } } | undefined;
+  const message = body?.error?.message;
+  return (
+    error.status === 400 && typeof message === "string" && OUT_OF_CREDIT.test(message)
+  );
 }
 
 /** The failure an error thrown by the SDK, or while reading its stream, means. */
@@ -45,7 +79,9 @@ export function classifySdkError(error: unknown): ProviderFailure {
     return new ProviderFailure("network");
   if (error instanceof Anthropic.APIError) {
     if (typeof error.status === "number") {
-      return new ProviderFailure(failureKindForStatus(error.status), error.status);
+      return new ProviderFailure(failureKindForStatus(error.status), error.status, {
+        outOfCredit: isOutOfCredit(error),
+      });
     }
     // An `error` event inside an open stream carries a type, not a status.
     const type = (error.error as { error?: { type?: unknown } } | undefined)?.error?.type;

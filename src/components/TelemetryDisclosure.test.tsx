@@ -19,8 +19,20 @@ describe("TelemetryDisclosure (PRD OPS-02, section 10 Security and privacy)", ()
   it("names both processors, so the user is told what is collected", () => {
     setup();
     const body = screen.getByText(/Two processors receive this/).textContent ?? "";
-    expect(body).toContain("Google Analytics");
+    expect(body).toContain("PostHog");
+    expect(body).not.toContain("Google Analytics");
     expect(body).toContain("Sentry");
+  });
+
+  it("names PostHog for replay and error reports, alongside Sentry for errors (GRV-120)", () => {
+    // ADR 0011: replay moved to PostHog, and error reports go to both while
+    // PostHog's error tracking is evaluated. Sentry no longer records.
+    setup();
+    const body = screen.getByText(/Two processors receive this/).textContent ?? "";
+    expect(body).toContain(
+      "PostHog for product events, Session Replay and error reports, and Sentry for error reports.",
+    );
+    expect(body).not.toContain("Sentry for error reports and Session Replay");
   });
 
   it("states that no project content or typed text is collected", () => {
@@ -69,8 +81,8 @@ describe("TelemetryDisclosure (PRD OPS-02, section 10 Security and privacy)", ()
     it("discloses that assistant conversations are stored, and stay with us", () => {
       setup();
       const body =
-        screen.getByText(/conversations with the assistant are stored/).textContent ?? "";
-      expect(body).toContain("never sent to Google Analytics or Sentry");
+        screen.getByText(/conversations with Cue are stored/).textContent ?? "";
+      expect(body).toContain("never sent to PostHog or Sentry");
       expect(body).toContain("deleting a project deletes its conversations");
     });
 

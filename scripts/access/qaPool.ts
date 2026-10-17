@@ -5,19 +5,28 @@
  * smoke test sign in as real, allowlisted accounts instead. They are ordinary
  * users with a verified address on a domain that receives no mail; what makes
  * them reachable from CI is that a service account signs a Firebase custom
- * token for one of them (`tests/e2e/hosted/qaSession.ts`). Nothing here is in
- * the app's bundle: only the provisioning script and the hosted suites import
- * it.
+ * token for one of them (`tests/e2e/hosted/qaSession.ts`). It lives under
+ * `scripts/`, not `src/`, so the pool's addresses stay out of the app's source
+ * and bundle (GRV-113): only the provisioning script (`qaAccounts.ts`) and the
+ * hosted suites import it.
  *
  * - Slot 0 belongs to the post-deploy smoke test.
  * - Slots 1 to 10 belong to the sweep: agent *n* signs in as slot *n*, so
  *   agents stay out of each other's projects. Ten is the sweep's agent ceiling
  *   (`MAX_AGENTS` in `scripts/qa-sweep/sweep.mjs`).
  *
- * Like the rest of `src/access`, this imports nothing from Firebase: the
+ * Every one of them carries the `internal` claim (GRV-113,
+ * `src/access/claims.ts`), so CI's sessions and kept assistant turns stay out
+ * of the product's measures.
+ *
+ * Like `src/access`, this imports nothing from Firebase: the
  * script supplies the Admin SDK as a {@link QaUserStore}, and the tests a map.
  */
-import { type AllowlistWriter, type ApprovalReport, approveEmails } from "./allowlist";
+import {
+  type AllowlistWriter,
+  type ApprovalReport,
+  approveEmails,
+} from "../../src/access/allowlist";
 
 /** The product owner's domain for the QA accounts. It receives no mail. */
 export const QA_ACCOUNT_DOMAIN = "qa.trygroove.app";
@@ -68,19 +77,28 @@ export interface QaUserRecord {
   displayName?: string;
 }
 
+/** An existing Auth user as provisioning reads it: its record and its `internal` claim. */
+export interface QaUser extends QaUserRecord {
+  /** Whether the user carries the `internal: true` custom claim. */
+  internal: boolean;
+}
+
 /** The fields provisioning may change on an existing user. */
 export type QaUserChanges = Partial<Omit<QaUserRecord, "uid">>;
 
 /**
  * Firebase Auth as provisioning needs it: the Admin SDK in the script, a map
- * in the tests. There is deliberately no way to set custom claims through it,
- * so provisioning cannot make a QA account an admin.
+ * in the tests. The one claim it can set is `internal`, keeping every other
+ * claim as it is; there is deliberately no general way to set custom claims
+ * through it, so provisioning cannot make a QA account an admin.
  */
 export interface QaUserStore {
   /** The user with this UID, or `null` if there is none. */
-  get(uid: string): Promise<QaUserRecord | null>;
+  get(uid: string): Promise<QaUser | null>;
   create(user: QaUserRecord): Promise<void>;
   update(uid: string, changes: QaUserChanges): Promise<void>;
+  /** Gives the user the `internal: true` claim, keeping its other claims. */
+  markInternal(uid: string): Promise<void>;
 }
 
 /** What one provisioning run did. */
@@ -103,12 +121,13 @@ function driftOf(user: QaUserRecord, account: QaAccount): QaUserChanges {
 }
 
 /**
- * Creates or corrects every QA account and puts each address on the
- * allowlist. Idempotent: a second run creates, updates and adds nothing.
+ * Creates or corrects every QA account, flags each one internal, and puts
+ * each address on the allowlist. Idempotent: a second run creates, updates
+ * and adds nothing.
  *
- * It only ever touches the fields above. In particular it leaves a disabled
- * account disabled (the runbook's response to a leaked key) and never sets a
- * custom claim.
+ * It only ever touches the fields above and the `internal` claim. In
+ * particular it leaves a disabled account disabled (the runbook's response to
+ * a leaked key) and never sets any other custom claim.
  */
 export async function provisionQaAccounts(
   users: QaUserStore,
@@ -131,15 +150,18 @@ export async function provisionQaAccounts(
         emailVerified: true,
         displayName: account.displayName,
       });
+      await users.markInternal(account.uid);
       report.created.push(account.email);
       continue;
     }
     const changes = driftOf(existing, account);
-    if (Object.keys(changes).length === 0) {
-      report.unchanged.push(account.email);
-    } else {
-      await users.update(account.uid, changes);
+    const drifted = Object.keys(changes).length > 0;
+    if (drifted) await users.update(account.uid, changes);
+    if (!existing.internal) await users.markInternal(account.uid);
+    if (drifted || !existing.internal) {
       report.updated.push(account.email);
+    } else {
+      report.unchanged.push(account.email);
     }
   }
   const emails = accounts.map((account) => account.email);

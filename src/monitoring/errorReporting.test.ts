@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Analytics } from "../analytics/analytics";
 import { ConsentStore } from "../analytics/consent";
 import {
+  createFailingTransport,
   createRecordingTransport,
   type RecordingTransport,
 } from "../analytics/transport";
@@ -60,7 +61,7 @@ function setup(
 }
 
 describe("one report per error (PRD OPS-03)", () => {
-  it("fans one report out to the GA4 counter and to every sink", () => {
+  it("fans one report out to the analytics counter and to every sink", () => {
     const sink = recordingSink();
     const { reporter, transport } = setup({ sinks: [sink] });
 
@@ -232,7 +233,7 @@ describe("no PII in a report (PRD OPS-02 / OPS-03)", () => {
     expect(sink.reports[0].message).toBe("non-error thrown (object)");
   });
 
-  it("sends no message at all on the GA4 counter event", () => {
+  it("sends no message at all on the analytics counter event", () => {
     const { reporter, transport } = setup();
 
     reporter.report(new Error('Clip "Midnight Drive" not found'), {
@@ -363,14 +364,7 @@ describe("analytics failure cannot break reporting", () => {
     const sink = recordingSink();
     const consent = new ConsentStore(memoryStorage());
     const analytics = new Analytics({
-      transport: {
-        logEvent() {
-          throw new Error("analytics blocked");
-        },
-        setUserProperties() {
-          throw new Error("analytics blocked");
-        },
-      },
+      transport: createFailingTransport("analytics blocked"),
       consent,
       storage: memoryStorage(),
     });

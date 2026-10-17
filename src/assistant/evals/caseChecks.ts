@@ -15,7 +15,14 @@
  *   release, playing a sparse 4-bar clip placed on it.
  * - {@link checkDissonant}: a chord on the new synth track holds a minor 2nd,
  *   a major 7th or a tritone.
+ *
+ * GRV-107's four (`addsTracks`, `endsAt`, `noEmptyClips`, `noNoOps`) and
+ * `clipsPlaced` are in `caseChecksQa.ts`; GRV-119's two (`exactEdit`, `nothingElse`), which judge
+ * a basic production action, are in `basicActionChecks.ts`.
+ * `noEmptyClips` and `clipsPlaced` judge every case ({@link EVERY_CASE_CHECKS}).
  */
+
+import type { RawCommandInput } from "../../commands/types";
 import type { NoteEvent, Project, Track } from "../../domain/entities";
 import {
   readInstrumentParameter,
@@ -23,13 +30,26 @@ import {
   SYNTH_AMP_RELEASE,
 } from "../../domain/parameters";
 import { TICKS_PER_BAR } from "../../domain/time";
+import { type BasicAction, checkNothingElse } from "./basicActionChecks";
+import {
+  checkAddsTracks,
+  checkClipsPlaced,
+  checkEndsAt,
+  checkNoEmptyClips,
+  checkNoNoOps,
+  type ExpectedValue,
+} from "./caseChecksQa";
 import type { CheckResult } from "./checks";
 
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });
 const fail = (detail: string): CheckResult => ({ status: "fail", detail });
 
-/** What a case expects the turn to come back with. */
-export type EvalExpectation = "proposal" | "ask";
+/**
+ * What a case expects the turn to come back with: a proposal, a question, a
+ * proposal or a scope-widening question (`either`), or no proposal and a
+ * question or an explanation instead (`explain`, GRV-119).
+ */
+export type EvalExpectation = "proposal" | "ask" | "either" | "explain";
 
 /** The checks a case may name beside the shared ones. */
 export const CASE_CHECK_IDS = [
@@ -38,8 +58,38 @@ export const CASE_CHECK_IDS = [
   "developsTrack",
   "padSound",
   "dissonant",
+  // GRV-107: from GRV-6's QA findings.
+  "addsTracks",
+  "endsAt",
+  "noEmptyClips",
+  "noNoOps",
+  // GRV-119: the basic production actions.
+  "exactEdit",
+  "nothingElse",
+  // A proposal that stops partway: a clip made and never placed.
+  "clipsPlaced",
 ] as const;
 export type CaseCheckId = (typeof CASE_CHECK_IDS)[number];
+
+/**
+ * The case checks every case is judged by, whatever it names: a proposal that
+ * stops partway applies cleanly and passes checks 1 to 5, so only these see
+ * it (notes cleared and never written, a clip made and never placed).
+ */
+export const EVERY_CASE_CHECKS: readonly CaseCheckId[] = ["noEmptyClips", "clipsPlaced"];
+
+/**
+ * The case checks `named` adds to {@link EVERY_CASE_CHECKS}, less those the
+ * case is `exempt` from, in registry order.
+ */
+export function caseChecksFor(
+  named: readonly CaseCheckId[] = [],
+  exempt: readonly CaseCheckId[] = [],
+): CaseCheckId[] {
+  const wanted = new Set([...EVERY_CASE_CHECKS, ...named]);
+  for (const id of exempt) wanted.delete(id);
+  return CASE_CHECK_IDS.filter((id) => wanted.has(id));
+}
 
 // ---------------------------------------------------------------------------
 // Expected outcome
@@ -48,7 +98,28 @@ export type CaseCheckId = (typeof CASE_CHECK_IDS)[number];
 /** What of a turn {@link checkOutcome} reads. */
 export interface OutcomeTurn {
   readonly proposal: unknown;
-  readonly ask?: { readonly question: string } | null;
+  /** The reply's text, which `explain` reads when it asked nothing. */
+  readonly text?: string;
+  readonly ask?: {
+    readonly question: string;
+    readonly context?: string;
+    readonly options?: readonly {
+      readonly label: string;
+      readonly description?: string;
+    }[];
+  } | null;
+}
+
+/** A question that offers to widen the scope, or asks whether to. */
+const WIDEN_SCOPE =
+  /\b(scope|whole song|entire song|widen|wider|broaden|all tracks|other tracks|new tracks|more tracks|add(?:ing)? (?:more |some |new )?tracks)\b/i;
+
+function askText(ask: NonNullable<OutcomeTurn["ask"]>): string {
+  return [
+    ask.question,
+    ask.context ?? "",
+    ...(ask.options ?? []).flatMap((option) => [option.label, option.description ?? ""]),
+  ].join(" ");
 }
 
 /**
@@ -59,6 +130,20 @@ export interface OutcomeTurn {
 export function checkOutcome(expect: EvalExpectation, turn: OutcomeTurn): CheckResult {
   const proposed = turn.proposal !== null && turn.proposal !== undefined;
   const asked = turn.ask ? `"${turn.ask.question}"` : null;
+  if (expect === "either") {
+    if (proposed) return pass("Proposed a change");
+    if (!turn.ask) return fail("Neither proposed nor asked to widen the scope");
+    return WIDEN_SCOPE.test(askText(turn.ask))
+      ? pass(`Asked to widen the scope: ${asked}`)
+      : fail(`Asked ${asked}, which does not offer to widen the scope`);
+  }
+  if (expect === "explain") {
+    if (proposed) return fail("Proposed a change instead of asking or explaining");
+    if (asked) return pass(`Asked ${asked}`);
+    return turn.text?.trim()
+      ? pass("Explained, and proposed nothing")
+      : fail("Neither asked, explained nor proposed");
+  }
   if (expect === "ask") {
     if (proposed) return fail("Proposed a change instead of asking first");
     return asked ? pass(`Asked ${asked}`) : fail("Neither asked a question nor proposed");
@@ -408,12 +493,23 @@ export function checkDissonant(before: Project, after: Project): CheckResult {
 // Dispatch
 // ---------------------------------------------------------------------------
 
+/** What the checks of GRV-107 read beside the projects and the reply. */
+export interface CaseCheckInputs {
+  /** The proposal's commands, in order. */
+  readonly commands?: readonly RawCommandInput[];
+  /** The case's {@link ExpectedValue}, for `endsAt`. */
+  readonly expectedValue?: ExpectedValue;
+  /** The case's basic production action, for `exactEdit` and `nothingElse`. */
+  readonly action?: BasicAction;
+}
+
 /** Runs the case check `id` on an applied proposal. */
 export function runCaseCheck(
   id: CaseCheckId,
   before: Project,
   after: Project,
   text: string,
+  inputs: CaseCheckInputs = {},
 ): CheckResult {
   switch (id) {
     case "hatDensity":
@@ -426,5 +522,23 @@ export function runCaseCheck(
       return checkPadSound(before, after);
     case "dissonant":
       return checkDissonant(before, after);
+    case "addsTracks":
+      return checkAddsTracks(before, after);
+    case "endsAt":
+      return checkEndsAt(after, inputs.expectedValue);
+    case "noEmptyClips":
+      return checkNoEmptyClips(before, after);
+    case "noNoOps":
+      return checkNoNoOps(before, inputs.commands ?? []);
+    case "exactEdit":
+      return inputs.action
+        ? inputs.action.target(before, after)
+        : fail("The case names no action");
+    case "nothingElse":
+      return inputs.action
+        ? checkNothingElse(before, after, inputs.action.allows(before, after))
+        : fail("The case names no action");
+    case "clipsPlaced":
+      return checkClipsPlaced(before, after);
   }
 }

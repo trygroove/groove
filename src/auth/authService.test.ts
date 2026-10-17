@@ -17,6 +17,7 @@ describe("MockAuthService (#854)", () => {
       isAnonymous: false,
     });
     expect(await authService.isAdmin()).toBe(true);
+    expect(await authService.isInternal()).toBe(false);
     expect("signInAnonymously" in authService).toBe(false);
   });
 

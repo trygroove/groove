@@ -18,6 +18,7 @@ import {
 import { MAX_SELECTED_NOTES } from "../projection/selectedNotes";
 import type { AssistantAsk } from "./ask";
 import { ASSISTANT_LIBRARY_LIMITS, ASSISTANT_REQUEST_LIMITS } from "./config";
+import { assistantMemoryContextSchema } from "./memory";
 import { assistantTurnSessionSchema } from "./transcripts";
 import type { AssistantVideo } from "./video";
 
@@ -255,6 +256,12 @@ export const assistantTurnRequestSchema = z.strictObject({
     }),
   context: assistantContextPayloadSchema,
   library: assistantLibraryContextSchema.optional(),
+  /**
+   * What Cue remembers about the producer (GRV-25, `memory.ts`): read before
+   * the reply, and the only turns offered `remember_producer`. A turn without
+   * one is answered without memory.
+   */
+  memory: assistantMemoryContextSchema.optional(),
   /**
    * The conversation, turn and project the transcript files this turn under
    * (GRV-8). Never sent to the provider. Optional, so a turn without one is

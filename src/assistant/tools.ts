@@ -4,8 +4,9 @@
  * The assistant changes a project only through shared commands, and only
  * through the allowlisted subset below. Each tool is one registered command:
  * its name is the command type with `_` for `.`, its input schema is generated
- * from the command's own Zod payload schema, and a call is turned back into
- * that command with the registered version pinned. Nothing here applies a
+ * from the command's own Zod payload schema (the create tools take the entity
+ * itself instead, see {@link ToolInput}), and a call is turned back into that
+ * command with the registered version pinned. Nothing here applies a
  * command — `proposal.ts` validates a set of calls and `proposalExecutor.ts`
  * hands them to the command history as one transaction.
  *
@@ -45,14 +46,23 @@
  * {@link NON_ASSISTANT_COMMANDS}, so a newly registered command needs a
  * decision here before the tests pass.
  */
-import { z } from "zod";
+import { type ZodType, z } from "zod";
+import type { ClipCreatePayload } from "../commands/definitions/clips";
 import type { DrumSetPadParameterPayload } from "../commands/definitions/drum";
 import {
   type ParameterSetPayload,
   parameterDefinitionAt,
 } from "../commands/definitions/parameters";
+import type { PlacementCreatePayload } from "../commands/definitions/placements";
+import type { TrackCreatePayload } from "../commands/definitions/tracks";
 import { findCommand } from "../commands/registry";
-import type { Project } from "../domain/entities";
+import type { PayloadParseResult } from "../commands/types";
+import {
+  clipSchema,
+  type Project,
+  placementSchema,
+  trackSchema,
+} from "../domain/entities";
 import {
   bareParameterId,
   getParameterDefinition,
@@ -80,8 +90,13 @@ import {
  *    proposal's goal and technique (GRV-5).
  * 6: a turn that carries the library is offered `recommend_sounds`
  *    (`recommendation.ts`, GRV-23).
+ * 7: a turn that carries the producer's memory is offered `remember_producer`
+ *    (`memory.ts`), and `ask_producer` takes a `memoryQuestion` (GRV-25).
+ * 8: `track_create`, `clip_create` and `placement_create` take the entity
+ *    itself, flat, and create only it: a track's clips and their placements
+ *    are calls of their own (GRV-90).
  */
-export const ASSISTANT_TOOLSET_VERSION = 6;
+export const ASSISTANT_TOOLSET_VERSION = 8;
 
 /** The song's own parameters the assistant may set: its tempo and its swing. */
 const SONG_PARAMETER_IDS: readonly string[] = [SONG_TEMPO.id, SONG_SWING.id];
@@ -217,6 +232,8 @@ interface ToolRule {
    * invalid values are rejected before mutation).
    */
   readonly refuseValue?: (payload: unknown, project: Project) => string | null;
+  /** What the tool takes, when that is not the command's payload. */
+  readonly input?: ToolInput;
 }
 
 function rule(
@@ -322,13 +339,37 @@ const DRUM_PAD_PARAMETER_RULE: ToolRule = {
 };
 
 /**
- * A complete `track_create` input. The model has been seen wrapping the whole
- * payload in a second `track` key (GRV-90): `{"track": {"track": {...},
- * "clips": [...]}}`. Showing the exact top-level shape in the tool's
- * description is what stops that; a test pins it as a payload the command
- * accepts.
+ * A tool whose input is not its command's payload as it stands. The three
+ * create tools take the entity itself, flat, and one entity per call (GRV-90):
+ * the model wrapped `track.create`'s `{track, clips, placements}` in a second
+ * `track` key in most runs that created a track, whatever the description
+ * said, and the same with `clip.create`'s `{clip, placements}`. A track, its
+ * clips and their placements are three calls in order instead, which also
+ * keeps each call's input small.
  */
-export const TRACK_CREATE_EXAMPLE = {
+interface ToolInput {
+  /** What the model sends; the tool's input schema is generated from it. */
+  readonly schema: ZodType<unknown>;
+  /** The command payload a parsed input stands for. */
+  readonly toPayload: (input: unknown) => unknown;
+  /**
+   * The calls a parsed payload stands for, in order, or null when no calls
+   * can express it (a create carrying automation lanes).
+   */
+  readonly fromPayload: (payload: unknown) => readonly AssistantToolInvocation[] | null;
+}
+
+/** One call as the model makes it: a tool's name and its input. */
+export interface AssistantToolInvocation {
+  readonly name: string;
+  readonly input: unknown;
+}
+
+const placementCalls = (placements: readonly unknown[]): AssistantToolInvocation[] =>
+  placements.map((input) => ({ name: "placement_create", input }));
+
+/** The flat inputs the create tools' descriptions show, each accepted as it stands. */
+export const CREATE_EXAMPLES = {
   track: {
     id: "trk_BassTrack000000000001",
     name: "Bass",
@@ -340,59 +381,104 @@ export const TRACK_CREATE_EXAMPLE = {
     sendConfig: [],
     mixer: { volume: 0, pan: 0, muted: false, soloed: false },
   },
-  clips: [
-    {
-      id: "clp_BassLine0000000000001",
-      trackId: "trk_BassTrack000000000001",
-      name: "Bassline",
-      color: "#808080",
-      lengthTicks: 768,
-      content: {
-        kind: "notes",
-        events: [
-          {
-            id: "evt_BassNote0000000000001",
-            trigger: { kind: "pitch", pitch: 36 },
-            startTicks: 0,
-            durationTicks: 192,
-            velocity: 0.8,
-            probability: null,
-          },
-        ],
-      },
+  clip: {
+    id: "clp_BassLine0000000000001",
+    trackId: "trk_BassTrack000000000001",
+    name: "Bassline",
+    color: "#808080",
+    lengthTicks: 768,
+    content: {
+      kind: "notes",
+      events: [
+        {
+          id: "evt_BassNote0000000000001",
+          trigger: { kind: "pitch", pitch: 36 },
+          startTicks: 0,
+          durationTicks: 192,
+          velocity: 0.8,
+          probability: null,
+        },
+      ],
     },
-  ],
-  placements: [
-    {
-      id: "plc_BassPlace000000000001",
-      clipId: "clp_BassLine0000000000001",
-      trackId: "trk_BassTrack000000000001",
-      startTicks: 0,
-      durationTicks: 768,
-      clipOffsetTicks: 0,
-      looped: false,
-    },
-  ],
+  },
+  placement: {
+    id: "plc_BassPlace000000000001",
+    clipId: "clp_BassLine0000000000001",
+    trackId: "trk_BassTrack000000000001",
+    startTicks: 0,
+    durationTicks: 768,
+    clipOffsetTicks: 0,
+    looped: true,
+  },
+} as const;
+
+const TRACK_INPUT: ToolInput = {
+  schema: trackSchema,
+  toPayload: (track) => ({ track, clips: [], placements: [], automation: [] }),
+  fromPayload(payload) {
+    const { track, clips, placements, automation } = payload as TrackCreatePayload;
+    if (automation.length > 0) return null;
+    return [
+      { name: "track_create", input: track },
+      ...clips.map((input) => ({ name: "clip_create", input })),
+      ...placementCalls(placements),
+    ];
+  },
+};
+
+const CLIP_INPUT: ToolInput = {
+  schema: clipSchema,
+  toPayload: (clip) => ({ clip, placements: [] }),
+  fromPayload(payload) {
+    const { clip, placements } = payload as ClipCreatePayload;
+    return [{ name: "clip_create", input: clip }, ...placementCalls(placements)];
+  },
+};
+
+const PLACEMENT_INPUT: ToolInput = {
+  schema: placementSchema,
+  toPayload: (placement) => ({ placement }),
+  fromPayload: (payload) =>
+    placementCalls([(payload as PlacementCreatePayload).placement]),
 };
 
 const TRACK_CREATE_DESCRIPTION = [
-  "Add a track, with its instrument, clips and placements. Duplicate a track by creating a copy with new IDs.",
-  'The input object has exactly these top-level keys: "track" (the track itself: id, name, color, order, type, instrument, devices, sendConfig, mixer), "clips" (array) and "placements" (array). "clips" and "placements" sit beside "track", never inside it, and "track" holds the track\'s own fields directly, never another "track" key.',
-  `Example input: ${JSON.stringify(TRACK_CREATE_EXAMPLE)}`,
+  "Add a track with its instrument and no clips. The input is the track itself, its fields at the top level: id, name, color, order, type, instrument, devices, sendConfig, mixer.",
+  "Give it clips with clip_create and place them with placement_create, as later calls in the same reply.",
+  "Duplicate a track by creating a copy with new IDs, then copies of its clips and placements.",
+  `Example input: ${JSON.stringify(CREATE_EXAMPLES.track)}`,
 ].join(" ");
+
+const CLIP_CREATE_DESCRIPTION = [
+  "Add a clip to a track: one in the project, or one track_create made earlier in this reply. The input is the clip itself, its fields at the top level: id, trackId, name, color, lengthTicks, content.",
+  "A clip plays only once placed: follow it with placement_create.",
+  "Duplicate a clip as an independent variation by creating a copy with new IDs.",
+  `Example input: ${JSON.stringify(CREATE_EXAMPLES.clip)}`,
+].join(" ");
+
+const PLACEMENT_CREATE_DESCRIPTION = [
+  "Place a clip on its track's timeline: a clip in the project, or one clip_create made earlier in this reply. The input is the placement itself, its fields at the top level: id, clipId, trackId, startTicks, durationTicks, clipOffsetTicks, looped.",
+  `Example input: ${JSON.stringify(CREATE_EXAMPLES.placement)}`,
+].join(" ");
+
+/** A rule whose tool takes {@link ToolInput} rather than the command's payload. */
+function flatRule(
+  commandType: string,
+  capability: AssistantCapability,
+  description: string,
+  input: ToolInput,
+): ToolRule {
+  return { ...rule(commandType, capability, description), input };
+}
 
 /** The allowlist, in the order the tools are offered to the model. */
 const TOOL_RULES: readonly ToolRule[] = [
   PARAMETER_SET_RULE,
-  rule("track.create", "tracks", TRACK_CREATE_DESCRIPTION, automationRestore),
+  flatRule("track.create", "tracks", TRACK_CREATE_DESCRIPTION, TRACK_INPUT),
   rule("track.update", "tracks", "Rename or recolour a track."),
   rule("track.reorder", "tracks", "Move a track to a new position in the track list."),
   rule("track.delete", "tracks", "Remove a track and its clips and placements."),
-  rule(
-    "clip.create",
-    "clips",
-    "Add a clip to a track, optionally with placements. Duplicate a clip as an independent variation by creating a copy with new IDs.",
-  ),
+  flatRule("clip.create", "clips", CLIP_CREATE_DESCRIPTION, CLIP_INPUT),
   rule("clip.update", "clips", "Rename, recolour or resize a clip."),
   rule("clip.delete", "clips", "Remove a clip and every placement of it."),
   rule("note.add", "notes", "Add note events to a clip."),
@@ -405,7 +491,12 @@ const TOOL_RULES: readonly ToolRule[] = [
   rule("notes.duplicate", "notes", "Repeat a clip's notes later in the clip."),
   rule("notes.clear", "notes", "Remove every note from a clip."),
   rule("notes.vary", "notes", "Vary a clip's notes deterministically from a seed."),
-  rule("placement.create", "placements", "Place a clip on its track's timeline."),
+  flatRule(
+    "placement.create",
+    "placements",
+    PLACEMENT_CREATE_DESCRIPTION,
+    PLACEMENT_INPUT,
+  ),
   rule("placement.update", "placements", "Move, resize, trim or loop a placement."),
   rule("placement.delete", "placements", "Remove a placement from the timeline."),
   rule(
@@ -474,9 +565,12 @@ function toolDefinition(entry: ToolRule): AssistantToolDefinition {
   }
   // `input` describes what the model may send: a field with a default is
   // optional to it, which is what the kernel's own parse accepts.
-  const { $schema: _dialect, ...inputSchema } = z.toJSONSchema(command.schema, {
-    io: "input",
-  }) as JsonSchema;
+  const { $schema: _dialect, ...inputSchema } = z.toJSONSchema(
+    entry.input?.schema ?? command.schema,
+    {
+      io: "input",
+    },
+  ) as JsonSchema;
   return {
     name: toolNameFor(entry.commandType),
     description: entry.description,
@@ -534,6 +628,16 @@ const { $schema: _explainDialect, ...explainInputSchema } = z.toJSONSchema(
   { io: "input" },
 ) as JsonSchema;
 
+/**
+ * Whether `calls` change anything: an explanation on its own does not, so
+ * calls that are only `explain_change` are no proposal. Whatever takes other
+ * calls out of a proposal (asks, videos, recommendations, memory) asks this of
+ * what is left.
+ */
+export function makesChanges(calls: readonly { readonly name: string }[]): boolean {
+  return calls.some((call) => call.name !== EXPLAIN_TOOL_NAME);
+}
+
 /** `explain_change` as it is offered to the model, beside the command tools. */
 export const EXPLAIN_TOOL: Pick<
   AssistantToolDefinition,
@@ -562,6 +666,39 @@ export type ToolCallResolution =
     };
 
 /**
+ * The payload schema behind the tool called `name`, or null when it is not an
+ * assistant tool. For describing a refused call field by field; validate
+ * through {@link resolveToolCall}.
+ */
+export function toolPayloadSchema(name: string): ZodType<unknown> | null {
+  const entry = RULES_BY_NAME.get(name);
+  return (
+    (entry && (entry.input?.schema ?? findCommand(entry.commandType)?.schema)) ?? null
+  );
+}
+
+/**
+ * A call's input parsed into its command's payload. A tool that takes its own
+ * shape ({@link ToolInput}) is parsed against that first, so a refusal names
+ * the fields the model was shown, not the command's.
+ */
+function parseToolInput(
+  entry: ToolRule,
+  command: NonNullable<ReturnType<typeof findCommand>>,
+  input: unknown,
+): PayloadParseResult {
+  if (!entry.input) return command.parsePayload(input);
+  const parsed = entry.input.schema.safeParse(input);
+  if (!parsed.success) {
+    const message = parsed.error.issues
+      .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+      .join("; ");
+    return { ok: false, message };
+  }
+  return command.parsePayload(entry.input.toPayload(parsed.data));
+}
+
+/**
  * Resolves one call against the allowlist: the tool must exist, its input
  * must pass the command's payload schema, and the payload must be one the
  * assistant is allowed to send. Never throws.
@@ -576,7 +713,7 @@ export function resolveToolCall(name: string, input: unknown): ToolCallResolutio
       message: `"${name.slice(0, 64)}" is not an assistant tool`,
     };
   }
-  const parsed = command.parsePayload(input);
+  const parsed = parseToolInput(entry, command, input);
   if (!parsed.ok) {
     return { ok: false, code: "invalid_payload", message: parsed.message };
   }
@@ -591,6 +728,26 @@ export function resolveToolCall(name: string, input: unknown): ToolCallResolutio
     payload: parsed.payload,
     capability: entry.capability(parsed.payload),
   };
+}
+
+/**
+ * The calls that stand for `command`, as the model would make them: the
+ * inverse of {@link resolveToolCall}, for tests and scripted providers. A
+ * create that carries its children becomes its own call followed by one per
+ * child. A payload no call can express, or one that does not parse, comes back
+ * as one call under the tool's name with the payload as its input, so
+ * resolving it refuses it.
+ */
+export function toolCallsFor(command: {
+  readonly type: string;
+  readonly payload: unknown;
+}): readonly AssistantToolInvocation[] {
+  const name = toolNameFor(command.type);
+  const entry = RULES_BY_NAME.get(name);
+  const parsed = findCommand(command.type)?.parsePayload(command.payload);
+  const calls =
+    entry?.input && parsed?.ok ? entry.input.fromPayload(parsed.payload) : null;
+  return calls ?? [{ name, input: command.payload }];
 }
 
 /**

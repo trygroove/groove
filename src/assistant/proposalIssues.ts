@@ -5,7 +5,9 @@
  */
 /**
  * Every reason a proposal can be refused. The list is a contract: a kept
- * transcript stores these codes for a rejected proposal (GRV-98).
+ * transcript stores these codes for a rejected proposal, and
+ * `assistant_proposal_rejected` carries them, pinned by `catalog.test.ts`
+ * (GRV-98).
  *
  * - `malformed`: the response is not a proposal at all.
  * - `stale_revision`: the project moved on since the request was built.

@@ -262,6 +262,44 @@ export function describeGuardStoresContract(
       expect((await t.turn()).text).toBe("pricey");
     });
 
+    it("holds an internal or admin account to neither the cap nor the ceiling (GRV-112)", async () => {
+      const expensive = replyEvents(["pricey"], {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+      });
+      const t = await setup([expensive], {
+        ...LIMITS,
+        requestsPerWindow: 1,
+        dailySpendCeilingUsd: 3,
+      });
+      const unlimited: AssistantCaller = { ...CALLER, unlimited: true };
+      const remaining = [];
+      for (let i = 0; i < 4; i += 1) {
+        remaining.push((await t.turn(unlimited)).requestsRemaining);
+      }
+      expect(remaining).toEqual([1, 1, 1, 1]);
+      expect(t.provider.requests).toHaveLength(4);
+      // Nothing is taken from its window, but every call is still spent.
+      expect(await used(t.guards)).toBe(0);
+      expect(await t.guards.spentMicroUsd(spendDay(START))).toBe(
+        4 *
+          ASSISTANT_MODELS["claude-sonnet-5"].priceUsdPerMillionTokens.input *
+          1_000_000,
+      );
+      // The same account without the claim is past the ceiling it ran up.
+      expect(await codeOf(t.turn())).toBe("spend_ceiling_reached");
+    });
+
+    it("stops an internal or admin account at the kill switch all the same", async () => {
+      const t = await setup([replyEvents(["hi"])]);
+      await harness.setEnabled(false);
+      expect(await codeOf(t.turn({ ...CALLER, unlimited: true }))).toBe(
+        "assistant_disabled",
+      );
+      expect(t.provider.requests).toHaveLength(0);
+      await harness.setEnabled(true);
+    });
+
     it("charges a call that stopped mid-reply for the text it streamed", async () => {
       // 3,000 characters is an estimated 1,000 output tokens; the stream
       // stalls before the provider reports its own count, and times out.

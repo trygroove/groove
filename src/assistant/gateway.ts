@@ -15,7 +15,8 @@
  * 3. stops if the kill switch is off or today's spend ceiling is reached;
  * 4. builds the per-model provider request with a bounded history;
  * 5. reserves one of the account's requests before **every** provider call,
- *    retries included, and adds what each call cost to the day's spend;
+ *    retries included, and adds what each call cost to the day's spend (an
+ *    internal or admin account skips the ceiling and the quota, GRV-112);
  * 6. calls the provider, streaming the reply's text as it arrives, under a
  *    per-attempt inactivity timeout, retrying a transient failure that has
  *    not streamed anything yet, and abandoning the call if the browser goes away;
@@ -38,10 +39,10 @@
  * a malformed reply. A turn that carries the published library is offered
  * `recommend_sounds` as well (GRV-23); its calls come back among the
  * proposal's, and the browser takes them out and checks their IDs against the
- * library it sent. A turn whose gateway can check a video with YouTube is
- * offered `recommend_video` too (GRV-16, ADR 0009): its calls are taken out
- * of the proposal, checked here, and returned as the turn's `videos`, with
- * every one YouTube does not vouch for dropped.
+ * library it sent. A turn whose gateway can search YouTube is offered
+ * `recommend_video` too (GRV-16, ADR 0009): its calls are taken out of the
+ * proposal, searched for here, and returned as the turn's `videos`, with
+ * every search that finds nothing YouTube vouches for dropped.
  */
 import { type AssistantAsk, askProducerTool, isAskCall, parseAskCall } from "./ask";
 import {
@@ -49,6 +50,7 @@ import {
   ASSISTANT_HEARTBEAT_INTERVAL_MS,
   ASSISTANT_HISTORY_TOKEN_BUDGET,
   ASSISTANT_LIMITS,
+  ASSISTANT_MAX_STEPS,
   ASSISTANT_MODEL_ID,
   ASSISTANT_MODELS,
   type AssistantCallLimits,
@@ -58,6 +60,7 @@ import {
 } from "./config";
 import type { AssistantGuardStores } from "./guards";
 import { type BoundedHistory, boundHistory, estimateTokens } from "./history";
+import { rememberTool } from "./memory";
 import { ASSISTANT_PROMPT_VERSION, buildSystemBlocks, createIdStem } from "./prompt";
 import {
   AssistantGatewayError,
@@ -72,6 +75,8 @@ import {
 import { type AssistantProvider, ProviderFailure } from "./provider";
 import {
   buildProviderRequest,
+  continuesTurn,
+  type ProviderAssistantBlock,
   type ProviderMessagesRequest,
   providerTools,
 } from "./providerRequest";
@@ -79,20 +84,23 @@ import { admitCall, type QuotaLimits, quotaExceededMessage } from "./quota";
 import { recommendationTool } from "./recommendation";
 import { recordTurn, type TranscriptWrite } from "./retention";
 import { costMicroUsd, spendDay, usdToMicro } from "./spend";
+import { answerStep, continuesAfter } from "./steps";
 import { NO_USAGE, type ProviderUsage, StreamReader } from "./streamEvents";
 import { type AssistantTurnLog, toTurnLog } from "./telemetry";
 import {
   ASSISTANT_TOOLSET_VERSION,
   assistantTools,
   EXPLAIN_TOOL,
-  EXPLAIN_TOOL_NAME,
+  makesChanges,
 } from "./tools";
 import type { TranscriptStore } from "./transcripts";
 import {
   type CheckedVideos,
   checkVideoCalls,
+  droppedVideoNote,
   isVideoCall,
-  type VideoVerifier,
+  NO_VIDEOS,
+  type VideoFinder,
   videoRecommendationTool,
 } from "./video";
 
@@ -102,10 +110,17 @@ export interface AssistantCaller {
   /** `firebase.sign_in_provider` from the ID token, e.g. `google.com`. */
   readonly signInProvider: string | null;
   /**
-   * Whether the ID token's address is a team or test account
-   * (`isInternalAccount`), so its transcripts are marked internal.
+   * Whether the ID token carries the `internal` claim (`hasInternalClaim`,
+   * `src/access/claims.ts`), so its transcripts are marked internal.
    */
   readonly internalAccount?: boolean;
+  /**
+   * Whether the ID token carries the `internal` or `admin` claim
+   * (`hasUnlimitedClaim`, GRV-112), so the account is held to neither its
+   * request quota nor the day's spend ceiling. Its calls still add to the
+   * day's spend, and the kill switch still stops it.
+   */
+  readonly unlimited?: boolean;
 }
 
 /** The quota and spend figures the gateway enforces. */
@@ -135,11 +150,12 @@ export interface AssistantGatewayDeps {
   /** Hears how keeping each completed turn went: a code, never the content. */
   readonly onTranscript?: (write: TranscriptWrite) => void;
   /**
-   * Checks a video the model recommends is real and embeddable (GRV-16, ADR
-   * 0009 decision 5), from the server. Without one the model is not offered
-   * `recommend_video`, and any call it makes anyway is dropped.
+   * Searches YouTube for a video the model recommends and checks it is real
+   * and embeddable (GRV-16, ADR 0009 decision 5), from the server. Without
+   * one the model is not offered `recommend_video`, and any call it makes
+   * anyway is dropped.
    */
-  readonly verifyVideo?: VideoVerifier;
+  readonly findVideo?: VideoFinder;
 }
 
 export interface AssistantTurnOptions {
@@ -229,13 +245,15 @@ async function prepare(
   idStem: string,
   videos: boolean,
 ): Promise<PreparedTurn> {
-  const system = buildSystemBlocks(turn.context, turn.library, idStem);
-  // A turn that carries the library may also recommend from it (GRV-23), and
-  // one whose videos can be checked may recommend a tutorial (GRV-16).
+  const system = buildSystemBlocks(turn.context, turn.library, idStem, turn.memory);
+  // A turn that carries the library may also recommend from it (GRV-23), one
+  // that can search YouTube may recommend a tutorial (GRV-16), and one that
+  // carries the producer's memory may propose adding to it (GRV-25).
   const tools = [
     ...providerTools([...assistantTools(), EXPLAIN_TOOL, askProducerTool()]),
     ...(turn.library ? [recommendationTool()] : []),
     ...(videos ? [videoRecommendationTool()] : []),
+    ...(turn.memory ? providerTools([rememberTool()]) : []),
   ];
   // The tool definitions take room in the window just as the prompt does.
   const systemTokens =
@@ -267,6 +285,8 @@ type AttemptOutcome =
       text: string;
       stopReason: AssistantStopReason;
       toolCalls: AssistantToolCall[];
+      /** The reply's blocks, to send back if the turn continues. */
+      content: ProviderAssistantBlock[];
     }
   | { kind: "failed"; failure: ProviderFailure; streamedText: boolean }
   | { kind: "timed_out" }
@@ -311,7 +331,7 @@ async function attemptCall(
     controller.signal.addEventListener("abort", () => resolve("aborted"), { once: true });
   });
 
-  const reader = new StreamReader();
+  const reader = new StreamReader(continuesTurn(request));
   let iterator: AsyncIterator<unknown> | undefined;
   const stopped = (): AttemptOutcome =>
     timedOut ? { kind: "timed_out" } : { kind: "cancelled" };
@@ -435,7 +455,7 @@ function proposalOf(
   allCalls: readonly AssistantToolCall[],
 ): AssistantProposal | null {
   const calls = allCalls.filter((call) => !isAskCall(call) && !isVideoCall(call));
-  if (calls.every((call) => call.name === EXPLAIN_TOOL_NAME)) return null;
+  if (!makesChanges(calls)) return null;
   return {
     baseRevision: turn.projectRevision,
     toolsetVersion: ASSISTANT_TOOLSET_VERSION,
@@ -477,6 +497,27 @@ async function keepTranscript(
     receivedAt,
   });
   deps.onTranscript?.(write);
+}
+
+/** What separates one step's text from the next in the reply. */
+const PARAGRAPH = "\n\n";
+
+/**
+ * `options` for a step after one that said something: its first text starts
+ * a new paragraph, so each step's sentence reads as its own update.
+ */
+function paragraphAfter(options: AssistantTurnOptions): AssistantTurnOptions {
+  let first = true;
+  return {
+    ...options,
+    onChunk(chunk) {
+      if (!first || chunk.type !== "text" || chunk.text.length === 0) {
+        return options.onChunk(chunk);
+      }
+      first = false;
+      return options.onChunk({ ...chunk, text: PARAGRAPH + chunk.text });
+    },
+  };
 }
 
 const TOO_LONG_MESSAGE =
@@ -540,7 +581,7 @@ export async function runAssistantTurn(
   let attempts = 0;
   let usage = NO_USAGE;
   let history: BoundedHistory = { messages: [], dropped: 0 };
-  let checked: CheckedVideos = { videos: [], dropped: 0 };
+  let checked: CheckedVideos = NO_VIDEOS;
 
   const finish = (
     outcome: AssistantTurnLog["outcome"],
@@ -560,6 +601,7 @@ export async function runAssistantTurn(
         historyDropped: history.dropped,
         videosShown: checked.videos.length,
         videosDropped: checked.dropped,
+        videosUnchecked: checked.unchecked,
       }),
     );
 
@@ -578,103 +620,133 @@ export async function runAssistantTurn(
       uid,
       turn,
       (deps.idStem ?? createIdStem)(),
-      deps.verifyVideo !== undefined,
+      deps.findVideo !== undefined,
     );
     history = prepared.history;
 
-    while (true) {
-      // A browser already gone costs the account nothing.
-      if (options.signal.aborted) {
-        throw new AssistantGatewayError(
-          "cancelled",
-          "The assistant request was cancelled.",
-        );
-      }
-      await checkSpend(deps.guards, deps.now(), guardLimits);
-      const requestsRemaining = await reserveCall(
-        deps.guards,
-        uid,
-        deps.now(),
-        guardLimits,
-      );
-      attempts += 1;
-      const attempt = await attemptCall(
-        deps,
-        prepared.request,
-        options,
-        limits.inactivityTimeoutMs,
-      );
-      usage = addUsage(usage, attempt.usage);
-      const cost = costMicroUsd(model, attempt.billedUsage);
-      if (cost > 0) await deps.guards.addSpend(spendDay(deps.now()), cost);
-      const { outcome } = attempt;
-      if (outcome.kind === "completed") {
-        // Cut off before it finished: whatever it was proposing or asking is
-        // gone (`StreamReader.result`), and its text may stop mid-sentence.
-        // Said as a failure, not passed off as a reply that did nothing.
-        if (outcome.stopReason === "max_tokens") {
-          throw new AssistantGatewayError("reply_too_long", TOO_LONG_MESSAGE);
+    const cancelled = () =>
+      new AssistantGatewayError("cancelled", "The assistant request was cancelled.");
+
+    /**
+     * One step's provider call, retried on a transient failure that has not
+     * streamed anything yet. Every attempt is one of the account's requests.
+     */
+    const callProvider = async (
+      request: ProviderMessagesRequest,
+      stepOptions: AssistantTurnOptions,
+    ) => {
+      while (true) {
+        // A browser already gone costs the account nothing.
+        if (options.signal.aborted) throw cancelled();
+        // An unlimited account takes no request from a window and is not
+        // stopped by the ceiling; it always has a full window left.
+        let remaining = guardLimits.requestsPerWindow;
+        if (!caller.unlimited) {
+          await checkSpend(deps.guards, deps.now(), guardLimits);
+          remaining = await reserveCall(deps.guards, uid, deps.now(), guardLimits);
         }
-        const ask = askOf(outcome.toolCalls);
-        // Every video YouTube does not vouch for is dropped, never shown
-        // unchecked (ADR 0009 decision 5).
-        checked = await checkVideoCalls(
-          outcome.toolCalls,
-          deps.verifyVideo,
-          options.signal,
+        attempts += 1;
+        const attempt = await attemptCall(
+          deps,
+          request,
+          stepOptions,
+          limits.inactivityTimeoutMs,
         );
-        if (options.signal.aborted) {
+        usage = addUsage(usage, attempt.usage);
+        const cost = costMicroUsd(model, attempt.billedUsage);
+        if (cost > 0) await deps.guards.addSpend(spendDay(deps.now()), cost);
+        const { outcome } = attempt;
+        if (outcome.kind === "completed") return { outcome, remaining };
+        if (outcome.kind === "cancelled") throw cancelled();
+        if (outcome.kind === "timed_out") {
           throw new AssistantGatewayError(
-            "cancelled",
-            "The assistant request was cancelled.",
+            "timeout",
+            "The assistant took too long to answer. Try again.",
           );
         }
-        finish("completed", outcome.stopReason);
-        const proposal = proposalOf(turn, outcome.toolCalls);
-        await keepTranscript(deps, uid, caller, turn, startedAt, {
-          text: outcome.text,
-          stopReason: outcome.stopReason,
-          proposal,
-          model: model.id,
-        });
-        return {
-          text: outcome.text,
-          stopReason: outcome.stopReason,
-          proposal,
-          ask,
-          videos: checked.videos,
-          model: model.id,
-          promptVersion: ASSISTANT_PROMPT_VERSION,
-          requestsRemaining,
-        };
+        failures.push({ kind: outcome.failure.kind, status: outcome.failure.status });
+        const retry =
+          outcome.failure.transient &&
+          !outcome.streamedText &&
+          attempts < limits.maxAttempts;
+        if (!retry) throw errorForFailure(outcome.failure);
+        try {
+          await sleep(limits.retryBackoffMs * 2 ** (attempts - 1), options.signal);
+        } catch {
+          throw cancelled();
+        }
       }
-      if (outcome.kind === "cancelled") {
-        throw new AssistantGatewayError(
-          "cancelled",
-          "The assistant request was cancelled.",
-        );
+    };
+
+    // The turn in steps (`steps.ts`): each reply that stops for change calls
+    // is answered and the model goes on, until it explains the proposal, asks
+    // a question, or stops on its own. Each step's text reaches the producer
+    // as its own paragraph as it streams.
+    const maxSteps = limits.maxSteps ?? ASSISTANT_MAX_STEPS;
+    let messages = prepared.request.messages;
+    const texts: string[] = [];
+    const calls: AssistantToolCall[] = [];
+    let requestsRemaining = 0;
+    let stopReason: AssistantStopReason;
+    for (let step = 1; ; step += 1) {
+      const said = texts.some((text) => text.trim().length > 0);
+      const { outcome, remaining } = await callProvider(
+        { ...prepared.request, messages },
+        said ? paragraphAfter(options) : options,
+      );
+      requestsRemaining = remaining;
+      // Cut off before it finished: whatever it was proposing or asking is
+      // gone (`StreamReader.result`), and its text may stop mid-sentence.
+      // Said as a failure, not passed off as a reply that did nothing.
+      if (outcome.stopReason === "max_tokens") {
+        throw new AssistantGatewayError("reply_too_long", TOO_LONG_MESSAGE);
       }
-      if (outcome.kind === "timed_out") {
-        throw new AssistantGatewayError(
-          "timeout",
-          "The assistant took too long to answer. Try again.",
-        );
+      texts.push(outcome.text);
+      // The last step allowed hands its calls on as they came, as a turn of
+      // one call does: the browser refuses whatever does not fit.
+      if (!continuesAfter(outcome.stopReason, outcome.toolCalls) || step >= maxSteps) {
+        calls.push(...outcome.toolCalls);
+        // A turn whose steps made calls stopped for them, as one call's would.
+        stopReason = calls.length > 0 ? "tool_use" : outcome.stopReason;
+        break;
       }
-      failures.push({ kind: outcome.failure.kind, status: outcome.failure.status });
-      const retry =
-        outcome.failure.transient &&
-        !outcome.streamedText &&
-        attempts < limits.maxAttempts;
-      if (!retry) throw errorForFailure(outcome.failure);
-      try {
-        await sleep(limits.retryBackoffMs * 2 ** (attempts - 1), options.signal);
-      } catch {
-        throw new AssistantGatewayError(
-          "cancelled",
-          "The assistant request was cancelled.",
-        );
-      }
+      const answered = answerStep(outcome.toolCalls);
+      calls.push(...answered.kept);
+      messages = [
+        ...messages,
+        { role: "assistant", content: outcome.content },
+        { role: "user", content: answered.results },
+      ];
     }
+
+    const ask = askOf(calls);
+    // Every search that turns up no video YouTube vouches for is dropped,
+    // never shown unchecked (ADR 0009 decision 5).
+    checked = await checkVideoCalls(calls, deps.findVideo, options.signal);
+    if (options.signal.aborted) throw cancelled();
+    const replyText = texts.filter((text) => text.trim().length > 0).join(PARAGRAPH);
+    // Words that lead into a dropped video are not left standing alone.
+    const note = droppedVideoNote(replyText, checked);
+    if (note) await options.onChunk({ type: "text", text: note });
+    const text = replyText + note;
+    finish("completed", stopReason);
+    const proposal = proposalOf(turn, calls);
+    await keepTranscript(deps, uid, caller, turn, startedAt, {
+      text,
+      stopReason,
+      proposal,
+      model: model.id,
+    });
+    return {
+      text,
+      stopReason,
+      proposal,
+      ask,
+      videos: checked.videos,
+      model: model.id,
+      promptVersion: ASSISTANT_PROMPT_VERSION,
+      requestsRemaining,
+    };
   } catch (error) {
     if (error instanceof AssistantGatewayError) {
       finish(error.code, null);
