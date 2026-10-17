@@ -218,6 +218,18 @@ describe("verifySecurityHeaders against a build", () => {
     expect(verifySecurityHeaders({ dir, firebaseJson, env })).toEqual([]);
   });
 
+  it("requires the PostHog host a build configures to be allowed", () => {
+    expect(configuredOrigins({ VITE_POSTHOG_KEY: "phc_x" })).toEqual([
+      ["connect-src", "https://eu.i.posthog.com"],
+    ]);
+    const us = configuredOrigins({
+      VITE_POSTHOG_KEY: "phc_x",
+      VITE_POSTHOG_HOST: "https://us.i.posthog.com",
+    });
+    expect(policyAllowsHost(contentSecurityPolicy(), "us.i.posthog.com")).toBe(false);
+    expect(us).toEqual([["connect-src", "https://us.i.posthog.com"]]);
+  });
+
   it("never generates a policy with an unsafe source", () => {
     expect(contentSecurityPolicy({ scriptHashes: ["sha256-x"] })).not.toMatch(/unsafe/);
   });

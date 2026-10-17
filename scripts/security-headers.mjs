@@ -48,6 +48,13 @@ export const SENTRY_DSN =
 /** The Sentry environment errors are reported under (`src/monitoring/sentrySink.ts`). */
 const SENTRY_ENVIRONMENT = "alpha";
 
+/**
+ * PostHog's EU ingestion host, the default (`POSTHOG_DEFAULT_HOST` in
+ * `src/analytics/posthogTransport.ts`; `VITE_POSTHOG_HOST` can change it, which
+ * `configuredOrigins` then checks against this policy).
+ */
+export const POSTHOG_INGESTION_ORIGIN = "https://eu.i.posthog.com";
+
 /** The Reporting API group the policy's `report-to` names. */
 export const REPORT_GROUP = "csp-endpoint";
 
@@ -145,6 +152,10 @@ export const CSP_DIRECTIVES = [
       ["https://*.google-analytics.com", "GA4's collection endpoint"],
       ["https://*.analytics.google.com", "GA4's collection endpoint"],
       [sentry.origin, "Sentry: errors, sessions and replays"],
+      [
+        POSTHOG_INGESTION_ORIGIN,
+        "PostHog: events, replays, web vitals and the project's remote config",
+      ],
     ],
   ],
   [
@@ -194,6 +205,11 @@ export const NOT_LOADED_HOSTS = {
   "docs.sentry.io": "documentation links in the Sentry SDK",
   "spotlightjs.com": "a documentation link in the Sentry SDK",
   "browser.sentry-cdn.com": "Sentry's lazy-loading CDN, which the app does not use",
+  "us.i.posthog.com":
+    "PostHog's US ingestion host, named by the SDK and the transport's docs; the project ingests in the EU",
+  "posthog.com": "documentation links in the PostHog SDK",
+  "app.posthog.com": "PostHog's legacy app host, named by the SDK, never contacted",
+  "us.posthog.com": "PostHog's US app host, named by the SDK, never contacted",
   "o447951.ingest.sentry.io": "an example DSN in the Sentry SDK's own messages",
   "placeholder.invalid": "a reserved, unresolvable host used as a parsing base",
   "type.googleapis.com": "protocol-buffer type names in the Firestore SDK, never fetched",
@@ -363,6 +379,12 @@ export function configuredOrigins(env) {
   if (env.VITE_SENTRY_DSN) {
     const endpoints = sentryEndpoints(env.VITE_SENTRY_DSN);
     required.push(["connect-src", endpoints.origin], ["report-uri", endpoints.report]);
+  }
+  if (env.VITE_POSTHOG_KEY) {
+    required.push([
+      "connect-src",
+      new URL(env.VITE_POSTHOG_HOST || POSTHOG_INGESTION_ORIGIN).origin,
+    ]);
   }
   return required;
 }
