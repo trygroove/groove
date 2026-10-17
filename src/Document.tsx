@@ -11,6 +11,7 @@ import {
   jsonLdScript,
   softwareApplicationJsonLd,
 } from "./components/landingStructuredData";
+import { REMOVE_WHEN_NOT_LANDING } from "./landingShellScript";
 
 /**
  * The document shell, and with it the statically generated landing page
@@ -55,15 +56,9 @@ import {
  * shell, which is what `scripts/verify-landing-static.mjs` exists to catch.
  */
 
-/**
- * Removes the prerendered landing markup when the shell is serving a deep link.
- *
- * Inlined and parser-blocking on purpose: it must run before the browser paints,
- * or a visitor opening a project would see the marketing page flash first. It is
- * the only inline script the document executes, and it reads nothing but the
- * path. (The two JSON-LD blocks below are data, which a browser never runs.)
- */
-const REMOVE_WHEN_NOT_LANDING = `if(location.pathname!=="/"){var e=document.getElementById("landing-static");if(e)e.remove()}`;
+// `REMOVE_WHEN_NOT_LANDING` is the only inline script the document executes;
+// the Content-Security-Policy allows it by its hash (GRV-7). The two JSON-LD
+// blocks below are data, which a browser never runs, and need nothing.
 
 /** The link-preview image, as an absolute URL: unfurlers do not resolve paths. */
 const SITE_IMAGE_URL = `${SITE_ORIGIN}${SITE_IMAGE.path}`;
@@ -127,7 +122,7 @@ export default function Document() {
           <LandingPageContent />
         </div>
         {/* `innerHTML` rather than a text child, which Solid's SSR would
-            escape. The content is the module-level constant above -- not input
+            escape. The content is the constant imported above -- not input
             of any kind -- and it has to be inline to run before first paint. */}
         <script data-landing="true" innerHTML={REMOVE_WHEN_NOT_LANDING} />
       </body>

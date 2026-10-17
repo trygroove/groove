@@ -24,7 +24,77 @@ import { passWelcome, qaSignInUnavailable, signInAsQaAccount } from "./qaSession
 //
 // Every first page load carries `?internal=1`, so smoke traffic is excluded
 // from the product's measures (`src/shared/internalTraffic.ts`).
+//
+// GRV-7: the live origin serves the security headers on every path, and no
+// page here breaks the enforced Content-Security-Policy. A refused script,
+// frame or request on the real origin (an origin the policy missed) fails the
+// deploy here, and is also reported to Sentry.
+
+/**
+ * Starts recording the page's CSP violations, and returns a check that there
+ * were none. Both the DOM event and the console message are watched: the
+ * event names the directive and URL, and the console also catches a refusal
+ * in a worker.
+ */
+async function watchCspViolations(page: Page): Promise<() => Promise<void>> {
+  const consoleViolations: string[] = [];
+  page.on("console", (message) => {
+    if (/Content Security Policy/i.test(message.text())) {
+      consoleViolations.push(message.text());
+    }
+  });
+  await page.addInitScript(() => {
+    const seen: string[] = [];
+    (window as unknown as { __cspViolations: string[] }).__cspViolations = seen;
+    document.addEventListener("securitypolicyviolation", (event) => {
+      seen.push(`${event.effectiveDirective} refused ${event.blockedURI}`);
+    });
+  });
+  return async () => {
+    const events = await page
+      .evaluate(
+        () => (window as unknown as { __cspViolations?: string[] }).__cspViolations,
+      )
+      .catch(() => []);
+    expect([...(events ?? []), ...consoleViolations]).toEqual([]);
+  };
+}
+
+test.describe("hosted security headers", () => {
+  test("serves the enforced policy and the other headers on every path", async ({
+    request,
+  }) => {
+    // `/` is the prerendered landing page, everything else the app shell.
+    for (const path of ["/?internal=1", "/projects?internal=1"]) {
+      const response = await request.get(path, { headers: { accept: "text/html" } });
+      expect(response.ok(), path).toBe(true);
+      const headers = response.headers();
+      const csp = headers["content-security-policy"] ?? "";
+      expect(csp, path).toContain("default-src 'self'");
+      expect(csp, path).toContain("frame-ancestors 'none'");
+      expect(csp, path).toMatch(/report-uri https:\/\/[^ ]+\/security\//);
+      expect(csp, path).not.toMatch(/unsafe-inline|unsafe-eval/);
+      expect(headers["reporting-endpoints"], path).toContain("csp-endpoint=");
+      expect(headers["strict-transport-security"], path).toMatch(/max-age=\d+/);
+      expect(headers["x-content-type-options"], path).toBe("nosniff");
+      expect(headers["referrer-policy"], path).toBe("strict-origin-when-cross-origin");
+      expect(headers["x-frame-options"], path).toBe("DENY");
+      expect(headers["permissions-policy"], path).toContain("microphone=(self)");
+    }
+  });
+});
+
 test.describe("hosted alpha smoke test", () => {
+  let noCspViolations: () => Promise<void>;
+
+  test.beforeEach(async ({ page }) => {
+    noCspViolations = await watchCspViolations(page);
+  });
+
+  test.afterEach(async () => {
+    await noCspViolations();
+  });
+
   test("loads the landing page with Request an invite and Sign in", async ({ page }) => {
     await page.goto("/?internal=1");
     await expect(
@@ -62,10 +132,18 @@ test.describe("hosted alpha smoke test", () => {
 test.describe("hosted alpha smoke test, signed in", () => {
   /** The project this test made, and so the only one it may delete. */
   let createdId: string | null = null;
+  let noCspViolations: () => Promise<void>;
+
+  test.beforeEach(async ({ page }) => {
+    noCspViolations = await watchCspViolations(page);
+  });
 
   test.afterEach(async ({ page }) => {
+    // Checked before the clean-up navigates away from the editor.
+    const check = noCspViolations;
     if (createdId) await deleteProject(page, createdId);
     createdId = null;
+    await check();
   });
 
   test("creates a project, opens it, and starts audio after a gesture", async ({
