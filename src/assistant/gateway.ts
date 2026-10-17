@@ -45,7 +45,7 @@
  * every search that finds nothing YouTube vouches for dropped.
  */
 import { type AssistantAsk, askProducerTool, isAskCall, parseAskCall } from "./ask";
-import { createNoteExpander } from "./compactNotes";
+import { createNoteExpander, expandAskPreviews } from "./compactNotes";
 import {
   ASSISTANT_CALL_LIMITS,
   ASSISTANT_HEARTBEAT_INTERVAL_MS,
@@ -724,7 +724,10 @@ export async function runAssistantTurn(
       ];
     }
 
-    const ask = askOf(calls);
+    // An option's preview takes notes as the proposal does, written out in
+    // a counter of their own (`compactNotes.ts`, GRV-131).
+    const asked = askOf(calls);
+    const ask = asked && expandAskPreviews(asked, idStem);
     // Every search that turns up no video YouTube vouches for is dropped,
     // never shown unchecked (ADR 0009 decision 5).
     checked = await checkVideoCalls(calls, deps.findVideo, options.signal);
