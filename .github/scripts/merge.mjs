@@ -71,7 +71,6 @@ const GATED = [
   /^firebase\.json$/,
   /^src\/domain\//,
   /^src\/persistence\//,
-  /^functions\//,
   /^package\.json$/,
   /^bun\.lockb?$/,
   /^release\.config\.mjs$/,
