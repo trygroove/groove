@@ -1,0 +1,10 @@
+{
+  "id": "ret",
+  "title": "Keep checkbox focus",
+  "steps": [
+    {
+      "file": "01-checkbox-keeps-a-clear-focus-ring-after-.png",
+      "caption": "Checkbox keeps a clear focus ring after Space"
+    }
+  ]
+}
