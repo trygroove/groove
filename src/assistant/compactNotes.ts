@@ -17,8 +17,10 @@
  * model's in it and never minting one the model has taken), so the proposal
  * the browser validates, previews, applies,
  * undoes and keeps in a transcript is made of ordinary note events and
- * ordinary command payloads, exactly as before. Nothing outside the gateway
- * ever sees a compact note.
+ * ordinary command payloads, exactly as before. The calls in an ask's
+ * previews are written out the same way, in a counter of their own
+ * ({@link expandAskPreviews}). Nothing outside the gateway ever sees a
+ * compact note.
  *
  * A note already written out as an event (a scripted provider's, or the
  * model's despite the schema) is left as it is for the tool's own schema to
@@ -33,6 +35,7 @@ import {
   parameterValueSchema,
 } from "../domain/parameters";
 import { durationTickSchema, tickSchema } from "../domain/time";
+import type { AskOption, AssistantAsk } from "./ask";
 import { NEW_ID_COUNTER_DIGITS } from "./prompt";
 import type { AssistantToolCall } from "./protocol";
 
@@ -83,22 +86,37 @@ export const compactNoteAddSchema = z.strictObject({
  */
 const GATEWAY_NOTE_MARK = "n";
 
-/** The digits after {@link GATEWAY_NOTE_MARK}, so the ID keeps its length. */
+/**
+ * What starts the counter of a note ID the gateway mints in an ask's preview
+ * (`ask_producer`'s `sound.calls`): a counter of its own, so a preview's notes
+ * neither take from the proposal's numbering nor share an ID with a note the
+ * proposal writes, should the producer apply that and then hear the preview.
+ */
+export const PREVIEW_NOTE_MARK = "p";
+
+/** The digits after a note mark, so the ID keeps its length. */
 const GATEWAY_NOTE_DIGITS = NEW_ID_COUNTER_DIGITS - GATEWAY_NOTE_MARK.length;
 
 /** The most notes one turn may write: what the gateway's counter can number. */
 export const MAX_TURN_NOTES = 10 ** GATEWAY_NOTE_DIGITS - 1;
 
-/** The `index`th note ID the gateway mints in a turn given `stem`, from 1. */
-export function gatewayNoteId(stem: string, index: number): string {
-  return `${ID_PREFIXES.event}_${stem}${GATEWAY_NOTE_MARK}${String(index).padStart(GATEWAY_NOTE_DIGITS, "0")}`;
+/**
+ * The `index`th note ID the gateway mints in a turn given `stem`, from 1, in
+ * the counter `mark` starts (the proposal's unless told otherwise).
+ */
+export function gatewayNoteId(
+  stem: string,
+  index: number,
+  mark: string = GATEWAY_NOTE_MARK,
+): string {
+  return `${ID_PREFIXES.event}_${stem}${mark}${String(index).padStart(GATEWAY_NOTE_DIGITS, "0")}`;
 }
 
-/** The pattern of every note ID the gateway mints in a turn given `stem`. */
-function gatewayNotePattern(stem: string): RegExp {
+/** The pattern of every note ID the gateway mints in a turn given `stem` and `mark`. */
+function gatewayNotePattern(stem: string, mark: string): RegExp {
   const escaped = stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(
-    `^${ID_PREFIXES.event}_${escaped}${GATEWAY_NOTE_MARK}\\d{${GATEWAY_NOTE_DIGITS}}$`,
+    `^${ID_PREFIXES.event}_${escaped}${mark}\\d{${GATEWAY_NOTE_DIGITS}}$`,
   );
 }
 
@@ -216,8 +234,11 @@ export interface NoteExpander {
  * counted up across the turn in the order the calls are accepted, so the same
  * calls always expand to the same notes.
  */
-export function createNoteExpander(stem: string): NoteExpander {
-  const pattern = gatewayNotePattern(stem);
+export function createNoteExpander(
+  stem: string,
+  mark: string = GATEWAY_NOTE_MARK,
+): NoteExpander {
+  const pattern = gatewayNotePattern(stem, mark);
   let counter = 0;
   /** Note IDs the turn's calls hold, minted or the model's own. */
   const taken = new Set<string>();
@@ -226,7 +247,7 @@ export function createNoteExpander(stem: string): NoteExpander {
   /** The next free note ID after `from`, and the counter it was minted at. */
   const nextFree = (from: number): { id: string; at: number } | null => {
     for (let at = from + 1; at <= MAX_TURN_NOTES; at += 1) {
-      const id = gatewayNoteId(stem, at);
+      const id = gatewayNoteId(stem, at, mark);
       if (!taken.has(id)) return { id, at };
     }
     return null;
@@ -235,12 +256,12 @@ export function createNoteExpander(stem: string): NoteExpander {
     refuseGatewayIds(call) {
       const clashing = modelNoteIds(call).filter((id) => pattern.test(id));
       if (clashing.length === 0) return null;
-      return `${clashing.join(", ")}: a note ID with "${GATEWAY_NOTE_MARK}" before its number is one Groove gives the notes you write. Make the note IDs you need from the stem with a ${NEW_ID_COUNTER_DIGITS}-digit number, as every new ID, e.g. ${ID_PREFIXES.event}_${stem}${"1".padStart(NEW_ID_COUNTER_DIGITS, "0")}`;
+      return `${idList(clashing)}: a note ID with "${mark}" before its number is one Groove gives the notes you write. Make the note IDs you need from the stem with a ${NEW_ID_COUNTER_DIGITS}-digit number, as every new ID, e.g. ${ID_PREFIXES.event}_${stem}${"1".padStart(NEW_ID_COUNTER_DIGITS, "0")}`;
     },
     refuseMintedIds(call) {
       const clashing = modelNoteIds(call).filter((id) => minted.has(id));
       if (clashing.length === 0) return null;
-      return `${clashing.join(", ")}: Groove has already given ${clashing.length === 1 ? "that ID" : "those IDs"} to a note you wrote`;
+      return `${idList(clashing)}: Groove has already given ${clashing.length === 1 ? "that ID" : "those IDs"} to a note you wrote`;
     },
     reserve(calls) {
       for (const call of calls) for (const id of modelNoteIds(call)) taken.add(id);
@@ -300,6 +321,54 @@ export function createNoteExpander(stem: string): NoteExpander {
     for (const id of [...noteIds, ...modelNoteIds(sent)]) taken.add(id);
     return { ok: true, call, noteIds };
   }
+}
+
+/**
+ * `ask` with the compact notes in its options' previews written out, as the
+ * proposal's are: a preview is "the same calls as a proposal", and the
+ * browser validates it as one before the producer can hear it (GRV-4).
+ *
+ * Each preview numbers its notes in a counter of its own
+ * ({@link PREVIEW_NOTE_MARK}), counted from 1 and kept clear of the note IDs
+ * its calls make themselves: a preview is never applied to the project, and
+ * is heard on its own, so its IDs need only be valid and unique within it. A
+ * call whose notes are not notes goes on as it came, and the browser refuses
+ * that preview as it refuses any call that does not fit its tool.
+ */
+export function expandAskPreviews(ask: AssistantAsk, stem: string): AssistantAsk {
+  if (!ask.options.some((option) => option.sound?.kind === "preview")) return ask;
+  return { ...ask, options: ask.options.map((option) => expandPreview(option, stem)) };
+}
+
+function expandPreview(option: AskOption, stem: string): AskOption {
+  const sound = option.sound;
+  if (sound?.kind !== "preview") return option;
+  const notes = createNoteExpander(stem, PREVIEW_NOTE_MARK);
+  const asCall = (call: (typeof sound.calls)[number]): AssistantToolCall => ({
+    id: "preview",
+    ...call,
+  });
+  notes.reserve(sound.calls.map(asCall));
+  const calls = sound.calls.map((call) => {
+    const expanded = notes.expand(asCall(call));
+    return expanded.ok
+      ? { name: call.name, input: expanded.call.input as typeof call.input }
+      : call;
+  });
+  return { ...option, sound: { ...sound, calls } };
+}
+
+/** The most IDs a refusal names before it counts the rest. */
+const NAMED_IDS = 5;
+
+/**
+ * `ids` as a refusal names them: the first few and how many more, so a call
+ * that clashes everywhere still gets a reason short enough to send.
+ */
+function idList(ids: readonly string[]): string {
+  const named = ids.slice(0, NAMED_IDS).join(", ");
+  const rest = ids.length - NAMED_IDS;
+  return rest > 0 ? `${named} and ${rest} more` : named;
 }
 
 function refusedCall(message: string): ExpandedCall {

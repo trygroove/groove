@@ -7,6 +7,7 @@ import {
 } from "../commands";
 import { createReferenceProject } from "../domain/fixtures";
 import { TRACK_VOLUME } from "../domain/parameters";
+import { previewCommands } from "../editor/assistant/askReferences";
 import { buildAssistantLibrary } from "../testing/assistantLibrary";
 import {
   type CallScript,
@@ -14,7 +15,7 @@ import {
   replyEvents,
   toolUseEvents,
 } from "../testing/scriptedAssistantProvider";
-import { ASK_PRODUCER_TOOL_NAME } from "./ask";
+import { ASK_PRODUCER_TOOL_NAME, type AskSound } from "./ask";
 import {
   ASSISTANT_CALL_LIMITS,
   ASSISTANT_MODELS,
@@ -1562,5 +1563,74 @@ describe("runAssistantTurn: compact notes (GRV-131)", () => {
       EXPLAIN_TOOL_NAME,
     ]);
     expect(validateProposal(project, result.proposal).ok).toBe(true);
+  });
+
+  it("writes out the notes in an ask's previews too, in a counter of their own, so the producer can hear them", async () => {
+    const stem = "Stem0000000000000";
+    const proposed = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[0, 40, 96, 0.8]] },
+    };
+    const previewClip = {
+      name: "clip_create",
+      input: {
+        id: "clp_Stem00000000000000001",
+        trackId: noteClip.trackId,
+        name: "Answer",
+        color: "#808080",
+        lengthTicks: 768,
+        content: {
+          kind: "notes",
+          events: [
+            [0, 43, 192, 0.7],
+            [384, 45, 192, 0.6],
+          ],
+        },
+      },
+    };
+    const previewAdd = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[192, 47, 96, 0.8]] },
+    };
+    const notANote = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[192, 47]] },
+    };
+    const ask = {
+      name: ASK_PRODUCER_TOOL_NAME,
+      input: {
+        question: "Which answer?",
+        options: [
+          {
+            label: "A call and response",
+            sound: { kind: "preview", calls: [previewClip, previewAdd] },
+          },
+          { label: "A half note", sound: { kind: "preview", calls: [notANote] } },
+        ],
+      },
+    };
+    const h = harness([toolUseEvents("A note and a question.", [proposed, ask])]);
+    const result = await runAssistantTurn(
+      { ...h.deps, idStem: () => stem },
+      SIGNED_IN,
+      request(),
+      { signal: new AbortController().signal, onChunk: () => {} },
+    );
+    const [heard, broken] = (result.ask?.options ?? []).map(
+      (option) => option.sound as Extract<AskSound, { kind: "preview" }>,
+    );
+    const commands = previewCommands(project, heard);
+    expect(commands?.map((command) => command.type)).toEqual(["clip.create", "note.add"]);
+    // Numbered apart from the proposal's notes, and unique within the preview.
+    expect(JSON.stringify(result.proposal?.calls)).toContain("evt_Stem0000000000000n001");
+    const previewIds = JSON.stringify(commands).match(/evt_Stem\w+/g);
+    expect(previewIds).toEqual([
+      "evt_Stem0000000000000p001",
+      "evt_Stem0000000000000p002",
+      "evt_Stem0000000000000p003",
+    ]);
+    // A preview whose notes are not notes is refused, as any bad call is.
+    expect(broken.calls).toEqual([notANote]);
+    expect(previewCommands(project, broken)).toBeNull();
   });
 });

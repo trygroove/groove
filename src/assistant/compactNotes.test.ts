@@ -160,6 +160,28 @@ describe("createNoteExpander", () => {
     ).toEqual({ ok: false, message: "bad" });
   });
 
+  it("names a few of the IDs it refuses and counts the rest, so the reason stays short", () => {
+    const notes = createNoteExpander(STEM);
+    const many = Array.from({ length: 100 }, (_, index) => [index, 36, 1, 0.5]);
+    expect(notes.expand(noteAdd(many)).ok).toBe(true);
+    const duplicate = (newIds: string[]) => ({
+      id: "toolu_2",
+      name: "notes_duplicate",
+      input: { clipId: CREATE_EXAMPLES.clip.id, eventIds: null, offsetTicks: 0, newIds },
+    });
+    const ids = Array.from({ length: 100 }, (_, index) => gatewayNoteId(STEM, index + 1));
+    for (const reason of [
+      notes.refuseMintedIds(duplicate(ids)),
+      notes.refuseGatewayIds(duplicate(ids)),
+    ]) {
+      expect(reason).toContain(`${ids.slice(0, 5).join(", ")} and 95 more:`);
+      expect(reason?.length).toBeLessThan(1_000);
+    }
+    expect(notes.refuseMintedIds(duplicate(ids.slice(0, 2)))).toMatch(
+      new RegExp(`^${ids[0]}, ${ids[1]}: `),
+    );
+  });
+
   it("refuses more notes in a turn than its IDs can number", () => {
     const notes = createNoteExpander(STEM);
     const many = Array.from({ length: MAX_TURN_NOTES }, (_, index) => [
