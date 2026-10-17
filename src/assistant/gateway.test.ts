@@ -45,6 +45,7 @@ import {
   AssistantGatewayError,
   type AssistantStreamChunk,
   type AssistantTurnRequest,
+  type AssistantTurnResult,
 } from "./protocol";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
 import { ADDED_RESULT } from "./steps";
@@ -1431,6 +1432,114 @@ describe("runAssistantTurn: compact notes (GRV-131)", () => {
       "evt_Stem0000000000000n003",
       "evt_Stem00000000000000003",
     ]);
+  });
+
+  describe("a note ID the model makes in the gateway's counter", () => {
+    const stem = "Stem0000000000000";
+    const firstAdd = {
+      name: "note_add",
+      input: {
+        clipId: noteClip.id,
+        notes: [
+          [0, 40, 96, 0.8],
+          [96, 43, 96, 0.8],
+        ],
+      },
+    };
+    const secondAdd = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[384, 45, 96, 0.8]] },
+    };
+    // The model kept counting from the IDs it was told: n001, n002, so n003.
+    const duplicateAt = (newIds: string[]) => ({
+      name: "notes_duplicate",
+      input: {
+        clipId: noteClip.id,
+        eventIds: [`evt_${stem}n001`],
+        offsetTicks: 192,
+        newIds,
+      },
+    });
+    const turn = (h: Harness) =>
+      runAssistantTurn({ ...h.deps, idStem: () => stem }, SIGNED_IN, request(), {
+        signal: new AbortController().signal,
+        onChunk: () => {},
+      });
+    const noteIdsOf = (result: { proposal: AssistantTurnResult["proposal"] }) =>
+      (result.proposal?.calls ?? []).flatMap((call) => {
+        const input = call.input as { notes?: { id: string }[]; newIds?: string[] };
+        return [...(input.notes ?? []).map((note) => note.id), ...(input.newIds ?? [])];
+      });
+
+    it("is refused back to the model in a step that is answered, and the gateway's counter goes on", async () => {
+      const h = harness([toolUseEvents("Notes.", [firstAdd])], {}, [
+        toolUseEvents("Again, and more.", [duplicateAt([`evt_${stem}n003`]), secondAdd]),
+        toolUseEvents("Fixed.", [duplicateAt([`evt_${stem}0001`]), explainCall]),
+      ]);
+      const result = await turn(h);
+      const answers = JSON.stringify(h.provider.requests[2].messages.at(-1));
+      expect(answers).toContain(
+        `evt_${stem}n003: a note ID with \\"n\\" before its number`,
+      );
+      expect(answers).toContain("4-digit number");
+      expect(answers).toContain(`Its note's ID is evt_${stem}n003.`);
+      expect(noteIdsOf(result)).toEqual([
+        `evt_${stem}n001`,
+        `evt_${stem}n002`,
+        `evt_${stem}n003`,
+        `evt_${stem}0001`,
+      ]);
+      expect(validateProposal(project, result.proposal).ok).toBe(true);
+    });
+
+    it("is skipped when the gateway numbers the last step's notes, which nothing answers", async () => {
+      const h = harness([toolUseEvents("Notes.", [firstAdd])], {}, [
+        toolUseEvents("Again, and more.", [
+          secondAdd,
+          duplicateAt([`evt_${stem}n003`]),
+          explainCall,
+        ]),
+      ]);
+      const result = await turn(h);
+      expect(noteIdsOf(result)).toEqual([
+        `evt_${stem}n001`,
+        `evt_${stem}n002`,
+        `evt_${stem}n004`,
+        `evt_${stem}n003`,
+      ]);
+      expect(validateProposal(project, result.proposal).ok).toBe(true);
+    });
+
+    it("refuses the proposal with why, when the last step reuses one already given", async () => {
+      const h = harness([toolUseEvents("Notes.", [firstAdd])], {}, [
+        toolUseEvents("Again.", [duplicateAt([`evt_${stem}n002`]), explainCall]),
+      ]);
+      const validation = validateProposal(project, (await turn(h)).proposal);
+      expect(validation).toMatchObject({
+        ok: false,
+        issues: [
+          {
+            code: "invalid_payload",
+            message: `evt_${stem}n002: Groove has already given that ID to a note you wrote`,
+          },
+        ],
+      });
+    });
+  });
+
+  it("refuses the proposal with why a note in the last step is not one", async () => {
+    const bad = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[0, 400, 96, 0.8]] },
+    };
+    const h = harness([toolUseEvents("A note.", [bad, explainCall])]);
+    const result = await run(h);
+    expect(validateProposal(project, result.proposal)).toMatchObject({
+      ok: false,
+      issues: [
+        { code: "invalid_payload", message: expect.stringMatching(/^notes\.0\.1:/) },
+      ],
+    });
   });
 
   it("refuses a malformed note back to the model, which sends it again", async () => {

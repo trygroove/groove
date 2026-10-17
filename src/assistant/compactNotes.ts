@@ -12,8 +12,10 @@
  *
  * The gateway expands them ({@link createNoteExpander}) before a call joins
  * the proposal, minting each note's ID from the turn's ID stem in the order
- * the calls came ({@link gatewayNoteId}: a counter the model's own IDs never
- * use, so the two cannot collide), so the proposal the browser validates, previews, applies,
+ * the calls came ({@link gatewayNoteId}: a counter the model's own IDs do
+ * not use, and one the gateway keeps to itself, refusing a note ID of the
+ * model's in it and never minting one the model has taken), so the proposal
+ * the browser validates, previews, applies,
  * undoes and keeps in a transcript is made of ordinary note events and
  * ordinary command payloads, exactly as before. Nothing outside the gateway
  * ever sees a compact note.
@@ -49,7 +51,9 @@ export const compactNoteSchema = z
   ])
   // Nothing after the probability: the offered schema says so too.
   .rest(z.never())
-  .describe(COMPACT_NOTE_DESCRIPTION);
+  .describe(COMPACT_NOTE_DESCRIPTION)
+  // Said outright as well, for a model that reads lengths before positions.
+  .meta({ minItems: 4, maxItems: 5 });
 export type CompactNote = z.infer<typeof compactNoteSchema>;
 
 const compactNotesSchema = z.array(compactNoteSchema);
@@ -72,7 +76,10 @@ export const compactNoteAddSchema = z.strictObject({
 /**
  * What starts the counter of a note ID the gateway mints. The model's new IDs
  * end in a counter of digits only (`prompt.ts`), notes_duplicate's included,
- * so a counter that starts with a letter is one it never makes.
+ * so a counter that starts with a letter is one it is never asked to make. A
+ * model can still slip into it, counting on from the IDs it was told, so the
+ * gateway refuses such an ID in a step it answers and never mints one a call
+ * has taken (`createNoteExpander`).
  */
 const GATEWAY_NOTE_MARK = "n";
 
@@ -85,6 +92,33 @@ export const MAX_TURN_NOTES = 10 ** GATEWAY_NOTE_DIGITS - 1;
 /** The `index`th note ID the gateway mints in a turn given `stem`, from 1. */
 export function gatewayNoteId(stem: string, index: number): string {
   return `${ID_PREFIXES.event}_${stem}${GATEWAY_NOTE_MARK}${String(index).padStart(GATEWAY_NOTE_DIGITS, "0")}`;
+}
+
+/** The pattern of every note ID the gateway mints in a turn given `stem`. */
+function gatewayNotePattern(stem: string): RegExp {
+  const escaped = stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `^${ID_PREFIXES.event}_${escaped}${GATEWAY_NOTE_MARK}\\d{${GATEWAY_NOTE_DIGITS}}$`,
+  );
+}
+
+/**
+ * The note IDs `call` makes itself, rather than leaves to the gateway:
+ * notes_duplicate's newIds, and the ID of a note it wrote out as an event.
+ */
+export function modelNoteIds(call: AssistantToolCall): string[] {
+  if (!isRecord(call.input)) return [];
+  if (call.name === "notes_duplicate") {
+    const { newIds } = call.input;
+    return Array.isArray(newIds)
+      ? newIds.filter((id): id is string => typeof id === "string")
+      : [];
+  }
+  const at = NOTE_FIELDS[call.name]?.(call.input);
+  if (!at || !Array.isArray(at.notes)) return [];
+  return at.notes.flatMap((note) =>
+    isRecord(note) && typeof note.id === "string" ? [note.id] : [],
+  );
 }
 
 /** A call with its compact notes written out, or why they could not be. */
@@ -156,6 +190,24 @@ export interface NoteExpander {
    * call sent again corrected gets the IDs it would have had.
    */
   expand(call: AssistantToolCall, check?: ExpandedCheck): ExpandedCall;
+  /**
+   * Why `call` may not join the proposal for a note ID it makes itself in
+   * the gateway's counter, or null when it makes none there. A step that is
+   * answered refuses such a call, so the model's IDs and the gateway's stay
+   * apart and the IDs the gateway reports count up without a gap.
+   */
+  refuseGatewayIds(call: AssistantToolCall): string | null;
+  /**
+   * Why `call` may not join the proposal for a note ID it makes itself that
+   * the gateway has already given a note, or null when it makes none.
+   */
+  refuseMintedIds(call: AssistantToolCall): string | null;
+  /**
+   * Holds back the note IDs `calls` make themselves, so none is minted for a
+   * note they write: for the last step, which nothing answers, before any of
+   * its calls is expanded.
+   */
+  reserve(calls: readonly AssistantToolCall[]): void;
 }
 
 /**
@@ -165,17 +217,45 @@ export interface NoteExpander {
  * calls always expand to the same notes.
  */
 export function createNoteExpander(stem: string): NoteExpander {
-  let minted = 0;
+  const pattern = gatewayNotePattern(stem);
+  let counter = 0;
+  /** Note IDs the turn's calls hold, minted or the model's own. */
+  const taken = new Set<string>();
+  /** The note IDs the gateway has given out. */
+  const minted = new Set<string>();
+  /** The next free note ID after `from`, and the counter it was minted at. */
+  const nextFree = (from: number): { id: string; at: number } | null => {
+    for (let at = from + 1; at <= MAX_TURN_NOTES; at += 1) {
+      const id = gatewayNoteId(stem, at);
+      if (!taken.has(id)) return { id, at };
+    }
+    return null;
+  };
   return {
+    refuseGatewayIds(call) {
+      const clashing = modelNoteIds(call).filter((id) => pattern.test(id));
+      if (clashing.length === 0) return null;
+      return `${clashing.join(", ")}: a note ID with "${GATEWAY_NOTE_MARK}" before its number is one Groove gives the notes you write. Make the note IDs you need from the stem with a ${NEW_ID_COUNTER_DIGITS}-digit number, as every new ID, e.g. ${ID_PREFIXES.event}_${stem}${"1".padStart(NEW_ID_COUNTER_DIGITS, "0")}`;
+    },
+    refuseMintedIds(call) {
+      const clashing = modelNoteIds(call).filter((id) => minted.has(id));
+      if (clashing.length === 0) return null;
+      return `${clashing.join(", ")}: Groove has already given ${clashing.length === 1 ? "that ID" : "those IDs"} to a note you wrote`;
+    },
+    reserve(calls) {
+      for (const call of calls) for (const id of modelNoteIds(call)) taken.add(id);
+    },
     expand(call, check) {
       const field = isRecord(call.input) ? NOTE_FIELDS[call.name] : undefined;
       const at = field && isRecord(call.input) ? field(call.input) : null;
       if (!at || !Array.isArray(at.notes) || !at.notes.some(Array.isArray)) {
         const refused = check?.(call) ?? null;
-        return refused === null ? { ok: true, call, noteIds: [] } : refusedCall(refused);
+        if (refused !== null) return refusedCall(refused);
+        return accept(call, []);
       }
       const events: unknown[] = [];
       const noteIds: string[] = [];
+      let next = counter;
       for (const [index, note] of at.notes.entries()) {
         if (!Array.isArray(note)) {
           events.push(note);
@@ -185,27 +265,41 @@ export function createNoteExpander(stem: string): NoteExpander {
         if (!parsed.success) {
           const issue = parsed.error.issues[0];
           const where = [at.path, index, ...(issue?.path ?? [])].join(".");
-          return {
-            ok: false,
-            message: `${where}: ${issue?.message ?? "not a note"}; a note is [startTicks, pitch or padId, durationTicks, velocity]`,
-          };
+          return refusedCall(
+            `${where}: ${issue?.message ?? "not a note"}; a note is [startTicks, pitch or padId, durationTicks, velocity]`,
+          );
         }
-        if (minted + noteIds.length >= MAX_TURN_NOTES) {
+        const free = nextFree(next);
+        if (free === null) {
           return refusedCall(
             `One proposal may write at most ${MAX_TURN_NOTES} notes; loop a short clip instead`,
           );
         }
-        const id = gatewayNoteId(stem, minted + noteIds.length + 1);
-        noteIds.push(id);
-        events.push(noteEventOf(parsed.data, id));
+        next = free.at;
+        noteIds.push(free.id);
+        events.push(noteEventOf(parsed.data, free.id));
       }
       const expanded = { ...call, input: at.write(events) };
       const refused = check?.(expanded) ?? null;
       if (refused !== null) return refusedCall(refused);
-      minted += noteIds.length;
-      return { ok: true, call: expanded, noteIds };
+      counter = next;
+      return accept(expanded, noteIds, call);
     },
   };
+
+  /**
+   * `call` accepted: the note IDs it holds, the gateway's and the model's
+   * own (read off the call as the model sent it), are taken from now on.
+   */
+  function accept(
+    call: AssistantToolCall,
+    noteIds: readonly string[],
+    sent: AssistantToolCall = call,
+  ): ExpandedCall {
+    for (const id of noteIds) minted.add(id);
+    for (const id of [...noteIds, ...modelNoteIds(sent)]) taken.add(id);
+    return { ok: true, call, noteIds };
+  }
 }
 
 function refusedCall(message: string): ExpandedCall {

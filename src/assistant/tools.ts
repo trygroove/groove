@@ -477,7 +477,7 @@ const TRACK_CREATE_DESCRIPTION = [
 const CLIP_CREATE_DESCRIPTION = [
   "Add a clip to a track: one in the project, or one track_create made earlier in this reply. The input is the clip itself, its fields at the top level: id, trackId, name, color, lengthTicks, content.",
   "A clip plays only once placed: follow it with placement_create.",
-  "Duplicate a clip as an independent variation by creating a copy with new IDs.",
+  "Duplicate a clip as an independent variation by creating a copy with a new clip ID (its notes, as always here, take no ID).",
   `Each note in content.events is an array, [startTicks, pitch, durationTicks, velocity], with no ID; a drum hit has its pad's ID in place of the pitch, e.g. [0, "pad_...", 48, 0.9]; an optional fifth number is its probability.`,
   `Example input: ${JSON.stringify(OFFERED_CLIP_EXAMPLE)}`,
 ].join(" ");

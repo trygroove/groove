@@ -118,7 +118,7 @@ describe("compact notes (GRV-131)", () => {
     );
   });
 
-  it("writes out the last step's calls too, and hands on one it cannot as it came", () => {
+  it("writes out the last step's calls too, and hands on one it cannot as it came, with why", () => {
     const bad = {
       ...compactClip,
       id: "toolu_7",
@@ -127,7 +127,12 @@ describe("compact notes (GRV-131)", () => {
     const notes = createNoteExpander(STEM);
     expect(expandCalls([compactClip, bad, other(EXPLAIN_TOOL_NAME)], notes)).toEqual([
       { ...compactClip, input: CREATE_EXAMPLES.clip },
-      bad,
+      {
+        ...bad,
+        refusal: expect.stringMatching(
+          /^content\.events\.0\.0: .*a note is \[startTicks/,
+        ),
+      },
       other(EXPLAIN_TOOL_NAME),
     ]);
   });

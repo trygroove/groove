@@ -16,7 +16,7 @@
  * (whether an ID exists in the open project) is still the browser's to refuse.
  */
 import { isAskCall } from "./ask";
-import type { NoteExpander } from "./compactNotes";
+import type { ExpandedCall, NoteExpander } from "./compactNotes";
 import { isRememberCall } from "./memory";
 import type { AssistantStopReason, AssistantToolCall } from "./protocol";
 import type { ProviderToolResultBlock } from "./providerRequest";
@@ -96,17 +96,27 @@ export interface AnsweredStep {
 
 /**
  * The calls of a step the turn does not answer (its last), handed on with
- * their compact notes written out. A call whose notes do not parse goes on
- * as it came, for the browser to refuse.
+ * their compact notes written out. The note IDs the calls make themselves are
+ * held back first, so a note written out in one of them never takes one. A
+ * call that cannot be written out, or that makes a note ID already given to
+ * a note, goes on as it came with why as its `refusal`, which the browser
+ * reports as the reason it refuses the proposal (nothing is left to answer
+ * the model with).
  */
 export function expandCalls(
   calls: readonly AssistantToolCall[],
   notes: NoteExpander,
 ): AssistantToolCall[] {
-  return calls.map((call) => {
+  const refusals = calls.map((call) =>
+    isChangeCall(call) ? notes.refuseMintedIds(call) : null,
+  );
+  notes.reserve(calls.filter((_, index) => refusals[index] === null));
+  return calls.map((call, index) => {
     if (!isChangeCall(call)) return call;
+    const refused = refusals[index];
+    if (refused != null) return { ...call, refusal: refused };
     const expanded = notes.expand(call);
-    return expanded.ok ? expanded.call : call;
+    return expanded.ok ? expanded.call : { ...call, refusal: expanded.message };
   });
 }
 
@@ -126,10 +136,16 @@ export function answerStep(
       kept.push(call);
       return { type: "tool_result", tool_use_id: call.id, content: NOTED_RESULT };
     }
-    const expanded = notes.expand(call, (written) => {
-      const resolution = resolveToolCall(written.name, written.input);
-      return resolution.ok ? null : resolution.message;
-    });
+    // A note ID of the model's in the gateway's counter is refused before
+    // any of the call's notes is numbered (`compactNotes.ts`).
+    const clash = notes.refuseGatewayIds(call);
+    const expanded: ExpandedCall =
+      clash !== null
+        ? { ok: false, message: clash }
+        : notes.expand(call, (written) => {
+            const resolution = resolveToolCall(written.name, written.input);
+            return resolution.ok ? null : resolution.message;
+          });
     if (!expanded.ok) {
       return {
         type: "tool_result",
