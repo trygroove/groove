@@ -79,6 +79,22 @@ export function firestoreTranscriptStore(db: Firestore): TranscriptStore {
         return true;
       });
     },
+    setRatingIfPermitted(uid, turnId, rating, permits) {
+      const preference = db.doc(preferenceDocPath(uid));
+      const ref = db.doc(transcriptDocPath(uid, turnId));
+      return db.runTransaction(async (tx) => {
+        const [prefSnapshot, recordSnapshot] = await Promise.all([
+          tx.get(preference),
+          tx.get(ref),
+        ]);
+        if (!permits(prefSnapshot.exists ? prefSnapshot.data() : null)) return false;
+        if (!recordSnapshot.exists) return false;
+        const record = recordSnapshot.data() as TranscriptRecord;
+        if (record.uid !== uid) return false;
+        tx.update(ref, { rating });
+        return true;
+      });
+    },
     async recent(filter, limit) {
       if (filter.uid === undefined && filter.projectId === undefined) {
         const page = await transcripts.orderBy("createdAt", "desc").limit(limit).get();

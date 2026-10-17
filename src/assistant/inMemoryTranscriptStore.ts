@@ -75,6 +75,14 @@ export function createInMemoryTranscriptStore(): InMemoryTranscriptStore {
         });
         return true;
       }),
+    setRatingIfPermitted: (uid, turnId, rating, permits) =>
+      serial(() => {
+        if (!permits(readPreference(uid))) return false;
+        const record = records.get(key(uid, turnId));
+        if (!record || record.uid !== uid) return false;
+        records.set(key(uid, turnId), { ...record, rating });
+        return true;
+      }),
     recent: (filter, limit) =>
       serial(() =>
         [...records.values()]
