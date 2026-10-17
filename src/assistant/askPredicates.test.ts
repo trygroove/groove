@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Device, Project, Track } from "../domain/entities";
+import type { Clip, Device, Project, Track } from "../domain/entities";
 import { createReferenceProject } from "../domain/fixtures";
 import type { AskPredicate, AssistantAsk } from "./ask";
 import { optionDoneByEdit, predicateHolds } from "./askPredicates";
@@ -134,6 +134,36 @@ describe("answering a question by doing (GRV-42)", () => {
       predicateHolds({ kind: "trackAdded", instrumentKind: otherKind }, asked, added),
     ).toBe(false);
     expect(predicateHolds({ kind: "trackAdded" }, asked, asked)).toBe(false);
+  });
+
+  it("does not count an empty track as one added with notes (GRV-121)", () => {
+    const empty: Track = { ...first, id: "trk_new" as Track["id"] };
+    const withEmpty = withSong(asked, { tracks: [...asked.song.tracks, empty] });
+    const predicate: AskPredicate = { kind: "trackAdded", withNotes: true };
+    expect(predicateHolds(predicate, asked, withEmpty)).toBe(false);
+    const clip = {
+      id: "clp_new",
+      trackId: empty.id,
+      name: "Hats",
+      color: asked.clips[0]?.color,
+      lengthTicks: 768,
+      content: {
+        kind: "notes",
+        events: [
+          {
+            id: "evt_new",
+            trigger: { kind: "pitch", pitch: 60 },
+            startTicks: 0,
+            durationTicks: 48,
+            velocity: 0.8,
+            probability: null,
+          },
+        ],
+      },
+    } as unknown as Clip;
+    const filled = { ...withEmpty, clips: [...withEmpty.clips, clip] };
+    expect(predicateHolds(predicate, asked, filled)).toBe(true);
+    expect(predicateHolds(predicate, withEmpty, filled)).toBe(true);
   });
 
   it("holds a track removed once it is gone", () => {
