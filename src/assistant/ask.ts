@@ -124,6 +124,12 @@ export const askPredicateSchema = z
       kind: z.literal("trackAdded"),
       trackType: trackTypeSchema.optional(),
       instrumentKind: z.enum(["sampler", "synth", "drumMachine"]).optional(),
+      withNotes: z
+        .boolean()
+        .optional()
+        .describe(
+          "Set true when the option says the new track has a part (a pattern, a line, a groove): it then counts only once the track holds a clip with notes. An empty new track never answers such an option.",
+        ),
     }),
     z.strictObject({ kind: z.literal("trackRemoved"), trackId: entityId }),
     z.strictObject({

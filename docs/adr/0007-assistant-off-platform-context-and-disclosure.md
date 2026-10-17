@@ -27,7 +27,7 @@ The assistant may be sent, for the project currently open:
 
 - project name, tempo, swing, time signature, total length (swing added by GRV-5, so the assistant proposes a swing change from the song's current value);
 - sections, with their names, positions and lengths;
-- tracks, with their names, type, instrument kind, device/clip/placement counts, and mixer state, and a drum machine's pads by ID and name (GRV-23, so a recommended sound can name the pad it is for), and each placement's ID, clip ID, start, length and whether it loops (GRV-6, so a new clip is placed beside the existing ones rather than on top of them);
+- tracks, with their names, type, instrument kind, device/clip/placement counts, and mixer state, and a drum machine's pads by ID and name (GRV-23, so a recommended sound can name the pad it is for) with each pad's hit count across the track's clips (GRV-122, a derived statistic, so "the hi-hats" is found as a pad with nothing selected), and each placement's ID, clip ID, start, length and whether it loops (GRV-6, so a new clip is placed beside the existing ones rather than on top of them);
 - derived note statistics — register, mean velocity, density, repetition;
 - a description of the current selection;
 - **raw note events for the current selection only**;
@@ -44,7 +44,9 @@ Audio of any kind. Note events outside the current selection. Asset URLs. Provid
 
 Sending the selection's notes is what lets the assistant edit notes at all. Scoping it to the selection is what keeps the exposure proportional: the material the user is actively working on goes, the rest of the project does not, and the payload does not grow without bound as the project does.
 
-Where the user has selected nothing, the assistant receives the song-level summary and no note events, and says it lacks the context rather than inventing it.
+The track the editor has in the assistant's scope counts as selected (GRV-122): its clips' notes go, as a selected track's do, because that track is what the producer is pointing at and the scope chip names it.
+
+Where the user has selected nothing and the scope is the whole song, the assistant receives the song-level summary and no note events, and says it lacks the context rather than inventing it.
 
 ### 4. User-entered names leave the platform, deliberately
 

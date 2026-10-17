@@ -115,6 +115,29 @@ describe("the welcome (GRV-25)", () => {
     expect(option("House")).not.toHaveAttribute("aria-keyshortcuts");
   });
 
+  it("scrolls each new question to the middle of the screen (GRV-128)", () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      renderWelcome();
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect((scrollIntoView.mock.contexts[0] as Element).contains(card())).toBe(true);
+      expect(scrollIntoView).toHaveBeenLastCalledWith(
+        expect.objectContaining({ block: "center" }),
+      );
+      // Choosing within a question does not scroll; the next question does.
+      clickAndFlush(option("House"));
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      type("Artists you love", "Four Tet");
+      send();
+      expect(card()).toHaveTextContent(/How much music have you made/);
+      expect(scrollIntoView).toHaveBeenCalledTimes(2);
+      expect((scrollIntoView.mock.contexts[1] as Element).contains(card())).toBe(true);
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
   it("sends the typed answer when Enter is pressed in the text box", () => {
     renderWelcome();
     clickAndFlush(option("House"));

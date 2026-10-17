@@ -4252,6 +4252,35 @@ describe("EditorView assistant panel", () => {
     expect(request.context.selection?.countByKind).toEqual({ event: notes.length });
   });
 
+  it("sends the hits written into a newly added drum track's clip (GRV-122)", async () => {
+    const { client } = await renderTalking(createStarterProject("u1", () => 0.5));
+    const add = screen.getByRole("group", { name: "Add track to the arrangement" });
+    clickAndFlush(within(add).getByRole("button", { name: "Add drum machine track" }));
+    const editor = await openSequenceEditor(1);
+    clickAndFlush(
+      within(within(editor).getByRole("group", { name: "Rows" })).getByRole("button", {
+        name: "HH",
+      }),
+    );
+    const generate = within(screen.getByRole("region", { name: "Generate" }));
+    clickAndFlush(generate.getByRole("button", { name: "Eighths" }));
+    await openPanel();
+    expect(scopeChip()).toHaveAccessibleName("Scope: Drum machine");
+
+    const request = await openAndSend(client, "make the hi-hats busier");
+
+    const drums = request.context.tracks.find((track) => track.name === "Drum machine");
+    const hh = drums?.pads.find((pad) => pad.name === "HH");
+    // Which pad the hits are on, by name, so "hi-hats" finds them.
+    expect.soft(hh?.noteCount).toBe(8);
+    // And the hits themselves, so a denser pattern can be built from them.
+    const hats = request.context.selectedNotes?.clips
+      .filter((clip) => clip.trackId === drums?.id)
+      .flatMap((clip) => clip.events)
+      .filter((event) => event.trigger.kind === "pad" && event.trigger.padId === hh?.id);
+    expect.soft(hats).toHaveLength(8);
+  });
+
   it("asks for the account's answer to the disclosure only once the assistant opens (GRV-8)", async () => {
     const retention = createFakeRetentionClient({ answered: true });
     repository = inMemoryModule.createInMemoryProjectRepository();

@@ -128,7 +128,7 @@ outcomes with their issues. No client reads the collection directly, admins
 included.
 
 To make a failure a regression case, **Download eval case** on the opened turn
-and run `bun run eval:assistant -- --from-transcript <file>`. A transcript
+and run `bun run assistant:eval -- --from-transcript <file>`. A transcript
 does not keep the song, so the file names an eval fixture to run the message
 against (`house-loop` unless edited to `kit-sketch` or `arrangement`). The file
 carries the producer's words: keep it off the repository.

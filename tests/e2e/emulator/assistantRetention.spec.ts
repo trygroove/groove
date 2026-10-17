@@ -77,6 +77,8 @@ test.describe("the assistant's disclosure and setting", () => {
       "Groove has stopped keeping your conversations and deleted the ones it kept.",
     );
     await expect(box).not.toBeChecked();
+    // Saving never drops keyboard focus (GRV-117).
+    await expect(box).toBeFocused();
     await step("Turned off: kept conversations are deleted");
     // Turning it off deleted what was kept, and a later turn is not kept.
     expect(await storedTranscripts(invitedProducer.uid)).toEqual([]);

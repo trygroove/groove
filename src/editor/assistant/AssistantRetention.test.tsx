@@ -213,6 +213,23 @@ describe("the assistant's settings (GRV-8)", () => {
     expect(await retention.get()).toMatchObject({ preference: { retain: true } });
   });
 
+  it("keeps keyboard focus on the checkbox while and after a change saves (GRV-117)", async () => {
+    const retention = createFakeRetentionClient({ answered: true });
+    const { panel } = await renderPanel(retention);
+    await waitFor(() => expect(composer(panel)).not.toBeNull());
+    clickAndFlush(within(panel).getByRole("button", { name: "Cue settings" }));
+    const box = within(panel).getByRole("checkbox", { name: RETENTION_LABEL });
+    box.focus();
+    fireEvent.click(box);
+    // A disabled control loses focus in a browser, so it must never be disabled.
+    await Promise.resolve();
+    expect(box).toBeEnabled();
+    expect(box).toHaveFocus();
+    await within(panel).findByText(OPTED_OUT_CONFIRMATION);
+    expect(box).toBeEnabled();
+    expect(box).toHaveFocus();
+  });
+
   it("keeps showing what is stored when a change cannot be saved", async () => {
     const retention = createFakeRetentionClient({ answered: false });
     const { panel } = await renderPanel(retention);

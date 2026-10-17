@@ -18,6 +18,41 @@
         "source": "**",
         "destination": "/app.html"
       }
+    ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'self'; script-src 'self' 'sha256-HnvfygMbPEwaVkllpigRIOR3H6lWnSfMpaQv8T40lw8=' https://apis.google.com https://*.googletagmanager.com; style-src 'self'; img-src 'self' data: blob: https://*.googletagmanager.com https://*.google-analytics.com https://www.google.com/images/cleardot.gif; font-src 'self'; media-src 'self' blob:; connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebasestorage.googleapis.com https://firebaseinstallations.googleapis.com https://firebase.googleapis.com https://us-east1-groove-35c07.cloudfunctions.net https://*.googletagmanager.com https://*.google-analytics.com https://*.analytics.google.com https://o4511857702404096.ingest.us.sentry.io https://eu.i.posthog.com; frame-src https://groove-35c07.firebaseapp.com https://www.youtube-nocookie.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; report-uri https://o4511857702404096.ingest.us.sentry.io/api/4511857708433408/security/?sentry_key=4d9426cc9606b12711ad479b11caa07c&sentry_environment=alpha; report-to csp-endpoint"
+          },
+          {
+            "key": "Reporting-Endpoints",
+            "value": "csp-endpoint=\"https://o4511857702404096.ingest.us.sentry.io/api/4511857708433408/security/?sentry_key=4d9426cc9606b12711ad479b11caa07c&sentry_environment=alpha\""
+          },
+          {
+            "key": "Strict-Transport-Security",
+            "value": "max-age=31536000"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          },
+          {
+            "key": "X-Frame-Options",
+            "value": "DENY"
+          },
+          {
+            "key": "Permissions-Policy",
+            "value": "accelerometer=(), bluetooth=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(self), midi=(), payment=(), serial=(), usb=()"
+          }
+        ]
+      }
     ]
   },
   "firestore": {
