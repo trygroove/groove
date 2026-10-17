@@ -71,3 +71,16 @@ describe("assistant composer height (GRV-115)", () => {
     expect(declarations).toContain("overflow-y: auto");
   });
 });
+
+describe("assistant question card beside a growing composer (GRV-115)", () => {
+  it("lets the card shrink, so the composer grows upward and stays on screen", () => {
+    // QA on production: with a question card showing, the card held its
+    // height (`flex: none`) once the log had shrunk away, and the composer
+    // grew down past the window's bottom edge, the Scope row with it.
+    const card = declarationsOf(".assistant-ask");
+    expect(card).toContain("flex: 0 1 auto");
+    expect(card).toContain("min-height: 0");
+    expect(card).toContain("overflow-y: auto");
+    expect(declarationsOf(".assistant-panel-composer")).toContain("flex: none");
+  });
+});
