@@ -1,5 +1,6 @@
 import { Errored, type JSX } from "@solidjs/web";
 import { createEffect, For, Match, onSettled, Show, Switch } from "solid-js";
+import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import { SendIcon, SparkIcon, StopIcon } from "../../components/icons";
 import AssistantAskCard from "./AssistantAskCard";
 import {
@@ -8,6 +9,7 @@ import {
   RetentionSettings,
 } from "./AssistantRetention";
 import { ERROR_HEADING, ERROR_REASSURANCE, errorMessage } from "./assistantErrorCopy";
+import MemoryProposalCard from "./MemoryProposalCard";
 import ProposalCard from "./ProposalCard";
 import RecommendationCard from "./RecommendationCard";
 import ReplyRating from "./ReplyRating";
@@ -38,7 +40,13 @@ export interface AssistantChatViewProps {
 export const WRITING_STATUS = "Writing…";
 
 /** What the panel offers someone who must sign in first (ADR 0006 decision 4). */
-export const SIGN_IN_NOTE = "Sign in to talk to the assistant.";
+export const SIGN_IN_NOTE = `Sign in to talk to ${ASSISTANT_NAME}.`;
+
+/** The nudge card's accessible name (GRV-25). */
+export const NUDGE_LABEL = `${ASSISTANT_NAME} suggests`;
+
+/** The composer's accessible name. */
+export const COMPOSER_LABEL = `Message ${ASSISTANT_NAME}`;
 
 /**
  * The assistant's conversation (GRV-26), after docs/assistant-panel.html: the
@@ -188,6 +196,34 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
             />
           )}
         </Show>
+        {/* Cue's one nudge a day (GRV-25), above the suggestions. */}
+        <Show
+          when={
+            !streaming() && !conversation().pendingAsk() && props.chat.nudge?.lesson()
+          }
+        >
+          {(lesson) => (
+            <section class="assistant-card cue-nudge" aria-label={NUDGE_LABEL}>
+              <b>Want to try "{lesson()}"?</b>
+              <div class="memory-proposal-actions">
+                <button
+                  type="button"
+                  class="assistant-button-primary"
+                  onClick={() => props.chat.nudge?.tryIt()}
+                >
+                  Let's try it
+                </button>
+                <button
+                  type="button"
+                  class="memory-proposal-secondary"
+                  onClick={() => props.chat.nudge?.dismiss()}
+                >
+                  Not today
+                </button>
+              </div>
+            </section>
+          )}
+        </Show>
         <Show
           when={
             !streaming() &&
@@ -217,7 +253,7 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
               props.bindComposer(element);
             }}
             class="assistant-panel-input"
-            aria-label="Message the assistant"
+            aria-label={COMPOSER_LABEL}
             placeholder="Ask for a change, a sound, or how something works"
             maxlength={MAX_MESSAGE_CHARS}
             value={props.chat.draft()}
@@ -228,7 +264,7 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
               type="button"
               class="assistant-scope"
               aria-label={`Scope: ${scope().label}`}
-              title="What the assistant reads and may change: your selection, the selected track, or the whole song. Click to widen it."
+              title={`What ${ASSISTANT_NAME} reads and may change: your selection, the selected track, or the whole song. Click to widen it.`}
               onClick={() => props.chat.widenScope()}
             >
               <span class="assistant-scope-label">Scope</span>
@@ -300,7 +336,7 @@ function Entry(props: {
           <div class="assistant-reply">
             <span class="assistant-entry-label assistant-reply-who">
               <SparkIcon size={10} />
-              Assistant
+              {ASSISTANT_NAME}
             </span>{" "}
             <p>
               {reply().text}
@@ -378,6 +414,11 @@ function Entry(props: {
               }
             />
           )}
+        </Show>
+      </Match>
+      <Match when={props.entry.kind === "memory"}>
+        <Show when={props.chat.memory}>
+          {(memory) => <MemoryProposalCard entryId={props.entry.id} memory={memory()} />}
         </Show>
       </Match>
       <Match when={props.entry.kind === "video" && props.entry}>

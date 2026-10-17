@@ -1,21 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { createInMemoryAccessRepository } from "./inMemoryAccessRepository";
+import { createInMemoryAccessRepository } from "../../src/access/inMemoryAccessRepository";
 import {
   isQaSlot,
   MAX_QA_SLOT,
   provisionQaAccounts,
   QA_ACCOUNTS,
+  type QaUser,
   type QaUserChanges,
-  type QaUserRecord,
   type QaUserStore,
   qaAccount,
-} from "./qaAccounts";
+} from "./qaPool";
 
 /** Firebase Auth over a map, counting every write. */
-function memoryUsers(seed: QaUserRecord[] = []) {
+function memoryUsers(seed: QaUser[] = []) {
   const users = new Map(seed.map((user) => [user.uid, { ...user }]));
-  const writes: { kind: "create" | "update"; uid: string; changes?: QaUserChanges }[] =
-    [];
+  const writes: {
+    kind: "create" | "update" | "markInternal";
+    uid: string;
+    changes?: QaUserChanges;
+  }[] = [];
   const store: QaUserStore = {
     async get(uid) {
       const user = users.get(uid);
@@ -23,7 +26,7 @@ function memoryUsers(seed: QaUserRecord[] = []) {
     },
     async create(user) {
       if (users.has(user.uid)) throw new Error(`exists: ${user.uid}`);
-      users.set(user.uid, { ...user });
+      users.set(user.uid, { ...user, internal: false });
       writes.push({ kind: "create", uid: user.uid });
     },
     async update(uid, changes) {
@@ -31,6 +34,12 @@ function memoryUsers(seed: QaUserRecord[] = []) {
       if (!user) throw new Error(`missing: ${uid}`);
       users.set(uid, { ...user, ...changes });
       writes.push({ kind: "update", uid, changes });
+    },
+    async markInternal(uid) {
+      const user = users.get(uid);
+      if (!user) throw new Error(`missing: ${uid}`);
+      users.set(uid, { ...user, internal: true });
+      writes.push({ kind: "markInternal", uid });
     },
   };
   return { store, users, writes };
@@ -58,7 +67,7 @@ describe("the QA account pool", () => {
 });
 
 describe("provisionQaAccounts", () => {
-  it("creates every account verified and allowlists every address", async () => {
+  it("creates every account verified and internal, and allowlists every address", async () => {
     const { store, users } = memoryUsers();
     const allowlist = createInMemoryAccessRepository();
 
@@ -72,7 +81,9 @@ describe("provisionQaAccounts", () => {
       email: "testuser3@qa.trygroove.app",
       emailVerified: true,
       displayName: "QA testuser3",
+      internal: true,
     });
+    expect([...users.values()].every((user) => user.internal)).toBe(true);
     expect((await allowlist.listAllowlist()).map((entry) => entry.email).sort()).toEqual(
       QA_ACCOUNTS.map((a) => a.email).sort(),
     );
@@ -106,6 +117,7 @@ describe("provisionQaAccounts", () => {
         email: "testuser2@qa.trygroove.app",
         emailVerified: false,
         displayName: "Renamed",
+        internal: true,
       },
     ]);
 
@@ -122,6 +134,28 @@ describe("provisionQaAccounts", () => {
       },
     ]);
     expect(users.get("qa-testuser-2")?.emailVerified).toBe(true);
+  });
+
+  // GRV-113: an account provisioned before the claim existed gets it, and
+  // nothing else about it changes.
+  it("flags an existing account that is not internal yet", async () => {
+    const { store, users, writes } = memoryUsers([
+      {
+        uid: "qa-testuser-4",
+        email: "testuser4@qa.trygroove.app",
+        emailVerified: true,
+        displayName: "QA testuser4",
+        internal: false,
+      },
+    ]);
+
+    const report = await provisionQaAccounts(store, createInMemoryAccessRepository(), 1, [
+      qaAccount(4),
+    ]);
+
+    expect(report.updated).toEqual(["testuser4@qa.trygroove.app"]);
+    expect(writes).toEqual([{ kind: "markInternal", uid: "qa-testuser-4" }]);
+    expect(users.get("qa-testuser-4")?.internal).toBe(true);
   });
 
   it("clears a refused sign-in on record for a QA address", async () => {

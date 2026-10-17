@@ -83,7 +83,9 @@ export class FirestoreProjectRepository implements ProjectRepository {
    * was before the write commits. The metadata document is therefore claimed
    * first; only then can the song, clip, and chunk documents be authorized. If
    * the second step fails, the claimed metadata document is removed rather
-   * than left behind as a project with no song.
+   * than left behind as a project with no song. That second step is a plain
+   * batch Firestore resends if its acknowledgement is lost; the rules let a
+   * resend that rewrites what the first send stored through (#891).
    */
   async createProject(project: Project): Promise<SaveResult> {
     const documents = encodeProject(project);
@@ -431,7 +433,39 @@ export class FirestoreProjectRepository implements ProjectRepository {
       });
       return { ok: true, ...outcome };
     } catch (error) {
+      if (firestoreErrorCode(error) === "permission-denied") {
+        const conflict = await this.conflictBehindRefusal(projectId, baseRevision);
+        if (conflict) return conflict;
+      }
       return toSaveFailure(error);
+    }
+  }
+
+  /**
+   * The security rules refuse a save that does not move the stored revision
+   * on by exactly one (GRV-7). When another tab's save lands between this
+   * transaction's read and its commit, the Firestore emulator evaluates the
+   * rules before the transaction's read preconditions, so the commit comes
+   * back `permission-denied` rather than as the retryable contention error the
+   * SDK would re-run the transaction for. Production may check the
+   * preconditions first and return `aborted` instead, in which case the SDK
+   * re-runs the transaction and its fresh read finds the conflict as before.
+   * This handles the emulator's order: reading the revision again tells a
+   * refusal behind a moved revision apart from any other, and the caller gets
+   * the same conflict a re-run would have found.
+   */
+  private async conflictBehindRefusal(
+    projectId: ProjectId,
+    baseRevision: number,
+  ): Promise<SaveResult | null> {
+    try {
+      const raw = await this.readDocument(projectDocumentPath(projectId));
+      if (!raw) return null;
+      const decoded = toMetadataResult(projectId, raw);
+      if (!decoded.ok || decoded.value.revision === baseRevision) return null;
+      return revisionConflict(baseRevision, decoded.value.revision);
+    } catch {
+      return null;
     }
   }
 

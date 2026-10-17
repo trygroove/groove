@@ -5,7 +5,8 @@
 // catalog's guarantees true at runtime:
 //
 // - **Enrichment.** Release SHA and surface are attached to every event;
-//   account type and internal-traffic are set as GA4 user properties. Callers
+//   account type and internal-traffic are set as person properties, and the
+//   signed-in account is identified by its Firebase UID alone. Callers
 //   never pass them, so they cannot be forgotten or set to something else.
 // - **Validation.** The payload is re-checked against the catalog and an event
 //   that fails is dropped rather than sent partially — a half-populated event
@@ -63,6 +64,17 @@ export class Analytics {
   private accountType: AccountType = "unknown";
   private internal = false;
   private userPropertiesSent = false;
+  /** The signed-in account's Firebase UID, or `null` when signed out. */
+  private userId: string | null = null;
+  /** The UID the current transport has been identified as. */
+  private identifiedAs: string | null = null;
+  /**
+   * A sign-out the vendor has not been told about yet. Signing out while no
+   * transport is identified (opted out, so on `noopTransport`) skips the reset,
+   * but the vendor client underneath may still hold the last account; the debt
+   * is paid on the next transport that may collect, before anything else.
+   */
+  private resetOwed = false;
   /** Fallback for once-only events when storage is unavailable. */
   private readonly onceMemory = new Set<string>();
 
@@ -83,10 +95,59 @@ export class Analytics {
    * a vendor SDK that loads lazily.
    */
   setTransport(transport: AnalyticsTransport): void {
+    const previous = this.transport;
     this.transport = transport;
+    if (previous !== transport) {
+      this.guard(() => {
+        previous.dispose?.();
+      });
+    }
     // The new transport has no idea who this user is yet.
+    this.identifiedAs = null;
     this.userPropertiesSent = false;
+    this.flushIdentity();
     this.flushUserProperties();
+  }
+
+  /**
+   * Records who is signed in: a Firebase UID, or `null` once signed out.
+   * `AuthProvider` calls it as auth state settles. The UID is the only
+   * identity analytics ever carries; no email or name reaches a transport.
+   *
+   * Signing out resets the transport's identity, so the next account on this
+   * browser is not merged into the last one. A page that loads signed out
+   * resets nothing: there is no identity to forget.
+   */
+  setUserId(userId: string | null): void {
+    if (userId === this.userId) return;
+    const previous = this.userId;
+    this.userId = userId;
+    if (this.identifiedAs === null) {
+      if (previous !== null) this.resetOwed = true;
+    } else {
+      this.identifiedAs = null;
+      this.guard(() => {
+        this.transport.resetIdentity();
+      });
+      // A reset forgets the person and its properties along with the UID.
+      this.userPropertiesSent = false;
+    }
+    this.flushIdentity();
+    this.flushUserProperties();
+  }
+
+  /**
+   * Sends one page view. The router calls it on every navigation, because the
+   * vendor's own pageview capture is off (it would also fire on the landing
+   * page and count route changes the app does not consider navigation).
+   */
+  pageview(): void {
+    if (!this.consent.analyticsAllowed) return;
+    this.flushIdentity();
+    this.flushUserProperties();
+    this.guard(() => {
+      this.transport.pageview();
+    });
   }
 
   /** The surface attached to subsequent events. */
@@ -136,6 +197,7 @@ export class Analytics {
       return;
     }
 
+    this.flushIdentity();
     this.flushUserProperties();
     this.send(name, {
       ...params,
@@ -190,6 +252,23 @@ export class Analytics {
     } catch {
       // Private browsing or a full quota. Handled by `onceMemory` above.
     }
+  }
+
+  private flushIdentity(): void {
+    if (!this.consent.analyticsAllowed) return;
+    if (this.resetOwed) {
+      this.resetOwed = false;
+      this.guard(() => {
+        this.transport.resetIdentity();
+      });
+      this.userPropertiesSent = false;
+    }
+    if (this.userId === null || this.identifiedAs === this.userId) return;
+    const userId = this.userId;
+    this.identifiedAs = userId;
+    this.guard(() => {
+      this.transport.identify(userId);
+    });
   }
 
   private flushUserProperties(): void {
@@ -254,9 +333,10 @@ function safeIsInternal(): boolean {
 /**
  * The app-wide analytics boundary.
  *
- * Starts with the no-op transport; `initTelemetry()` swaps in the Google
- * Analytics transport once the app has painted. Tests construct their own
- * `Analytics` with a recording transport rather than reaching for this.
+ * Starts with the no-op transport; `initTelemetry()` swaps in the PostHog
+ * transport, which loads its SDK once the browser is idle after first paint,
+ * and on the landing page once that has loaded and settled (GRV-123). Tests construct their own `Analytics`
+ * with a recording transport rather than reaching for this.
  */
 export const analytics = new Analytics();
 

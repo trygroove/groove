@@ -1,0 +1,2066 @@
+{
+  "generatedAt": "2026-10-12T16:37:30.868Z",
+  "model": "claude-sonnet-5",
+  "promptVersion": "2026-10-12.5",
+  "toolsetVersion": 6,
+  "runsPerCase": 3,
+  "caseIds": [
+    "sketch-house",
+    "sketch-broken",
+    "variation-fill",
+    "variation-mangled",
+    "arrange-build-drop",
+    "arrange-no-build",
+    "balance-clean",
+    "balance-lopsided",
+    "process-glue",
+    "process-crushed",
+    "density-hats",
+    "develop-track-ask",
+    "develop-track-arrange",
+    "pad-genre-known",
+    "pad-genre-unknown",
+    "sketch-whole-song",
+    "sketch-track-scope",
+    "db-nudge-down",
+    "db-turn-down",
+    "db-lower",
+    "db-turn-up",
+    "db-stale-cancelled",
+    "db-stale-undone",
+    "resketch-extreme",
+    "noop-bd-only"
+  ],
+  "aborted": null,
+  "scorecard": {
+    "headline": {
+      "applies": {
+        "pass": 56,
+        "judged": 70,
+        "rate": 0.8
+      },
+      "overall": {
+        "pass": 388,
+        "judged": 417,
+        "rate": 0.9304556354916067
+      },
+      "expectMatch": {
+        "pass": 70,
+        "judged": 73,
+        "rate": 0.958904109589041
+      },
+      "turns": 75,
+      "errored": 2
+    },
+    "secondary": {
+      "turns": 75,
+      "latencyMs": {
+        "count": 73,
+        "p50": 18417,
+        "p95": 96730
+      },
+      "firstTextMs": {
+        "count": 75,
+        "p50": 10932,
+        "p95": 54720
+      },
+      "tokens": {
+        "turns": 75,
+        "input": 2366043,
+        "output": 237675,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "meanTokens": {
+        "input": 31547.24,
+        "output": 3169,
+        "cacheRead": 0
+      },
+      "costUsd": {
+        "total": 7.108836000000002,
+        "perTurn": 0.09478448000000003
+      },
+      "stopReasons": {
+        "tool_use": 73,
+        "max_tokens": 2
+      },
+      "maxTokensRate": 0.02666666666666667,
+      "refusalRate": 0
+    },
+    "cases": {
+      "sketch-house": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 44193,
+          "p95": 54826
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 43644,
+          "p95": 54720
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 93253,
+          "output": 12040,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 31084.333333333332,
+          "output": 4013.3333333333335,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.306906,
+          "perTurn": 0.102302
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "sketch-broken": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 100699,
+          "p95": 101196
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 46733,
+          "p95": 53847
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 93314,
+          "output": 37410,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 31104.666666666668,
+          "output": 12470,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.560728,
+          "perTurn": 0.18690933333333334
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "variation-fill": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 33543,
+          "p95": 45310
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 17118,
+          "p95": 29139
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 98277,
+          "output": 12540,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 32759,
+          "output": 4180,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.321954,
+          "perTurn": 0.10731800000000001
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "variation-mangled": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 29847,
+          "p95": 35397
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 17014,
+          "p95": 21441
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 98244,
+          "output": 9950,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 32748,
+          "output": 3316.6666666666665,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.29598800000000003,
+          "perTurn": 0.09866266666666668
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "arrange-build-drop": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 51935,
+          "p95": 60829
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 40986,
+          "p95": 50716
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 103484,
+          "output": 15455,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 34494.666666666664,
+          "output": 5151.666666666667,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.361518,
+          "perTurn": 0.120506
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "arrange-no-build": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 48197,
+          "p95": 49814
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 30350,
+          "p95": 34117
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 103503,
+          "output": 16211,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 34501,
+          "output": 5403.666666666667,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.369116,
+          "perTurn": 0.12303866666666667
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "balance-clean": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 11637,
+          "p95": 15527
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 4554,
+          "p95": 9969
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 94767,
+          "output": 3921,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 31589,
+          "output": 1307,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.228744,
+          "perTurn": 0.076248
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "balance-lopsided": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 7864,
+          "p95": 8409
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 2801,
+          "p95": 3489
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 94735,
+          "output": 2333,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 31578.333333333332,
+          "output": 777.6666666666666,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.2128,
+          "perTurn": 0.07093333333333333
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "process-glue": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 4734,
+          "p95": 4748
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 796,
+          "p95": 823
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 94685,
+          "output": 1227,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 31561.666666666668,
+          "output": 409,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.20163999999999999,
+          "perTurn": 0.06721333333333333
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "process-crushed": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 8394,
+          "p95": 9289
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 3850,
+          "p95": 6280
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 94715,
+          "output": 2139,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 31571.666666666668,
+          "output": 713,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.21082,
+          "perTurn": 0.07027333333333334
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "density-hats": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 23760,
+          "p95": 25281
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 12340,
+          "p95": 14284
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 106314,
+          "output": 8134,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 35438,
+          "output": 2711.3333333333335,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.293968,
+          "perTurn": 0.09798933333333333
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "develop-track-ask": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 10441,
+          "p95": 14843
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 5300,
+          "p95": 10932
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 92870,
+          "output": 2516,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 30956.666666666668,
+          "output": 838.6666666666666,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.21089999999999998,
+          "perTurn": 0.07029999999999999
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "develop-track-arrange": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 1,
+          "p50": 84882,
+          "p95": 84882
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 128382,
+          "p95": 132674
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 93663,
+          "output": 41176,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 31221,
+          "output": 13725.333333333334,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.599086,
+          "perTurn": 0.19969533333333334
+        },
+        "stopReasons": {
+          "tool_use": 1,
+          "max_tokens": 2
+        },
+        "maxTokensRate": 0.6666666666666666,
+        "refusalRate": 0
+      },
+      "pad-genre-known": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 15887,
+          "p95": 24962
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 9234,
+          "p95": 16932
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 92990,
+          "output": 5069,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 30996.666666666668,
+          "output": 1689.6666666666667,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.23667,
+          "perTurn": 0.07889
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "pad-genre-unknown": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 18742,
+          "p95": 23493
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 10334,
+          "p95": 13443
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 92832,
+          "output": 5685,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 30944,
+          "output": 1895,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.242514,
+          "perTurn": 0.08083800000000001
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "sketch-whole-song": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 52105,
+          "p95": 71902
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 39233,
+          "p95": 52094
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 91224,
+          "output": 16205,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 30408,
+          "output": 5401.666666666667,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.34449799999999997,
+          "perTurn": 0.11483266666666665
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "sketch-track-scope": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 55380,
+          "p95": 96730
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 31931,
+          "p95": 56871
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 92836,
+          "output": 22939,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 30945.333333333332,
+          "output": 7646.333333333333,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.415062,
+          "perTurn": 0.138354
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "db-nudge-down": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 3136,
+          "p95": 4672
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 1840,
+          "p95": 4659
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 91201,
+          "output": 864,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 30400.333333333332,
+          "output": 288,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.191042,
+          "perTurn": 0.06368066666666666
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "db-turn-down": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 3037,
+          "p95": 3220
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 1674,
+          "p95": 1801
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 91190,
+          "output": 842,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 30396.666666666668,
+          "output": 280.6666666666667,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.19080000000000003,
+          "perTurn": 0.0636
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "db-lower": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 2850,
+          "p95": 3026
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 1463,
+          "p95": 1562
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 91212,
+          "output": 824,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 30404,
+          "output": 274.6666666666667,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.190664,
+          "perTurn": 0.06355466666666666
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "db-turn-up": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 3298,
+          "p95": 6234
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 1940,
+          "p95": 4687
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 91187,
+          "output": 858,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 30395.666666666668,
+          "output": 286,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.190954,
+          "perTurn": 0.06365133333333334
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "db-stale-cancelled": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 3580,
+          "p95": 3925
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 1868,
+          "p95": 2708
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 91333,
+          "output": 937,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 30444.333333333332,
+          "output": 312.3333333333333,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.192036,
+          "perTurn": 0.064012
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "db-stale-undone": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 3728,
+          "p95": 4116
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 2267,
+          "p95": 3075
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 91316,
+          "output": 872,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 30438.666666666668,
+          "output": 290.6666666666667,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.19135200000000002,
+          "perTurn": 0.06378400000000001
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "resketch-extreme": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 25695,
+          "p95": 44460
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 24131,
+          "p95": 43391
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 95670,
+          "output": 7532,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 31890,
+          "output": 2510.6666666666665,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.26666,
+          "perTurn": 0.08888666666666667
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      },
+      "noop-bd-only": {
+        "turns": 3,
+        "latencyMs": {
+          "count": 3,
+          "p50": 36916,
+          "p95": 55530
+        },
+        "firstTextMs": {
+          "count": 3,
+          "p50": 35845,
+          "p95": 39623
+        },
+        "tokens": {
+          "turns": 3,
+          "input": 91228,
+          "output": 9996,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "meanTokens": {
+          "input": 30409.333333333332,
+          "output": 3332,
+          "cacheRead": 0
+        },
+        "costUsd": {
+          "total": 0.282416,
+          "perTurn": 0.09413866666666666
+        },
+        "stopReasons": {
+          "tool_use": 3
+        },
+        "maxTokensRate": 0,
+        "refusalRate": 0
+      }
+    }
+  },
+  "summary": {
+    "checks": {
+      "valid": {
+        "pass": 56,
+        "fail": 14,
+        "skip": 0
+      },
+      "bundled": {
+        "pass": 56,
+        "fail": 0,
+        "skip": 14
+      },
+      "inScope": {
+        "pass": 56,
+        "fail": 0,
+        "skip": 14
+      },
+      "atomicUndo": {
+        "pass": 56,
+        "fail": 0,
+        "skip": 14
+      },
+      "grounded": {
+        "pass": 56,
+        "fail": 0,
+        "skip": 14
+      },
+      "notFlattened": {
+        "pass": 11,
+        "fail": 0,
+        "skip": 4
+      },
+      "coverage": {
+        "pass": 0,
+        "fail": 3,
+        "skip": 67
+      },
+      "outcome": {
+        "pass": 70,
+        "fail": 3,
+        "skip": 0
+      },
+      "hatDensity": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0
+      },
+      "pointsToGenerate": {
+        "pass": 0,
+        "fail": 3,
+        "skip": 0
+      },
+      "developsTrack": {
+        "pass": 0,
+        "fail": 1,
+        "skip": 0
+      },
+      "padSound": {
+        "pass": 0,
+        "fail": 0,
+        "skip": 3
+      },
+      "dissonant": {
+        "pass": 0,
+        "fail": 0,
+        "skip": 3
+      },
+      "addsTracks": {
+        "pass": 1,
+        "fail": 2,
+        "skip": 3
+      },
+      "endsAt": {
+        "pass": 18,
+        "fail": 0,
+        "skip": 0
+      },
+      "noEmptyClips": {
+        "pass": 0,
+        "fail": 3,
+        "skip": 0
+      },
+      "noNoOps": {
+        "pass": 5,
+        "fail": 0,
+        "skip": 1
+      }
+    },
+    "cases": {
+      "sketch-house": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "sketch-broken": {
+        "valid": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "inScope": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "atomicUndo": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "grounded": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "notFlattened": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "variation-fill": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "variation-mangled": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "notFlattened": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "arrange-build-drop": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "arrange-no-build": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "notFlattened": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "balance-clean": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "balance-lopsided": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "notFlattened": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "process-glue": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "process-crushed": {
+        "valid": {
+          "pass": 2,
+          "fail": 1,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "inScope": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "atomicUndo": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "grounded": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "notFlattened": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "density-hats": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "hatDensity": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "pointsToGenerate": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        }
+      },
+      "develop-track-ask": {
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "develop-track-arrange": {
+        "valid": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 1
+        },
+        "outcome": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 0
+        },
+        "developsTrack": {
+          "pass": 0,
+          "fail": 1,
+          "skip": 0
+        }
+      },
+      "pad-genre-known": {
+        "valid": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "inScope": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "atomicUndo": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "grounded": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "padSound": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "dissonant": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        }
+      },
+      "pad-genre-unknown": {
+        "valid": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "inScope": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "atomicUndo": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "grounded": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        }
+      },
+      "sketch-whole-song": {
+        "valid": {
+          "pass": 2,
+          "fail": 1,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "inScope": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "atomicUndo": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "grounded": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "addsTracks": {
+          "pass": 0,
+          "fail": 2,
+          "skip": 1
+        }
+      },
+      "sketch-track-scope": {
+        "valid": {
+          "pass": 1,
+          "fail": 2,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 2
+        },
+        "inScope": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 2
+        },
+        "atomicUndo": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 2
+        },
+        "grounded": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 2
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "addsTracks": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 2
+        }
+      },
+      "db-nudge-down": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "endsAt": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "db-turn-down": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "endsAt": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "db-lower": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "endsAt": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "db-turn-up": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "endsAt": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "db-stale-cancelled": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "endsAt": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "db-stale-undone": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "endsAt": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "resketch-extreme": {
+        "valid": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "inScope": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "atomicUndo": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "grounded": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noEmptyClips": {
+          "pass": 0,
+          "fail": 3,
+          "skip": 0
+        },
+        "noNoOps": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        }
+      },
+      "noop-bd-only": {
+        "valid": {
+          "pass": 2,
+          "fail": 1,
+          "skip": 0
+        },
+        "bundled": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "inScope": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "atomicUndo": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "grounded": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        },
+        "coverage": {
+          "pass": 0,
+          "fail": 0,
+          "skip": 3
+        },
+        "outcome": {
+          "pass": 3,
+          "fail": 0,
+          "skip": 0
+        },
+        "noNoOps": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 1
+        }
+      }
+    },
+    "errored": {
+      "total": 2,
+      "auth": 0,
+      "cases": {
+        "sketch-house": 0,
+        "sketch-broken": 0,
+        "variation-fill": 0,
+        "variation-mangled": 0,
+        "arrange-build-drop": 0,
+        "arrange-no-build": 0,
+        "balance-clean": 0,
+        "balance-lopsided": 0,
+        "process-glue": 0,
+        "process-crushed": 0,
+        "density-hats": 0,
+        "develop-track-ask": 0,
+        "develop-track-arrange": 2,
+        "pad-genre-known": 0,
+        "pad-genre-unknown": 0,
+        "sketch-whole-song": 0,
+        "sketch-track-scope": 0,
+        "db-nudge-down": 0,
+        "db-turn-down": 0,
+        "db-lower": 0,
+        "db-turn-up": 0,
+        "db-stale-cancelled": 0,
+        "db-stale-undone": 0,
+        "resketch-extreme": 0,
+        "noop-bd-only": 0
+      }
+    }
+  }
+}

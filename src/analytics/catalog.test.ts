@@ -113,6 +113,8 @@ describe("event names", () => {
         "automation_lane_created",
         "browser_capability_missing",
         "clip_edited",
+        "cue_nudge_answered",
+        "cue_nudge_shown",
         "device_added",
         "device_edit_failed",
         "exception",
@@ -131,7 +133,17 @@ describe("event names", () => {
         "library_pack_upgraded",
         "loop_range_set",
         "loop_toggled",
+        "memory_forgotten",
+        "memory_note_confirmed",
+        "memory_note_proposed",
+        "memory_note_undone",
         "note_edit_failed",
+        "onboarding_completed",
+        "onboarding_question_answered",
+        "onboarding_skipped",
+        "onboarding_started",
+        "onboarding_validation",
+        "onboarding_validation_chip",
         "placement_duplicated",
         "project_created",
         "project_deleted",
@@ -227,7 +239,7 @@ describe("parameter declarations", () => {
       if (spec.kind !== "count") continue;
       expect(spec.max, `${event}.${param}`).toBeGreaterThan(0);
       // Bucketed cardinality: an unbounded count is a re-identification risk
-      // and a GA4 cardinality problem.
+      // and an analytics cardinality problem.
       expect(spec.max, `${event}.${param}`).toBeLessThanOrEqual(1000);
     }
   });
@@ -459,9 +471,11 @@ describe("catalog cross-references", () => {
         "library_browser",
         "limiter_device",
         "mixer",
+        "memory",
         "musical_key",
         "note_audition",
         "note_clipboard",
+        "onboarding",
         "pack_browser",
         "piano_roll",
         "playhead_seek",

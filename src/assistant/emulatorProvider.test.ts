@@ -12,10 +12,11 @@ import {
   createEmulatorAssistantProvider,
   DUSTIER_ROLE,
   EMULATOR_ASK,
-  EMULATOR_MISSING_VIDEO_ID,
+  EMULATOR_MISSING_VIDEO_QUERY,
+  EMULATOR_REMEMBER,
   EMULATOR_REPLY_CHUNKS,
   EMULATOR_VIDEO,
-  emulatorVideoVerifier,
+  emulatorVideoFinder,
   LOOSEN_EXPLANATION,
   LOOSEN_SWING,
   LOOSEN_VOLUME_DROP_DB,
@@ -24,6 +25,7 @@ import {
 } from "./emulatorProvider";
 import { type AssistantGatewayDeps, runAssistantTurn } from "./gateway";
 import { createInMemoryGuardStores } from "./inMemoryGuardStores";
+import { type AssistantMemoryContext, REMEMBER_TOOL_NAME } from "./memory";
 import { buildAssistantPayload } from "./payload";
 import { validateProposal } from "./proposal";
 import type { AssistantLibraryContext } from "./protocol";
@@ -51,6 +53,7 @@ function turn(
   signal: AbortSignal = new AbortController().signal,
   project: Project = createReferenceProject(),
   library?: AssistantLibraryContext,
+  memory?: AssistantMemoryContext,
 ): { chunks: AssistantStreamChunk[]; result: Promise<AssistantTurnResult> } {
   const chunks: AssistantStreamChunk[] = [];
   const result = runAssistantTurn(
@@ -61,6 +64,7 @@ function turn(
       messages: [{ role: "user", text }],
       context: buildAssistantPayload(project),
       ...(library ? { library } : {}),
+      ...(memory ? { memory } : {}),
     },
     { signal, onChunk: (chunk) => chunks.push(chunk) },
   );
@@ -180,6 +184,31 @@ describe("the emulator's assistant provider", () => {
     expect(multi.ask?.multiSelect).toBe(true);
   });
 
+  it("ends [remember] in a memory proposal on a turn that carries memory (GRV-25)", async () => {
+    const memory: AssistantMemoryContext = {
+      taste: [],
+      artists: "",
+      experience: null,
+      goal: null,
+      learn: [],
+      gear: [],
+      notes: [],
+      askLater: null,
+    };
+    const reply = await turn(
+      gateway(),
+      "I'm making more trap lately [remember]",
+      new AbortController().signal,
+      createReferenceProject(),
+      undefined,
+      memory,
+    ).result;
+    expect(reply.stopReason).toBe("tool_use");
+    expect(reply.proposal?.calls).toEqual([
+      expect.objectContaining({ name: REMEMBER_TOOL_NAME, input: EMULATOR_REMEMBER }),
+    ]);
+  });
+
   it("ends [ask-rich] in a question about the project's first track, with a preview that applies", async () => {
     const project = createReferenceProject();
     const reply = await turn(gateway(), "Where do I start? [ask-rich]").result;
@@ -279,20 +308,23 @@ describe("the emulator's assistant provider", () => {
     expect(reply.text).toMatch(/can't find/);
   });
 
-  it("answers [video] with the one video its verifier vouches for (GRV-16)", async () => {
+  it("answers [video] with the one video its search finds (GRV-16)", async () => {
     const reply = await turn(
-      { ...gateway(), verifyVideo: emulatorVideoVerifier },
+      { ...gateway(), findVideo: emulatorVideoFinder },
       "How do I get that acid squelch? [video]",
     ).result;
     expect(reply.text.length).toBeGreaterThan(0);
     expect(reply.proposal).toBeNull();
-    expect(reply.videos).toEqual([EMULATOR_VIDEO]);
+    const { query: _query, ...video } = EMULATOR_VIDEO;
+    expect(reply.videos).toEqual([video]);
     expect(
-      await emulatorVideoVerifier(
-        EMULATOR_MISSING_VIDEO_ID,
+      await emulatorVideoFinder(
+        EMULATOR_MISSING_VIDEO_QUERY,
         new AbortController().signal,
       ),
-    ).toBeNull();
+    ).toBe("missing");
+    // The search that found nothing is said to be left out, not left implied.
+    expect(reply.text).toMatch(/left it out\.$/);
   });
 
   it("is only chosen in the emulator, and only with no key", () => {

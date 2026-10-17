@@ -35,9 +35,12 @@
  *   the project's first track and bars 1-2, let it be heard, and answer
  *   themselves when the tempo goes to 100 BPM or below
  *   ({@link emulatorRichAsk}).
- * - `[video]` (GRV-16): a short reply that recommends {@link EMULATOR_VIDEO},
- *   and a second video {@link emulatorVideoVerifier} refuses, so the turn shows
- *   one card and drops the other.
+ * - `[video]` (GRV-16): a short reply that searches for {@link EMULATOR_VIDEO},
+ *   and for a second video {@link emulatorVideoFinder} finds nothing for, so
+ *   the turn shows one card and drops the other.
+ * - `[remember]`: a short reply that ends in `remember_producer` (GRV-25),
+ *   proposing {@link EMULATOR_REMEMBER}'s note. The gateway only lets it
+ *   through on a turn that carries the producer's memory.
  * - anything else: a short reply, streamed in pieces with a pause between.
  *
  * Like the rest of `src/assistant`, it imports no Firebase and no SDK.
@@ -45,14 +48,15 @@
 import { setParameter } from "../commands/definitions/parameters";
 import { SONG_TEMPO } from "../domain/parameters";
 import { ASK_PRODUCER_TOOL_NAME, type AskProducerInput } from "./ask";
+import { REMEMBER_TOOL_NAME } from "./memory";
 import { LIBRARY_BLOCK_HEADING, PROJECT_BLOCK_HEADING } from "./prompt";
 import type { AssistantLibraryContext } from "./protocol";
 import type { AssistantProvider } from "./provider";
 import { ProviderFailure } from "./provider";
-import type { ProviderMessagesRequest } from "./providerRequest";
+import { continuesTurn, type ProviderMessagesRequest } from "./providerRequest";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
 import { EXPLAIN_TOOL_NAME, toolNameFor } from "./tools";
-import { RECOMMEND_VIDEO_TOOL, type VideoFacts, type VideoVerifier } from "./video";
+import { type FoundVideo, RECOMMEND_VIDEO_TOOL, type VideoFinder } from "./video";
 
 /** The reply every ordinary turn streams, piece by piece. */
 export const EMULATOR_REPLY_CHUNKS = [
@@ -69,6 +73,26 @@ type Step =
   | { readonly wait: number }
   | { readonly hang: true }
   | { readonly fail: true };
+
+/** A later step that ends the turn with nothing more to say (`gateway.ts`). */
+function finishedReply(): Step[] {
+  return [
+    {
+      event: {
+        type: "message_start",
+        message: { id: "msg_emulator", usage: { input_tokens: 100, output_tokens: 1 } },
+      },
+    },
+    {
+      event: {
+        type: "message_delta",
+        delta: { stop_reason: "end_turn" },
+        usage: { output_tokens: 1 },
+      },
+    },
+    { event: { type: "message_stop" } },
+  ];
+}
 
 function textReply(chunks: readonly string[], stopReason = "end_turn"): Step[] {
   return [
@@ -173,19 +197,15 @@ function misfitProposal(request: ProviderMessagesRequest): Step[] {
     {
       name: "track_create",
       input: {
-        track: {
-          id: trackId,
-          name: "Noise pad",
-          color: "#808080",
-          order: contextTracks(request).length,
-          type: "instrument",
-          instrument: { kind: "sampler", assetId: MISFIT_ASSET_ID, parameters: {} },
-          devices: [],
-          sendConfig: [],
-          mixer: { volume: -6, pan: 0, muted: false, soloed: false },
-        },
-        clips: [],
-        placements: [],
+        id: trackId,
+        name: "Noise pad",
+        color: "#808080",
+        order: contextTracks(request).length,
+        type: "instrument",
+        instrument: { kind: "sampler", assetId: MISFIT_ASSET_ID, parameters: {} },
+        devices: [],
+        sendConfig: [],
+        mixer: { volume: -6, pan: 0, muted: false, soloed: false },
       },
     },
   ]);
@@ -394,45 +414,48 @@ function askReply(multiSelect: boolean): Step[] {
 /**
  * The video `[video]` recommends: a real, embeddable YouTube tutorial, so a
  * screenshot of it playing shows the real player. Its facts are what YouTube's
- * oEmbed reported for it, which {@link emulatorVideoVerifier} answers without
+ * oEmbed reported for it, which {@link emulatorVideoFinder} answers without
  * asking YouTube.
  */
 export const EMULATOR_VIDEO = {
+  query: "acid bassline 303 tutorial",
   videoId: "tH9LHIyJ0c8",
   title: "How to Make an Acid Bassline with the TB-303 by Roland Cloud",
   channel: "pointblank music school",
   reason: "Shows how resonance and envelope mod make a 303 line squelch.",
 } as const;
 
-/** The second video `[video]` names, which does not exist and is dropped. */
-export const EMULATOR_MISSING_VIDEO_ID = "zzzzzzzzzzz";
+/** The second search `[video]` makes, which finds nothing and is dropped. */
+export const EMULATOR_MISSING_VIDEO_QUERY = "a video that is not there";
 
 /**
- * The emulator's and the mock backend's video check (GRV-16): it vouches for
- * {@link EMULATOR_VIDEO} alone and refuses every other ID, with no request to
- * YouTube, so the browser suite never depends on YouTube being up.
+ * The emulator's and the mock backend's video search (GRV-16): it finds
+ * {@link EMULATOR_VIDEO} for its query alone and nothing for any other, with
+ * no request to YouTube, so the browser suite never depends on YouTube being
+ * up.
  */
-export const emulatorVideoVerifier: VideoVerifier = async (videoId) =>
-  videoId === EMULATOR_VIDEO.videoId
+export const emulatorVideoFinder: VideoFinder = async (query) =>
+  query === EMULATOR_VIDEO.query
     ? ({
+        videoId: EMULATOR_VIDEO.videoId,
         title: EMULATOR_VIDEO.title,
         channel: EMULATOR_VIDEO.channel,
-      } satisfies VideoFacts)
-    : null;
+      } satisfies FoundVideo)
+    : "missing";
 
-/** `[video]`'s reply: a sentence, then two video recommendations. */
+/** `[video]`'s reply: a sentence, then two video searches. */
 function videoReply(): Step[] {
   return proposalReply(
-    "It's the resonance and the envelope sweeping the cutoff together. This walkthrough shows it clearly:",
+    "It's the resonance and the envelope sweeping the cutoff together: push the resonance up, then let a short filter envelope open and close the cutoff on every note.",
     [
       {
         name: RECOMMEND_VIDEO_TOOL,
-        input: { videoId: EMULATOR_VIDEO.videoId, reason: EMULATOR_VIDEO.reason },
+        input: { query: EMULATOR_VIDEO.query, reason: EMULATOR_VIDEO.reason },
       },
       {
         name: RECOMMEND_VIDEO_TOOL,
         input: {
-          videoId: EMULATOR_MISSING_VIDEO_ID,
+          query: EMULATOR_MISSING_VIDEO_QUERY,
           reason: "A video that is not there.",
         },
       },
@@ -440,10 +463,26 @@ function videoReply(): Step[] {
   );
 }
 
+/** What `[remember]` proposes remembering. */
+export const EMULATOR_REMEMBER = {
+  kind: "note",
+  text: "Making more trap lately",
+} as const;
+
+/** `[remember]`'s reply: one `remember_producer` call. */
+function rememberReply(): Step[] {
+  return proposalReply("Sounds like that will matter next time too.", [
+    { id: "toolu_remember", name: REMEMBER_TOOL_NAME, input: EMULATOR_REMEMBER },
+  ]);
+}
+
 function lastUserMessage(request: ProviderMessagesRequest): string {
   for (let index = request.messages.length - 1; index >= 0; index -= 1) {
     const message = request.messages[index];
-    if (message?.role === "user") return message.content;
+    // A continued turn's tool results are not the producer's words.
+    if (message?.role === "user" && typeof message.content === "string") {
+      return message.content;
+    }
   }
   return "";
 }
@@ -470,6 +509,8 @@ export function createEmulatorAssistantProvider(
   firstTime: FirstTimeCheck = inProcessFirstTime(),
 ): AssistantProvider {
   function scriptFor(request: ProviderMessagesRequest): Step[] {
+    // A scripted proposal is whole in one step; the step after it ends the turn.
+    if (continuesTurn(request)) return finishedReply();
     const message = lastUserMessage(request);
     if (message.includes("[hang]")) {
       return [...textReply([EMULATOR_REPLY_CHUNKS[0]]).slice(0, 3), { hang: true }];
@@ -484,6 +525,7 @@ export function createEmulatorAssistantProvider(
     if (message.includes("[ask-rich]")) return richAskReply(request);
     if (message.includes("[ask-multi]")) return askReply(true);
     if (message.includes("[ask]")) return askReply(false);
+    if (message.includes("[remember]")) return rememberReply();
     if (message.includes("[video]")) return videoReply();
     return textReply(EMULATOR_REPLY_CHUNKS);
   }

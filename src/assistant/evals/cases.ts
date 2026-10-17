@@ -11,19 +11,38 @@
  * case may carry the conversation before its request (`history`), expect a
  * question rather than a proposal (`expect: "ask"`), and name checks of its
  * own (`checks`) beside the shared ones.
+ *
+ * GRV-108 adds cases saved from `bun run assistant:try`: one JSON file per
+ * case in `cases/`, run against a named fixture (`namedFixtures.ts`), loaded
+ * after the TypeScript ones into {@link EVAL_CASES}.
+ *
+ * GRV-119 adds a second set beside the musical one: the basic production
+ * actions (`basicActionCases.ts`), simple exact edits each judged by checks 18
+ * and 19. A case names its set (`set`, the musical one when it does not), and
+ * the scorecard scores each set on its own as well as the run as a whole.
  */
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { z } from "zod";
 import type { Project } from "../../domain/entities";
 import type { SelectionScope, SelectionState } from "../../selection/types";
 import { type AskAnswer, type AssistantAsk, answerMessage, askTranscript } from "../ask";
-import type { AssistantMessage } from "../protocol";
-import type { CaseCheckId, EvalExpectation } from "./caseChecks";
+import { type AssistantMessage, assistantMessageSchema } from "../protocol";
+import { BASIC_ACTION_CASES } from "./basicActionCases";
+import type { BasicAction } from "./basicActionChecks";
+import { CASE_CHECK_IDS, type CaseCheckId, type EvalExpectation } from "./caseChecks";
+import type { ExpectedValue } from "./caseChecksQa";
 import {
   createArrangementProject,
+  createBdOnlyProject,
+  createBdSketchProject,
   createHouseLoopProject,
   createKitSketchProject,
   createTechnoDrumsProject,
   createTechnoLoopProject,
 } from "./fixtures";
+import { FIXTURE_NAME, jsonFixturesDir, namedFixture } from "./namedFixtures";
+import type { EvalSetId } from "./sets";
 import type { ExportedTranscriptCase, TranscriptCaseFixture } from "./transcriptCase";
 
 /** The capabilities asked once conventionally and once at an extreme (check 6). */
@@ -41,6 +60,12 @@ export const EVAL_CAPABILITIES = [
   "density",
   "development",
   "newPart",
+  // GRV-107's cases from GRV-6's QA findings.
+  "sketchScope",
+  "relativeLevel",
+  "resketch",
+  // GRV-119's basic production actions.
+  "basicAction",
 ] as const;
 export type EvalCapability = (typeof EVAL_CAPABILITIES)[number];
 
@@ -78,6 +103,8 @@ export type EvalSelection =
 export interface EvalCase {
   /** Stable and short: `bun run eval:assistant -- <id>` runs just this case. */
   readonly id: string;
+  /** The set the scorecard scores it in; the musical one when absent. */
+  readonly set?: EvalSetId;
   readonly capability: EvalCapability;
   readonly axis: EvalAxis;
   /** The producer's words, sent as the turn's last message. */
@@ -96,6 +123,16 @@ export interface EvalCase {
   readonly expect: EvalExpectation;
   /** Checks of its own, judged on an applied proposal beside the shared ones. */
   readonly checks?: readonly CaseCheckId[];
+  /**
+   * Checks every case is judged by (`EVERY_CASE_CHECKS`) that this one's
+   * request makes wrong: "clear this clip" asks for the empty clip check 16
+   * fails.
+   */
+  readonly exempt?: readonly CaseCheckId[];
+  /** What the `endsAt` check holds a parameter to. */
+  readonly expectedValue?: ExpectedValue;
+  /** The edit `exactEdit` and `nothingElse` judge (GRV-119). */
+  readonly action?: BasicAction;
   readonly fixture: () => Project;
   readonly selection: EvalSelection;
   readonly scope: EvalScope;
@@ -147,7 +184,65 @@ const PAD_REQUEST = "I think this track needs a high, atmospheric pad sound.";
 /** What a case that may add new tracks, and change nothing else, allows. */
 const NEW_TRACKS_ONLY: EvalScope = { tracks: [], createTracks: true, ...NOTHING_ELSE };
 
-export const EVAL_CASES: readonly EvalCase[] = [
+/** GRV-107: the sketch request QA sent, on a project with only BD. */
+const HOUSE_SKETCH_REQUEST =
+  "Sketch a four-on-the-floor house loop with drums, bass, chords, melody and a texture.";
+
+/** GRV-107: the extreme request QA sent. */
+const BROKEN_DNB_REQUEST =
+  "Make a broken, lurching, abrasive drum and bass loop, no straight grid.";
+
+/** The BD track's volume the relative-dB cases start from. */
+const BD_START_DB = -3;
+
+/** What a sketch may change: any track, new tracks, and the song's tempo. */
+const SKETCH_SCOPE: EvalScope = {
+  tracks: "all",
+  createTracks: true,
+  ...NOTHING_ELSE,
+  song: true,
+};
+
+/** What a level request may change: the BD track alone. */
+const BD_ONLY: EvalScope = { tracks: ["BD"], createTracks: false, ...NOTHING_ELSE };
+
+/** A relative-dB case: BD starts at `from`, and should end at `to`. */
+function relativeDbCase(
+  id: string,
+  request: string,
+  from: number,
+  to: number,
+  history?: readonly AssistantMessage[],
+): EvalCase {
+  return {
+    id,
+    capability: "relativeLevel",
+    axis: "conventional",
+    request,
+    history,
+    expect: "proposal",
+    fixture: () => createBdOnlyProject(from),
+    selection: null,
+    scope: BD_ONLY,
+    checks: ["endsAt"],
+    expectedValue: { track: "BD", parameter: "volume", value: to, tolerance: 0.05 },
+  };
+}
+
+/** A turn the panel resends: the producer's words and the reply's. */
+function resentTurn(request: string, reply: string): readonly AssistantMessage[] {
+  return [
+    { role: "user", text: request },
+    { role: "assistant", text: reply },
+  ];
+}
+
+/**
+ * The cases written here, in TypeScript. Tests that pin what a particular
+ * case says read these, not {@link EVAL_CASES}, so a case saved as JSON can
+ * never break them.
+ */
+export const TYPESCRIPT_CASES: readonly EvalCase[] = [
   {
     id: "sketch-house",
     capability: "loopSketch",
@@ -323,7 +418,190 @@ export const EVAL_CASES: readonly EvalCase[] = [
     selection: null,
     scope: NEW_TRACKS_ONLY,
   },
+  // GRV-107: GRV-6's QA findings.
+  {
+    id: "sketch-whole-song",
+    capability: "sketchScope",
+    axis: "conventional",
+    request: HOUSE_SKETCH_REQUEST,
+    expect: "proposal",
+    fixture: createBdOnlyProject,
+    selection: null,
+    scope: SKETCH_SCOPE,
+    checks: ["addsTracks"],
+  },
+  {
+    id: "sketch-track-scope",
+    capability: "sketchScope",
+    axis: "conventional",
+    request: HOUSE_SKETCH_REQUEST,
+    // A proposal that adds tracks, or a question about widening the scope.
+    expect: "either",
+    fixture: createBdOnlyProject,
+    selection: { tracks: ["BD"] },
+    scope: SKETCH_SCOPE,
+    checks: ["addsTracks"],
+  },
+  relativeDbCase("db-nudge-down", "Nudge the BD down 1 dB", BD_START_DB, -4),
+  relativeDbCase("db-turn-down", "Turn the BD down by 1 dB", BD_START_DB, -4),
+  relativeDbCase("db-lower", "Lower the BD by 1 dB", BD_START_DB, -4),
+  relativeDbCase("db-turn-up", "Turn the BD up by 3 dB", BD_START_DB, 0),
+  // The panel resends what the reply said, whether or not the change stuck.
+  relativeDbCase(
+    "db-stale-cancelled",
+    "Turn the BD up by 3 dB",
+    BD_START_DB,
+    0,
+    resentTurn(
+      "Turn the BD down by 2 dB",
+      "I'll lower the BD volume from -3.0 dB to -5.0 dB.",
+    ),
+  ),
+  relativeDbCase(
+    "db-stale-undone",
+    "Turn the BD down by 3 dB",
+    0,
+    -3,
+    resentTurn(
+      "Turn the BD down by 2 dB",
+      "I'll lower the BD volume from 0.0 dB to -2.0 dB.",
+    ),
+  ),
+  {
+    id: "resketch-extreme",
+    capability: "resketch",
+    axis: "extreme",
+    request: BROKEN_DNB_REQUEST,
+    history: resentTurn(
+      HOUSE_SKETCH_REQUEST,
+      "I've sketched a four-on-the-floor house loop: the BD kicks, an offbeat bass, Am chords, a short melody and a held texture.",
+    ),
+    expect: "proposal",
+    fixture: createBdSketchProject,
+    selection: null,
+    scope: SKETCH_SCOPE,
+    checks: ["noNoOps"],
+  },
+  {
+    id: "noop-bd-only",
+    capability: "resketch",
+    axis: "extreme",
+    request: BROKEN_DNB_REQUEST,
+    expect: "proposal",
+    fixture: createBdOnlyProject,
+    selection: null,
+    scope: SKETCH_SCOPE,
+    checks: ["noNoOps"],
+  },
+  // GRV-119: the basic production actions, a set of their own.
+  ...BASIC_ACTION_CASES,
 ];
+
+// ---------------------------------------------------------------------------
+// GRV-108: cases saved from `bun run assistant:try`, one JSON file each.
+// ---------------------------------------------------------------------------
+
+const evalScopeSchema = z.strictObject({
+  tracks: z.union([z.literal("all"), z.array(z.string().min(1))]),
+  createTracks: z.boolean(),
+  song: z.boolean(),
+  master: z.boolean(),
+  returns: z.boolean(),
+  sections: z.boolean(),
+});
+
+const evalSelectionSchema = z.union([
+  z.strictObject({ tracks: z.array(z.string().min(1)).min(1) }),
+  z.strictObject({ clips: z.array(z.string().min(1)).min(1) }),
+  z.null(),
+]);
+
+/**
+ * A case as its JSON file holds it: an {@link EvalCase} with the fixture
+ * named (a `fixtures.ts` builder or a JSON fixture, see `namedFixtures.ts`)
+ * rather than built.
+ */
+export const jsonEvalCaseSchema = z.strictObject({
+  id: z.string().regex(FIXTURE_NAME, "lower-case words joined by hyphens"),
+  capability: z.enum(EVAL_CAPABILITIES),
+  axis: z.enum(["conventional", "extreme"]),
+  request: z.string().min(1),
+  history: z.array(assistantMessageSchema).optional(),
+  expect: z.enum(["proposal", "ask", "either", "explain"]),
+  checks: z.array(z.enum(CASE_CHECK_IDS)).optional(),
+  exempt: z.array(z.enum(CASE_CHECK_IDS)).optional(),
+  expectedValue: z
+    .strictObject({
+      track: z.string().min(1),
+      parameter: z.enum(["volume", "pan"]),
+      value: z.number(),
+      tolerance: z.number().min(0),
+    })
+    .optional(),
+  fixture: z.string().regex(FIXTURE_NAME),
+  selection: evalSelectionSchema,
+  scope: evalScopeSchema,
+  parts: z.array(z.enum(EVAL_PARTS)).optional(),
+});
+export type JsonEvalCase = z.infer<typeof jsonEvalCaseSchema>;
+
+/** Where the JSON cases live, from the repository root the tools run in. */
+export function jsonCasesDir(): string {
+  return resolve("src/assistant/evals/cases");
+}
+
+/** Parses a JSON case, or throws naming `label` and what is wrong with it. */
+export function parseJsonEvalCase(raw: unknown, label: string): JsonEvalCase {
+  const parsed = jsonEvalCaseSchema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  const issues = parsed.error.issues
+    .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+    .join("; ");
+  throw new Error(`${label} is not an eval case: ${issues}`);
+}
+
+/** The case a JSON case runs as, its fixture looked up in `fixturesDir`. */
+export function evalCaseFromJson(
+  json: JsonEvalCase,
+  fixturesDir = jsonFixturesDir(),
+): EvalCase {
+  const { fixture, ...rest } = json;
+  return { ...rest, fixture: namedFixture(fixture, fixturesDir) };
+}
+
+/**
+ * Every JSON case in `casesDir`, sorted by file name. A file must be named
+ * for its case's ID; one that does not parse, or names no fixture there is,
+ * throws, so a broken case fails the suite rather than going missing.
+ */
+export function loadJsonCases(
+  casesDir = jsonCasesDir(),
+  fixturesDir = jsonFixturesDir(),
+): EvalCase[] {
+  if (!existsSync(casesDir)) return [];
+  return readdirSync(casesDir)
+    .filter((file) => file.endsWith(".json"))
+    .sort()
+    .map((file) => {
+      const path = join(casesDir, file);
+      let raw: unknown;
+      try {
+        raw = JSON.parse(readFileSync(path, "utf8"));
+      } catch (error) {
+        throw new Error(
+          `${path} is not JSON: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      const json = parseJsonEvalCase(raw, path);
+      if (`${json.id}.json` !== file) {
+        throw new Error(`${path} holds the case "${json.id}"; name it ${json.id}.json`);
+      }
+      return evalCaseFromJson(json, fixturesDir);
+    });
+}
+
+/** Every case: the TypeScript ones, then the JSON ones saved beside them. */
+export const EVAL_CASES: readonly EvalCase[] = [...TYPESCRIPT_CASES, ...loadJsonCases()];
 
 /** The messages a case's turn sends: its history, then its request. */
 export function caseMessages(evalCase: EvalCase): AssistantMessage[] {

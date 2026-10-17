@@ -77,6 +77,27 @@ describe("the assistant's system prompt", () => {
     expect(ASSISTANT_SYSTEM_PROMPT).toContain("Groove has audio (loops and samples)");
   });
 
+  // GRV-101 QA: the live eval scored the Generate pointer 0/3 while it was optional.
+  it("always points a drum density or rhythm request at the Generate panel", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "Whenever a request is about a drum part's density or rhythm",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("you may add in a sentence");
+  });
+
+  // GRV-101 QA: notes.transpose skips pad triggers, so the prompt must not promise it.
+  it("says Transform's transpose leaves pad hits alone", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("Transpose moves pitched notes only");
+  });
+
+  // GRV-101 QA: replies said "recommend_sounds" and "notes_quantize" to the producer.
+  it("keeps tool names out of the producer's words", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("never by a tool's name");
+    const section =
+      ASSISTANT_SYSTEM_PROMPT.split("## What Groove has")[1]?.split("\n## ")[0] ?? "";
+    expect(section).not.toMatch(/\b[a-z]+_[a-z_]+\b/);
+  });
+
   it("lists every device type and every one of its parameters by key", () => {
     for (const device of deviceTypes()) {
       const line = ASSISTANT_SYSTEM_PROMPT.split("\n").find((candidate) =>
@@ -141,18 +162,23 @@ describe("the assistant's system prompt", () => {
       "Always start the reply with a sentence saying what you are proposing or asking, before any tool call",
     );
     expect(ASSISTANT_SYSTEM_PROMPT).toContain(
-      "a reply that runs out of it is lost whole",
+      "a step that runs out of it loses the whole reply",
     );
     expect(ASSISTANT_SYSTEM_PROMPT).toContain("looped: true to fill its length");
     expect(ASSISTANT_SYSTEM_PROMPT).toContain("never the whole part you would propose");
   });
 
   // GRV-6 QA: a "broken" re-sketch proposed only notes_clear on the kick and
-  // bass clips, meaning to write the new notes once the calls came back.
-  it("says no tool answers back, so a replacement is cleared and written in one reply", () => {
-    expect(ASSISTANT_SYSTEM_PROMPT).toContain("No tool ever answers back");
+  // bass clips, meaning to write the new notes once the calls came back. A
+  // turn now goes on in steps (steps.ts), but a replacement still stays in one.
+  it("builds a proposal in narrated steps, ended by explain_change", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("No tool ever answers back");
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("each step starts with one short sentence");
     expect(ASSISTANT_SYSTEM_PROMPT).toContain(
-      "to replace a clip's notes, clear them and add the new ones (note_add) in the same reply",
+      "to replace a clip's notes, clear them and add the new ones (note_add) in the same step",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "call explain_change once, as your last call",
     );
   });
 

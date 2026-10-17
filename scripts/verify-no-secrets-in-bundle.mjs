@@ -67,9 +67,15 @@ export const FORBIDDEN_PATTERNS = [
     pattern: /\bgh[pousr]_[A-Za-z0-9]{36,}\b/,
   },
   {
+    // The source-map upload's key (GRV-120). Not to be confused with the
+    // project key (`phc_…`), which ships to every browser by design.
+    name: "PostHog personal API key",
+    pattern: /\bphx_[A-Za-z0-9]{20,}\b/,
+  },
+  {
     name: "a raw .env-style assignment of a known server-only secret",
     pattern:
-      /\b(?:FIREBASE_SERVICE_ACCOUNT|FIREBASE_DEPLOY_SERVICE_ACCOUNT|GOOGLE_APPLICATION_CREDENTIALS|SENTRY_AUTH_TOKEN)\s*=/,
+      /\b(?:FIREBASE_SERVICE_ACCOUNT|FIREBASE_DEPLOY_SERVICE_ACCOUNT|GOOGLE_APPLICATION_CREDENTIALS|SENTRY_AUTH_TOKEN|POSTHOG_PERSONAL_API_KEY)\s*=/,
   },
 ];
 

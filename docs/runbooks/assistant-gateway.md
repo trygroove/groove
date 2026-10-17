@@ -18,14 +18,26 @@ provider's API key or talks to the provider directly.
   `claude-haiku-4-5` is a change to `ASSISTANT_MODEL_ID` and a deploy.
 - Each turn logs one `assistant turn` record to Cloud Logging: outcome code,
   model, prompt version, attempts, failure kinds, token counts, duration, and
-  how many recommended videos were shown and dropped. Never the conversation,
+  how many recommended videos were shown, dropped, and dropped unchecked.
+  Never the conversation,
   the project, the account or the provider's error text.
-- A tutorial video the model recommends (GRV-16, ADR 0009) is checked from
-  `assistantTurn` against YouTube's public oEmbed endpoint
-  (`https://www.youtube.com/oembed`, no key, plain outbound HTTPS, no Google
-  Cloud API). A video it does not describe is dropped, and while it is
-  unreachable every video is dropped: `videosDropped` climbing with
-  `videosShown` at 0 is the sign.
+- A tutorial video the model recommends (GRV-16, ADR 0009) is found from
+  `assistantTurn`: the model writes a short search for the technique, the
+  gateway runs it through the YouTube Data API's search (embeddable videos,
+  strict SafeSearch) with the key in the Secret Manager secret
+  **`YOUTUBE_API_KEY`** (`ASSISTANT_YOUTUBE_KEY_SECRET` in
+  `src/assistant/config.ts`), and checks the top result against YouTube's
+  public oEmbed endpoint (`https://www.youtube.com/oembed`) before showing it.
+  A search that finds nothing oEmbed vouches for is dropped (`videosDropped`);
+  one that cannot be made (YouTube unreachable, or the day's quota used up)
+  is dropped unchecked, and `videosUnchecked` climbing is the sign. A reply
+  whose video was dropped ends with a line saying so. With the secret set
+  to a blank line the model is offered no video at all.
+- **The YouTube quota.** A search costs 100 of the API's 10,000 free daily
+  units, so the project gets about **100 video searches a day**, shared by
+  every account; the quota resets at midnight Pacific time. Past it, videos
+  are dropped unchecked until the reset. To raise it, request more quota for
+  the YouTube Data API v3 in the Google Cloud console.
 
 ## Limits and the kill switch
 
@@ -77,10 +89,28 @@ gateway, or the next `main` deploy fails:
    (`roles/secretmanager.admin`) in the project's IAM page. Without it the
    deploy fails with a permission error on the secret.
 
-3. **Merge.** The `deploy` job deploys `assistantTurn` with the rest.
+3. **Create the YouTube key (GRV-16).** Enable the YouTube Data API:
+
+   ```bash
+   gcloud services enable youtube.googleapis.com --project <project-id>
+   ```
+
+   In the Google Cloud console, **APIs & Services → Credentials → Create
+   credentials → API key**, and restrict the key to the YouTube Data API v3.
+   Then store it as the second secret, pasting the key when prompted:
+
+   ```bash
+   firebase functions:secrets:set YOUTUBE_API_KEY --project <project-id>
+   ```
+
+   `assistantTurn` binds this secret too, so it has to exist before the
+   deploy that adds it, or that deploy fails.
+
+4. **Merge.** The `deploy` job deploys `assistantTurn` with the rest.
 
 To check it is live: Cloud Functions in the Google Cloud console lists
-`assistantTurn` in `us-east1`, with `ANTHROPIC_API_KEY` under its secrets.
+`assistantTurn` in `us-east1`, with `ANTHROPIC_API_KEY` and `YOUTUBE_API_KEY`
+under its secrets.
 
 ## Why a proposal was rejected
 
@@ -128,9 +158,10 @@ message logs `assistant_session_started`; its first bad response logs
 when that comes first). A conversation stays sad after it recovers, and a
 thumbs-down changed to a thumbs-up does not take its event back.
 
-PostHog (ADR 0011, GRV-106) has not landed, so the insight is defined here for
-the product owner to create once it has. One **Trends** insight, weekly,
-filtering out internal traffic (`traffic_type` = `internal`) on every series:
+The events go to PostHog (ADR 0011, GRV-106). The insight is defined here for
+the product owner to create in the PostHog project. One **Trends** insight,
+weekly, with the project's "filter out internal and test users" setting on
+(it excludes events whose `internal` property is `true`) for every series:
 
 - **A**: `assistant_session_started`, total count.
 - **B**: `assistant_session_sad` where `counts_for` = `full`, total count.
@@ -167,8 +198,9 @@ one that ends in a proposal (`[propose]`), or one that ends in a question for
 you with options (`[ask]`, `[ask-multi]` for several picks, or `[ask-rich]`
 for options that point at the first track and bars 1-2, can be heard, and
 answer themselves when you set the tempo to 100 BPM or below; GRV-42), or one
-that recommends a tutorial video (`[video]`, GRV-16: one real video, which the
-emulator vouches for without asking YouTube, and one it drops). Two
+that recommends a tutorial video (`[video]`, GRV-16: one search that finds a
+real video, which the emulator answers without asking YouTube, and one that
+finds nothing and is dropped). Two
 scripts serve the core flows: "Loosen the beat" proposes swing and a quieter
 track (CF-027), and asking for something dusty or dustier recommends kicks from
 the library the turn carries (CF-034). The browser suite drives the real

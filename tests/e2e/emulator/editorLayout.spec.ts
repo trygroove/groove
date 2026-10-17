@@ -147,7 +147,7 @@ async function expectHeaderWhole(
   const controls = {
     transport: header.locator(".editor-header-center"),
     history: header.locator(".editor-header-end .header-cell-group"),
-    assistant: header.getByRole("button", { name: "Assistant" }),
+    assistant: header.getByRole("button", { name: "Cue" }),
     export: header.getByRole("button", { name: "Export", exact: true }),
     guide: header.getByRole("button", { name: "Keyboard shortcuts" }),
     account,

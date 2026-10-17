@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { buildTestReport, testRecord } from "../../testing/evalRecords";
 import { ASSISTANT_MODEL_ID } from "../config";
 import { EVAL_CASES } from "./cases";
-import { EvalUsageError, parseEvalArgs, requireApiKey, selectEvalCases } from "./cli";
+import {
+  EvalUsageError,
+  loadBaseline,
+  parseEvalArgs,
+  requireApiKey,
+  selectEvalCases,
+} from "./cli";
+import { summaryOf } from "./run";
 
 function options(argv: string[], env: Record<string, string | undefined> = {}) {
   const parsed = parseEvalArgs(argv, env);
@@ -13,14 +21,22 @@ describe("parseEvalArgs", () => {
   it("defaults to every case, 3 runs, the configured model and production's 540 s turn limit", () => {
     expect(options([])).toEqual({
       caseIds: [],
+      set: null,
       runs: 3,
       model: ASSISTANT_MODEL_ID,
       out: null,
       replay: null,
+      baseline: null,
       fromTranscript: null,
       concurrency: 3,
       turnTimeoutMs: 540_000,
+      maxSteps: null,
     });
+  });
+
+  it("takes the most steps a turn may take, 1 for a turn of one call", () => {
+    expect(options(["--steps", "1"]).maxSteps).toBe(1);
+    expect(() => options(["--steps", "0"])).toThrow("--steps must be a whole number");
   });
 
   it("reads a transcript case file, alone (GRV-98)", () => {
@@ -52,6 +68,8 @@ describe("parseEvalArgs", () => {
         "30",
         "--replay",
         "r.json",
+        "--baseline",
+        "b.json",
       ]),
     ).toMatchObject({
       caseIds: ["process-glue", "sketch-house"],
@@ -60,7 +78,12 @@ describe("parseEvalArgs", () => {
       concurrency: 2,
       turnTimeoutMs: 30_000,
       replay: "r.json",
+      baseline: "b.json",
     });
+  });
+
+  it("reads the set to run", () => {
+    expect(options(["--set", "basicActions"]).set).toBe("basicActions");
   });
 
   it("takes the run count from EVAL_RUNS unless --runs says otherwise", () => {
@@ -82,6 +105,7 @@ describe("parseEvalArgs", () => {
     [["--runs"], "--runs needs a value"],
     [["--wat"], "Unknown option --wat"],
     [["--model", "gpt-4"], 'Unknown model "gpt-4"'],
+    [["--set", "vibes"], 'Unknown set "vibes". Sets: musical, basicActions'],
   ])("refuses %j", (argv, message) => {
     expect(() => parseEvalArgs(argv)).toThrow(EvalUsageError);
     expect(() => parseEvalArgs(argv)).toThrow(message);
@@ -97,6 +121,17 @@ describe("selectEvalCases", () => {
 
   it("refuses an unknown case and lists the real ones", () => {
     expect(() => selectEvalCases(["nope"])).toThrow(/No eval case "nope"\. Cases: /);
+  });
+
+  it("keeps to one set when given one (GRV-119)", () => {
+    const basic = selectEvalCases([], EVAL_CASES, "basicActions");
+    expect(basic).toHaveLength(32);
+    expect(basic.every((entry) => entry.set === "basicActions")).toBe(true);
+    const musical = selectEvalCases([], EVAL_CASES, "musical");
+    expect(musical.length + basic.length).toBe(EVAL_CASES.length);
+    expect(() => selectEvalCases(["sketch-house"], EVAL_CASES, "basicActions")).toThrow(
+      'No eval case "sketch-house"',
+    );
   });
 });
 
@@ -114,4 +149,36 @@ describe("requireApiKey", () => {
       );
     },
   );
+});
+
+describe("loadBaseline", () => {
+  const report = buildTestReport([
+    testRecord({ caseId: "a", durationMs: 1_000 }),
+    testRecord({ caseId: "a", durationMs: 3_000, valid: "fail" }),
+  ]);
+
+  it("scores a full report.json afresh from its records", () => {
+    const saved = JSON.parse(JSON.stringify(report));
+    delete saved.scorecard;
+    const loaded = loadBaseline(saved, "r.json");
+    expect(loaded.scorecard).toEqual(report.scorecard);
+    expect(loaded.label).toEqual({
+      path: "r.json",
+      generatedAt: report.generatedAt,
+      model: report.model,
+      promptVersion: report.promptVersion,
+    });
+  });
+
+  it("takes a summary.json's scorecard as it is", () => {
+    const saved = JSON.parse(JSON.stringify(summaryOf(report)));
+    expect(loadBaseline(saved, "s.json").scorecard).toEqual(report.scorecard);
+  });
+
+  it("refuses a file that is not a report", () => {
+    expect(() => loadBaseline({ hello: 1 }, "x.json")).toThrow(EvalUsageError);
+    expect(() => loadBaseline({ model: "m", summary: { checks: {} } }, "y.json")).toThrow(
+      /neither records nor a scorecard/,
+    );
+  });
 });

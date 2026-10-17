@@ -6,8 +6,8 @@ import { createRecordingTransport } from "../../analytics/transport";
 import type { AssistantProposal } from "../../assistant/protocol";
 import {
   ASSISTANT_TOOLSET_VERSION,
+  CREATE_EXAMPLES,
   EXPLAIN_TOOL_NAME,
-  TRACK_CREATE_EXAMPLE,
 } from "../../assistant/tools";
 import { createControlRegistry } from "../../controls/registry";
 import type { Project } from "../../domain/entities";
@@ -50,10 +50,8 @@ const SWING: AssistantProposal["calls"] = [
 
 /** A track on a sound the library does not have: a proposal the kernel rejects. */
 function missingSound(): AssistantProposal["calls"] {
-  const input = structuredClone(TRACK_CREATE_EXAMPLE) as Record<string, unknown> & {
-    track: Record<string, unknown>;
-  };
-  input.track.instrument = {
+  const input: Record<string, unknown> = structuredClone(CREATE_EXAMPLES.track);
+  input.instrument = {
     kind: "sampler",
     assetId: "ast_NoisePad0000000000001",
     parameters: {},

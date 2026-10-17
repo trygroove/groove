@@ -23,9 +23,6 @@ import {
  * Cue and producer memory), and it is frozen once it lands: a later PR that
  * changes an assertion here has to say so in its body and justify it.
  *
- * It is `test.fixme` because there is no welcome yet. The PR that completes
- * the journey removes this marker.
- *
  * **The account.** Every other spec's fresh account has skipped onboarding
  * (`seedRegisteredSession`); this one asks for an account with no profile,
  * which is what a producer who has never been through it has. It imports
@@ -44,7 +41,7 @@ import {
 
 test.describe("CF-035", () => {
   // biome-ignore format: unparked by removing only test.fixme, so the frozen body keeps its lines
-  test.fixme(
+  test(
     "a new producer meets Cue and opens the studio",
     async ({ page, browserName }) => {
       await seedRegisteredSession(page, {
@@ -123,6 +120,9 @@ test.describe("CF-035", () => {
       const projectUrl = page.url();
       await arrangement(page).waitFor();
       await expect(cuePanel(page)).toBeVisible();
+      // Cue's panel opens on its first-run notice (GRV-8) until it is
+      // answered; the conversation is behind it.
+      await cuePanel(page).getByRole("button", { name: "OK" }).click();
       await expect(conversationIn(cuePanel(page))).toContainText("Four Tet");
       await expect(cuePanel(page)).toContainText(/first lesson/i);
       await step("The studio opens, and the conversation carries on in Cue's panel");

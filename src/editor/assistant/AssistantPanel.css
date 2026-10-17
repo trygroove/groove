@@ -813,6 +813,30 @@
   color: var(--color-foreground-bright);
 }
 
+/* A worded skip (onboarding's "Skip this question", GRV-25). */
+.assistant-ask-skip {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-foreground);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.assistant-ask-skip:hover:not(:disabled) {
+  background: var(--color-background-hover);
+  color: var(--color-foreground-bright);
+}
+
+.assistant-ask-skip:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.assistant-ask-skip:focus-visible,
 .assistant-ask-dismiss:focus-visible,
 .assistant-ask-option:focus-visible {
   outline: 1px solid var(--color-accent);
@@ -1047,6 +1071,51 @@
   .assistant-panel-edge::after {
     transition: none;
   }
+}
+
+/* Something Cue proposes remembering (GRV-25): Remember and Not now, then a
+   receipt line with Undo once it is saved. */
+.memory-proposal {
+  gap: 6px;
+}
+
+.memory-proposal-actions,
+.memory-proposal-receipt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.memory-proposal-receipt {
+  justify-content: space-between;
+}
+
+.memory-proposal-status {
+  color: var(--color-foreground);
+  font-size: var(--font-size-small);
+  overflow-wrap: anywhere;
+}
+
+.memory-proposal-secondary {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-foreground);
+  font: inherit;
+  font-size: var(--font-size-small);
+  cursor: pointer;
+}
+
+.memory-proposal-secondary:hover:not(:disabled) {
+  background: var(--color-background-hover);
+  color: var(--color-foreground-bright);
+}
+
+.memory-proposal-secondary:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 /* The settings button while the settings are open (GRV-8). */
@@ -1326,4 +1395,11 @@
   position: static;
   flex: 1;
   height: auto;
+}
+
+/* Cue's one nudge a day (GRV-25), over the suggestions. */
+.cue-nudge {
+  flex: none;
+  gap: 8px;
+  margin: 0 12px 8px;
 }

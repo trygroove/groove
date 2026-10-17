@@ -335,7 +335,7 @@ describe("My packs", () => {
     );
     expect(main.querySelector(".sound-row-length")).toHaveTextContent("0.10 s");
     // The producer named it, so replay masks it, as it did before.
-    expect(main.querySelector(".sound-row-name")).toHaveClass("sentry-mask");
+    expect(main.querySelector(".sound-row-name")).toHaveClass("ph-mask");
 
     // Rename and delete come before the heart and similar sounds, which keep
     // the last two places they have on every other row.
@@ -772,6 +772,23 @@ describe("My packs", () => {
     expect(transport.named("sound_import_failed")[0].params).toMatchObject({
       error_code: "quota_exceeded",
     });
+  });
+
+  it("holds an internal or admin account to no allowance (GRV-112)", async () => {
+    const repository = createInMemoryUserLibraryRepository();
+    repository.setUsage("u1", USER_DATA_CAP_BYTES - 32);
+    setUp({ repository, account: { ...REGISTERED, unlimited: true } });
+    const pack = await addNamedPack("Field Recordings");
+    // Its usage is shown, with no allowance beside it and no warning.
+    expect(await screen.findByText(/^\S+ \S+ used$/)).toBeVisible();
+    expect(screen.queryByText(/ of .* used$/)).toBeNull();
+    expect(screen.queryByText(/Your library is \d+% full/)).toBeNull();
+
+    drop(pack, [audioFile("tape-kick.wav", "audio/wav", 64)]);
+
+    await within(files()).findByRole("button", { name: "Audition tape kick" });
+    expect(screen.queryByText(/Your library is full/)).toBeNull();
+    expect(repository.objects.size).toBe(1);
   });
 
   it("warns before deleting a sound, then deletes it", async () => {

@@ -194,7 +194,7 @@ describe("createAssistantHandler", () => {
     expect(error.code).toBe("invalid-argument");
   });
 
-  it("marks a team account's kept turn internal, from the ID token's address", async () => {
+  async function keptTurnInternal(claims: Record<string, unknown>): Promise<boolean[]> {
     const transcripts = createInMemoryTranscriptStore();
     const info = vi.spyOn(logger, "info").mockImplementation(() => {});
     try {
@@ -221,15 +221,65 @@ describe("createAssistantHandler", () => {
           },
         },
       );
-      (request.auth?.token as { email?: string }).email = "someone@qa.trygroove.app";
+      Object.assign(request.auth?.token ?? {}, claims);
       await handle(request, streamingResponse().response);
-      expect(transcripts.records().map((record) => record.internal)).toEqual([true]);
       // How it went is logged as a code; what was said never is.
       expect(info).toHaveBeenCalledWith("assistant transcript", { write: "kept" });
       expect(JSON.stringify(info.mock.calls)).not.toContain("Swing it.");
+      return transcripts.records().map((record) => record.internal);
     } finally {
       info.mockRestore();
     }
+  }
+
+  it("marks a flagged account's kept turn internal, from the ID token's claim", async () => {
+    expect(await keptTurnInternal({ internal: true })).toEqual([true]);
+  });
+
+  // GRV-113: the address is not what makes an account internal.
+  it.each([
+    ["no claim", { email: "someone@example.com" }],
+    ["a claim that is not true", { internal: "true" }],
+  ])("leaves the kept turn of an account with %s as it was", async (_, claims) => {
+    expect(await keptTurnInternal(claims)).toEqual([false]);
+  });
+
+  // GRV-112: the claims, never the address, lift the quota.
+  async function quotaCodes(claims: Record<string, unknown>): Promise<string[]> {
+    const provider = createScriptedAssistantProvider([replyEvents(["ok"])]);
+    const guards = createInMemoryGuardStores();
+    const handle = createAssistantHandler(() => ({
+      provider,
+      guards,
+      log: () => {},
+      guardLimits: { requestsPerWindow: 1, windowMs: 60_000, dailySpendCeilingUsd: 25 },
+    }));
+    const codes: string[] = [];
+    for (let i = 0; i < 2; i += 1) {
+      const request = callable({ uid: "u", provider: "google.com" });
+      Object.assign(request.auth?.token ?? {}, claims);
+      codes.push(
+        await handle(request, streamingResponse().response).then(
+          () => "ok",
+          (error: unknown) => (error instanceof HttpsError ? error.code : "thrown"),
+        ),
+      );
+    }
+    return codes;
+  }
+
+  it.each([
+    ["internal", { internal: true }],
+    ["admin", { admin: true }],
+  ])("does not hold an %s account to the request quota", async (_, claims) => {
+    expect(await quotaCodes(claims)).toEqual(["ok", "ok"]);
+  });
+
+  it.each([
+    ["no claim", { email: "someone@example.com" }],
+    ["claims that are not true", { internal: "true", admin: 1 }],
+  ])("holds an account with %s to the request quota", async (_, claims) => {
+    expect(await quotaCodes(claims)).toEqual(["ok", "resource-exhausted"]);
   });
 
   it("cancels when the client disconnects", async () => {

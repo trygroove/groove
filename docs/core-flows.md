@@ -147,12 +147,17 @@ signing in from the landing page and arriving signed in. From creating a project
 onwards the journey is the one it always was: edit the starter pattern and hear
 it. Parked at `test.fixme` until #854's stack lands.
 
+**Revised for onboarding (GRV-25).** A new account now meets Cue at the welcome
+before the dashboard, so step 3 passes through it with Skip to the studio. The
+welcome itself is CF-035's subject.
+
 **Preconditions:** you have been invited: your Google address is on the alpha
 list. You have no projects.
 
 1. Open the landing page.
 2. Choose Sign in, and sign in with Google as the invited address.
-3. You arrive at the dashboard, signed in, with no projects yet.
+3. You arrive signed in at the welcome, where Cue introduces itself. Choose
+   Skip to the studio: you are on the dashboard, with no projects yet.
 4. Create a new project.
 5. The project opens on the arrangement, with a four-on-the-floor starter
    pattern sitting on its only track, a drum machine named "BD".
@@ -1195,7 +1200,7 @@ proposal of two changes: swing up to 58%, and the BD track 3 dB quieter. This
 account has already answered the assistant's disclosure (GRV-8).
 
 1. Create a new project. It opens on the arrangement.
-2. Press the Assistant button in the header. The assistant opens floating over
+2. Press the Cue button in the header. The assistant opens floating over
    the bottom-right corner of the editor, ready to type into. It says its scope
    is the selected track, BD.
 3. Type "Loosen the beat" and press Enter. Your message appears in the
@@ -1449,7 +1454,7 @@ track. The library holds at least one such kick.
 
 1. Create a new project. It opens on the arrangement, with the starter kick on
    the drum machine's "BD" pad.
-2. Press the Assistant button, type "The kick is too clean. Anything dustier?"
+2. Press the Cue button, type "The kick is too clean. Anything dustier?"
    and press Enter. Your message appears in the conversation, and the
    assistant's reply follows it.
 3. The reply ends with a recommended pack. It names the pack, its publisher,
@@ -1502,8 +1507,10 @@ onboarding, with no projects.
    said: House, Techno, Four Tet, Played around, Drums and beats and Ableton
    Move. Its box to share your answers is unticked. Cue offers a first lesson.
 7. Choose Open the studio. A new project opens on the arrangement, with Cue's
-   panel open and the same conversation in it: your answers, and Cue's offer
-   of a first lesson.
+   panel open. A producer who has not yet answered the notice about Groove
+   keeping conversations (GRV-8) sees it first; choose OK. The same
+   conversation is in the panel: your answers, and Cue's offer of a first
+   lesson.
 8. Reload the page. The conversation is still in Cue's panel.
 9. Open the dashboard. It stays on the dashboard, and lists the project.
 

@@ -12,7 +12,7 @@ import {
   initializeApp as initAdmin,
 } from "firebase-admin/app";
 import { getAuth as getAdminAuth } from "firebase-admin/auth";
-import { isQaSlot, type QaAccount, qaAccount } from "../../../src/access/qaAccounts";
+import { isQaSlot, type QaAccount, qaAccount } from "../../../scripts/access/qaPool";
 import { installFirebaseUser } from "../support/firebaseSession";
 
 /**
@@ -215,4 +215,26 @@ export async function signInAsQaAccount(
   const record = await signInInThisProcess(account, apiKey, env);
   await installFirebaseUser(page, apiKey, record);
   return account;
+}
+
+/**
+ * Gets a signed-in page that opened the dashboard past the welcome (GRV-25),
+ * if it was sent there: an account that has not been through onboarding is
+ * taken to the welcome first, and the QA accounts start without a profile.
+ * Choosing "Skip to the studio" is what a producer who wants the dashboard
+ * does, and it is remembered, so a later run goes straight there. Leaves the
+ * page on the dashboard either way.
+ */
+export async function passWelcome(page: Page): Promise<void> {
+  // Wait for something only the gate's far side or the welcome draws: the
+  // dashboard's New Project button, or the welcome's Skip. Anything the
+  // dashboard page draws before its gate has read the profile would end the
+  // wait before the redirect, and Skip would never be pressed.
+  const ready = page.getByRole("button", { name: "New Project" });
+  const skip = page.getByRole("button", { name: "Skip to the studio" });
+  await ready.or(skip).first().waitFor();
+  if (await skip.isVisible()) {
+    await skip.click();
+  }
+  await ready.waitFor();
 }

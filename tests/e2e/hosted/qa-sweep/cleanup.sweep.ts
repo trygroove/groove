@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { expect, test } from "@playwright/test";
 import { persistedUid } from "../../support/firebaseSession";
+import { passWelcome } from "../qaSession";
 import { ACCOUNT_FILE, CLEANUP_FILE, SESSION_FILE, SWEEP_URL } from "./paths";
 
 /** Far more than a run makes; only there so a stuck list cannot loop forever. */
@@ -33,6 +34,7 @@ test("delete every project the agent's QA account owns", async ({ browser }) => 
     });
     const page = await context.newPage();
     await page.goto("/projects?internal=1");
+    await passWelcome(page);
     await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
     // A session that no longer restores is not signed in as the slot's
     // account, and whatever list it reached would say nothing about what that

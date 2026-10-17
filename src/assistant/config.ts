@@ -92,6 +92,13 @@ export const SMALLEST_CONTEXT_WINDOW_TOKENS = Math.min(
  */
 export const ASSISTANT_API_KEY_SECRET = "ANTHROPIC_API_KEY";
 
+/**
+ * The name of the Secret Manager secret that holds the YouTube Data API key
+ * the gateway searches for tutorial videos with (GRV-16). Like the provider's
+ * key it is bound to the Cloud Function only.
+ */
+export const ASSISTANT_YOUTUBE_KEY_SECRET = "YOUTUBE_API_KEY";
+
 /** The name the browser calls the gateway by (a callable Cloud Function). */
 export const ASSISTANT_CALLABLE_NAME = "assistantTurn";
 
@@ -123,7 +130,20 @@ export interface AssistantCallLimits {
   readonly functionTimeoutSeconds: number;
   /** Defaults to {@link ASSISTANT_HEARTBEAT_INTERVAL_MS}. */
   readonly heartbeatIntervalMs?: number;
+  /**
+   * The most provider calls one turn may take as steps (`gateway.ts`): the
+   * model proposes a part, is told it was added, and goes on to the next.
+   * 1 is a turn of one call, whose tool calls are the whole proposal.
+   * Defaults to {@link ASSISTANT_MAX_STEPS}. Retries are not steps.
+   */
+  readonly maxSteps?: number;
 }
+
+/**
+ * Steps a turn may take. A loop sketch is a few parts, and a step usually
+ * makes one or two; more than this is a proposal too big to review.
+ */
+export const ASSISTANT_MAX_STEPS = 8;
 
 export const ASSISTANT_HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -133,6 +153,7 @@ export const ASSISTANT_CALL_LIMITS: AssistantCallLimits = {
   retryBackoffMs: 1_000,
   functionTimeoutSeconds: 540,
   heartbeatIntervalMs: ASSISTANT_HEARTBEAT_INTERVAL_MS,
+  maxSteps: ASSISTANT_MAX_STEPS,
 };
 
 /**

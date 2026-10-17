@@ -29,6 +29,8 @@ import {
  *    account over {@link USER_DATA_CAP_BYTES} is refused here instead: it is
  *    not counted, and the outcome tells the function to delete the object.
  *    That delete's own event then finds a `refused` entry and changes nothing;
+ *    An internal or admin account (GRV-112) has no allowance: its writes are
+ *    always counted, so its total stays true, and never refused;
  *  - only `users/{uid}/{kind}/…` objects of a declared kind count. The factory
  *    library and anything else in the bucket are skipped.
  */
@@ -84,11 +86,26 @@ function countedBytes(entry: UsageLedgerEntry | null): number {
   return entry?.state === "counted" ? entry.bytes : 0;
 }
 
-/** Count a written (or overwritten) object against its owner, if it fits. */
+/** What the ledger asks about an account outside the transaction's reads. */
+export interface UsageLedgerOptions {
+  /**
+   * Whether the account carries the `internal` or `admin` claim
+   * (`hasUnlimitedClaim`, GRV-112), so a write past the allowance is counted
+   * rather than refused. Asked only of a write that would go over. Without
+   * one, every account is held to the allowance.
+   */
+  readonly isUnlimited?: (uid: string) => Promise<boolean>;
+}
+
+/**
+ * Count a written (or overwritten) object against its owner, if it fits or
+ * the owner has no allowance.
+ */
 export async function recordObjectWritten(
   tx: UsageTransaction,
   event: StorageObjectEvent,
   now: number,
+  options: UsageLedgerOptions = {},
 ): Promise<LedgerOutcome> {
   const owner = parseUserDataPath(event.path);
   if (!owner) return { applied: false, reason: "not_user_data" };
@@ -113,7 +130,11 @@ export async function recordObjectWritten(
   // A newer generation replaces whatever the entry counted: an overwrite whose
   // delete has not arrived yet comes off once, now, and that delete is stale.
   const replaced = countedBytes(entry);
-  if (bytes > 0 && usage.totalBytes - replaced + bytes > USER_DATA_CAP_BYTES) {
+  if (
+    bytes > 0 &&
+    usage.totalBytes - replaced + bytes > USER_DATA_CAP_BYTES &&
+    !(await options.isUnlimited?.(owner.uid))
+  ) {
     tx.setEntry(owner.uid, event.path, {
       kind: owner.kind,
       bytes: 0,
