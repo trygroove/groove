@@ -10,7 +10,7 @@ import {
   useContext,
 } from "solid-js";
 import { type Analytics, analytics as defaultAnalytics } from "../analytics/analytics";
-import { isInternalAccount, markInternalTraffic } from "../shared/internalTraffic";
+import { markInternalTraffic } from "../shared/internalTraffic";
 import { authService } from "./authService";
 
 interface AuthState {
@@ -41,8 +41,8 @@ export interface AuthProviderProps extends ParentProps {
   /** Overridden in tests; defaults to the app-wide analytics boundary. */
   analytics?: Analytics;
   /**
-   * Where the internal-traffic flag persists when a team or test account
-   * signs in. Defaults to the browser's `localStorage`; tests inject
+   * Where the internal-traffic flag persists when an internal account signs
+   * in. Defaults to the browser's `localStorage`; tests inject
    * `memoryStorage()`, and `null` persists nothing.
    */
   internalTrafficStorage?: Storage | null;
@@ -66,8 +66,9 @@ export function AuthProvider(props: AuthProviderProps) {
 
   const signOut = () => authService.signOut();
 
-  // PRD `OPS-02`: account type is a GA4 *user property*, not an event
-  // parameter, and it is the only account fact analytics carries. The
+  // PRD `OPS-02`: account type is a *person property*, not an event
+  // parameter, and it is the only account fact analytics carries besides the
+  // UID below. The
   // boundary attaches it to every subsequent event, so no call site passes
   // it and none can get it wrong.
   //
@@ -81,18 +82,48 @@ export function AuthProvider(props: AuthProviderProps) {
     (accountType) => analytics.setAccountType(accountType),
   );
 
-  // The team's and the test accounts' sessions are internal traffic
-  // (`src/shared/internalTraffic.ts`), so they stay out of the product's
-  // measures without anyone remembering `?internal=1`. Marking is one-way: the
-  // browser stays marked after a sign-out or a cohort account's sign-in, and
-  // only `?internal=0` clears it. The address is read in the compute half and
-  // goes no further than this boolean; analytics never sees it.
+  // GRV-106: the signed-in account is identified to analytics by its Firebase
+  // UID and nothing else (no email, no display name), and forgotten again on
+  // sign-out. `undefined` while auth is still resolving, so a page load does
+  // not read as a sign-out before Firebase has restored the session.
   createEffect(
-    () => !state.loading && isInternalAccount(state.user?.email),
-    (internalAccount) => {
-      if (!internalAccount) return;
-      markInternalTraffic(internalTrafficStorage);
-      analytics.setInternalTraffic(true);
+    () => (state.loading ? undefined : (state.user?.uid ?? null)),
+    (uid) => {
+      if (uid !== undefined) analytics.setUserId(uid);
+    },
+  );
+
+  // An internal account's sessions are internal traffic
+  // (`src/shared/internalTraffic.ts`), so they stay out of the product's
+  // measures without anyone remembering `?internal=1`. What makes an account
+  // internal is the `internal: true` custom claim in its ID token (GRV-113,
+  // `src/access/claims.ts`), which only trusted code can set; nothing here
+  // looks at the address. Marking is one-way: the browser stays marked after a
+  // sign-out or a cohort account's sign-in, and only `?internal=0` clears it.
+  //
+  // The signed-in UID is the compute half's one read. Reading the claim is
+  // asynchronous, so the apply half's cleanup drops an answer that arrives
+  // after the session has changed: a slow token for the last account never
+  // marks the next one's browser. A token that cannot be read marks nothing.
+  createEffect(
+    () => (state.loading || state.isAnonymous ? null : (state.user?.uid ?? null)),
+    (uid) => {
+      if (uid === null) return;
+      let current = true;
+      authService.isInternal().then(
+        (internal) => {
+          if (!current || !internal) return;
+          markInternalTraffic(internalTrafficStorage);
+          analytics.setInternalTraffic(true);
+        },
+        () => {
+          // Marking traffic is a measurement nicety; a token that fails to
+          // refresh is the session's problem to report, not this effect's.
+        },
+      );
+      return () => {
+        current = false;
+      };
     },
   );
 
@@ -138,7 +169,7 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
-/** Coarse, non-identifying account fact for the GA4 user property. */
+/** Coarse, non-identifying account fact for the analytics person property. */
 function accountTypeOf(state: AuthState): "anonymous" | "registered" {
   return state.isAnonymous ? "anonymous" : "registered";
 }

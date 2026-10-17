@@ -136,7 +136,10 @@ export function describeTranscriptStoreContract(
       const store = await harness.store();
       const provider = createScriptedAssistantProvider([
         toolUseEvents("Try this.", [
-          { name: "set_track_volume", input: { trackId: "trk_1", value: -6 } },
+          {
+            name: "track_setFlag",
+            input: { trackId: "trk_Bass00000000000000001", flag: "muted", value: true },
+          },
         ]),
       ]);
       await setRetention(store, OWNER, true, START);
@@ -166,8 +169,8 @@ export function describeTranscriptStoreContract(
       expect(record?.proposal?.calls).toEqual([
         {
           id: "toolu_1",
-          name: "set_track_volume",
-          input: { trackId: "trk_1", value: -6 },
+          name: "track_setFlag",
+          input: { trackId: "trk_Bass00000000000000001", flag: "muted", value: true },
         },
       ]);
       expect(record?.outcomes).toEqual([

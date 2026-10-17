@@ -16,6 +16,11 @@ import {
   type RetentionRequest,
 } from "./assistant/retention";
 import type { RetentionCall } from "./assistant/retentionClient";
+import {
+  TRANSCRIPT_ADMIN_CALLABLE,
+  type TranscriptAdminRequest,
+} from "./assistant/transcriptAdmin";
+import type { TranscriptAdminCall } from "./assistant/transcriptAdminClient";
 import { CLOUD_FUNCTIONS_REGION } from "./shared/cloudFunctions";
 
 /**
@@ -72,6 +77,22 @@ export function createFirebaseRetentionCall(
   const call = httpsCallable<RetentionRequest, unknown>(
     functionsFor(app, emulatorHost),
     ASSISTANT_RETENTION_CALLABLE,
+  );
+  return async (request) => (await call(request)).data;
+}
+
+/**
+ * The browser's side of the `assistantTranscriptsAdmin` callable (GRV-98):
+ * kept transcripts, for the admin page. The function decides who may read
+ * them; nothing here does.
+ */
+export function createFirebaseTranscriptAdminCall(
+  app: FirebaseApp,
+  emulatorHost: string | null,
+): TranscriptAdminCall {
+  const call = httpsCallable<TranscriptAdminRequest, unknown>(
+    functionsFor(app, emulatorHost),
+    TRANSCRIPT_ADMIN_CALLABLE,
   );
   return async (request) => (await call(request)).data;
 }

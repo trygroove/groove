@@ -86,6 +86,11 @@ export interface ProposalIssue {
    */
   readonly callIndex: number | null;
   readonly message: string;
+  /**
+   * Where in the project a broken invariant sits (`song.tracks.2.instrument`),
+   * for an `invalid_project` issue whose kernel issue named one (GRV-98).
+   */
+  readonly path?: string;
 }
 
 /** What one entity kind gains, loses and changes. IDs only. */
@@ -162,7 +167,69 @@ function fromCommandIssue(issue: CommandIssue): ProposalIssue {
         : issue.code === "invalid_payload"
           ? "invalid_payload"
           : "rejected";
-  return { code, callIndex: issue.commandIndex, message: issue.message };
+  const domainPath = issue.domainIssues?.[0]?.path;
+  return {
+    code,
+    callIndex: issue.commandIndex,
+    message: issue.message,
+    ...(domainPath && domainPath.length > 0 ? { path: domainPath.join(".") } : {}),
+  };
+}
+
+/** The tool calls a proposal's issues count from: every call but `explain_change`. */
+function changingCalls(
+  input: unknown,
+): { id: string | null; name: string; input: unknown }[] {
+  const calls = (input as { calls?: unknown } | null)?.calls;
+  if (!Array.isArray(calls)) return [];
+  return calls.flatMap((call) => {
+    const parsed = toolCallSchema.safeParse(call);
+    if (!parsed.success || parsed.data.name === EXPLAIN_TOOL_NAME) return [];
+    const id = (call as { id?: unknown }).id;
+    return [
+      {
+        id: typeof id === "string" ? id : null,
+        name: parsed.data.name,
+        input: parsed.data.input,
+      },
+    ];
+  });
+}
+
+/**
+ * The tool call an issue blames, by its ID (the provider's, when the call
+ * carried one) and its tool name, or `null` when it blames no one call
+ * (GRV-98). `callIndex` counts the calls that change something, as
+ * {@link ProposalIssue} does.
+ */
+export function issueCall(
+  input: unknown,
+  issue: ProposalIssue,
+): { readonly id: string | null; readonly name: string } | null {
+  if (issue.callIndex === null) return null;
+  const call = changingCalls(input)[issue.callIndex];
+  return call ? { id: call.id, name: call.name } : null;
+}
+
+/**
+ * What a refused proposal was trying to change, for the
+ * `assistant_proposal_rejected` event (GRV-98): the capability of the calls
+ * that resolved against the allowlist (`null` when none did) and how many
+ * calls would have changed something. Never throws.
+ */
+export function rejectedProposalShape(input: unknown): {
+  readonly capability: ProposalCapability | null;
+  readonly commandCount: number;
+} {
+  const calls = changingCalls(input);
+  const capabilities = calls.flatMap((call) => {
+    const resolution = resolveToolCall(call.name, call.input);
+    return resolution.ok ? [resolution.capability] : [];
+  });
+  return {
+    capability: capabilities.length > 0 ? proposalCapability(capabilities) : null,
+    commandCount: calls.length,
+  };
 }
 
 /**

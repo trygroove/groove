@@ -183,6 +183,8 @@ export default defineConfig({
         "src/arrangement/**/*.test.{ts,tsx}",
         "src/controls/**/*.test.{ts,tsx}",
         "src/routes/**/*.test.{ts,tsx}",
+        "src/onboarding/**/*.test.{ts,tsx}",
+        "src/memory/**/*.test.{ts,tsx}",
       ]),
       // The boundaries that talk to something outside the app: the
       // repository, the sample-library manifest, auth, and exported files.
@@ -194,6 +196,9 @@ export default defineConfig({
         "src/userData/**/*.test.{ts,tsx}",
         "src/userLibrary/**/*.test.{ts,tsx}",
         "src/access/**/*.test.{ts,tsx}",
+        // The access scripts' pure logic (the QA account pool), kept out of
+        // `src/` so no internal address reaches the bundle (GRV-113).
+        "scripts/access/**/*.test.ts",
         "src/assistant/**/*.test.{ts,tsx}",
       ]),
       // The cross-cutting rail, plus the handful of root-level

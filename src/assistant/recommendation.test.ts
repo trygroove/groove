@@ -11,7 +11,7 @@ import {
   splitRecommendations,
   validateRecommendation,
 } from "./recommendation";
-import { assistantTools } from "./tools";
+import { assistantTools, EXPLAIN_TOOL_NAME } from "./tools";
 
 const library = buildAssistantLibrary();
 
@@ -115,6 +115,17 @@ describe("splitRecommendations", () => {
     });
     expect(split.proposal).toBeNull();
     expect(split.recommendations).toHaveLength(1);
+  });
+
+  it("leaves no proposal when all that is left is an explanation", () => {
+    const explain = { id: "t3", name: EXPLAIN_TOOL_NAME, input: {} };
+    const split = splitRecommendations({
+      baseRevision: 4,
+      toolsetVersion: 3,
+      calls: [recommend, explain],
+    });
+    expect(split.proposal).toBeNull();
+    expect(split.recommendations).toEqual([recommend]);
   });
 });
 

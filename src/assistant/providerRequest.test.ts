@@ -21,6 +21,11 @@ const parts: ProviderRequestParts = {
   pseudonymousUserId: "abc123",
 };
 
+/** `parts.system` with the static prompt's cache breakpoint. */
+const CACHED_SYSTEM = [
+  { type: "text", text: "system", cache_control: { type: "ephemeral" } },
+];
+
 /**
  * One test per configured model (ADR 0006 decision 3). Adding a model to
  * `ASSISTANT_MODELS` without pinning its request here fails the last test.
@@ -31,10 +36,11 @@ const PINNED: Record<AssistantModelId, () => void> = {
       model: "claude-sonnet-5",
       max_tokens: 16_000,
       stream: true,
-      system: parts.system,
+      system: CACHED_SYSTEM,
       messages: parts.messages,
       tools: parts.tools,
       metadata: { user_id: "abc123" },
+      cache_control: { type: "ephemeral" },
       // Summarized, so a long think streams rather than going silent (GRV-6).
       thinking: { type: "adaptive", display: "summarized" },
       output_config: { effort: "medium" },
@@ -46,10 +52,11 @@ const PINNED: Record<AssistantModelId, () => void> = {
       model: "claude-haiku-4-5",
       max_tokens: 16_000,
       stream: true,
-      system: parts.system,
+      system: CACHED_SYSTEM,
       messages: parts.messages,
       tools: parts.tools,
       metadata: { user_id: "abc123" },
+      cache_control: { type: "ephemeral" },
       thinking: { type: "enabled", budget_tokens: 4_096 },
     });
     // Haiku 4.5 rejects `effort`; the budget must sit under `max_tokens`.
@@ -67,6 +74,24 @@ describe("buildProviderRequest", () => {
 
   it("shapes Claude Haiku 4.5's request: a thinking budget and no effort", () => {
     PINNED["claude-haiku-4-5"]();
+  });
+
+  it("caches the static prompt, and up to the last block of every request", () => {
+    const body = buildProviderRequest(ASSISTANT_MODELS[ASSISTANT_MODEL_ID], {
+      ...parts,
+      system: [
+        { type: "text", text: "prompt" },
+        { type: "text", text: "project" },
+        { type: "text", text: "id stem" },
+      ],
+    });
+    // Only the prompt is the same on every turn; what follows it changes.
+    expect(body.system.map((block) => block.cache_control ?? null)).toEqual([
+      { type: "ephemeral" },
+      null,
+      null,
+    ]);
+    expect(body.cache_control).toEqual({ type: "ephemeral" });
   });
 
   it("pins a request shape for every configured model", () => {

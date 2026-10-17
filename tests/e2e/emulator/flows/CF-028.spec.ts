@@ -79,7 +79,7 @@ test.describe("CF-028", () => {
     const bar = await boxOf(panel(page), "the minimised assistant");
     expect(bar.height).toBeLessThan(64);
     expect(bar.y + bar.height).toBeGreaterThan(viewport.height - 2);
-    await expect(panel(page)).toContainText("Assistant");
+    await expect(panel(page)).toContainText("Cue");
     await step("Minimise to a bar");
     await panel(page).click({ position: { x: 48, y: bar.height / 2 } });
     expect((await boxOf(panel(page), "the assistant")).height).toBe(taller.height);

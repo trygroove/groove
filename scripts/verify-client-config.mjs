@@ -35,8 +35,7 @@ import { join } from "node:path";
 const BUILD_DIR = "dist/client";
 
 // Only the fields whose absence breaks app startup. `databaseURL` (unused, the
-// project has no Realtime Database) and `measurementId` (analytics-only, and
-// the app degrades cleanly without it) are deliberately not required.
+// project has no Realtime Database) is deliberately not required.
 const REQUIRED = [
   { key: "apiKey", pattern: /^AIza[\w-]{35}$/ },
   { key: "authDomain", pattern: /\.firebaseapp\.com$/ },

@@ -33,7 +33,7 @@ describe("the assistant's error copy", () => {
         "en-GB",
       ),
     ).toBe(
-      "You've used all your assistant requests for the last 24 hours. The next one frees up at 14:05.",
+      "You've used all your requests to Cue for the last 24 hours. The next one frees up at 14:05.",
     );
   });
 });

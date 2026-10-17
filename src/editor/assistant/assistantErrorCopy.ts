@@ -4,10 +4,11 @@
  * Every one is followed by the same reassurance, because none of them
  * touches the song.
  */
+import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import type { AssistantErrorDetails } from "../../assistant/protocol";
 
 /** The heading every inline error shares. */
-export const ERROR_HEADING = "The assistant couldn't reply.";
+export const ERROR_HEADING = `${ASSISTANT_NAME} couldn't reply.`;
 
 /** The line under every failure's own words. */
 export const ERROR_REASSURANCE = "Your song is unchanged, and editing still works.";
@@ -47,14 +48,14 @@ export function errorMessage(
       return "Its reply ran out of room before it finished. Try asking for a smaller change.";
     case "quota_exceeded":
       return error.resetsAt === undefined
-        ? "You've used all your assistant requests for the last 24 hours."
-        : `You've used all your assistant requests for the last 24 hours. The next one frees up ${resetTime(error.resetsAt, now, locale)}.`;
+        ? `You've used all your requests to ${ASSISTANT_NAME} for the last 24 hours.`
+        : `You've used all your requests to ${ASSISTANT_NAME} for the last 24 hours. The next one frees up ${resetTime(error.resetsAt, now, locale)}.`;
     case "assistant_disabled":
-      return "The assistant is switched off for now.";
+      return `${ASSISTANT_NAME} is switched off for now.`;
     case "spend_ceiling_reached":
-      return "The assistant has reached today's limit for everyone. It will be back tomorrow.";
+      return `${ASSISTANT_NAME} has reached today's limit for everyone. It will be back tomorrow.`;
     case "unauthenticated":
-      return "Sign in to use the assistant.";
+      return `Sign in to talk to ${ASSISTANT_NAME}.`;
     case "invalid_request":
       return "That message, or what's in scope, is too large for it to read.";
     case "cancelled":

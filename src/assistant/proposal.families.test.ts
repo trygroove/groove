@@ -82,7 +82,7 @@ import {
   type AssistantCapability,
   assistantTools,
   type ProposalCapability,
-  toolNameFor,
+  toolCallsFor,
 } from "./tools";
 
 interface ToolCall {
@@ -90,9 +90,11 @@ interface ToolCall {
   readonly input: unknown;
 }
 
-/** A command as the model would call it. */
+/** A command as the model would call it: one call, since every case's command makes one. */
 function call(command: RawCommandInput): ToolCall {
-  return { name: toolNameFor(command.type), input: command.payload };
+  const calls = toolCallsFor(command);
+  if (calls.length !== 1) throw new Error(`${command.type} makes ${calls.length} calls`);
+  return calls[0];
 }
 
 function proposalOf(fx: CommandTestProject, calls: readonly ToolCall[]) {
@@ -149,22 +151,10 @@ const FAMILIES: readonly FamilyCase[] = [
       call(removeTrack(fx.trackAId)),
     ],
     badSchema: (fx) => call(updateTrack(fx.trackAId, {})),
-    unauthorized: () => {
-      const track = createTrack(context, { name: "Automated", order: 2 });
-      return call(
-        addTrack(track, {
-          automation: [
-            {
-              id: context.ids("automation"),
-              target: { scope: "track", trackId: track.id, parameterId: TRACK_VOLUME.id },
-              interpolation: "linear",
-              points: [],
-            },
-          ],
-        }),
-      );
-    },
-    unauthorizedCode: "unauthorized",
+    // Automation on a new track is refused by track_create's own schema
+    // (tools.test.ts); the family's allowlist case is a tool that does not exist.
+    unauthorized: (fx) => ({ name: "track_duplicate", input: { trackId: fx.trackAId } }),
+    unauthorizedCode: "unknown_tool",
     // Two tracks with one ID.
     invariant: (fx) => {
       const original = fx.project.song.tracks[1];

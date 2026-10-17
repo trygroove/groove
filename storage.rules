@@ -53,8 +53,14 @@ service firebase.storage {
     // can each pass this check. The function holds the line there: a write
     // that arrives with the account already full is not counted and is
     // deleted again (`src/userData/usageLedger.ts`).
+    //
+    // An internal or admin account (GRV-112, `hasUnlimitedClaim` in
+    // `src/access/claims.ts`) has no allowance. Both are custom claims only
+    // trusted code can set, so nobody can lift their own.
     function withinAllowance(uid) {
-      return usedBytes(uid) + request.resource.size <= 1073741824;
+      return request.auth.token.get('internal', false) == true
+        || request.auth.token.get('admin', false) == true
+        || usedBytes(uid) + request.resource.size <= 1073741824;
     }
 
     // An imported sound: audio of a type we decode, non-empty, at most 100 MB

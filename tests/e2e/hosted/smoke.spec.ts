@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
+import { SMOKE_QA_SLOT } from "../../../scripts/access/qaPool";
 import { requestAccessUrl } from "../../../site.config.mjs";
-import { SMOKE_QA_SLOT } from "../../../src/access/qaAccounts";
-import { qaSignInUnavailable, signInAsQaAccount } from "./qaSession";
+import { passWelcome, qaSignInUnavailable, signInAsQaAccount } from "./qaSession";
 
 // PRD `OPS-01` post-deploy smoke test. Runs against `SMOKE_URL` (the real
 // deployed Firebase Hosting URL) with real Firebase Authentication and
@@ -80,6 +80,7 @@ test.describe("hosted alpha smoke test, signed in", () => {
 
     await signInAsQaAccount(page, SMOKE_QA_SLOT);
     await page.goto("/projects?internal=1");
+    await passWelcome(page);
     await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
 
     // The account has no seeded project, so the smoke test creates one. That

@@ -239,6 +239,36 @@ describe("storage.rules: users/{uid}/packs", () => {
     await assertFails(uploadBytes(ref(storage, audioPath("u2")), audio(1), WAV));
   });
 
+  it.each([
+    ["internal", { internal: true }],
+    ["admin", { admin: true }],
+  ])("holds an %s account to no allowance (GRV-112)", async (_, claims) => {
+    await seedUsage("u1", USER_DATA_CAP_BYTES);
+    const storage = testEnv
+      .authenticatedContext("u1", {
+        firebase: { sign_in_provider: "google.com" },
+        ...claims,
+      })
+      .storage();
+    await assertSucceeds(uploadBytes(ref(storage, audioPath("u1")), audio(101), WAV));
+    // The per-file limit is not an allowance, and still holds.
+    await assertFails(
+      uploadBytes(ref(storage, audioPath("u1")), audio(MAX_IMPORT_FILE_BYTES + 1), WAV),
+    );
+  });
+
+  it("holds an account whose claims are not true to the allowance", async () => {
+    await seedUsage("u1", USER_DATA_CAP_BYTES);
+    const storage = testEnv
+      .authenticatedContext("u1", {
+        firebase: { sign_in_provider: "google.com" },
+        internal: "true",
+        admin: 1,
+      })
+      .storage();
+    await assertFails(uploadBytes(ref(storage, audioPath("u1")), audio(101), WAV));
+  });
+
   it("keeps the factory library read-only and the rest of the bucket shut", async () => {
     const storage = registeredContext(testEnv, "u1").storage();
     await assertFails(uploadBytes(ref(storage, "library/audio/x.ogg"), audio(), WAV));

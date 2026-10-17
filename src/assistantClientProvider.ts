@@ -5,6 +5,7 @@ import {
   type AssistantRetentionClient,
   createRetentionClient,
 } from "./assistant/retentionClient";
+import type { TranscriptAdminClient } from "./assistant/transcriptAdminClient";
 import { isMockBackend, resolveEmulatorHosts } from "./devBackend";
 
 /**
@@ -74,11 +75,39 @@ async function createRetention(): Promise<AssistantRetentionClient> {
   );
 }
 
+/**
+ * The admin page's transcript client (GRV-98): the
+ * `assistantTranscriptsAdmin` callable, or on the mock backend the same
+ * logic over the store its gateway keeps transcripts in, as an admin (the
+ * mock backend's one account is one).
+ */
+export async function getTranscriptAdminClient(): Promise<TranscriptAdminClient> {
+  const { createTranscriptAdminClient } = await import(
+    "./assistant/transcriptAdminClient"
+  );
+  if (isMockBackend) {
+    const [{ handleTranscriptAdminRequest }, store] = await Promise.all([
+      import("./assistant/transcriptAdmin"),
+      mockTranscriptStore(),
+    ]);
+    return createTranscriptAdminClient((request) =>
+      handleTranscriptAdminRequest(store, { admin: true }, request),
+    );
+  }
+  const [{ createFirebaseTranscriptAdminCall }, { app }] = await Promise.all([
+    import("./firebaseAssistantTransport"),
+    import("./firebaseConfig"),
+  ]);
+  return createTranscriptAdminClient(
+    createFirebaseTranscriptAdminCall(app, resolveEmulatorHosts()?.functions ?? null),
+  );
+}
+
 async function createClient(): Promise<AssistantClient> {
   if (isMockBackend) {
     const [
       { createLocalAssistantTransport },
-      { createEmulatorAssistantProvider, emulatorVideoVerifier },
+      { createEmulatorAssistantProvider, emulatorVideoFinder },
       guards,
       transcripts,
     ] = await Promise.all([
@@ -93,8 +122,8 @@ async function createClient(): Promise<AssistantClient> {
           provider: createEmulatorAssistantProvider(),
           guards: guards.createInMemoryGuardStores(),
           transcripts,
-          // Never YouTube from the page: the mock backend vouches for its own video.
-          verifyVideo: emulatorVideoVerifier,
+          // Never YouTube from the page: the mock backend finds its own video.
+          findVideo: emulatorVideoFinder,
           log: () => {},
           now: Date.now,
         },

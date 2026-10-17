@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { ADMIN_CLAIM, INTERNAL_CLAIM } from "../access/claims";
 import {
   formatBytes,
   IMPORT_CONTENT_TYPES,
@@ -85,6 +86,12 @@ describe("storage.rules", () => {
   it("enforces the same cap and per-file limit", () => {
     expect(rules).toContain(`${USER_DATA_CAP_BYTES}`);
     expect(rules).toContain(`${MAX_IMPORT_FILE_BYTES}`);
+  });
+
+  it("lifts the allowance for the same claims as hasUnlimitedClaim (GRV-112)", () => {
+    for (const claim of [INTERNAL_CLAIM, ADMIN_CLAIM]) {
+      expect(rules).toContain(`request.auth.token.get('${claim}', false) == true`);
+    }
   });
 
   it("accepts exactly the same audio types", () => {

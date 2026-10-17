@@ -60,12 +60,23 @@ const TRANSIENT: ReadonlySet<ProviderFailureKind> = new Set([
 export class ProviderFailure extends Error {
   readonly kind: ProviderFailureKind;
   readonly status: number | null;
+  /**
+   * The account has no API credit left: every call will be refused the same
+   * way until it is topped up. A `rejected` 400, told apart by the provider's
+   * message, which is never kept. The evals stop on it (`evals/run.ts`).
+   */
+  readonly outOfCredit: boolean;
 
-  constructor(kind: ProviderFailureKind, status: number | null = null) {
+  constructor(
+    kind: ProviderFailureKind,
+    status: number | null = null,
+    options: { readonly outOfCredit?: boolean } = {},
+  ) {
     super(`provider call failed: ${kind}${status === null ? "" : ` (${status})`}`);
     this.name = "ProviderFailure";
     this.kind = kind;
     this.status = status;
+    this.outOfCredit = options.outOfCredit ?? false;
   }
 
   get transient(): boolean {

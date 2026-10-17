@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 // The delivered factory pack set, the source of truth `pack_id` is pinned
 // against — see the cross-reference test below.
 import { PACKS } from "../../scripts/starter-library/packs.mjs";
+import { PROPOSAL_ISSUE_CODES } from "../assistant/proposalIssues";
 import { RECOMMENDATION_ISSUE_CODES } from "../assistant/recommendation";
 import { PROPOSAL_CAPABILITIES } from "../assistant/tools";
 import { CAPABILITY_IDS } from "../browser/capabilities";
@@ -17,6 +18,7 @@ import {
   type AnalyticsEventDefinition,
   type AnalyticsParam,
   ASSISTANT_PROPOSAL_CAPABILITIES,
+  ASSISTANT_PROPOSAL_ISSUE_CODES,
   ASSISTANT_RECOMMENDATION_REFUSALS,
   ASSISTANT_SUGGESTION_IDS,
   BROWSER_CAPABILITY_IDS,
@@ -88,6 +90,7 @@ describe("event names", () => {
         "assistant_message_sent",
         "assistant_proposal_applied",
         "assistant_proposal_cancelled",
+        "assistant_proposal_rejected",
         "assistant_proposal_shown",
         "assistant_proposal_undone",
         "assistant_recommendation_kept",
@@ -107,6 +110,8 @@ describe("event names", () => {
         "automation_lane_created",
         "browser_capability_missing",
         "clip_edited",
+        "cue_nudge_answered",
+        "cue_nudge_shown",
         "device_added",
         "device_edit_failed",
         "exception",
@@ -125,7 +130,17 @@ describe("event names", () => {
         "library_pack_upgraded",
         "loop_range_set",
         "loop_toggled",
+        "memory_forgotten",
+        "memory_note_confirmed",
+        "memory_note_proposed",
+        "memory_note_undone",
         "note_edit_failed",
+        "onboarding_completed",
+        "onboarding_question_answered",
+        "onboarding_skipped",
+        "onboarding_started",
+        "onboarding_validation",
+        "onboarding_validation_chip",
         "placement_duplicated",
         "project_created",
         "project_deleted",
@@ -221,7 +236,7 @@ describe("parameter declarations", () => {
       if (spec.kind !== "count") continue;
       expect(spec.max, `${event}.${param}`).toBeGreaterThan(0);
       // Bucketed cardinality: an unbounded count is a re-identification risk
-      // and a GA4 cardinality problem.
+      // and an analytics cardinality problem.
       expect(spec.max, `${event}.${param}`).toBeLessThanOrEqual(1000);
     }
   });
@@ -324,6 +339,15 @@ describe("catalog cross-references", () => {
         ),
       ].sort(),
     ).toEqual([...RECOMMENDATION_ISSUE_CODES].sort());
+  });
+
+  it("pins exactly the proposal validator's issue codes as the rejected event's issue_code", () => {
+    // A new way to refuse a proposal added without an analytics decision
+    // fails here (GRV-98).
+    expect([...ASSISTANT_PROPOSAL_ISSUE_CODES]).toEqual([...PROPOSAL_ISSUE_CODES]);
+    expect([
+      ...declaredValues(ANALYTICS_EVENTS.assistant_proposal_rejected.params.issue_code),
+    ]).toEqual([...PROPOSAL_ISSUE_CODES]);
   });
 
   it("pins exactly the assistant's capability keys as the proposal events' capability", () => {
@@ -443,9 +467,11 @@ describe("catalog cross-references", () => {
         "library_browser",
         "limiter_device",
         "mixer",
+        "memory",
         "musical_key",
         "note_audition",
         "note_clipboard",
+        "onboarding",
         "pack_browser",
         "piano_roll",
         "playhead_seek",
@@ -507,6 +533,7 @@ describe("section 11 measure coverage", () => {
       "assistant_proposal_applied",
       "assistant_proposal_cancelled",
       "assistant_proposal_undone",
+      "assistant_proposal_rejected",
     ],
     "assistant result ownership": [
       "assistant_proposal_applied",

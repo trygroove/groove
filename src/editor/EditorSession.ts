@@ -218,6 +218,11 @@ export class EditorSession {
   private gestureParts: GesturePart[] | null = null;
   /** The newest revision known to be saved elsewhere. */
   private remoteRevision: number;
+  /**
+   * False while `remoteRevision` is only a guess, from a conflict that did not
+   * say which revision the store is at; a load may then settle it lower.
+   */
+  private remoteRevisionKnown = true;
   /** True while the saved project is being loaded and taken in. */
   private syncing = false;
   /** The next try at a load that failed, if one is waiting. */
@@ -655,10 +660,11 @@ export class EditorSession {
     const savedThrough = this.autosave.savedThrough;
     this.unsaved = this.unsaved.filter((edit) => edit.through > savedThrough);
     if (status.state === "failed" && status.failure?.reason === "revision_conflict") {
-      this.remoteRevision = Math.max(
-        this.remoteRevision,
-        status.failure.currentRevision ?? status.revision + 1,
-      );
+      const current = status.failure.currentRevision;
+      if (current === undefined && this.remoteRevision <= status.revision) {
+        this.remoteRevisionKnown = false;
+      }
+      this.remoteRevision = Math.max(this.remoteRevision, current ?? status.revision + 1);
     }
     this.reconcileRemote();
   }
@@ -673,6 +679,7 @@ export class EditorSession {
       this.autosave.applyRemote(event);
       return;
     }
+    if (event.metadata.revision >= this.remoteRevision) this.remoteRevisionKnown = true;
     this.remoteRevision = Math.max(this.remoteRevision, event.metadata.revision);
     this.reconcileRemote();
   }
@@ -737,14 +744,23 @@ export class EditorSession {
       this.retryReload();
       return;
     }
-    this.reloadDelayMs = RELOAD_RETRY_MS;
     const saved = loaded.value;
-    // What the store held when it was read, unless a newer snapshot came in
-    // during the read. A revision guessed from a conflict settles here too.
+    // A read can lag what is already known: Firestore may answer it from the
+    // view its live listener keeps, which has not yet heard of the write that
+    // refused this session's own (GRV-88). Taking such a read as the truth
+    // would leave the session on a conflict nothing clears, so it is tried
+    // again. Only a revision guessed from a conflict that named none may
+    // settle lower than what was seen.
+    if (saved.metadata.revision < seen && this.remoteRevisionKnown) {
+      this.retryReload();
+      return;
+    }
+    this.reloadDelayMs = RELOAD_RETRY_MS;
     this.remoteRevision =
       this.remoteRevision === seen
         ? saved.metadata.revision
         : Math.max(this.remoteRevision, saved.metadata.revision);
+    this.remoteRevisionKnown = true;
     const status = this.autosave.status;
     // A write started, or a gesture opened, while the project loaded; each
     // calls `reconcileRemote` again once it is over.

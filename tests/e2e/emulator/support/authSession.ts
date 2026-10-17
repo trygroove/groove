@@ -60,6 +60,8 @@ export interface RegisteredSession {
   uid: string;
   email: string;
   displayName: string;
+  /** The account's own ID token, as its browser holds it. */
+  idToken: string;
 }
 
 export interface SeedRegisteredSessionOptions {
@@ -76,6 +78,18 @@ export interface SeedRegisteredSessionOptions {
    * about onboarding, passes `false` for an account with no profile at all.
    */
   onboarded?: boolean;
+  /**
+   * Gives the account the `admin` claim (#854), for a spec about the admin
+   * page (GRV-98). The claim is set before the session is installed, so the
+   * page's ID token carries it from the first load.
+   */
+  admin?: boolean;
+  /**
+   * Gives the account the `internal` claim (GRV-113), the stand-in for
+   * `bun run internal:grant`. Set before the session is installed, like
+   * `admin`.
+   */
+  internal?: boolean;
 }
 
 /**
@@ -93,12 +107,53 @@ export async function seedRegisteredSession(
   const displayName = options.displayName ?? "Flow Producer";
 
   await allowlist(email);
-  const record = await signInInThisProcess(email, displayName);
+  let record = await signInInThisProcess(email, displayName);
+  const claims: Record<string, true> = {};
+  if (options.admin) claims.admin = true;
+  if (options.internal) claims.internal = true;
+  if (Object.keys(claims).length > 0) {
+    await grantClaims(String(record.uid), claims);
+    // Signing in again mints an ID token with the claim in it.
+    record = await signInInThisProcess(email, displayName);
+  }
   if (options.onboarded !== false) await seedSkippedOnboarding(String(record.uid));
 
   await installFirebaseUser(page, API_KEY, record);
 
-  return { uid: String(record.uid), email, displayName };
+  const tokens = record.stsTokenManager as { accessToken?: unknown } | undefined;
+  return {
+    uid: String(record.uid),
+    email,
+    displayName,
+    idToken: String(tokens?.accessToken),
+  };
+}
+
+/** The Auth emulator's REST endpoint for one `accounts:<operation>`. */
+export function authEmulatorAccountsUrl(operation: string): string {
+  return `http://${authEmulatorHost}/identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accounts:${operation}`;
+}
+
+/**
+ * Sets custom claims on an account through the Auth emulator's REST API, with
+ * its `owner` bearer token: the stand-in for `bun run admin:grant` and
+ * `bun run internal:grant`.
+ */
+async function grantClaims(uid: string, claims: Record<string, true>): Promise<void> {
+  const response = await fetch(authEmulatorAccountsUrl("update"), {
+    method: "POST",
+    headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      localId: uid,
+      customAttributes: JSON.stringify(claims),
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `The Auth emulator refused to set an account's claims (${response.status}): ` +
+        `${await response.text()}`,
+    );
+  }
 }
 
 /**
@@ -137,4 +192,39 @@ async function signInInThisProcess(
   const record = user.toJSON() as Record<string, unknown>;
   await signOut(auth);
   return record;
+}
+
+/**
+ * Asks the Auth emulator to change an account the way the account itself can:
+ * with its own ID token and the app's API key, as the client SDK or anyone
+ * holding the token would. Returns the raw response.
+ */
+export function updateOwnAccount(
+  idToken: string,
+  changes: Record<string, unknown>,
+): Promise<Response> {
+  return fetch(
+    `http://${authEmulatorHost}/identitytoolkit.googleapis.com/v1/accounts:update?key=${API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken, ...changes }),
+    },
+  );
+}
+
+/** An account's custom claims as the Auth emulator stores them, read as `owner`. */
+export async function accountClaims(uid: string): Promise<Record<string, unknown>> {
+  const response = await fetch(authEmulatorAccountsUrl("lookup"), {
+    method: "POST",
+    headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
+    body: JSON.stringify({ localId: [uid] }),
+  });
+  if (!response.ok) {
+    throw new Error(`The Auth emulator refused a lookup (${response.status})`);
+  }
+  const body = (await response.json()) as {
+    users?: { customAttributes?: string }[];
+  };
+  return JSON.parse(body.users?.[0]?.customAttributes ?? "{}");
 }

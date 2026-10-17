@@ -11,6 +11,8 @@ import type { Analytics } from "../../analytics/analytics";
 import type { AssistantClient } from "../../assistant/assistantClient";
 import type { AssistantRetentionClient } from "../../assistant/retentionClient";
 import type { Project } from "../../domain/entities";
+import { memoryContext } from "../../memory/memoryEdits";
+import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import type { Suggestion } from "../../projection/projectAnalysisProjection";
 import type { EditorViewName } from "../editorViews";
 import type { AskEditorLink } from "./askReferences";
@@ -42,6 +44,8 @@ import {
   useAssistantRecommendations,
 } from "./useAssistantRecommendations";
 import { type AssistantRetention, useAssistantRetention } from "./useAssistantRetention";
+import { type CueNudge, useCueNudge } from "./useCueNudge";
+import { type AssistantMemoryProposals, useMemoryProposals } from "./useMemoryProposals";
 
 /** Who is here to talk: a signed-in account, or someone who must sign in. */
 export interface AssistantAccount {
@@ -106,6 +110,12 @@ export interface UseAssistantChatOptions {
   readonly conversationKey?: Accessor<string | null>;
   /** The store it is kept in; this tab's session storage by default. */
   readonly conversationStore?: ConversationStore;
+  /**
+   * The producer's profile (GRV-25): what Cue remembers, sent with every
+   * turn, and where a confirmed memory card is saved. Without it turns carry
+   * no memory.
+   */
+  readonly profile?: ProducerProfileStore;
 }
 
 export interface AssistantChat {
@@ -127,6 +137,10 @@ export interface AssistantChat {
   readonly recommendations: AssistantRecommendations | null;
   /** The pending question's answer so far (GRV-42). */
   readonly ask: AskDraft;
+  /** The memory cards, when there is a profile to save them to (GRV-25). */
+  readonly memory: AssistantMemoryProposals | null;
+  /** Cue's one nudge a day, when there is a profile to read it from (GRV-25). */
+  readonly nudge: CueNudge | null;
   /** The account's answer about keeping conversations, when it is asked for. */
   readonly retention: AssistantRetention | null;
   /** What a card logs its own actions through (a video's Play, GRV-16). */
@@ -181,9 +195,9 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         analytics: options.analytics,
         // The conversation is made just below; Refresh is only ever pressed later.
         refresh: (entryId) => conversation.refresh(entryId),
-        onOutcome: (entryId, outcome) => {
+        onOutcome: (entryId, outcome, issues) => {
           const turnId = turnOfEntry.get(entryId);
-          if (turnId) retention?.reportOutcome(turnId, outcome);
+          if (turnId) retention?.reportOutcome(turnId, outcome, issues);
         },
       })
     : null;
@@ -202,6 +216,11 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
           refresh: (entryId) => conversation.refresh(entryId),
         })
       : null;
+
+  const profile = options.profile;
+  const memory = profile
+    ? useMemoryProposals({ store: profile, analytics: options.analytics })
+    : null;
 
   const conversation = useAssistantConversation({
     client: options.client,
@@ -238,10 +257,30 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
       ? (entryId, call, library, origin) =>
           recommendations.receive(entryId, call, library, origin)
       : undefined,
+    memory: profile
+      ? () => {
+          const current = profile.profile();
+          return current ? memoryContext(current) : null;
+        }
+      : undefined,
+    onMemoryProposal: memory
+      ? (entryId, proposal) => memory.receive(entryId, proposal)
+      : undefined,
+    onMemoryQuestionAsked: memory ? (question) => memory.asked(question) : undefined,
     persistence: options.conversationKey
       ? { key: options.conversationKey, store: options.conversationStore }
       : undefined,
   });
+
+  const nudge = profile
+    ? useCueNudge({
+        profile,
+        expanded: options.expanded,
+        ready: () => (retention ? retention.answered() : true),
+        conversation,
+        analytics: options.analytics,
+      })
+    : null;
 
   const ask = useAskDraft({
     conversation,
@@ -277,6 +316,8 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     proposals,
     recommendations,
     ask,
+    memory,
+    nudge,
     retention,
     analytics: options.analytics,
   };
