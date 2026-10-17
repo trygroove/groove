@@ -206,6 +206,7 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
               bindComposer={(element) => props.panel.bindComposer(element)}
               bindAskText={(element) => props.panel.bindAskText(element)}
               focusComposer={() => props.panel.focusComposer()}
+              reclaimComposerFocus={() => props.panel.reclaimComposerFocus()}
               settingsOpen={settingsOpen}
               closeSettings={() => setSettingsOpen(false)}
               holdExpandedVideo={(collapse) => props.panel.holdExpandedVideo(collapse)}

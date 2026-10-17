@@ -75,6 +75,13 @@ export interface AssistantPanel {
   focusInPanelOutsideFields(): boolean;
   /** Puts focus in the composer, if there is one to type into. */
   focusComposer(): void;
+  /**
+   * Puts focus in the composer after the control that held it went (the
+   * conversation arriving late, GRV-8), but only once the producer has used
+   * the panel this session: a panel restored open with the editor never
+   * takes focus (GRV-130), because Space and 1 to 5 are app keys.
+   */
+  reclaimComposerFocus(): void;
   /** Bound by the panel and the header's button. */
   bindPanel(element: HTMLElement | undefined): void;
   bindEdge(element: HTMLElement | undefined): void;
@@ -119,6 +126,8 @@ export function useAssistantPanel(
     { readonly collapse: () => void } | undefined
   >(undefined);
   let pendingFocus: FocusIntent = null;
+  // Whether the producer has opened the panel or put focus in it this session.
+  let engaged = false;
 
   const focusIsIn = (element: HTMLElement | undefined): boolean => {
     const active = document.activeElement;
@@ -160,6 +169,7 @@ export function useAssistantPanel(
 
   function open(from: Element | null | undefined): void {
     const active = from === undefined ? document.activeElement : from;
+    engaged = true;
     opener = active instanceof HTMLElement && active !== document.body ? active : null;
     apply(layouts.toggle(layout()), "panel");
     (options.analytics?.() ?? defaultAnalytics).logFeatureFirstUse("assistant");
@@ -221,8 +231,15 @@ export function useAssistantPanel(
     focusComposer() {
       if (composerElement?.isConnected) composerElement.focus();
     },
+    reclaimComposerFocus() {
+      if (!engaged) return;
+      if (composerElement?.isConnected) composerElement.focus();
+    },
     bindPanel(element) {
       panelElement = element;
+      element?.addEventListener("focusin", () => {
+        engaged = true;
+      });
     },
     bindEdge(element) {
       edgeElement = element;

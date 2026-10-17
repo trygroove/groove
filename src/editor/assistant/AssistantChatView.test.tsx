@@ -17,6 +17,7 @@ import { memoryStorage } from "../../testing/storage";
 import type { EditorViewName } from "../editorViews";
 import { SIGN_IN_NOTE, WRITING_STATUS } from "./AssistantChatView";
 import AssistantPanel from "./AssistantPanel";
+import { LAYOUT_STORAGE_KEY } from "./assistantPanelLayout";
 import { ERROR_REASSURANCE } from "./assistantErrorCopy";
 import type { ScopeSelection } from "./assistantScope";
 import { type AssistantAccount, useAssistantChat } from "./useAssistantChat";
@@ -43,6 +44,8 @@ function recordingAnalytics() {
 }
 
 interface Options {
+  readonly open?: boolean;
+  readonly storage?: ReturnType<typeof memoryStorage>;
   readonly account?: AssistantAccount;
   readonly project?: Project;
 }
@@ -59,7 +62,7 @@ function renderChat(options: Options = {}) {
   );
   const Harness = () => {
     const panel = useAssistantPanel({
-      storage: memoryStorage(),
+      storage: options.storage ?? memoryStorage(),
       analytics: () => analytics,
     });
     const chat = useAssistantChat({
@@ -81,7 +84,9 @@ function renderChat(options: Options = {}) {
     );
   };
   const { unmount } = render(() => <Harness />);
-  clickAndFlush(screen.getByRole("button", { name: "Open it" }));
+  if (options.open !== false) {
+    clickAndFlush(screen.getByRole("button", { name: "Open it" }));
+  }
   return { client, transport, project, setSelection, setAccount, unmount };
 }
 
@@ -122,6 +127,17 @@ describe("the assistant's conversation", () => {
     expect(composer()).toHaveFocus();
     expect(scopeChip()).toHaveAccessibleName("Scope: BD");
     expect(button("Send")).toBeDisabled();
+  });
+
+  it("does not take focus when the editor opens with the panel already open (GRV-130)", () => {
+    const storage = memoryStorage();
+    storage.setItem(
+      LAYOUT_STORAGE_KEY,
+      JSON.stringify({ mode: "floating", home: "floating", height: 420, width: 360 }),
+    );
+    renderChat({ storage, open: false });
+    expect(composer()).not.toHaveFocus();
+    expect(document.body).toHaveFocus();
   });
 
   it("sends a message stamped with its scope, and streams the reply", async () => {

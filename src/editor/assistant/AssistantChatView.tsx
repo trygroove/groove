@@ -26,6 +26,8 @@ export interface AssistantChatViewProps {
   bindAskText(element: HTMLElement | undefined): void;
   /** Puts focus back in the composer, after Stop or Try again. */
   focusComposer(): void;
+  /** Like `focusComposer`, but only once the producer has engaged the panel (GRV-130). */
+  reclaimComposerFocus?(): void;
   /** Whether the assistant's settings are open in place of the conversation (GRV-8). */
   readonly settingsOpen?: () => boolean;
   /** Closes the settings, back to the conversation. */
@@ -109,7 +111,7 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
       active === document.body ||
       active.classList.contains("assistant-panel")
     ) {
-      props.focusComposer();
+      (props.reclaimComposerFocus ?? props.focusComposer)();
     }
   });
   const conversation = () => props.chat.conversation;
