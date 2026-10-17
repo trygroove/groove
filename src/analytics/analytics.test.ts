@@ -526,3 +526,30 @@ describe("transports", () => {
     expect(working.events).toHaveLength(1);
   });
 });
+
+describe("what the assistant's turn says about analytics (GRV-126)", () => {
+  it("is allowed with the vendor's session while consent allows it", () => {
+    const transport: AnalyticsTransport = {
+      ...createRecordingTransport(),
+      sessionId: () => "session-1",
+    };
+    const { analytics, consent } = setup({ transport });
+    expect(analytics.productAnalyticsAllowed).toBe(true);
+    expect(analytics.sessionId()).toBe("session-1");
+
+    consent.optOut();
+    expect(analytics.productAnalyticsAllowed).toBe(false);
+    expect(analytics.sessionId()).toBeNull();
+  });
+
+  it("has no session on a transport without one, or one that throws", () => {
+    expect(setup().analytics.sessionId()).toBeNull();
+    const throwing: AnalyticsTransport = {
+      ...createRecordingTransport(),
+      sessionId: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(setup({ transport: throwing }).analytics.sessionId()).toBeNull();
+  });
+});

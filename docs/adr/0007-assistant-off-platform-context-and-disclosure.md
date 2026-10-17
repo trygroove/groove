@@ -67,7 +67,7 @@ This is a real cost and it is accepted rather than mitigated: a track named for 
 >
 > The assistant behaves exactly the same either way, and every other part of Groove works without it — if you would rather nothing was sent, you can simply not use the assistant.
 
-Decision 9 turns the control into a notice with a way out ("OK" / "Don't keep them") and adds "unless you tell it not to" to the third paragraph; `src/editor/assistant/retentionCopy.ts` holds the current wording.
+Decision 9 turns the control into a notice with a way out ("OK" / "Don't keep them") and adds "unless you tell it not to" to the third paragraph; GRV-126 adds a fourth paragraph saying a kept conversation also goes to PostHog ([ADR 0003](./0003-replay-canvas-capture-and-assistant-conversation-retention.md) decision 2, as amended), and widens the control's scope line to match. `src/editor/assistant/retentionCopy.ts` holds the current wording.
 
 Wording stays tweakable without reopening this ADR; what may not change is that it remains true and specific about the same four things — what is sent, what the provider may do with it, what we keep and for how long, and what the control does and does not cover.
 

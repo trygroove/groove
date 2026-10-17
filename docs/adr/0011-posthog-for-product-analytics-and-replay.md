@@ -72,11 +72,17 @@ After at least four weeks of production traffic, a follow-up ADR keeps one track
 
 If PostHog wins, Sentry is removed and this ADR's single-vendor consequence holds in full. If not, the PostHog sink is removed.
 
-### 4. The assistant gateway sends one LLM event per turn, with no content
+### 4. The assistant gateway sends one LLM event per provider call, traced per conversation, with content for kept accounts
 
-`functions/` sends one PostHog `$ai_generation` event per turn, built from `AssistantTurnLog` (`src/assistant/telemetry.ts`): model, prompt version, outcome, stop reason, duration, token counts, attempts, and failure kinds. It is attributed to the turn's Firebase UID.
+*Rewritten by GRV-126.* As first decided, this was one content-free event per turn. Debugging the assistant needs the conversation itself in PostHog's AI Observability, beside the session's events and replay, so it is now:
 
-**Content capture is off.** No prompt, reply, tool input, project context or library is sent (`$ai_input` and `$ai_output` stay unset). Kept conversations live only in our own Firestore, as ADR 0003 requires. Sending this event must never delay or fail a turn.
+- **One `$ai_generation` event per provider call**, retries and later steps of a turn included, sent from `functions/` with `posthog-node` to the project's own ingestion host (the `POSTHOG_HOST` param, US by default, where the project is) with its public key (the `POSTHOG_KEY` param, `VITE_POSTHOG_KEY`'s value). It is attributed to the turn's Firebase UID, the same `distinct_id` the browser identifies with.
+- **One trace per conversation.** `$ai_trace_id` is the conversation ID the request's `session` names, or a fresh ID for the turn when it names none. Each event carries `$ai_span_id`, `$ai_model`, `$ai_provider`, the input, output and cache token counts, `$ai_latency`, `$ai_is_error`, `$ai_http_status` and `$ai_stop_reason`, and beside them `prompt_version`, the turn's `outcome`, the `attempt`, the `failure_kind` and the `internal` flag the project's internal-traffic filter reads. The browser sends PostHog's `$session_id` with the turn, so a trace links to its session's replay. No `$ai_trace` event: PostHog builds the trace from the generations.
+- **Only with product analytics allowed.** The browser sends its `productAnalytics` consent with every turn; declined or missing, no event is sent at all.
+- **Content only for kept accounts.** `$ai_input` (the system prompt with the project context, and the messages), `$ai_tools` and `$ai_output_choices` (the reply's text and tool calls) are set only when the account lets Groove keep its conversations (`permitsRetention`, read from the transcript store on the same turn) as well as allowing product analytics. Otherwise the event carries codes, counts and durations only. This is the one deliberate exception to "no user text in events", and it is scoped to these `$ai_*` events from the gateway: the `src/analytics` catalog and its parameter rules are unchanged, and ADR 0003 decision 2 is amended to match.
+- **Sending never delays or fails a turn.** Events are queued as the turn ends and flushed, with a two-second limit, before the function returns; a PostHog failure is logged as a code only. `src/assistant/traces.ts` decides what an event says, `functions/src/posthogTraces.ts` sends it.
+
+Turning keeping off stops new content going to PostHog but does not delete what PostHog already has; those copies expire under PostHog's data retention, and the disclosure says so (`src/editor/assistant/retentionCopy.ts`). Deleting them on opt-out is out of scope, by choice.
 
 ### 5. Prompt experiments use PostHog feature flags
 
@@ -109,6 +115,6 @@ A prompt or model change may be rolled out behind a PostHog flag and judged agai
 1. PostHog transport, consent and internal traffic; remove the Firebase Analytics transport (decision 1).
 2. PostHog replay with the ADR 0002/0003 conditions and payload test; turn off Sentry replay; update the disclosure (decision 2).
 3. PostHog error sink, source-map upload and the shared payload test (decision 3).
-4. The gateway's `$ai_generation` event (decision 4).
+4. The gateway's `$ai_generation` events (decision 4, GRV-126).
 5. Prompt-version feature flag (decision 5), once GRV-103 reports.
 6. The follow-up ADR choosing one error tracker, after the evaluation (decision 3).

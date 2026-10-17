@@ -178,6 +178,30 @@ To read the conversations behind a thumbs-down, filter **Assistant
 transcripts** in `/admin` to **Rated down**. A rating is only kept on a turn
 the account lets Groove keep.
 
+## Traces in PostHog's AI Observability
+
+`assistantTurn` sends one `$ai_generation` event per provider call, retries
+included, to PostHog (GRV-126, ADR 0011 decision 4), grouped into one trace
+per conversation and linked to the session's replay through `$session_id`.
+Nothing is sent when the browser says product analytics is declined. The
+request and the reply (`$ai_input`, `$ai_tools`, `$ai_output_choices`) are in
+the event only for an account that lets Groove keep its conversations; any
+other account's events carry tokens, latency, stop reason and failure codes
+only. Filter out internal traffic with the `internal` property, as for the
+browser's events.
+
+To turn it on:
+
+1. Check LLM analytics (AI Observability) is on in the PostHog project.
+2. Set **`POSTHOG_KEY`** to the project API key (`phc_…`, the same value as
+   the `VITE_POSTHOG_KEY` variable) in `functions/.env.<project-id>`, and
+   **`POSTHOG_HOST`** if the project is not in PostHog's US region (it
+   defaults to `https://us.i.posthog.com`). The key is public by design, so
+   committing it is fine. Empty, the default, sends no traces.
+3. Deploy. A failed send logs `assistant trace not sent` with a `failure`
+   code (`flush_timeout`, `flush_failed`, `send_failed`, `capture_failed`);
+   the turn itself is unaffected, and the flush waits at most two seconds.
+
 ## Rotating the key
 
 ```bash

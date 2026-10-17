@@ -19,6 +19,7 @@ import {
   type AssistantStreamChunk,
   type AssistantTurnResult,
 } from "../../src/assistant/protocol";
+import type { FlushableTraceSink } from "./posthogTraces";
 
 /** How each gateway failure reaches the browser. */
 const HTTPS_CODES: Record<AssistantErrorCode, FunctionsErrorCode> = {
@@ -59,9 +60,15 @@ export function toHttpsError(error: AssistantGatewayError): HttpsError {
 /** Everything but the provider is wired here; the provider needs the secret. */
 export type AssistantHandlerDeps = Omit<
   AssistantGatewayDeps,
-  "log" | "now" | "onTranscript"
+  "log" | "now" | "onTranscript" | "traces"
 > &
-  Partial<Pick<AssistantGatewayDeps, "log" | "now" | "onTranscript">>;
+  Partial<Pick<AssistantGatewayDeps, "log" | "now" | "onTranscript">> & {
+    /**
+     * Where the turn's traces go (GRV-126), flushed once the turn is over,
+     * whichever way it ended, before the callable returns.
+     */
+    readonly traces?: FlushableTraceSink;
+  };
 
 export function createAssistantHandler(
   deps: () => AssistantHandlerDeps,
@@ -74,14 +81,16 @@ export function createAssistantHandler(
       | ({ firebase?: { sign_in_provider?: unknown } } & Record<string, unknown>)
       | undefined;
     const signInProvider = token?.firebase?.sign_in_provider;
+    let wired: AssistantHandlerDeps | undefined;
     try {
+      wired = deps();
       return await runAssistantTurn(
         {
           log: (record) => logger.info("assistant turn", record),
           // A code only: whether the turn was kept, never what it said.
           onTranscript: (write) => logger.info("assistant transcript", { write }),
           now: Date.now,
-          ...deps(),
+          ...wired,
         },
         {
           uid: request.auth?.uid ?? null,
@@ -101,6 +110,9 @@ export function createAssistantHandler(
       if (error instanceof AssistantGatewayError) throw toHttpsError(error);
       logger.error("assistant turn failed unexpectedly", describeUnexpectedError(error));
       throw new HttpsError("internal", "The assistant failed.");
+    } finally {
+      // Bounded, and never rejects: the turn's result stands either way.
+      await wired?.traces?.flush();
     }
   };
 }

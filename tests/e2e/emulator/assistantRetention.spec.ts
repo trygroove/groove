@@ -24,7 +24,7 @@ import { expect, test } from "./support/test";
 
 const LABEL = "Keep my conversations with Cue for 30 days";
 const SCOPE =
-  "This controls Groove's own copy only. It does not take back anything already sent to Anthropic.";
+  "This controls what Groove keeps and sends to PostHog from now on. It does not take back anything already sent to Anthropic or PostHog.";
 
 test.describe("the assistant's disclosure and setting", () => {
   test("is answered before the first message, and changed later in settings", async ({

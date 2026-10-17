@@ -29,14 +29,19 @@
  * Admins read them through `assistantTranscriptsAdmin` (GRV-98).
  * `src/assistant/retention.ts` and `transcripts.ts` decide all of it.
  *
+ * `assistantTurn` also sends each provider call to PostHog's AI
+ * Observability as a `$ai_generation` event (GRV-126), only when the browser
+ * says product analytics is allowed, and with the conversation in it only
+ * for an account whose conversations are kept (`src/assistant/traces.ts`).
+ *
  * Every kind of user data (packs today, recordings and presets later) is a
  * folder under `users/{uid}/`, so a new kind is counted as soon as it is added
  * to `USER_DATA_KINDS` — nothing here changes.
  *
  * Built by `firebase.json`'s `functions.predeploy` with `bun build`, which
  * bundles the shared modules in and leaves `firebase-admin`,
- * `firebase-functions` and `@anthropic-ai/sdk` to the runtime's own install of
- * `functions/package.json`.
+ * `firebase-functions`, `@anthropic-ai/sdk` and `posthog-node` to the
+ * runtime's own install of `functions/package.json`.
  */
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -102,6 +107,12 @@ import {
 import { createAnthropicProvider } from "./anthropicProvider";
 import { createAssistantHandler } from "./assistantHandler";
 import { firestoreGuardStores } from "./assistantStores";
+import {
+  createPostHogTraceClient,
+  createPostHogTraces,
+  type FlushableTraceSink,
+  POSTHOG_US_HOST,
+} from "./posthogTraces";
 import { createRetentionHandler } from "./retentionHandler";
 import { createRevokeAccessHandler } from "./revokeAccessHandler";
 import { createTranscriptAdminHandler } from "./transcriptAdminHandler";
@@ -405,12 +416,56 @@ function videoFinder(): VideoFinder | undefined {
 }
 
 /**
+ * The PostHog project's public key (`phc_…`, the same value as the browser's
+ * `VITE_POSTHOG_KEY`). Public by design, so a param rather than a secret.
+ * Empty, the default, sends no traces.
+ */
+const posthogKey = defineString("POSTHOG_KEY", {
+  default: "",
+  description:
+    "PostHog project API key (phc_...) the assistant's traces go to (empty: no traces)",
+});
+
+/** The PostHog project's ingestion host. */
+const posthogHost = defineString("POSTHOG_HOST", {
+  default: POSTHOG_US_HOST,
+  description: "PostHog ingestion host for the assistant's traces",
+});
+
+let posthogTraces: { key: string; sink: FlushableTraceSink } | null = null;
+
+/**
+ * Where the assistant's traces go (GRV-126): one client per instance, made on
+ * the first turn that needs it, or none without a key.
+ */
+function assistantTraces(): FlushableTraceSink | undefined {
+  const key = posthogKey.value().trim();
+  if (!key) return undefined;
+  if (posthogTraces?.key !== key) {
+    posthogTraces = {
+      key,
+      sink: createPostHogTraces({
+        client: createPostHogTraceClient(
+          key,
+          posthogHost.value().trim() || POSTHOG_US_HOST,
+        ),
+        // A code only: a PostHog error's message could quote what was sent.
+        onFailure: (failure) => logger.warn("assistant trace not sent", { failure }),
+      }),
+    };
+  }
+  return posthogTraces.sink;
+}
+
+/**
  * The assistant's gateway (#69, ADR 0006): one authenticated turn, its reply
  * streamed back as it is written. A callable, so Firebase verifies the
  * caller's ID token before the handler runs; the gateway then refuses a
  * guest, and holds every account to its request quota and the organisation
  * to its daily spend ceiling, with a kill switch in `assistantControl/settings`. Nothing it logs carries the conversation, the project or the
- * account (`src/assistant/telemetry.ts`).
+ * account (`src/assistant/telemetry.ts`). Its PostHog traces carry the
+ * conversation only for a kept account that allows product analytics
+ * (GRV-126, `src/assistant/traces.ts`).
  */
 export const assistantTurn = onCall(
   {
@@ -422,6 +477,7 @@ export const assistantTurn = onCall(
     guards: firestoreGuardStores(getFirestore()),
     transcripts: firestoreTranscriptStore(getFirestore()),
     findVideo: videoFinder(),
+    traces: assistantTraces(),
   })),
 );
 

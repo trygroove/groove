@@ -236,6 +236,37 @@ export const assistantMessageSchema = z.strictObject({
 export type AssistantMessage = z.infer<typeof assistantMessageSchema>;
 
 /**
+ * What the browser says about analytics with each turn (GRV-126): whether the
+ * producer allows product analytics (`src/analytics/consent.ts`), and
+ * PostHog's current session, so the turn's trace links to the session's
+ * events and replay. A missing `productAnalytics` means declined: the
+ * gateway sends no trace at all.
+ */
+export const assistantTurnAnalyticsSchema = z.strictObject({
+  productAnalytics: z.boolean().optional(),
+  sessionId: z
+    .string()
+    .regex(/^[A-Za-z0-9-]{1,128}$/)
+    .optional(),
+});
+export type AssistantTurnAnalytics = z.infer<typeof assistantTurnAnalyticsSchema>;
+
+/**
+ * The analytics a turn carries: the consent as it stands, and the session
+ * only when it is allowed and has the shape the gateway accepts, so a vendor
+ * ID of some other shape is left out rather than failing the turn.
+ */
+export function turnAnalytics(
+  productAnalytics: boolean,
+  sessionId: string | null,
+): AssistantTurnAnalytics {
+  const session = assistantTurnAnalyticsSchema.shape.sessionId.safeParse(sessionId);
+  return productAnalytics && sessionId && session.success
+    ? { productAnalytics, sessionId }
+    : { productAnalytics };
+}
+
+/**
  * One turn: the conversation so far, ending in the user's new message, the
  * project context it is about, and the revision of the project that context
  * was read from (PRD AI-06). A proposal the turn returns carries that
@@ -268,6 +299,12 @@ export const assistantTurnRequestSchema = z.strictObject({
    * answered the same and simply never kept.
    */
   session: assistantTurnSessionSchema.optional(),
+  /**
+   * What the gateway's trace of this turn may do (GRV-126, `traces.ts`).
+   * Never sent to the provider. Optional, so a turn without one is answered
+   * the same and traced not at all.
+   */
+  analytics: assistantTurnAnalyticsSchema.optional(),
 });
 export type AssistantTurnRequest = z.infer<typeof assistantTurnRequestSchema>;
 
