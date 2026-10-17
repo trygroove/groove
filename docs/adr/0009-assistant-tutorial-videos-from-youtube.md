@@ -52,6 +52,8 @@ Recommending a video needs nothing beyond what [ADR 0007](./0007-assistant-off-p
 
 Because there is no curated list, the video ID comes from the model, and a model can name a video that does not exist, has been removed, or does not allow embedding. GRV-16 checks a recommended video is real and embeddable (for example through YouTube's oEmbed endpoint, which needs no API key) before it renders a card, and drops a recommendation that fails the check rather than showing a broken one. That check is made by Groove, not on the user's behalf from their browser, so it does not break decision 3.
 
+**Amended 2026-10-13 (GRV-16 QA): the model names a search, not an ID.** In production the model almost never recalled an ID that exists, so every recommendation was dropped and no card ever showed. The model now gives a short search for the technique, and `assistantTurn` runs it through the YouTube Data API's search (embeddable videos only, strict SafeSearch) and shows the first result oEmbed still vouches for, with YouTube's title and channel. Both requests are Groove's, from the server, so decision 3 holds: the user's browser sends YouTube nothing until Play. What reaches Google is the model's search words and Groove's API key; the prompt keeps project names and the producer's own words out of the search. The search needs the `youtube.googleapis.com` API and a key in Secret Manager, and its free quota is about 100 searches a day; past it, videos are dropped as unchecked until the quota resets.
+
 ### 6. The disclosure says so, where the video is
 
 The video card or player carries a short line saying the video plays from YouTube and that YouTube's terms and privacy policy apply when it does. Wording is GRV-16's to settle; what may not change is that it names YouTube and appears before or at the moment the user chooses to play.
@@ -86,4 +88,4 @@ The video card or player carries a short line saying the video plays from YouTub
 - The cohort reports recommendations that are unsafe, low quality or off-topic often enough that YouTube's policies and the model's judgement are not a sufficient filter: reintroduce curation, starting from the channels the cohort rated well.
 - Public launch, where a larger and uninvited audience changes what "we delegate to YouTube" costs.
 - A second provider is wanted, or YouTube's embedding terms change.
-- The assistant gains a tool that searches YouTube, which would replace model-named IDs and may change decision 5.
+- The day's search quota is regularly used up (the turn log's `videosUnchecked` climbing late in the day): ask Google for more, or cache searches.

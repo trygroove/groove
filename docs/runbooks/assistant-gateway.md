@@ -21,14 +21,23 @@ provider's API key or talks to the provider directly.
   how many recommended videos were shown, dropped, and dropped unchecked.
   Never the conversation,
   the project, the account or the provider's error text.
-- A tutorial video the model recommends (GRV-16, ADR 0009) is checked from
-  `assistantTurn` against YouTube's public oEmbed endpoint
-  (`https://www.youtube.com/oembed`, no key, plain outbound HTTPS, no Google
-  Cloud API). A video oEmbed answers with a 4xx for (missing, private, not
-  embeddable) is dropped; while YouTube is unreachable every video is dropped
-  unchecked, and `videosUnchecked` climbing is the sign. `videosDropped`
-  climbing with `videosUnchecked` at 0 means the model is naming IDs that do
-  not exist. A reply whose video was dropped ends with a line saying so.
+- A tutorial video the model recommends (GRV-16, ADR 0009) is found from
+  `assistantTurn`: the model writes a short search for the technique, the
+  gateway runs it through the YouTube Data API's search (embeddable videos,
+  strict SafeSearch) with the key in the Secret Manager secret
+  **`YOUTUBE_API_KEY`** (`ASSISTANT_YOUTUBE_KEY_SECRET` in
+  `src/assistant/config.ts`), and checks the top result against YouTube's
+  public oEmbed endpoint (`https://www.youtube.com/oembed`) before showing it.
+  A search that finds nothing oEmbed vouches for is dropped (`videosDropped`);
+  one that cannot be made (YouTube unreachable, or the day's quota used up)
+  is dropped unchecked, and `videosUnchecked` climbing is the sign. A reply
+  whose video was dropped ends with a line saying so. With the secret set
+  to a blank line the model is offered no video at all.
+- **The YouTube quota.** A search costs 100 of the API's 10,000 free daily
+  units, so the project gets about **100 video searches a day**, shared by
+  every account; the quota resets at midnight Pacific time. Past it, videos
+  are dropped unchecked until the reset. To raise it, request more quota for
+  the YouTube Data API v3 in the Google Cloud console.
 
 ## Limits and the kill switch
 
@@ -80,10 +89,28 @@ gateway, or the next `main` deploy fails:
    (`roles/secretmanager.admin`) in the project's IAM page. Without it the
    deploy fails with a permission error on the secret.
 
-3. **Merge.** The `deploy` job deploys `assistantTurn` with the rest.
+3. **Create the YouTube key (GRV-16).** Enable the YouTube Data API:
+
+   ```bash
+   gcloud services enable youtube.googleapis.com --project <project-id>
+   ```
+
+   In the Google Cloud console, **APIs & Services → Credentials → Create
+   credentials → API key**, and restrict the key to the YouTube Data API v3.
+   Then store it as the second secret, pasting the key when prompted:
+
+   ```bash
+   firebase functions:secrets:set YOUTUBE_API_KEY --project <project-id>
+   ```
+
+   `assistantTurn` binds this secret too, so it has to exist before the
+   deploy that adds it, or that deploy fails.
+
+4. **Merge.** The `deploy` job deploys `assistantTurn` with the rest.
 
 To check it is live: Cloud Functions in the Google Cloud console lists
-`assistantTurn` in `us-east1`, with `ANTHROPIC_API_KEY` under its secrets.
+`assistantTurn` in `us-east1`, with `ANTHROPIC_API_KEY` and `YOUTUBE_API_KEY`
+under its secrets.
 
 ## Why a proposal was rejected
 
@@ -126,8 +153,9 @@ one that ends in a proposal (`[propose]`), or one that ends in a question for
 you with options (`[ask]`, `[ask-multi]` for several picks, or `[ask-rich]`
 for options that point at the first track and bars 1-2, can be heard, and
 answer themselves when you set the tempo to 100 BPM or below; GRV-42), or one
-that recommends a tutorial video (`[video]`, GRV-16: one real video, which the
-emulator vouches for without asking YouTube, and one it drops). Two
+that recommends a tutorial video (`[video]`, GRV-16: one search that finds a
+real video, which the emulator answers without asking YouTube, and one that
+finds nothing and is dropped). Two
 scripts serve the core flows: "Loosen the beat" proposes swing and a quieter
 track (CF-027), and asking for something dusty or dustier recommends kicks from
 the library the turn carries (CF-034). The browser suite drives the real

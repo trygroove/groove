@@ -35,9 +35,9 @@
  *   the project's first track and bars 1-2, let it be heard, and answer
  *   themselves when the tempo goes to 100 BPM or below
  *   ({@link emulatorRichAsk}).
- * - `[video]` (GRV-16): a short reply that recommends {@link EMULATOR_VIDEO},
- *   and a second video {@link emulatorVideoVerifier} refuses, so the turn shows
- *   one card and drops the other.
+ * - `[video]` (GRV-16): a short reply that searches for {@link EMULATOR_VIDEO},
+ *   and for a second video {@link emulatorVideoFinder} finds nothing for, so
+ *   the turn shows one card and drops the other.
  * - `[remember]`: a short reply that ends in `remember_producer` (GRV-25),
  *   proposing {@link EMULATOR_REMEMBER}'s note. The gateway only lets it
  *   through on a turn that carries the producer's memory.
@@ -56,7 +56,7 @@ import { ProviderFailure } from "./provider";
 import { continuesTurn, type ProviderMessagesRequest } from "./providerRequest";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
 import { EXPLAIN_TOOL_NAME, toolNameFor } from "./tools";
-import { RECOMMEND_VIDEO_TOOL, type VideoFacts, type VideoVerifier } from "./video";
+import { type FoundVideo, RECOMMEND_VIDEO_TOOL, type VideoFinder } from "./video";
 
 /** The reply every ordinary turn streams, piece by piece. */
 export const EMULATOR_REPLY_CHUNKS = [
@@ -414,45 +414,48 @@ function askReply(multiSelect: boolean): Step[] {
 /**
  * The video `[video]` recommends: a real, embeddable YouTube tutorial, so a
  * screenshot of it playing shows the real player. Its facts are what YouTube's
- * oEmbed reported for it, which {@link emulatorVideoVerifier} answers without
+ * oEmbed reported for it, which {@link emulatorVideoFinder} answers without
  * asking YouTube.
  */
 export const EMULATOR_VIDEO = {
+  query: "acid bassline 303 tutorial",
   videoId: "tH9LHIyJ0c8",
   title: "How to Make an Acid Bassline with the TB-303 by Roland Cloud",
   channel: "pointblank music school",
   reason: "Shows how resonance and envelope mod make a 303 line squelch.",
 } as const;
 
-/** The second video `[video]` names, which does not exist and is dropped. */
-export const EMULATOR_MISSING_VIDEO_ID = "zzzzzzzzzzz";
+/** The second search `[video]` makes, which finds nothing and is dropped. */
+export const EMULATOR_MISSING_VIDEO_QUERY = "a video that is not there";
 
 /**
- * The emulator's and the mock backend's video check (GRV-16): it vouches for
- * {@link EMULATOR_VIDEO} alone and refuses every other ID, with no request to
- * YouTube, so the browser suite never depends on YouTube being up.
+ * The emulator's and the mock backend's video search (GRV-16): it finds
+ * {@link EMULATOR_VIDEO} for its query alone and nothing for any other, with
+ * no request to YouTube, so the browser suite never depends on YouTube being
+ * up.
  */
-export const emulatorVideoVerifier: VideoVerifier = async (videoId) =>
-  videoId === EMULATOR_VIDEO.videoId
+export const emulatorVideoFinder: VideoFinder = async (query) =>
+  query === EMULATOR_VIDEO.query
     ? ({
+        videoId: EMULATOR_VIDEO.videoId,
         title: EMULATOR_VIDEO.title,
         channel: EMULATOR_VIDEO.channel,
-      } satisfies VideoFacts)
+      } satisfies FoundVideo)
     : "missing";
 
-/** `[video]`'s reply: a sentence, then two video recommendations. */
+/** `[video]`'s reply: a sentence, then two video searches. */
 function videoReply(): Step[] {
   return proposalReply(
     "It's the resonance and the envelope sweeping the cutoff together: push the resonance up, then let a short filter envelope open and close the cutoff on every note.",
     [
       {
         name: RECOMMEND_VIDEO_TOOL,
-        input: { videoId: EMULATOR_VIDEO.videoId, reason: EMULATOR_VIDEO.reason },
+        input: { query: EMULATOR_VIDEO.query, reason: EMULATOR_VIDEO.reason },
       },
       {
         name: RECOMMEND_VIDEO_TOOL,
         input: {
-          videoId: EMULATOR_MISSING_VIDEO_ID,
+          query: EMULATOR_MISSING_VIDEO_QUERY,
           reason: "A video that is not there.",
         },
       },

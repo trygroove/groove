@@ -12,11 +12,11 @@ import {
   createEmulatorAssistantProvider,
   DUSTIER_ROLE,
   EMULATOR_ASK,
-  EMULATOR_MISSING_VIDEO_ID,
+  EMULATOR_MISSING_VIDEO_QUERY,
   EMULATOR_REMEMBER,
   EMULATOR_REPLY_CHUNKS,
   EMULATOR_VIDEO,
-  emulatorVideoVerifier,
+  emulatorVideoFinder,
   LOOSEN_EXPLANATION,
   LOOSEN_SWING,
   LOOSEN_VOLUME_DROP_DB,
@@ -308,21 +308,22 @@ describe("the emulator's assistant provider", () => {
     expect(reply.text).toMatch(/can't find/);
   });
 
-  it("answers [video] with the one video its verifier vouches for (GRV-16)", async () => {
+  it("answers [video] with the one video its search finds (GRV-16)", async () => {
     const reply = await turn(
-      { ...gateway(), verifyVideo: emulatorVideoVerifier },
+      { ...gateway(), findVideo: emulatorVideoFinder },
       "How do I get that acid squelch? [video]",
     ).result;
     expect(reply.text.length).toBeGreaterThan(0);
     expect(reply.proposal).toBeNull();
-    expect(reply.videos).toEqual([EMULATOR_VIDEO]);
+    const { query: _query, ...video } = EMULATOR_VIDEO;
+    expect(reply.videos).toEqual([video]);
     expect(
-      await emulatorVideoVerifier(
-        EMULATOR_MISSING_VIDEO_ID,
+      await emulatorVideoFinder(
+        EMULATOR_MISSING_VIDEO_QUERY,
         new AbortController().signal,
       ),
     ).toBe("missing");
-    // The video it refused is said to be left out, not left implied.
+    // The search that found nothing is said to be left out, not left implied.
     expect(reply.text).toMatch(/left it out\.$/);
   });
 

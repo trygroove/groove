@@ -92,6 +92,13 @@ export const SMALLEST_CONTEXT_WINDOW_TOKENS = Math.min(
  */
 export const ASSISTANT_API_KEY_SECRET = "ANTHROPIC_API_KEY";
 
+/**
+ * The name of the Secret Manager secret that holds the YouTube Data API key
+ * the gateway searches for tutorial videos with (GRV-16). Like the provider's
+ * key it is bound to the Cloud Function only.
+ */
+export const ASSISTANT_YOUTUBE_KEY_SECRET = "YOUTUBE_API_KEY";
+
 /** The name the browser calls the gateway by (a callable Cloud Function). */
 export const ASSISTANT_CALLABLE_NAME = "assistantTurn";
 

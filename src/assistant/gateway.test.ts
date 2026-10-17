@@ -55,7 +55,7 @@ import {
   EXPLAIN_TOOL_NAME,
   toolNameFor,
 } from "./tools";
-import { RECOMMEND_VIDEO_TOOL, type VideoVerifier } from "./video";
+import { RECOMMEND_VIDEO_TOOL, type VideoFinder } from "./video";
 
 function call(command: RawCommandInput) {
   return { name: toolNameFor(command.type), input: command.payload };
@@ -307,16 +307,19 @@ describe("runAssistantTurn: asking the producer (GRV-42)", () => {
 });
 
 describe("runAssistantTurn: tutorial videos (GRV-16, ADR 0009)", () => {
-  const real = "tH9LHIyJ0c8";
-  const missing = "zzzzzzzzzzz";
-  const videoCall = (videoId: string, reason = "Shows the squelch.") => ({
+  const real = "acid bassline tutorial";
+  const missing = "a video that is not there";
+  const realId = "tH9LHIyJ0c8";
+  const videoCall = (query: string, reason = "Shows the squelch.") => ({
     name: RECOMMEND_VIDEO_TOOL,
-    input: { videoId, reason },
+    input: { query, reason },
   });
-  const verifier: VideoVerifier = async (videoId) =>
-    videoId === real ? { title: "Acid Basslines", channel: "Point Blank" } : "missing";
+  const verifier: VideoFinder = async (query) =>
+    query === real
+      ? { videoId: realId, title: "Acid Basslines", channel: "Point Blank" }
+      : "missing";
 
-  it("offers recommend_video only when the gateway can check a video", async () => {
+  it("offers recommend_video only when the gateway can search YouTube", async () => {
     const without = harness([replyEvents(["ok"])]);
     await run(without);
     expect(without.provider.requests[0].tools.map((tool) => tool.name)).not.toContain(
@@ -324,30 +327,30 @@ describe("runAssistantTurn: tutorial videos (GRV-16, ADR 0009)", () => {
     );
 
     const h = harness([replyEvents(["ok"])]);
-    h.deps = { ...h.deps, verifyVideo: verifier };
+    h.deps = { ...h.deps, findVideo: verifier };
     await run(h);
     expect(h.provider.requests[0].tools.map((tool) => tool.name)).toContain(
       RECOMMEND_VIDEO_TOOL,
     );
   });
 
-  it("returns the videos YouTube vouches for, with its title and channel, and drops the rest", async () => {
+  it("returns the videos its searches find, with their title and channel, and drops the rest", async () => {
     const h = harness([
       toolUseEvents("Watch this.", [videoCall(real), videoCall(missing)]),
     ]);
     const checked: string[] = [];
     h.deps = {
       ...h.deps,
-      verifyVideo: async (videoId, signal) => {
-        checked.push(videoId);
-        return verifier(videoId, signal);
+      findVideo: async (query, signal) => {
+        checked.push(query);
+        return verifier(query, signal);
       },
     };
     const result = await run(h);
     expect(checked.sort()).toEqual([real, missing].sort());
     expect(result.videos).toEqual([
       {
-        videoId: real,
+        videoId: realId,
         title: "Acid Basslines",
         channel: "Point Blank",
         reason: "Shows the squelch.",
@@ -367,7 +370,7 @@ describe("runAssistantTurn: tutorial videos (GRV-16, ADR 0009)", () => {
 
   it("says there is no video when a reply's only video is dropped, rather than ending on nothing", async () => {
     const h = harness([toolUseEvents("", [videoCall(missing)])]);
-    h.deps = { ...h.deps, verifyVideo: verifier };
+    h.deps = { ...h.deps, findVideo: verifier };
     const result = await run(h);
     expect(result.videos).toEqual([]);
     expect(result.text).toMatch(/^I couldn't find a video on YouTube/);
@@ -377,17 +380,17 @@ describe("runAssistantTurn: tutorial videos (GRV-16, ADR 0009)", () => {
 
   it("adds nothing to a reply whose video is shown", async () => {
     const h = harness([toolUseEvents("The squelch is resonance.", [videoCall(real)])]);
-    h.deps = { ...h.deps, verifyVideo: verifier };
+    h.deps = { ...h.deps, findVideo: verifier };
     const result = await run(h);
     expect(result.text).toBe("The squelch is resonance.");
     expect(result.videos).toHaveLength(1);
   });
 
-  it("drops every video when the check is unavailable, and never shows one unchecked", async () => {
+  it("drops every video when the search is unavailable, and never shows one unchecked", async () => {
     const h = harness([toolUseEvents("Watch this.", [videoCall(real)])]);
     h.deps = {
       ...h.deps,
-      verifyVideo: async () => {
+      findVideo: async () => {
         throw new Error("YouTube is down");
       },
     };
@@ -401,30 +404,30 @@ describe("runAssistantTurn: tutorial videos (GRV-16, ADR 0009)", () => {
     });
   });
 
-  it("drops a video call made without a verifier, and a malformed ID unchecked", async () => {
+  it("drops a video call made without a finder, and a malformed one unsearched", async () => {
     const h = harness([toolUseEvents("Watch this.", [videoCall(real)])]);
     expect((await run(h)).videos).toEqual([]);
 
     const checked: string[] = [];
     const g = harness([
-      toolUseEvents("Watch this.", [videoCall("../../evil"), videoCall(real)]),
+      toolUseEvents("Watch this.", [videoCall("x".repeat(500)), videoCall(real)]),
     ]);
     g.deps = {
       ...g.deps,
-      verifyVideo: async (videoId, signal) => {
-        checked.push(videoId);
-        return verifier(videoId, signal);
+      findVideo: async (query, signal) => {
+        checked.push(query);
+        return verifier(query, signal);
       },
     };
     const result = await run(g);
     expect(checked).toEqual([real]);
-    expect(result.videos.map((video) => video.videoId)).toEqual([real]);
+    expect(result.videos.map((video) => video.videoId)).toEqual([realId]);
   });
 
   it("keeps the changes a turn proposes beside its video", async () => {
     const tempo = call(setParameter({ scope: "song", parameterId: "song.tempo" }, 120));
     const h = harness([toolUseEvents("Both.", [tempo, videoCall(real)])]);
-    h.deps = { ...h.deps, verifyVideo: verifier };
+    h.deps = { ...h.deps, findVideo: verifier };
     const result = await run(h);
     expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([tempo.name]);
     expect(result.videos).toHaveLength(1);
