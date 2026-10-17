@@ -155,7 +155,21 @@ export interface BaselineLabel {
   readonly path: string;
   readonly generatedAt: string;
   readonly model: string;
+  /**
+   * The thinking effort the baseline ran at (GRV-131), or undefined when its
+   * report did not record one.
+   */
+  readonly thinkingEffort?: string;
   readonly promptVersion: string;
+}
+
+/**
+ * The effort part of a run's label (GRV-131), so a comparison between two
+ * efforts says which ran at which. A baseline saved before efforts were
+ * recorded says so rather than guessing.
+ */
+export function effortLabel(effort: string | undefined): string {
+  return effort === undefined ? "effort not recorded" : `effort ${effort}`;
 }
 
 /** The rows grouped by set, in the order they come; one group with no set. */
@@ -187,7 +201,7 @@ export function comparisonLines(
   return [
     "## Against the baseline",
     "",
-    `Baseline: \`${baseline.path}\` (run ${baseline.generatedAt}, model \`${baseline.model}\`, prompt \`${baseline.promptVersion}\`).`,
+    `Baseline: \`${baseline.path}\` (run ${baseline.generatedAt}, model \`${baseline.model}\`, ${effortLabel(baseline.thinkingEffort)}, prompt \`${baseline.promptVersion}\`).`,
     "",
     ...bySet(comparisons).flatMap(({ set, rows }) =>
       set === undefined ? table(rows) : [`### ${setLabel(set)}`, "", ...table(rows)],

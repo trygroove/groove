@@ -291,6 +291,18 @@ describe("compareScorecards", () => {
       model: "m",
       promptVersion: "p",
     });
+    expect(lines).toContain(
+      "Baseline: `baseline.json` (run then, model `m`, effort not recorded, prompt `p`).",
+    );
+    expect(
+      comparisonLines(compared, {
+        path: "b.json",
+        generatedAt: "then",
+        model: "m",
+        thinkingEffort: "low",
+        promptVersion: "p",
+      }),
+    ).toContain("Baseline: `b.json` (run then, model `m`, effort low, prompt `p`).");
     expect(lines).toContain("### Musical capability");
     expect(lines).toContain("### Basic production actions");
     expect(comparisonConsoleLines(compared)).toContain("  Basic production actions:");

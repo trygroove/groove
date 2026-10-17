@@ -100,6 +100,12 @@ describe("parseEvalArgs", () => {
     );
   });
 
+  it("refuses --effort on a replay, which keeps the effort the saved run had", () => {
+    expect(() => options(["--replay", "r.json", "--effort", "low"])).toThrow(
+      "--replay re-scores a saved run at the effort it ran at: drop --effort",
+    );
+  });
+
   it("runs the configured model at the effort asked for, its ID and price unchanged", () => {
     const sonnet = ASSISTANT_MODELS["claude-sonnet-5"];
     expect(evalModel("claude-sonnet-5", null)).toBe(sonnet);
@@ -205,6 +211,11 @@ describe("loadBaseline", () => {
       model: report.model,
       promptVersion: report.promptVersion,
     });
+  });
+
+  it("labels the baseline with the effort it ran at, when its report recorded one", () => {
+    const saved = { ...JSON.parse(JSON.stringify(report)), thinkingEffort: "low" };
+    expect(loadBaseline(saved, "r.json").label.thinkingEffort).toBe("low");
   });
 
   it("takes a summary.json's scorecard as it is", () => {

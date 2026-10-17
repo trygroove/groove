@@ -79,6 +79,7 @@ import {
 } from "../src/assistant/evals/scorecard";
 import {
   comparisonConsoleLines,
+  effortLabel,
   formatRate,
   heavySetConsoleLines,
 } from "../src/assistant/evals/scorecardMarkdown";
@@ -134,7 +135,7 @@ function printSummary(
   const { errored } = report.summary;
   const { headline, secondary } = report.scorecard;
   console.log(
-    `\nModel ${report.model}, prompt ${report.promptVersion}, ${report.records.length} turns, ${errored.total} errored`,
+    `\nModel ${report.model}${report.thinkingEffort ? `, ${effortLabel(report.thinkingEffort)}` : ""}, prompt ${report.promptVersion}, ${report.records.length} turns, ${errored.total} errored`,
   );
   console.log(
     `\nHeadline: applies ${formatRate(headline.applies)}, overall ${formatRate(headline.overall)}, expected outcome ${formatRate(headline.expectMatch)}`,
@@ -151,7 +152,7 @@ function printSummary(
   }
   if (baseline) {
     console.log(
-      `\nAgainst ${baseline.label.path} (${baseline.label.model}, prompt ${baseline.label.promptVersion}):`,
+      `\nAgainst ${baseline.label.path} (${baseline.label.model}, ${effortLabel(baseline.label.thinkingEffort)}, prompt ${baseline.label.promptVersion}):`,
     );
     for (const line of comparisonConsoleLines(baseline.comparisons)) console.log(line);
     if (baseline.heavy) {

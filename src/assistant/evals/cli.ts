@@ -133,6 +133,11 @@ export function parseEvalArgs(
     );
   }
   if (effort !== null) {
+    if (replay !== null) {
+      throw new EvalUsageError(
+        "--replay re-scores a saved run at the effort it ran at: drop --effort",
+      );
+    }
     if (!(THINKING_EFFORTS as readonly string[]).includes(effort)) {
       throw new EvalUsageError(
         `Unknown effort "${effort}". Efforts: ${THINKING_EFFORTS.join(", ")}`,
@@ -228,6 +233,7 @@ export interface LoadedBaseline {
 export function loadBaseline(saved: unknown, path: string): LoadedBaseline {
   const report = saved as Partial<ScorecardSource> & {
     generatedAt?: string;
+    thinkingEffort?: string;
     promptVersion?: string;
     scorecard?: Scorecard;
   };
@@ -243,6 +249,9 @@ export function loadBaseline(saved: unknown, path: string): LoadedBaseline {
     path,
     generatedAt: report.generatedAt ?? "unknown",
     model: report.model,
+    ...(typeof report.thinkingEffort === "string"
+      ? { thinkingEffort: report.thinkingEffort }
+      : {}),
     promptVersion: report.promptVersion ?? "unknown",
   };
   if (Array.isArray(report.records)) {
