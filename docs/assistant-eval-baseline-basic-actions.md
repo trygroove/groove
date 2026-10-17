@@ -5,10 +5,10 @@
 ## How to record it
 
 1. Run the set 3 times per case on the production model, against the live model:
-   - locally, with `ANTHROPIC_API_KEY` set: `bun run eval:assistant -- --set basicActions --out tmp/assistant-evals/basic-actions`;
-   - or from the Actions tab: **Assistant evals** (`.github/workflows/eval-assistant.yml`), with the set's case IDs (`bun run eval:assistant -- --help` lists them; they all start `basic-`) in the cases box. Its artifact carries the summary files.
+   - locally, with `ANTHROPIC_API_KEY` set: `bun run assistant:eval -- --set basicActions --out tmp/assistant-evals/basic-actions`;
+   - or from the Actions tab: **Assistant evals** (`.github/workflows/eval-assistant.yml`), with the set's case IDs (`bun run assistant:eval -- --help` lists them; they all start `basic-`) in the cases box. Its artifact carries the summary files.
 2. Commit the run's `summary.md` over this page, and its `summary.json` beside it as `docs/assistant-eval-baseline-basic-actions.json`. Both name the run's date, model and prompt version.
-3. Compare a later change against it with `bun run eval:assistant -- --set basicActions --baseline docs/assistant-eval-baseline-basic-actions.json`.
+3. Compare a later change against it with `bun run assistant:eval -- --set basicActions --baseline docs/assistant-eval-baseline-basic-actions.json`.
 
 ## What to expect on the first run
 

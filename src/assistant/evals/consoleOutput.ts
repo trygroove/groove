@@ -1,5 +1,5 @@
 /**
- * What `bun run eval:assistant` prints while it runs and when it ends: one
+ * What `bun run assistant:eval` prints while it runs and when it ends: one
  * line per run naming the calls it proposed, an indented line per check that
  * failed with that check's own reason, and a digest that groups every failure
  * by check and by reason, so a cause shared by many runs reads as one line.

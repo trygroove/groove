@@ -12,7 +12,7 @@
  * Every transition is the app's:
  *
  * - `ask` is one turn through the gateway's own turn ({@link runCaseTurn},
- *   what `eval:assistant` runs), with the production prompt, tools and model,
+ *   what `assistant:eval` runs), with the production prompt, tools and model,
  *   resending the history as the panel builds it ({@link historyOf}). A reply
  *   that only proposed is dropped from what is resent, as the panel drops it.
  * - A proposal is validated by the executor (GRV-4) as the card's controller
