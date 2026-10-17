@@ -71,6 +71,15 @@ const GATED = [
   /^firebase\.json$/,
   /^src\/domain\//,
   /^src\/persistence\//,
+  // Who may sign in, and the admin checks the callables rely on.
+  /^src\/access\//,
+  // The deployed surface: triggers, secrets, the sign-in gate, limits. The
+  // handlers and stores beside it are glue over src/ and merge on their own.
+  /^functions\/src\/index\.ts$/,
+  // The only code that holds the Anthropic key, so it also controls spend.
+  /^functions\/src\/anthropicProvider\.ts$/,
+  /^functions\/package\.json$/,
+  /^functions\/\.env/,
   /^package\.json$/,
   /^bun\.lockb?$/,
   /^release\.config\.mjs$/,
