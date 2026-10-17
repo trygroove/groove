@@ -2,6 +2,7 @@
 
 - Run: 2026-10-17T19:48:14.049Z
 - Model: `claude-sonnet-5`
+- Thinking effort: medium
 - Prompt version: `2026-10-16.2`
 - Tool set version: 8
 - Runs per case: 3; cases: 57; turns: 171; errored turns: 0

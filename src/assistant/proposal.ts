@@ -48,6 +48,9 @@ import {
 /** The most commands one proposal may carry. */
 export const MAX_PROPOSAL_COMMANDS = 100;
 
+/** The longest reason the gateway may give for a call it could not write out. */
+const MAX_CALL_REFUSAL_LENGTH = 1_000;
+
 /** The longest intent a proposal may state. */
 export const MAX_PROPOSAL_INTENT_LENGTH = 1_000;
 
@@ -58,6 +61,11 @@ export const MAX_PROPOSAL_INTENT_LENGTH = 1_000;
 const toolCallSchema = z.object({
   name: z.string().min(1).max(200),
   input: z.unknown(),
+  /**
+   * Why the gateway could not write the call out for the browser, when it
+   * had no step left to tell the model (`AssistantToolCall.refusal`, GRV-131).
+   */
+  refusal: z.string().max(MAX_CALL_REFUSAL_LENGTH).optional(),
 });
 
 const proposalInputSchema = z.strictObject({
@@ -283,6 +291,10 @@ export function validateProposal(project: Project, input: unknown): ProposalVali
   const capabilities: AssistantCapability[] = [];
   const issues: ProposalIssue[] = [];
   calls.forEach((call, callIndex) => {
+    if (call.refusal !== undefined) {
+      issues.push({ code: "invalid_payload", callIndex, message: call.refusal });
+      return;
+    }
     const resolution = resolveToolCall(call.name, call.input);
     if (!resolution.ok) {
       issues.push({ code: resolution.code, callIndex, message: resolution.message });

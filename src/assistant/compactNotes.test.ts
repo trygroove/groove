@@ -179,6 +179,8 @@ describe("compactNoteSchema", () => {
     expect(compactNoteSchema.safeParse([0, 36, 192, 0.8, 0.5, 1]).success).toBe(false);
     expect(z.toJSONSchema(compactNoteSchema, { io: "input" })).toMatchObject({
       items: { not: {} },
+      minItems: 4,
+      maxItems: 5,
     });
   });
 });
