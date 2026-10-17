@@ -1,0 +1,14 @@
+{
+  "id": "g126",
+  "title": "Cue disclosure names PostHog",
+  "steps": [
+    {
+      "file": "01-an-account-that-answered-the-old-notice-.png",
+      "caption": "An account that answered the old notice sees it again"
+    },
+    {
+      "file": "02-the-setting-with-its-new-scope-line-and-.png",
+      "caption": "The setting, with its new scope line and the disclosure under it"
+    }
+  ]
+}
