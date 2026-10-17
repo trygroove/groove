@@ -10,18 +10,39 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 48px 20px 32px;
+  /* The top clears the fixed header (about 150px tall). */
+  padding: 168px 20px 32px;
   background: var(--color-background);
   color: var(--color-text);
 }
 
+/* Fixed: the conversation scrolls under it and fades out into the page's
+   black over FADE_HEIGHT (150px), so the mark and name never move. */
 .welcome-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  margin-bottom: 28px;
+  padding: 36px 20px 0;
+  background: var(--color-background);
   text-align: center;
+}
+
+.welcome-header::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 150px;
+  background: linear-gradient(to bottom, var(--color-background), transparent);
+  pointer-events: none;
 }
 
 .welcome-name {
@@ -52,6 +73,9 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* Room below the last card, so a new question can be scrolled to the
+     middle of the screen rather than stopping at the page's end. */
+  padding-bottom: 50vh;
 }
 
 /* The panel's log, but grown to the page rather than scrolled in a box. */

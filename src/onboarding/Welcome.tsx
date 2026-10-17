@@ -21,6 +21,7 @@ import type { ProfileRepository } from "../persistence/profileRepository";
 import type { ProjectRepository } from "../persistence/projectRepository";
 import { getProfileRepository } from "../profileRepositoryClient";
 import { getProjectRepository } from "../projectRepositoryClient";
+import { scrollBehavior } from "../shared/motion";
 import { useShortcuts } from "../shortcuts/useShortcuts";
 import CueMark from "./CueMark";
 import { MemoryCard } from "./MemoryCard";
@@ -113,6 +114,18 @@ export default function Welcome(props: WelcomeProps): JSX.Element {
     contexts: () => (askTextHasFocus() ? ["composer"] : []),
   });
 
+  // Each new question scrolls to the middle of the screen, the history
+  // moving up under the fixed header. Keyed on the question's reply, so
+  // typing or choosing within one question never scrolls.
+  let askSlot: HTMLDivElement | undefined;
+  createEffect(
+    () => onboarding.pendingAsk()?.replyId,
+    (replyId) => {
+      if (replyId === undefined) return;
+      askSlot?.scrollIntoView?.({ block: "center", behavior: scrollBehavior() });
+    },
+  );
+
   async function skip(): Promise<void> {
     await onboarding.skipAll();
     navigate("/projects");
@@ -166,22 +179,24 @@ export default function Welcome(props: WelcomeProps): JSX.Element {
             />
           </Show>
         </div>
-        <Show when={onboarding.pendingAsk()}>
-          {(pending) => (
-            <AssistantAskCard
-              pending={pending()}
-              draft={draft}
-              streaming={onboarding.streaming()}
-              bindText={(element) => {
-                askText = element;
-              }}
-              takeFocus={() => true}
-              textLabel={onboarding.question()?.textLabel}
-              skipLabel="Skip this question"
-              keyHint={false}
-            />
-          )}
-        </Show>
+        <div class="welcome-ask-slot" ref={askSlot}>
+          <Show when={onboarding.pendingAsk()}>
+            {(pending) => (
+              <AssistantAskCard
+                pending={pending()}
+                draft={draft}
+                streaming={onboarding.streaming()}
+                bindText={(element) => {
+                  askText = element;
+                }}
+                takeFocus={() => true}
+                textLabel={onboarding.question()?.textLabel}
+                skipLabel="Skip this question"
+                keyHint={false}
+              />
+            )}
+          </Show>
+        </div>
         <div class="welcome-actions">
           <Switch>
             {/* A failed save still lets them in: the card offers the retry,
