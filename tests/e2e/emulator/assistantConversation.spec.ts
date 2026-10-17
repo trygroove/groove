@@ -1,3 +1,5 @@
+import type { Page } from "@playwright/test";
+import { walkthrough } from "../support/walkthrough";
 import {
   answerDisclosure,
   assistantButton,
@@ -19,6 +21,9 @@ import { expect, test } from "./support/test";
  * `[propose]` ends in a proposal, and `[ask]` in a question for the producer
  * (GRV-42).
  */
+
+const step = (page: Page) =>
+  walkthrough(page, { id: "GRV-115", title: "The composer beside a question card" });
 
 const REPLY =
   "Here is one idea. Try a small change first, then listen to it in the loop.";
@@ -119,6 +124,41 @@ test.describe("a question the assistant asks", () => {
     await expect(conversation(page)).toContainText("Asked: Where should the drop land?");
     await expect(conversation(page).getByText(REPLY)).toHaveCount(1);
     await expect(page).toHaveURL(/\/projects\/[^/]+$/);
+  });
+
+  test("leaves room for the composer to grow to ten lines on screen (GRV-115)", async ({
+    page,
+  }) => {
+    // QA on production: with a card showing, the card held its height and the
+    // composer grew down past the window, the Scope row with it.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await newProject(page);
+    await assistantButton(page).click();
+    await answerDisclosure(page);
+    await composer(page).fill("Build me a drop [ask]");
+    await page.keyboard.press("Enter");
+    const card = panel(page).getByRole("region", { name: "Cue asks" });
+    await expect(card).toContainText("Where should the drop land?");
+
+    const rest = await composer(page).boundingBox();
+    await composer(page).fill(
+      Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join("\n"),
+    );
+    await expect
+      .poll(async () => (await composer(page).boundingBox())?.height ?? 0)
+      .toBeGreaterThan((rest?.height ?? 0) * 3);
+
+    const panelBox = await panel(page).boundingBox();
+    const composerBox = await composer(page).boundingBox();
+    const scopeBox = await scope(page).boundingBox();
+    if (!panelBox || !composerBox || !scopeBox || !rest) throw new Error("not laid out");
+    const panelBottom = panelBox.y + panelBox.height;
+    expect(scopeBox.y + scopeBox.height).toBeLessThanOrEqual(panelBottom);
+    expect(panelBottom).toBeLessThanOrEqual(800);
+    // It grew upward, over the card, which still shows.
+    expect(composerBox.y).toBeLessThan(rest.y);
+    await expect(card).toBeVisible();
+    await step(page)("Ten lines in the composer, with the question card above it");
   });
 
   test("is answered by making the change in the editor (GRV-42)", async ({ page }) => {

@@ -10,7 +10,6 @@
   display: grid;
   align-content: start;
   overflow: auto;
-  scrollbar-width: thin;
   /* The interface is dark whatever the system is, and so is this scrollbar. */
   color-scheme: dark;
 }
