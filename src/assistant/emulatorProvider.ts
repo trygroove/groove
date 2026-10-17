@@ -29,6 +29,13 @@
  *   pack of the best one, for the BD track (or the first) and its kick pad, read from the
  *   library the turn carries (GRV-23). With no library, or no such kick, a
  *   short reply saying so.
+ * - `[first-beat]` (CF-036, GRV-129): the first-beat lesson's one turn, as a
+ *   model takes it: a proposal that adds a "Snare & Hat" drum machine with a
+ *   Snare and a Hat pad, no sounds on them yet, and a one-bar backbeat clip
+ *   placed at bar 1; then kick, snare and hat recommendations in that order,
+ *   the kick for the BD track's kick pad and the other two for the new
+ *   track's own pads ({@link FIRST_BEAT}). Read from the library the turn
+ *   carries; a part the library has no sound for is left out.
  * - `[ask]`: a short reply that ends in `ask_producer` (GRV-42), a single
  *   pick among {@link EMULATOR_ASK}'s options; `[ask-multi]` asks the same
  *   question as a multi-select; `[ask-rich]` asks one whose options point at
@@ -353,6 +360,185 @@ function dustierRecommendation(request: ProviderMessagesRequest): Step[] {
   );
 }
 
+/** A scripted ID: `prefix_` and `stem`, padded with zeros to a real ID's length. */
+function scriptedId(prefix: string, stem: string): string {
+  return `${prefix}_${stem.padEnd(21, "0")}`;
+}
+
+/**
+ * What `[first-beat]` adds (CF-036): the track, its two pads and its clip,
+ * by fixed IDs so a test can find them, and the roles its three
+ * recommendations are for, in the order it makes them.
+ */
+export const FIRST_BEAT = {
+  trackName: "Snare & Hat",
+  trackId: scriptedId("trk", "FirstBeatSnareHat"),
+  snarePadId: scriptedId("pad", "FirstBeatSnare"),
+  hatPadId: scriptedId("pad", "FirstBeatHat"),
+  clipId: scriptedId("clp", "FirstBeatBackbeat"),
+  placementId: scriptedId("plc", "FirstBeatPlace"),
+  /** The kick, the snare and the hat, by the library's roles. */
+  roles: { kick: /^kick$/, snare: /^snare$/, hat: /hat$/ },
+} as const;
+
+/** One bar of 4/4 at 192 PPQ, and one 16th of it. */
+const BAR_TICKS = 768;
+const SIXTEENTH_TICKS = 48;
+
+/** The backbeat's notes: the snare on 2 and 4, the hat on every 8th. */
+function firstBeatEvents(): unknown[] {
+  const hit = (n: number, padId: string, sixteenth: number, velocity: number) => ({
+    id: scriptedId("evt", `FirstBeatNote${String(n).padStart(2, "0")}`),
+    trigger: { kind: "pad", padId },
+    startTicks: sixteenth * SIXTEENTH_TICKS,
+    durationTicks: SIXTEENTH_TICKS,
+    velocity,
+    probability: null,
+  });
+  return [
+    hit(1, FIRST_BEAT.snarePadId, 4, 0.9),
+    hit(2, FIRST_BEAT.snarePadId, 12, 0.9),
+    ...[0, 2, 4, 6, 8, 10, 12, 14].map((sixteenth, index) =>
+      hit(3 + index, FIRST_BEAT.hatPadId, sixteenth, 0.6),
+    ),
+  ];
+}
+
+/** A pad with no sound yet, as `track_create` takes it. */
+function emptyPad(id: string, name: string) {
+  return {
+    id,
+    name,
+    assetId: null,
+    chokeGroup: null,
+    parameters: {},
+    mixer: { volume: 0, pan: 0, muted: false, soloed: false },
+  };
+}
+
+/** The library's first one-shot for `role`, one the project does not use if it can. */
+function soundFor(library: AssistantLibraryContext | null, role: RegExp) {
+  const candidates = (library?.packs ?? []).flatMap((pack) =>
+    pack.sounds
+      .filter((sound) => role.test(sound.role) && sound.type === "one-shot")
+      .map((sound) => ({ pack, sound })),
+  );
+  return candidates.find((entry) => !entry.sound.inProject) ?? candidates[0] ?? null;
+}
+
+/**
+ * CF-036's script: the first-beat lesson's turn. The proposal adds the
+ * "Snare & Hat" drum machine, its backbeat clip and the clip's placement;
+ * then it recommends a kick for the BD track's kick pad (or the first
+ * track's first pad), a snare for the new Snare pad and a hat for the new Hat
+ * pad, in that order. The snare and hat name pads that only exist once the
+ * proposal is applied, which is the point (GRV-129).
+ */
+function firstBeatLesson(request: ProviderMessagesRequest): Step[] {
+  const library = systemJson(
+    request,
+    LIBRARY_BLOCK_HEADING,
+  ) as AssistantLibraryContext | null;
+  const tracks = contextTracks(request);
+  const kickTrack =
+    tracks.find((candidate) => candidate.name === LOOSEN_TRACK_NAME) ?? tracks[0];
+  const kickPad =
+    kickTrack?.pads?.find((candidate) => KICK_PAD_NAME.test(candidate.name)) ??
+    kickTrack?.pads?.[0];
+  const calls: ScriptedCall[] = [
+    {
+      name: "track_create",
+      input: {
+        id: FIRST_BEAT.trackId,
+        name: FIRST_BEAT.trackName,
+        color: "#808080",
+        order: tracks.length,
+        type: "instrument",
+        instrument: {
+          kind: "drumMachine",
+          pads: [
+            emptyPad(FIRST_BEAT.snarePadId, "Snare"),
+            emptyPad(FIRST_BEAT.hatPadId, "Hat"),
+          ],
+          parameters: {},
+        },
+        devices: [],
+        sendConfig: [],
+        mixer: { volume: 0, pan: 0, muted: false, soloed: false },
+      },
+    },
+    {
+      name: "clip_create",
+      input: {
+        id: FIRST_BEAT.clipId,
+        trackId: FIRST_BEAT.trackId,
+        name: "Backbeat",
+        color: "#808080",
+        lengthTicks: BAR_TICKS,
+        content: { kind: "notes", events: firstBeatEvents() },
+      },
+    },
+    {
+      name: "placement_create",
+      input: {
+        id: FIRST_BEAT.placementId,
+        clipId: FIRST_BEAT.clipId,
+        trackId: FIRST_BEAT.trackId,
+        startTicks: 0,
+        durationTicks: BAR_TICKS,
+        clipOffsetTicks: 0,
+        looped: false,
+      },
+    },
+  ];
+  const parts = [
+    {
+      role: FIRST_BEAT.roles.kick,
+      reason: "A punchy kick to anchor the beat on BD.",
+      trackId: kickTrack?.id,
+      padId: kickPad?.id,
+    },
+    {
+      role: FIRST_BEAT.roles.snare,
+      reason: "A snare to land the backbeat on 2 and 4.",
+      trackId: FIRST_BEAT.trackId,
+      padId: FIRST_BEAT.snarePadId,
+    },
+    {
+      role: FIRST_BEAT.roles.hat,
+      reason: "A tight hat to keep the eighths moving.",
+      trackId: FIRST_BEAT.trackId,
+      padId: FIRST_BEAT.hatPadId,
+    },
+  ];
+  for (const part of parts) {
+    const found = soundFor(library, part.role);
+    if (!found) continue;
+    calls.push({
+      name: RECOMMEND_SOUNDS_TOOL,
+      input: {
+        packId: found.pack.id,
+        soundIds: [found.sound.id],
+        reason: part.reason,
+        ...(part.trackId ? { trackId: part.trackId } : {}),
+        ...(part.padId ? { padId: part.padId } : {}),
+      },
+    });
+  }
+  calls.push({
+    name: EXPLAIN_TOOL_NAME,
+    input: {
+      goal: "A full first beat: the kick you have, a snare on the backbeat and hats on the eighths.",
+      technique:
+        "A second drum machine holds the snare and hat so each part has its own pad; pick a sound for each pad to hear it.",
+    },
+  });
+  return proposalReply(
+    "Let's build your first beat. I'll add a snare and hats on a new drum machine, then we'll pick a sound for each part.",
+    calls,
+  );
+}
+
 /**
  * The question `[ask-rich]` asks, about `trackId`: an option that points at
  * the track and plays it, one about bars 1-2, and one that previews the song
@@ -522,6 +708,7 @@ export function createEmulatorAssistantProvider(
     if (message.includes("[misfit]")) return misfitProposal(request);
     if (/loosen the beat/i.test(message)) return loosenProposal(request);
     if (/\bdust(y|ier)\b/i.test(message)) return dustierRecommendation(request);
+    if (message.includes("[first-beat]")) return firstBeatLesson(request);
     if (message.includes("[ask-rich]")) return richAskReply(request);
     if (message.includes("[ask-multi]")) return askReply(true);
     if (message.includes("[ask]")) return askReply(false);
