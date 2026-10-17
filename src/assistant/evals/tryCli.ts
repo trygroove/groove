@@ -11,7 +11,7 @@
  * opens a prompt that takes the same commands, one per line.
  *
  * `ask` and `answer` call the live model, so they need `ANTHROPIC_API_KEY`;
- * without it they say so and call nothing, as `eval:assistant` does.
+ * without it they say so and call nothing, as `assistant:eval` does.
  */
 import { ASSISTANT_MODEL_ID, ASSISTANT_MODELS, type AssistantModelId } from "../config";
 import type { AssistantProvider } from "../provider";
@@ -614,7 +614,7 @@ export function formatResult(result: TryResult): string {
         `Saved the case "${result.caseId}" on the fixture "${result.fixture}":`,
         ...result.files.map((file) => `  ${file.path}`),
         "Add its expected scope and any case checks by hand, then run it with",
-        `  bun run eval:assistant -- ${result.caseId}`,
+        `  bun run assistant:eval -- ${result.caseId}`,
       ].join("\n");
   }
 }

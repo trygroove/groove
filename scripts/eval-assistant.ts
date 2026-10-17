@@ -1,5 +1,5 @@
 /**
- * `bun run eval:assistant`: the assistant's musical capability evals (GRV-6).
+ * `bun run assistant:eval`: the assistant's musical capability evals (GRV-6).
  *
  * Runs every case in `src/assistant/evals/cases.ts` (or the ones named) N
  * times against the **live model**, through the gateway's own turn with the
@@ -8,19 +8,19 @@
  * demand only: by hand or from the Actions tab (`.github/workflows/eval-assistant.yml`),
  * never in per-push CI and never on a schedule.
  *
- *   bun run eval:assistant                       every case, 3 runs each
- *   bun run eval:assistant -- sketch-house       one case (or several)
- *   bun run eval:assistant -- --set basicActions the basic production actions (GRV-119) alone
- *   bun run eval:assistant -- --runs 5           N runs per case
- *   bun run eval:assistant -- --model claude-haiku-4-5
- *   bun run eval:assistant -- --out tmp/evals    where the report goes
- *   bun run eval:assistant -- --timeout 180      per-turn limit in seconds (default 540, production's)
- *   bun run eval:assistant -- --steps 1          steps a turn may take (default production's; 1 is one call)
- *   bun run eval:assistant -- --replay <report.json>
+ *   bun run assistant:eval                       every case, 3 runs each
+ *   bun run assistant:eval -- sketch-house       one case (or several)
+ *   bun run assistant:eval -- --set basicActions the basic production actions (GRV-119) alone
+ *   bun run assistant:eval -- --runs 5           N runs per case
+ *   bun run assistant:eval -- --model claude-haiku-4-5
+ *   bun run assistant:eval -- --out tmp/evals    where the report goes
+ *   bun run assistant:eval -- --timeout 180      per-turn limit in seconds (default 540, production's)
+ *   bun run assistant:eval -- --steps 1          steps a turn may take (default production's; 1 is one call)
+ *   bun run assistant:eval -- --replay <report.json>
  *       re-judge a saved report's proposals with the current checks (no model call)
- *   bun run eval:assistant -- --baseline docs/assistant-eval-baseline.json
+ *   bun run assistant:eval -- --baseline docs/assistant-eval-baseline.json
  *       print every scorecard number beside the baseline's, with its delta
- *   bun run eval:assistant -- --from-transcript <transcript-<turn>.json>
+ *   bun run assistant:eval -- --from-transcript <transcript-<turn>.json>
  *       run a kept turn the admin transcript viewer downloaded as the one case
  *       (GRV-98): its message against the fixture the file names
  *

@@ -16,7 +16,7 @@
  * Each command reads and writes one session file,
  * `tmp/assistant-sessions/<id>.json`; `--session <id>` picks one, otherwise
  * the one used last. `--json` prints what a command did as JSON, and
- * `--model` picks a configured model as `eval:assistant` does. `ask` and
+ * `--model` picks a configured model as `assistant:eval` does. `ask` and
  * `answer` go through the gateway's own turn with the production prompt and
  * tools, against the live model: they need `ANTHROPIC_API_KEY` and say so,
  * calling nothing, without it. Nothing here touches Firestore, user data or

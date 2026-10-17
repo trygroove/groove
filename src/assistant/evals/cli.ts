@@ -1,5 +1,5 @@
 /**
- * The argument parsing and the API-key guard of `bun run eval:assistant`
+ * The argument parsing and the API-key guard of `bun run assistant:eval`
  * (GRV-6), kept apart from `scripts/eval-assistant.ts` so they are tested
  * without running the script. Nothing here reads `process` or calls a model:
  * the script hands in `argv` and the environment, and turns an
@@ -48,7 +48,7 @@ export class EvalUsageError extends Error {
   }
 }
 
-export const EVAL_USAGE = `Usage: bun run eval:assistant -- [case ...] [--set ${EVAL_SETS.join("|")}] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS] [--steps N]`;
+export const EVAL_USAGE = `Usage: bun run assistant:eval -- [case ...] [--set ${EVAL_SETS.join("|")}] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS] [--steps N]`;
 
 const DEFAULT_TURN_TIMEOUT_SECONDS = DEFAULT_TURN_TIMEOUT_MS / 1000;
 
@@ -159,7 +159,7 @@ export function requireApiKey(
   env: Readonly<Record<string, string | undefined>>,
   tool: { readonly name: string; readonly example: string } = {
     name: "The assistant evals",
-    example: "bun run eval:assistant",
+    example: "bun run assistant:eval",
   },
 ): string {
   const apiKey = env[ASSISTANT_API_KEY_SECRET]?.trim();

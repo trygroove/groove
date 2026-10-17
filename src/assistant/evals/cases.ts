@@ -101,7 +101,7 @@ export type EvalSelection =
   | null;
 
 export interface EvalCase {
-  /** Stable and short: `bun run eval:assistant -- <id>` runs just this case. */
+  /** Stable and short: `bun run assistant:eval -- <id>` runs just this case. */
   readonly id: string;
   /** The set the scorecard scores it in; the musical one when absent. */
   readonly set?: EvalSetId;

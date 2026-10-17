@@ -128,7 +128,7 @@ describe("bun run assistant:try", () => {
       io,
     );
     expect(saved.exitCode).toBe(0);
-    expect(saved.output).toContain("bun run eval:assistant -- tuck-bass");
+    expect(saved.output).toContain("bun run assistant:eval -- tuck-bass");
     expect(JSON.parse(files.get("cases/tuck-bass.json") ?? "{}")).toMatchObject({
       id: "tuck-bass",
       fixture: "house-loop",

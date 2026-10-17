@@ -10,7 +10,7 @@
  * `FIREBASE_AUTH_EMULATOR_HOST` are set) through the schema-v1 layout, scrubs
  * it (`src/assistant/evals/scrubFixture.ts`), and writes
  * `src/assistant/evals/fixtures/<fixture-id>.json`, which
- * `bun run assistant:try -- new <fixture-id>` and `eval:assistant` load. It
+ * `bun run assistant:try -- new <fixture-id>` and `assistant:eval` load. It
  * never writes to Firestore.
  *
  * `--turn` reads a kept transcript (GRV-98) for its project, and prints how the
