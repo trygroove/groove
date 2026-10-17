@@ -1,0 +1,18 @@
+{
+  "id": "scroll",
+  "title": "Assistant composer",
+  "steps": [
+    {
+      "file": "01-composer-at-rest-two-lines-no-scroll-bar.png",
+      "caption": "Composer at rest: two lines, no scroll bar"
+    },
+    {
+      "file": "02-composer-grown-to-five-lines.png",
+      "caption": "Composer grown to five lines"
+    },
+    {
+      "file": "03-composer-capped-at-ten-lines-with-the-th.png",
+      "caption": "Composer capped at ten lines, with the thin scroll bar"
+    }
+  ]
+}
