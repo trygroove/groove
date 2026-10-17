@@ -22,33 +22,39 @@
   --muted-opacity: 0.4;
 }
 
-/* Scroll bars (GRV-115): thin, in the border greys, over no track, and drawn
-   only where something overflows (`overflow: auto`, never `scroll`). One
-   rule here so no surface ships the platform's native bars. Chromium and
-   Firefox read the standard properties; the WebKit pseudo-elements below are
-   only for a browser that has not got them, and drop the arrow buttons. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-strong) transparent;
+/* Scroll bars (GRV-115): thin, in the border greys, over no track, with no
+   arrow buttons, and drawn only where something overflows (`overflow: auto`,
+   never `scroll`). One rule here so no surface ships the platform's native
+   bars, and no stylesheet sets a thin width or a colour of its own with the
+   standard properties (`scrollbar-width: none`, to hide a bar, is fine).
+
+   Chromium and Safari take the WebKit pseudo-elements, the only way to drop
+   the arrows. Chromium ignores them on any element that sets a standard
+   `scrollbar-*` property, and draws arrows on a thin bar, so the standard
+   properties go only to a browser without the pseudo-elements: Firefox,
+   whose thin bars have no arrows anyway. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
 
-@supports not (scrollbar-width: thin) {
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
+::-webkit-scrollbar-button {
+  display: none;
+}
 
-  ::-webkit-scrollbar-button {
-    display: none;
-  }
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
 
-  ::-webkit-scrollbar-track,
-  ::-webkit-scrollbar-corner {
-    background: transparent;
-  }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+}
 
-  ::-webkit-scrollbar-thumb {
-    background: var(--color-border-strong);
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
   }
 }
 

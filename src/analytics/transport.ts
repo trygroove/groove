@@ -24,6 +24,11 @@ export interface AnalyticsTransport {
   /** One page view, sent by the router on navigation. */
   pageview(): void;
   /**
+   * The vendor's current session ID, or `null` before it has loaded. Optional:
+   * a transport with no sessions leaves it out.
+   */
+  sessionId?(): string | null;
+  /**
    * Called once the boundary has replaced this transport (on an opt-out, say).
    * A transport that buffers drops its buffer and stops any pending vendor
    * load here, so nothing queued before the swap is sent after it.

@@ -61,8 +61,11 @@ export const TRANSCRIPT_RETENTION_MS = TRANSCRIPT_RETENTION_DAYS * 24 * 60 * 60 
  * the notice again. A stale answer never widens retention past what the
  * account said: a stale "don't keep" still stops it (see
  * {@link permitsRetention}).
+ *
+ * 2 (GRV-126): kept conversations also go to PostHog, and turning keeping
+ * off no longer promises to delete those copies.
  */
-export const ASSISTANT_DISCLOSURE_VERSION = 1;
+export const ASSISTANT_DISCLOSURE_VERSION = 2;
 
 export function transcriptDocPath(uid: string, turnId: string): string {
   return `${ASSISTANT_TRANSCRIPTS_COLLECTION}/${uid}_${turnId}`;
