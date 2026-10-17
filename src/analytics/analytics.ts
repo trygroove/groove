@@ -150,6 +150,28 @@ export class Analytics {
     });
   }
 
+  /**
+   * Whether product analytics may be collected now: what the assistant's turn
+   * tells the gateway, which sends its trace only when it is (GRV-126).
+   */
+  get productAnalyticsAllowed(): boolean {
+    return this.consent.analyticsAllowed;
+  }
+
+  /**
+   * The vendor's current session, so a server-side event can join it (the
+   * assistant's trace, GRV-126), or `null` while analytics is not allowed or
+   * the vendor has not loaded.
+   */
+  sessionId(): string | null {
+    if (!this.consent.analyticsAllowed) return null;
+    try {
+      return this.transport.sessionId?.() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   /** The surface attached to subsequent events. */
   setSurface(surface: Surface): void {
     this.surface = surface;

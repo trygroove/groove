@@ -49,11 +49,30 @@ export const SENTRY_DSN =
 const SENTRY_ENVIRONMENT = "alpha";
 
 /**
- * PostHog's EU ingestion host, the default (`POSTHOG_DEFAULT_HOST` in
- * `src/analytics/posthogTransport.ts`; `VITE_POSTHOG_HOST` can change it, which
- * `configuredOrigins` then checks against this policy).
+ * The production PostHog project's ingestion host (`vars.VITE_POSTHOG_HOST` in
+ * CI): the project is in the US. `configuredOrigins` checks the build's host
+ * against this policy.
  */
-export const POSTHOG_INGESTION_ORIGIN = "https://eu.i.posthog.com";
+export const POSTHOG_INGESTION_ORIGIN = "https://us.i.posthog.com";
+
+/**
+ * The host the app uses when `VITE_POSTHOG_HOST` is unset (`POSTHOG_DEFAULT_HOST`
+ * in `src/analytics/posthogTransport.ts`).
+ */
+const POSTHOG_APP_DEFAULT_HOST = "https://eu.i.posthog.com";
+
+/**
+ * Where the PostHog SDK reads the project's remote config for an ingestion
+ * host: its region's assets host (`us.i.posthog.com` reads from
+ * `us-assets.i.posthog.com`). A self-hosted or proxied host serves both.
+ */
+export function postHogAssetsOrigin(host) {
+  const origin = new URL(host).origin;
+  return origin.replace(
+    /^https:\/\/(us|eu)\.i\.posthog\.com$/,
+    "https://$1-assets.i.posthog.com",
+  );
+}
 
 /** The Reporting API group the policy's `report-to` names. */
 export const REPORT_GROUP = "csp-endpoint";
@@ -152,9 +171,10 @@ export const CSP_DIRECTIVES = [
       ["https://*.google-analytics.com", "GA4's collection endpoint"],
       ["https://*.analytics.google.com", "GA4's collection endpoint"],
       [sentry.origin, "Sentry: errors, sessions and replays"],
+      [POSTHOG_INGESTION_ORIGIN, "PostHog: events, replays and web vitals"],
       [
-        POSTHOG_INGESTION_ORIGIN,
-        "PostHog: events, replays, web vitals and the project's remote config",
+        postHogAssetsOrigin(POSTHOG_INGESTION_ORIGIN),
+        "PostHog: the project's remote config",
       ],
     ],
   ],
@@ -205,8 +225,8 @@ export const NOT_LOADED_HOSTS = {
   "docs.sentry.io": "documentation links in the Sentry SDK",
   "spotlightjs.com": "a documentation link in the Sentry SDK",
   "browser.sentry-cdn.com": "Sentry's lazy-loading CDN, which the app does not use",
-  "us.i.posthog.com":
-    "PostHog's US ingestion host, named by the SDK and the transport's docs; the project ingests in the EU",
+  "eu.i.posthog.com":
+    "PostHog's EU ingestion host, the transport's default and named by the SDK; the project ingests in the US",
   "posthog.com": "documentation links in the PostHog SDK",
   "app.posthog.com": "PostHog's legacy app host, named by the SDK, never contacted",
   "us.posthog.com": "PostHog's US app host, named by the SDK, never contacted",
@@ -381,10 +401,9 @@ export function configuredOrigins(env) {
     required.push(["connect-src", endpoints.origin], ["report-uri", endpoints.report]);
   }
   if (env.VITE_POSTHOG_KEY) {
-    required.push([
-      "connect-src",
-      new URL(env.VITE_POSTHOG_HOST || POSTHOG_INGESTION_ORIGIN).origin,
-    ]);
+    const host = env.VITE_POSTHOG_HOST || POSTHOG_APP_DEFAULT_HOST;
+    const origins = new Set([new URL(host).origin, postHogAssetsOrigin(host)]);
+    for (const origin of origins) required.push(["connect-src", origin]);
   }
   return required;
 }
@@ -416,7 +435,8 @@ export function verifySecurityHeaders({ dir, firebaseJson, env = {} }) {
     if (!directiveSources(csp, directive).includes(source)) {
       problems.push(
         `The build is configured for ${source}, which ${directive} does not name. ` +
-          "Update FIREBASE_PROJECT_ID or SENTRY_DSN in scripts/security-headers.mjs.",
+          "Update FIREBASE_PROJECT_ID, SENTRY_DSN or POSTHOG_INGESTION_ORIGIN in scripts/security-headers.mjs " +
+          "to match the build's environment, then run `bun run security-headers:write`.",
       );
     }
   }

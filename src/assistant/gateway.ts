@@ -28,7 +28,12 @@
  *    connection that died (GRV-42);
  * 9. keeps the completed turn in the transcript store unless the account
  *    has said no (GRV-8, GRV-97, `retention.ts`). Keeping it never fails or
- *    changes the turn: the reply is the same either way.
+ *    changes the turn: the reply is the same either way;
+ * 10. hands one `$ai_generation` event per provider call to the trace sink,
+ *    completed or failed, when the browser said product analytics is allowed
+ *    (GRV-126, `traces.ts`), with the request and reply in it only for an
+ *    account whose conversations are kept. Tracing never fails or changes
+ *    the turn either.
  *
  * Every turn offers the model the assistant's tool set (GRV-4) and
  * `ask_producer` (GRV-42). A turn that stops for `tool_use` returns its
@@ -94,7 +99,15 @@ import {
   EXPLAIN_TOOL,
   makesChanges,
 } from "./tools";
-import type { TranscriptStore } from "./transcripts";
+import {
+  type AssistantTraceSink,
+  type GenerationCall,
+  type GenerationResult,
+  generationEvents,
+  traceConsent,
+  traceIdFor,
+} from "./traces";
+import { permitsRetention, type TranscriptStore } from "./transcripts";
 import {
   type CheckedVideos,
   checkVideoCalls,
@@ -157,6 +170,13 @@ export interface AssistantGatewayDeps {
    * anyway is dropped.
    */
   readonly findVideo?: VideoFinder;
+  /**
+   * Where the turn's `$ai_generation` events go (GRV-126): PostHog's AI
+   * Observability, from the Cloud Function. Without one, nothing is traced.
+   */
+  readonly traces?: AssistantTraceSink;
+  /** A fresh trace ID for a turn whose request names no conversation; random by default. */
+  readonly traceId?: () => string;
 }
 
 export interface AssistantTurnOptions {
@@ -500,6 +520,54 @@ async function keepTranscript(
   deps.onTranscript?.(write);
 }
 
+/** How one call ended, as its trace tells it. */
+function generationResult(outcome: AttemptOutcome): GenerationResult {
+  switch (outcome.kind) {
+    case "completed":
+      return {
+        kind: "completed",
+        text: outcome.text,
+        stopReason: outcome.stopReason,
+        toolCalls: outcome.toolCalls,
+      };
+    case "failed":
+      return {
+        kind: "failed",
+        failure: outcome.failure.kind,
+        status: outcome.failure.status,
+      };
+    default:
+      return outcome;
+  }
+}
+
+/**
+ * Whether the account lets Groove keep its conversations, read from the
+ * transcript store for this turn (`permitsRetention`). No store, or one that
+ * cannot be read, is a no: the trace then carries no content.
+ */
+async function retentionPermitted(
+  store: TranscriptStore | undefined,
+  uid: string,
+): Promise<boolean> {
+  if (!store) return false;
+  try {
+    return permitsRetention(await store.preference(uid));
+  } catch {
+    return false;
+  }
+}
+
+/** What a traced turn knows once its request has parsed. */
+interface Tracing {
+  readonly sink: AssistantTraceSink;
+  readonly uid: string;
+  readonly turn: AssistantTurnRequest;
+  readonly turnKey: string;
+  /** Read as the turn starts, so it is ready by the time the turn ends. */
+  readonly retention: Promise<boolean>;
+}
+
 /** What separates one step's text from the next in the reply. */
 const PARAGRAPH = "\n\n";
 
@@ -583,6 +651,38 @@ export async function runAssistantTurn(
   let usage = NO_USAGE;
   let history: BoundedHistory = { messages: [], dropped: 0 };
   let checked: CheckedVideos = NO_VIDEOS;
+  const generations: GenerationCall[] = [];
+  let tracing: Tracing | null = null;
+
+  /**
+   * Hands the turn's events to the sink, once it has ended. Never throws, and
+   * waits for nothing but the retention read begun at the start of the turn.
+   */
+  const trace = async (outcome: AssistantTurnLog["outcome"]) => {
+    if (!tracing || generations.length === 0) return;
+    try {
+      const { sink, uid, turn, turnKey } = tracing;
+      const includeContent = await tracing.retention;
+      const events = generationEvents(
+        {
+          uid,
+          traceId: traceIdFor(turn, turnKey),
+          turnKey,
+          sessionId: turn.analytics?.sessionId ?? null,
+          model: model.id,
+          promptVersion: ASSISTANT_PROMPT_VERSION,
+          outcome,
+          internal:
+            (caller.internalAccount ?? false) || (turn.session?.internal ?? false),
+          includeContent,
+        },
+        generations,
+      );
+      for (const event of events) sink.capture(event);
+    } catch {
+      // A trace never fails or changes the turn.
+    }
+  };
 
   const finish = (
     outcome: AssistantTurnLog["outcome"],
@@ -613,6 +713,15 @@ export async function runAssistantTurn(
   try {
     const uid = authenticate(caller);
     const turn = parseRequest(rawRequest);
+    if (deps.traces && traceConsent(turn)) {
+      tracing = {
+        sink: deps.traces,
+        uid,
+        turn,
+        turnKey: turn.session?.turnId ?? (deps.traceId ?? (() => crypto.randomUUID()))(),
+        retention: retentionPermitted(deps.transcripts, uid),
+      };
+    }
     if (!(await deps.guards.isEnabled())) {
       throw new AssistantGatewayError("assistant_disabled", DISABLED_MESSAGE);
     }
@@ -651,12 +760,23 @@ export async function runAssistantTurn(
           remaining = await reserveCall(deps.guards, uid, deps.now(), guardLimits);
         }
         attempts += 1;
+        const callStartedAt = tracing ? deps.now() : 0;
         const attempt = await attemptCall(
           deps,
           request,
           stepOptions,
           limits.inactivityTimeoutMs,
         );
+        if (tracing) {
+          generations.push({
+            attempt: attempts,
+            request,
+            startedAt: callStartedAt,
+            endedAt: deps.now(),
+            usage: attempt.usage,
+            result: generationResult(attempt.outcome),
+          });
+        }
         usage = addUsage(usage, attempt.usage);
         const cost = costMicroUsd(model, attempt.billedUsage);
         if (cost > 0) await deps.guards.addSpend(spendDay(deps.now()), cost);
@@ -745,6 +865,7 @@ export async function runAssistantTurn(
       proposal,
       model: model.id,
     });
+    await trace("completed");
     return {
       text,
       stopReason,
@@ -758,11 +879,13 @@ export async function runAssistantTurn(
   } catch (error) {
     if (error instanceof AssistantGatewayError) {
       finish(error.code, null);
+      await trace(error.code);
       throw error;
     }
     // Not a known failure (a store that could not be reached, a bug): logged
     // as such, and left for the function to report as an internal error.
     finish("internal_error", null);
+    await trace("internal_error");
     throw error;
   } finally {
     stopHeartbeat();

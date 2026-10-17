@@ -653,6 +653,13 @@ export function createPostHogTransport(
       }
       sendPersonProperties();
     },
+    sessionId() {
+      try {
+        return client?.get_session_id() || null;
+      } catch {
+        return null;
+      }
+    },
     identify(userId) {
       submit((target) => target.identify(userId));
       identified = true;

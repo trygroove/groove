@@ -1,6 +1,7 @@
 import { createRoot, flush } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { Analytics } from "../../analytics/analytics";
+import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
 import { type AssistantAsk, askTranscript } from "../../assistant/ask";
 import { ASSISTANT_REQUEST_LIMITS } from "../../assistant/config";
@@ -366,6 +367,61 @@ describe("a conversation's session health (GRV-103)", () => {
     flush();
     expect(conversation.entries()[1]).not.toHaveProperty("rating");
     expect(conversation.rateReply("nothing", "up")).toBeNull();
+    dispose();
+  });
+});
+
+describe("what a turn says about analytics (GRV-126)", () => {
+  const project = createSliceFixtureProject();
+  const scope: AssistantScope = {
+    level: "track",
+    label: "BD",
+    catalogScope: "track",
+    selection: null,
+    track: project.song.tracks[0] ?? null,
+  };
+
+  function talk(allowed: boolean) {
+    const client = createFakeAssistantClient();
+    const consent = new ConsentStore(memoryStorage());
+    if (!allowed) consent.optOut();
+    const analytics = new Analytics({
+      transport: { ...createRecordingTransport(), sessionId: () => "0192f3a1-7c2b" },
+      consent,
+      storage: memoryStorage(),
+    });
+    let conversation: AssistantConversation | undefined;
+    const dispose = createRoot((dispose) => {
+      conversation = useAssistantConversation({
+        client: async () => client,
+        project: () => project,
+        scope: () => scope,
+        canSend: () => true,
+        analytics: () => analytics,
+      });
+      return dispose;
+    });
+    flush();
+    if (!conversation) throw new Error("no conversation");
+    return { conversation, client, dispose };
+  }
+
+  it("sends the consent and the session while product analytics is allowed", async () => {
+    const { conversation, client, dispose } = talk(true);
+    conversation.send("Make it groove");
+    await vi.waitFor(() => expect(client.turns).toHaveLength(1));
+    expect(client.last().request.analytics).toEqual({
+      productAnalytics: true,
+      sessionId: "0192f3a1-7c2b",
+    });
+    dispose();
+  });
+
+  it("says declined, with no session, once it is not", async () => {
+    const { conversation, client, dispose } = talk(false);
+    conversation.send("Make it groove");
+    await vi.waitFor(() => expect(client.turns).toHaveLength(1));
+    expect(client.last().request.analytics).toEqual({ productAnalytics: false });
     dispose();
   });
 });

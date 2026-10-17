@@ -7,6 +7,7 @@ import {
   createSliceFixtureProject,
 } from "../domain/fixtures";
 import { SONG_SWING } from "../domain/parameters";
+import { createStarterProject } from "../editor/starterProject";
 import { buildAssistantLibrary, DRUM_PACK_ID } from "../testing/assistantLibrary";
 import {
   createEmulatorAssistantProvider,
@@ -17,6 +18,7 @@ import {
   EMULATOR_REPLY_CHUNKS,
   EMULATOR_VIDEO,
   emulatorVideoFinder,
+  FIRST_BEAT,
   LOOSEN_EXPLANATION,
   LOOSEN_SWING,
   LOOSEN_VOLUME_DROP_DB,
@@ -299,6 +301,52 @@ describe("the emulator's assistant provider", () => {
     const validation = validateRecommendation(call.input, library);
     if (!validation.ok) throw new Error(validation.message);
     expect(validation.recommendation.padId).toBeNull();
+  });
+
+  it("answers [first-beat] with a new drum machine, then a kick, a snare and a hat for their own pads (CF-036)", async () => {
+    const project = createStarterProject("uid-1", () => 0);
+    const bd = project.song.tracks[0];
+    if (bd?.instrument?.kind !== "drumMachine") throw new Error("no starter kit");
+    const library = buildAssistantLibrary();
+    const reply = await turn(
+      gateway(),
+      "Let's go [first-beat]",
+      new AbortController().signal,
+      project,
+      library,
+    ).result;
+    if (!reply.proposal) throw new Error("no proposal");
+    const split = splitRecommendations(reply.proposal);
+    if (!split.proposal) throw new Error("no changes proposed");
+    // The changes fit the starter project, and add the track and its clip.
+    const validation = validateProposal(project, split.proposal);
+    if (!validation.ok) throw new Error(JSON.stringify(validation.issues));
+    const applied = executeTransaction(project, validation.proposal.commands);
+    if (!applied.ok) throw new Error("the proposal did not apply");
+    const kit = applied.project.song.tracks.find(
+      (track) => track.id === FIRST_BEAT.trackId,
+    );
+    expect(kit?.name).toBe(FIRST_BEAT.trackName);
+    if (kit?.instrument?.kind !== "drumMachine") throw new Error("no new kit");
+    expect(kit.instrument.pads.map((pad) => [pad.id, pad.name, pad.assetId])).toEqual([
+      [FIRST_BEAT.snarePadId, "Snare", null],
+      [FIRST_BEAT.hatPadId, "Hat", null],
+    ]);
+    expect(
+      applied.project.song.placements.some((placement) => placement.trackId === kit.id),
+    ).toBe(true);
+    // Kick, snare and hat, each for its own pad.
+    const recommended = split.recommendations.map((call) => {
+      const checked = validateRecommendation(call.input, library);
+      if (!checked.ok) throw new Error(checked.message);
+      const { sounds, trackId, padId } = checked.recommendation;
+      return [sounds[0]?.role, trackId, padId];
+    });
+    expect(recommended).toEqual([
+      ["kick", bd.id, bd.instrument.pads[0]?.id],
+      ["snare", FIRST_BEAT.trackId, FIRST_BEAT.snarePadId],
+      ["closed-hat", FIRST_BEAT.trackId, FIRST_BEAT.hatPadId],
+    ]);
   });
 
   it("says it can't find one when the turn carries no library", async () => {

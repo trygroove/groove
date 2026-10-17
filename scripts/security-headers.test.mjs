@@ -12,6 +12,7 @@ import {
   hostingHeaders,
   inlineScriptHashes,
   NOT_LOADED_HOSTS,
+  POSTHOG_INGESTION_ORIGIN,
   policyAllowsHost,
   SENTRY_DSN,
   scriptHash,
@@ -218,16 +219,32 @@ describe("verifySecurityHeaders against a build", () => {
     expect(verifySecurityHeaders({ dir, firebaseJson, env })).toEqual([]);
   });
 
-  it("requires the PostHog host a build configures to be allowed", () => {
+  it("requires the PostHog hosts a build configures to be allowed", () => {
     expect(configuredOrigins({ VITE_POSTHOG_KEY: "phc_x" })).toEqual([
       ["connect-src", "https://eu.i.posthog.com"],
+      ["connect-src", "https://eu-assets.i.posthog.com"],
     ]);
-    const us = configuredOrigins({
+    expect(
+      configuredOrigins({
+        VITE_POSTHOG_KEY: "phc_x",
+        VITE_POSTHOG_HOST: "https://ph.example.com/ingest",
+      }),
+    ).toEqual([["connect-src", "https://ph.example.com"]]);
+    expect(policyAllowsHost(contentSecurityPolicy(), "eu.i.posthog.com")).toBe(false);
+  });
+
+  it("passes production's PostHog host, the remote config's assets host included", () => {
+    build();
+    // What the deploy job builds with (GRV-7's QA: it failed the first deploys).
+    const env = {
       VITE_POSTHOG_KEY: "phc_x",
       VITE_POSTHOG_HOST: "https://us.i.posthog.com",
-    });
-    expect(policyAllowsHost(contentSecurityPolicy(), "us.i.posthog.com")).toBe(false);
-    expect(us).toEqual([["connect-src", "https://us.i.posthog.com"]]);
+    };
+    expect(configuredOrigins(env)).toEqual([
+      ["connect-src", POSTHOG_INGESTION_ORIGIN],
+      ["connect-src", "https://us-assets.i.posthog.com"],
+    ]);
+    expect(verifySecurityHeaders({ dir, firebaseJson, env })).toEqual([]);
   });
 
   it("never generates a policy with an unsafe source", () => {
