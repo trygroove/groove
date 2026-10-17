@@ -298,10 +298,12 @@ export default function RecommendationCard(props: RecommendationCardProps): JSX.
               <output class="assistant-proposal-say">
                 {recommendationStatusText(current())}
               </output>
+              <Show when={(props.heldAfter ?? 0) > 0}>
+                <span class="assistant-card-more">
+                  {moreAfterThis(props.heldAfter ?? 0)}
+                </span>
+              </Show>
             </div>
-            <Show when={(props.heldAfter ?? 0) > 0}>
-              <p class="assistant-card-more">{moreAfterThis(props.heldAfter ?? 0)}</p>
-            </Show>
           </section>
         )}
       </Show>

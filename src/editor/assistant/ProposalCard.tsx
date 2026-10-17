@@ -203,10 +203,12 @@ export default function ProposalCard(props: ProposalCardProps): JSX.Element {
             <output class="assistant-proposal-say">
               {proposalStatusText(current())}
             </output>
+            <Show when={(props.heldAfter ?? 0) > 0}>
+              <span class="assistant-card-more">
+                {moreAfterThis(props.heldAfter ?? 0)}
+              </span>
+            </Show>
           </div>
-          <Show when={(props.heldAfter ?? 0) > 0}>
-            <p class="assistant-card-more">{moreAfterThis(props.heldAfter ?? 0)}</p>
-          </Show>
           <Show when={current().explanation}>
             {(why) => (
               <details
