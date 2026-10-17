@@ -1210,6 +1210,11 @@
   accent-color: var(--color-accent);
 }
 
+.assistant-setting input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 /* A tutorial video the assistant recommends (GRV-16), after
    docs/design/mocks/07-assistant-video*.png: a 16:9 stage that is a still
    poster until Play (nothing from YouTube in it, not even a thumbnail), then
