@@ -1,4 +1,4 @@
-import type { Instrument, Project, Track } from "../domain/entities";
+import type { Clip, DrumPad, Instrument, Project, Track } from "../domain/entities";
 import type { SelectionScope, SelectionState } from "../selection/types";
 import { fingerprintOf } from "./fingerprint";
 import { type AssistantSelectedNotes, selectedNotes } from "./selectedNotes";
@@ -36,7 +36,8 @@ export interface AssistantTrackSummary {
   readonly placementCount: number;
   /**
    * A drum machine's pads, in order, by ID and name, so the assistant can
-   * name the pad a sound is for (GRV-23). Empty for any other instrument.
+   * name the pad a sound is for (GRV-23), each with how many hits the track's
+   * clips give it (GRV-122). Empty for any other instrument.
    */
   readonly pads: readonly AssistantPadSummary[];
   /**
@@ -57,6 +58,13 @@ export interface AssistantPlacementSummary {
 export interface AssistantPadSummary {
   readonly id: string;
   readonly name: string;
+  /**
+   * The pad's hits across the track's clips, each clip counted once however
+   * often it is placed (GRV-122). A count, never the hits themselves: those go
+   * only for a selection (`selectedNotes`). It is what lets "the hi-hats" be
+   * found as the HH pad of a drum machine with nothing selected.
+   */
+  readonly noteCount: number;
 }
 
 export interface AssistantSectionSummary {
@@ -88,10 +96,31 @@ export interface AssistantContext {
   readonly fingerprint: string;
 }
 
+/** Each pad by ID and name, with its hits across `clips`. */
+function summarizePads(
+  pads: readonly DrumPad[],
+  clips: readonly Clip[],
+): AssistantPadSummary[] {
+  const hits = new Map<string, number>();
+  for (const clip of clips) {
+    if (clip.content.kind !== "notes") continue;
+    for (const event of clip.content.events) {
+      if (event.trigger.kind !== "pad") continue;
+      hits.set(event.trigger.padId, (hits.get(event.trigger.padId) ?? 0) + 1);
+    }
+  }
+  return pads.map((pad) => ({
+    id: pad.id,
+    name: pad.name,
+    noteCount: hits.get(pad.id) ?? 0,
+  }));
+}
+
 function summarizeTrack(track: Track, project: Project): AssistantTrackSummary {
   const placements = project.song.placements.filter(
     (placement) => placement.trackId === track.id,
   );
+  const clips = project.clips.filter((clip) => clip.trackId === track.id);
   return {
     id: track.id,
     name: track.name,
@@ -102,11 +131,11 @@ function summarizeTrack(track: Track, project: Project): AssistantTrackSummary {
     pan: track.mixer.pan,
     muted: track.mixer.muted,
     soloed: track.mixer.soloed,
-    clipCount: project.clips.filter((clip) => clip.trackId === track.id).length,
+    clipCount: clips.length,
     placementCount: placements.length,
     pads:
       track.instrument?.kind === "drumMachine"
-        ? track.instrument.pads.map((pad) => ({ id: pad.id, name: pad.name }))
+        ? summarizePads(track.instrument.pads, clips)
         : [],
     placements: placements
       .map((placement) => ({

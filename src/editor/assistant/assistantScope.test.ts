@@ -67,13 +67,16 @@ describe("the assistant's scope", () => {
     expect(selectionKey(clips)).not.toBe(selectionKey(notes));
   });
 
-  it("sends raw notes for a selection only (ADR 0007)", () => {
+  it("sends raw notes for the selection or the track in scope, never the song (ADR 0007)", () => {
     const selected = scopedContext(project, resolveScope(notes, null));
     expect(selected.selectedNotes?.noteCount).toBe(4);
     const clipped = scopedContext(project, resolveScope(clips, null));
     expect(clipped.selectedNotes?.noteCount).toBe(4);
+    // GRV-122: the track in scope is what the producer is pointing at, so its
+    // notes go, every clip on it.
     const onTrack = scopedContext(project, resolveScope(notes, "track"));
-    expect(onTrack.selectedNotes).toBeNull();
+    expect(onTrack.selectedNotes?.noteCount).toBe(4);
+    expect(onTrack.selectedNotes?.clips.map((c) => c.trackId)).toEqual([track?.id]);
     expect(onTrack.selection).toEqual({
       description: `In scope: the track "BD" (${track?.id})`,
       countByKind: { track: 1 },

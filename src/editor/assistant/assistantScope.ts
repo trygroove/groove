@@ -17,8 +17,10 @@
  * screen.
  *
  * The context is the allowlisted payload (`src/assistant/payload.ts`, ADR
- * 0007). Raw note events go only for a selection: the track scope names its
- * track but sends no notes, and the song scope sends neither.
+ * 0007). Raw note events go for what the scope points at: the selection's
+ * notes, or every note on the track in scope (GRV-122: a producer who has
+ * just written hats into a new drum track has that track in scope, and asks
+ * about them without selecting anything). The song scope sends none.
  *
  * Pure, so the rules are tested without rendering.
  */
@@ -135,6 +137,10 @@ function selectionStateOf(selection: ScopeSelection): SelectionState {
     selection.kind === "notes"
       ? selection.eventIds.map((id) => ({ kind: "event", id }))
       : selection.placementIds.map((id) => ({ kind: "placement", id }));
+  return selectionOf(scopes);
+}
+
+function selectionOf(scopes: SelectionScope[]): SelectionState {
   return { scopes, focus: scopes[0] ?? null };
 }
 
@@ -149,20 +155,18 @@ export function scopedContext(
   if (scope.level === "selection" && scope.selection) {
     return buildAssistantPayload(project, selectionStateOf(scope.selection));
   }
-  const payload = buildAssistantPayload(project);
   if (scope.level === "track" && scope.track) {
+    const track = scope.track;
     return {
-      ...payload,
+      ...buildAssistantPayload(project, selectionOf([{ kind: "track", id: track.id }])),
       selection: {
-        description:
-          `In scope: the track "${scope.track.name}" (${scope.track.id})`.slice(
-            0,
-            MAX_DESCRIPTION,
-          ),
+        description: `In scope: the track "${track.name}" (${track.id})`.slice(
+          0,
+          MAX_DESCRIPTION,
+        ),
         countByKind: { track: 1 },
       },
-      selectedNotes: null,
     };
   }
-  return payload;
+  return buildAssistantPayload(project);
 }

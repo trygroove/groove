@@ -37,6 +37,28 @@ describe("the assistant's system prompt", () => {
     );
   });
 
+  // GRV-122: "make the hi-hats busier" looked for a hi-hat track and blamed a stale snapshot.
+  it("finds a drum sound as a pad by name, from its hit count and its hits", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "is a pad on a drum machine track, not a track of its own",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "A pad's \"noteCount\" is how many hits that track's clips give it",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "the producer's selection or the track in scope",
+    );
+  });
+
+  it("says the description is never stale, whatever an earlier reply said", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "never say your view of the project has not refreshed",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "look for it again in the description, which is newer than that reply",
+    );
+  });
+
   // GRV-101: the prompt names every panel the producer can use, so a new one is added here and there.
   it("names each of the app's panels in 'What Groove has'", () => {
     const section =
