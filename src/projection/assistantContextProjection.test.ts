@@ -166,15 +166,30 @@ describe("buildAssistantContext: selected notes (ADR 0007)", () => {
     const kit = createDenseStepFixtureProject();
     const drums = kit.song.tracks[0];
     const pads = drums.instrument?.kind === "drumMachine" ? drums.instrument.pads : [];
-    expect(buildAssistantContext(kit).tracks[0].pads).toEqual(
-      pads.map((pad) => ({ id: pad.id, name: pad.name })),
-    );
+    expect(
+      buildAssistantContext(kit).tracks[0].pads.map(({ id, name }) => ({ id, name })),
+    ).toEqual(pads.map((pad) => ({ id: pad.id, name: pad.name })));
     expect(buildAssistantContext(kit).tracks[0].pads.map((pad) => pad.name)).toEqual([
       "BD",
       "SD",
       "HH",
     ]);
     expect(buildAssistantContext(createSliceFixtureProject()).tracks[0].pads).toEqual([]);
+  });
+
+  // GRV-122: "the hi-hats" has to be findable with nothing selected.
+  it("counts each pad's hits across the track's clips, a clip once however often it plays", () => {
+    const kit = createDenseStepFixtureProject();
+    const counts = buildAssistantContext(kit).tracks[0].pads.map((pad) => [
+      pad.name,
+      pad.noteCount,
+    ]);
+    // Eight bars: a kick on every beat, snares on two and four, hats on the eighths.
+    expect(counts).toEqual([
+      ["BD", 32],
+      ["SD", 16],
+      ["HH", 64],
+    ]);
   });
 
   it("lists each track's placements by start, with no other track's", () => {

@@ -125,7 +125,7 @@ describe("the assistant's conversation", () => {
   });
 
   it("sends a message stamped with its scope, and streams the reply", async () => {
-    const { client, transport } = renderChat();
+    const { client, project, transport } = renderChat();
     await send("Make it groove");
 
     expect(composer()).toHaveValue("");
@@ -133,7 +133,8 @@ describe("the assistant's conversation", () => {
     expect(log()).toHaveTextContent("Make it groove");
     const turn = client.last();
     expect(turn.request.messages).toEqual([{ role: "user", text: "Make it groove" }]);
-    expect(turn.request.context.selectedNotes).toBeNull();
+    // The track in scope sends its notes (GRV-122).
+    expect(turn.request.context.selectedNotes?.noteCount).toBe(noteIds(project).length);
 
     // Streaming: Stop replaces Send, the log holds its announcement, and the
     // header (and so the minimised bar) says it is writing.
@@ -425,8 +426,10 @@ describe("the scope chip", () => {
     clickAndFlush(scopeChip());
     expect(scopeChip()).toHaveAccessibleName("Scope: BD");
     await send("Now the track");
-    // The track scope names its track but sends no notes (ADR 0007).
-    expect(client.last().request.context.selectedNotes).toBeNull();
+    // The track scope names its track and sends all its notes (GRV-122).
+    expect(client.last().request.context.selectedNotes?.noteCount).toBe(
+      noteIds(project).length,
+    );
     expect(client.last().request.context.selection?.description).toContain("BD");
     fireAndFlush(() => client.last().done());
 
@@ -434,6 +437,7 @@ describe("the scope chip", () => {
     expect(scopeChip()).toHaveAccessibleName("Scope: Whole song");
     await send("Now the song");
     expect(client.last().request.context.selection).toBeNull();
+    expect(client.last().request.context.selectedNotes).toBeNull();
     fireAndFlush(() => client.last().done());
 
     // Round again, then a new selection lets the choice go.

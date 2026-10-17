@@ -61,12 +61,14 @@ export const assistantTrackContextSchema = z.strictObject({
   clipCount: count,
   placementCount: count,
   /**
-   * A drum machine's pads by ID and name (GRV-23); empty for any other track.
-   * Defaults to empty so a tab still on the bundle from before GRV-23, which
-   * sends no `pads`, keeps working until it reloads.
+   * A drum machine's pads by ID and name (GRV-23), each with its hits across
+   * the track's clips (GRV-122); empty for any other track. Defaults to empty
+   * so a tab still on the bundle from before GRV-23, which sends no `pads`,
+   * keeps working until it reloads, and `noteCount` is optional for a tab on
+   * the bundle from before GRV-122.
    */
   pads: z
-    .array(z.strictObject({ id: z.string().max(64), name }))
+    .array(z.strictObject({ id: z.string().max(64), name, noteCount: count.optional() }))
     .max(MAX_CONTEXT_PADS)
     .default([]),
   /**
