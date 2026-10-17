@@ -22,6 +22,36 @@
   --muted-opacity: 0.4;
 }
 
+/* Scroll bars (GRV-115): thin, in the border greys, over no track, and drawn
+   only where something overflows (`overflow: auto`, never `scroll`). One
+   rule here so no surface ships the platform's native bars. Chromium and
+   Firefox read the standard properties; the WebKit pseudo-elements below are
+   only for a browser that has not got them, and drop the arrow buttons. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+@supports not (scrollbar-width: thin) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+  }
+}
+
 :root {
   /* The rack (#447): every instrument and device is one unit this wide at
      most, with this much rack showing between one and the next. */

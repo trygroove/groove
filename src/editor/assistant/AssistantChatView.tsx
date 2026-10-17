@@ -9,6 +9,7 @@ import {
   RetentionSettings,
 } from "./AssistantRetention";
 import { ERROR_HEADING, ERROR_REASSURANCE, errorMessage } from "./assistantErrorCopy";
+import { fitComposer } from "./composerHeight";
 import MemoryProposalCard from "./MemoryProposalCard";
 import ProposalCard from "./ProposalCard";
 import RecommendationCard from "./RecommendationCard";
@@ -121,6 +122,14 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
   let log: HTMLDivElement | undefined;
   let composerElement: HTMLTextAreaElement | undefined;
   let pinned = true;
+  // The composer follows its text (GRV-115). The draft is the one reactive
+  // read; the resize is a DOM write, so it is the apply half's.
+  createEffect(
+    () => props.chat.draft(),
+    () => {
+      if (composerElement) fitComposer(composerElement);
+    },
+  );
   const PIN_SLACK = 40;
   createEffect(
     () => conversation().entries(),
@@ -252,6 +261,7 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
               props.bindComposer(element);
             }}
             class="assistant-panel-input"
+            rows={2}
             aria-label={COMPOSER_LABEL}
             placeholder="Ask for a change, a sound, or how something works"
             maxlength={MAX_MESSAGE_CHARS}
