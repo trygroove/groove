@@ -410,6 +410,13 @@
   font-size: var(--font-size-tiny);
 }
 
+/* The quiet line on a card the rest of its turn waits behind (GRV-129). */
+.assistant-card-more {
+  margin: 0;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-tiny);
+}
+
 /* The quieter of the card's buttons; pressed (Preview, while previewing) is
    the brightest thing beside it. */
 .assistant-button {

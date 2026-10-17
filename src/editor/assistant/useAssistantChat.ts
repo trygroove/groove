@@ -9,6 +9,12 @@
 import { type Accessor, createEffect, createMemo, createSignal } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
 import type { AssistantClient } from "../../assistant/assistantClient";
+import type { AssistantToolCall } from "../../assistant/protocol";
+import {
+  createdTargets,
+  namedTarget,
+  type RecommendationTargets,
+} from "../../assistant/recommendationTargets";
 import type { AssistantRetentionClient } from "../../assistant/retentionClient";
 import { createSessionHealth, type SessionTurn } from "../../assistant/sessionHealth";
 import type { ReplyRating } from "../../assistant/transcripts";
@@ -29,7 +35,9 @@ import {
   widen,
 } from "./assistantScope";
 import { assistantSuggestions } from "./assistantSuggestions";
+import { type CardQueue, useCardQueue } from "./cardQueue";
 import type { ConversationStore } from "./conversationStore";
+import { MISSING_SLOT } from "./recommendationCardModel";
 import { type AskDraft, useAskDraft } from "./useAskDraft";
 import {
   type AssistantConversation,
@@ -140,6 +148,11 @@ export interface AssistantChat {
   readonly proposals: AssistantProposals | null;
   /** The recommended packs, when there is an editor and a library to try them in. */
   readonly recommendations: AssistantRecommendations | null;
+  /**
+   * Which of a turn's cards are held back until the one before is decided,
+   * and how many wait behind the one shown (GRV-129).
+   */
+  readonly cards: Pick<CardQueue, "held" | "heldAfter" | "skipped">;
   /** The pending question's answer so far (GRV-42). */
   readonly ask: AskDraft;
   /** The memory cards, when there is a profile to save them to (GRV-25). */
@@ -248,6 +261,25 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         })
       : null;
 
+  // A turn's proposal and sound cards come up one at a time (GRV-129). Each
+  // turn is keyed by the origin its cards share; a sound card is skipped,
+  // not shown, when the track or pad it names only the turn's declined
+  // proposal would have added.
+  const queue = useCardQueue();
+  const proposalOfTurn = new Map<
+    object,
+    { readonly entryId: string; readonly created: RecommendationTargets }
+  >();
+  function forDeclinedProposal(turn: object, call: AssistantToolCall): boolean {
+    const proposed = proposalOfTurn.get(turn);
+    if (!proposed || !proposals?.declined(proposed.entryId)) return false;
+    const { trackId, padId } = namedTarget(call.input);
+    const created =
+      (trackId !== null && proposed.created.has(trackId)) ||
+      (padId !== null && [...proposed.created.values()].some((pads) => pads.has(padId)));
+    return created && recommending?.port.slotFor(trackId, padId) === MISSING_SLOT;
+  }
+
   const profile = options.profile;
   const memory = profile
     ? useMemoryProposals({ store: profile, analytics: options.analytics })
@@ -268,7 +300,15 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
           if (origin.sessionTurn !== undefined) {
             sessionTurnOfEntry.set(entryId, origin.sessionTurn);
           }
-          proposals.receive(entryId, proposal, origin);
+          proposalOfTurn.set(origin, {
+            entryId,
+            created: createdTargets(proposal.calls),
+          });
+          queue.add(origin, {
+            entryId,
+            show: () => proposals.receive(entryId, proposal, origin),
+            decided: () => proposals.decided(entryId),
+          });
         }
       : undefined,
     session: retentionOptions
@@ -289,7 +329,12 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
       : undefined,
     onRecommendation: recommendations
       ? (entryId, call, library, origin) =>
-          recommendations.receive(entryId, call, library, origin)
+          queue.add(origin, {
+            entryId,
+            show: () => recommendations.receive(entryId, call, library, origin),
+            decided: () => recommendations.decided(entryId),
+            skip: () => forDeclinedProposal(origin, call),
+          })
       : undefined,
     memory: profile
       ? () => {
@@ -372,6 +417,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     account: options.account,
     proposals,
     recommendations,
+    cards: queue,
     ask,
     memory,
     nudge,

@@ -25,6 +25,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import type { Project } from "../../domain/entities";
+import { lessonOfferAsk, lessonOfferText } from "../../onboarding/questions";
 import type { SelectionScope, SelectionState } from "../../selection/types";
 import { type AskAnswer, type AssistantAsk, answerMessage, askTranscript } from "../ask";
 import { type AssistantMessage, assistantMessageSchema } from "../protocol";
@@ -38,6 +39,7 @@ import {
   createBdSketchProject,
   createHouseLoopProject,
   createKitSketchProject,
+  createStarterFixtureProject,
   createTechnoDrumsProject,
   createTechnoLoopProject,
 } from "./fixtures";
@@ -66,6 +68,8 @@ export const EVAL_CAPABILITIES = [
   "resketch",
   // GRV-119's basic production actions.
   "basicAction",
+  // GRV-129: sounds picked for the pads a turn adds.
+  "soundPicks",
 ] as const;
 export type EvalCapability = (typeof EVAL_CAPABILITIES)[number];
 
@@ -138,6 +142,11 @@ export interface EvalCase {
   readonly scope: EvalScope;
   /** The parts the request asks for, which check 7 looks for; none skips it. */
   readonly parts?: readonly EvalPart[];
+  /**
+   * Whether the turn carries the library (`evalLibrary.ts`), as the editor's
+   * do, so the model is offered `recommend_sounds` (GRV-129).
+   */
+  readonly library?: boolean;
 }
 
 const NOTHING_ELSE = { song: false, master: false, returns: false, sections: false };
@@ -228,6 +237,18 @@ function relativeDbCase(
     expectedValue: { track: "BD", parameter: "volume", value: to, tolerance: 0.05 },
   };
 }
+
+/** The first lesson onboarding offers a producer who wants to finish a track. */
+const FIRST_LESSON_ASK = lessonOfferAsk("first_track");
+
+/** The conversation the lesson offer ends: the producer's goal, then Cue's offer. */
+const FIRST_LESSON_HISTORY: readonly AssistantMessage[] = [
+  { role: "user", text: "My goal is to finish my first track." },
+  {
+    role: "assistant",
+    text: `${lessonOfferText("first_track", "studio")}\n\n${askTranscript(FIRST_LESSON_ASK)}`,
+  },
+];
 
 /** A turn the panel resends: the producer's words and the reply's. */
 function resentTurn(request: string, reply: string): readonly AssistantMessage[] {
@@ -492,6 +513,33 @@ export const TYPESCRIPT_CASES: readonly EvalCase[] = [
     selection: null,
     scope: SKETCH_SCOPE,
     checks: ["noNoOps"],
+  },
+  // GRV-129: the first-beat lesson's turn, which adds a drum machine and
+  // picks a sound for each of its pads.
+  {
+    id: "first-beat-lesson",
+    capability: "soundPicks",
+    axis: "conventional",
+    request: answerMessage(FIRST_LESSON_ASK, { picked: [0], text: "" }),
+    history: FIRST_LESSON_HISTORY,
+    expect: "proposal",
+    fixture: createStarterFixtureProject,
+    selection: null,
+    scope: { tracks: "all", createTracks: true, ...NOTHING_ELSE, song: true },
+    checks: ["recommendationTargets"],
+    library: true,
+  },
+  {
+    id: "snare-hats-sounds",
+    capability: "soundPicks",
+    axis: "conventional",
+    request: "Add a snare and hats, and pick sounds for them",
+    expect: "proposal",
+    fixture: createStarterFixtureProject,
+    selection: null,
+    scope: { tracks: "all", createTracks: true, ...NOTHING_ELSE },
+    checks: ["recommendationTargets"],
+    library: true,
   },
   // GRV-119: the basic production actions, a set of their own.
   ...BASIC_ACTION_CASES,

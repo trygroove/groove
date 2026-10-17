@@ -94,6 +94,7 @@ export const CHECK_LABELS: Record<CheckId, string> = {
   exactEdit: "18. Makes the exact edit asked for",
   nothingElse: "19. Nothing else changed",
   clipsPlaced: "20. Every new clip is placed",
+  recommendationTargets: "21. Each sound lands on its own pad",
 };
 
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });

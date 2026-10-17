@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ASK_PRODUCER_TOOL_NAME } from "./ask";
 import { REMEMBER_TOOL_NAME } from "./memory";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
-import { ADDED_RESULT, answerStep, continuesAfter } from "./steps";
+import { ADDED_RESULT, answerStep, continuesAfter, goesOnToReaim } from "./steps";
 import { CREATE_EXAMPLES, EXPLAIN_TOOL_NAME } from "./tools";
 
 const change = { id: "toolu_1", name: "track_create", input: CREATE_EXAMPLES.track };
@@ -32,7 +32,7 @@ describe("answerStep", () => {
       input: { track: change.input },
     };
     const remember = other(REMEMBER_TOOL_NAME, "toolu_4");
-    const { kept, results } = answerStep([change, wrapped, remember]);
+    const { kept, results } = answerStep([change, wrapped, remember], new Map());
     expect(kept).toEqual([change, remember]);
     expect(results).toEqual([
       { type: "tool_result", tool_use_id: "toolu_1", content: ADDED_RESULT },
@@ -41,6 +41,52 @@ describe("answerStep", () => {
     ]);
     expect(results[1]?.content).toMatch(
       /^Refused, not added to the proposal: .*Send this call again, corrected\.$/,
+    );
+  });
+});
+
+describe("answerStep: where a recommendation is aimed (GRV-129)", () => {
+  const recommend = (id: string, target: { trackId?: string; padId?: string }) => ({
+    id,
+    name: RECOMMEND_SOUNDS_TOOL,
+    input: { packId: "pak_x", soundIds: ["a"], reason: "Fits.", ...target },
+  });
+  const known = new Map([
+    ["trk_Kit00000000000000000001", new Set(["pad_Kick0000000000000000001"])],
+  ]);
+
+  it("notes one aimed at a track and pad the project has, and refuses one aimed at neither", () => {
+    const good = recommend("toolu_1", {
+      trackId: "trk_Kit00000000000000000001",
+      padId: "pad_Kick0000000000000000001",
+    });
+    const bad = recommend("toolu_2", { trackId: "trk_Gone" });
+    const answered = answerStep([good, bad], known);
+    expect(answered.kept).toEqual([good]);
+    expect(answered.misaimed).toBe(1);
+    expect(answered.results[0]).toEqual({
+      type: "tool_result",
+      tool_use_id: "toolu_1",
+      content: "Noted.",
+    });
+    expect(answered.results[1]).toMatchObject({ tool_use_id: "toolu_2", is_error: true });
+    expect(goesOnToReaim("tool_use", [good, bad], answered)).toBe(true);
+    expect(goesOnToReaim("tool_use", [good], answerStep([good], known))).toBe(false);
+  });
+
+  it("knows the track a track_create earlier in the step made", () => {
+    const aimed = recommend("toolu_2", { trackId: CREATE_EXAMPLES.track.id });
+    const answered = answerStep([change, aimed], known);
+    expect(answered.misaimed).toBe(0);
+    expect(answered.kept).toEqual([change, aimed]);
+    expect(answered.targets.has(CREATE_EXAMPLES.track.id)).toBe(true);
+  });
+
+  it("does not go on to re-aim a step that asked a question", () => {
+    const bad = recommend("toolu_1", { trackId: "trk_Gone" });
+    const ask = other(ASK_PRODUCER_TOOL_NAME);
+    expect(goesOnToReaim("tool_use", [bad, ask], answerStep([bad, ask], known))).toBe(
+      false,
     );
   });
 });

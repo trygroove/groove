@@ -2,6 +2,7 @@ import type { JSX } from "@solidjs/web";
 import { createMemo, For, Match, Show, Switch } from "solid-js";
 import { type ControlAddress, controlKey } from "../../commands/controlAddress";
 import { editorViewSpec } from "../editorViews";
+import { moreAfterThis } from "./cardQueue";
 import type { ProposalRow } from "./proposalCardModel";
 import type { AssistantProposals, ProposalCard as Card } from "./useAssistantProposals";
 
@@ -10,6 +11,8 @@ export interface ProposalCardProps {
   readonly proposals: AssistantProposals;
   /** Whether Refresh can ask now: not while a reply streams, nor signed out. */
   readonly canAsk: boolean;
+  /** How many of the turn's cards wait behind this one (GRV-129). */
+  readonly heldAfter?: number;
 }
 
 /** The line under the card's buttons: where it stands, announced as it changes. */
@@ -201,6 +204,9 @@ export default function ProposalCard(props: ProposalCardProps): JSX.Element {
               {proposalStatusText(current())}
             </output>
           </div>
+          <Show when={(props.heldAfter ?? 0) > 0}>
+            <p class="assistant-card-more">{moreAfterThis(props.heldAfter ?? 0)}</p>
+          </Show>
           <Show when={current().explanation}>
             {(why) => (
               <details

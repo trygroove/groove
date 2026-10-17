@@ -39,6 +39,7 @@ import {
 } from "../protocol";
 import { type AssistantProvider, ProviderFailure } from "../provider";
 import { continuesTurn, type ProviderMessagesRequest } from "../providerRequest";
+import { splitRecommendations } from "../recommendation";
 import type { ProviderUsage } from "../streamEvents";
 import type { AssistantTurnLog } from "../telemetry";
 import { ASSISTANT_TOOLSET_VERSION } from "../tools";
@@ -65,6 +66,7 @@ import {
   skip,
 } from "./checks";
 import { describeProposal, type ProposalStats } from "./describe";
+import { evalLibrary } from "./evalLibrary";
 import { type Scorecard, scorecardOf } from "./scorecard";
 import { caseSet, type EvalSetId } from "./sets";
 
@@ -383,6 +385,8 @@ export async function runCaseTurn(
           projectRevision: project.metadata.revision,
           messages: caseMessages(evalCase),
           context,
+          // As the editor sends it, so `recommend_sounds` is offered (GRV-129).
+          ...(evalCase.library ? { library: evalLibrary() } : {}),
         },
         {
           signal: controller.signal,
@@ -498,7 +502,11 @@ export function evaluateTurn(
   }
   const caseChecks = caseChecksFor(evalCase.checks, evalCase.exempt);
   const project = evalCase.fixture();
-  const valid = checkValid(project, turn.proposal, whyNoProposal(turn));
+  // Sound recommendations come back among the proposal's calls; the panel
+  // takes them out before it validates the changes, and so do the checks.
+  const split = turn.proposal ? splitRecommendations(turn.proposal) : null;
+  const changes = turn.proposal ? (split?.proposal ?? null) : turn.proposal;
+  const valid = checkValid(project, changes, whyNoProposal(turn));
   if (!valid.applied) {
     const notJudged = skip("The proposal did not apply");
     return {
@@ -524,7 +532,7 @@ export function evaluateTurn(
       valid: valid.result,
       bundled: checkBundled(proposal.commands, after),
       inScope: checkInScope(project, after, resolveScope(project, evalCase.scope)),
-      atomicUndo: checkAtomicUndo(project, turn.proposal),
+      atomicUndo: checkAtomicUndo(project, changes),
       grounded: checkGrounded(project, after, proposal.impact.controls, turn.text),
       coverage: checkCoverage(project, after, evalCase.parts ?? []),
       outcome,
@@ -535,6 +543,8 @@ export function evaluateTurn(
             commands: proposal.commands,
             expectedValue: evalCase.expectedValue,
             action: evalCase.action,
+            recommendations: split?.recommendations ?? [],
+            library: evalCase.library ? evalLibrary() : null,
           }),
         ]),
       ),

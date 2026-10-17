@@ -14,12 +14,24 @@
  * one is refused back to the model, which can send it again, rather than
  * sinking the whole proposal in the browser. What the gateway cannot check
  * (whether an ID exists in the open project) is still the browser's to refuse.
+ *
+ * A `recommend_sounds` call is checked for where it is aimed (GRV-129): a
+ * track or pad it names must be in the project context or made by a change
+ * call earlier in the turn (`recommendationTargets.ts`). One aimed at nothing
+ * is refused back to the model, even on the step that would have ended the
+ * turn, so it can name the right pad rather than leave the browser a card
+ * for a pad that does not exist.
  */
 import { isAskCall } from "./ask";
 import { isRememberCall } from "./memory";
 import type { AssistantStopReason, AssistantToolCall } from "./protocol";
 import type { ProviderToolResultBlock } from "./providerRequest";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
+import {
+  misaimedRecommendation,
+  type RecommendationTargets,
+  withCreatedTargets,
+} from "./recommendationTargets";
 import { EXPLAIN_TOOL_NAME, resolveToolCall } from "./tools";
 import { isVideoCall } from "./video";
 
@@ -74,31 +86,62 @@ function refusal(message: string): string {
 export interface AnsweredStep {
   readonly kept: readonly AssistantToolCall[];
   readonly results: readonly ProviderToolResultBlock[];
+  /** The tracks and pads a recommendation may name after this step. */
+  readonly targets: RecommendationTargets;
+  /** How many recommendations were refused for naming a track or pad that is not there. */
+  readonly misaimed: number;
 }
 
 /**
- * Answers a step the turn continues after: each change call that fits its
- * tool joins the proposal and is told so; one that does not is refused, with
- * why, and left out. Any other call is noted and kept.
+ * Answers a step: each change call that fits its tool joins the proposal and
+ * is told so; one that does not is refused, with why, and left out. A
+ * recommendation aimed at a track or pad that is neither in `targets` nor
+ * made by an earlier call is refused the same way. Any other call is noted
+ * and kept.
  */
-export function answerStep(calls: readonly AssistantToolCall[]): AnsweredStep {
+export function answerStep(
+  calls: readonly AssistantToolCall[],
+  targets: RecommendationTargets,
+): AnsweredStep {
   const kept: AssistantToolCall[] = [];
+  let known = targets;
+  let misaimed = 0;
+  const refuse = (call: AssistantToolCall, message: string): ProviderToolResultBlock => ({
+    type: "tool_result",
+    tool_use_id: call.id,
+    content: refusal(message),
+    is_error: true,
+  });
   const results = calls.map((call): ProviderToolResultBlock => {
+    if (call.name === RECOMMEND_SOUNDS_TOOL) {
+      const problem = misaimedRecommendation(call, known);
+      if (problem) {
+        misaimed += 1;
+        return refuse(call, problem);
+      }
+    }
     if (!isChangeCall(call)) {
       kept.push(call);
       return { type: "tool_result", tool_use_id: call.id, content: NOTED_RESULT };
     }
     const resolution = resolveToolCall(call.name, call.input);
-    if (!resolution.ok) {
-      return {
-        type: "tool_result",
-        tool_use_id: call.id,
-        content: refusal(resolution.message),
-        is_error: true,
-      };
-    }
+    if (!resolution.ok) return refuse(call, resolution.message);
     kept.push(call);
+    known = withCreatedTargets(known, call);
     return { type: "tool_result", tool_use_id: call.id, content: ADDED_RESULT };
   });
-  return { kept, results };
+  return { kept, results, targets: known, misaimed };
+}
+
+/**
+ * Whether a step the turn would have ended on goes on after all: it
+ * recommended a sound for a track or pad that is not there, and asked
+ * nothing, so the model is told and can aim it again.
+ */
+export function goesOnToReaim(
+  stopReason: AssistantStopReason,
+  calls: readonly AssistantToolCall[],
+  answered: AnsweredStep,
+): boolean {
+  return stopReason === "tool_use" && answered.misaimed > 0 && !calls.some(isAskCall);
 }

@@ -67,6 +67,11 @@ export interface RecommendationSlot {
   readonly target: Extract<LibraryTarget, { kind: "pad" | "sampler" }>;
   /** What the card calls it: the pad's name, or the sampler's track's. */
   readonly label: string;
+  /**
+   * What the card's header names it (GRV-129): "track · pad" on a drum
+   * machine, the track's name on a sampler.
+   */
+  readonly heading: string;
   /** The slot as a control, for its outline and for showing it. */
   readonly address: ControlAddress;
   /** Where the audio override plays. */
@@ -74,13 +79,24 @@ export interface RecommendationSlot {
 }
 
 /**
- * The slot a recommendation for `trackId` tries its sounds in: that track's,
- * or the selected track's when it names none or one the song does not have.
- * On a drum machine it is the pad the recommendation names, so a kick goes on
- * the kick's pad whichever pad is selected; when it names none, or one the kit
- * does not have, it is the selected pad, as the Library would aim. Null when
- * that track has no slot a one-shot can play through (a synth, a loop track,
- * an empty kit) or there is no track at all.
+ * A recommendation names a track or pad the song does not have (GRV-129):
+ * not the selected one in its place, and nothing to try.
+ */
+export const MISSING_SLOT = "missing";
+
+/** Where a recommendation is aimed: a slot, a named target that is missing, or nowhere. */
+export type RecommendationAim = RecommendationSlot | typeof MISSING_SLOT | null;
+
+/**
+ * The slot a recommendation for `trackId` and `padId` tries its sounds in,
+ * read against `project` as it stands now. A recommendation that names no
+ * track is for the selected one, and one that names no pad, on a drum
+ * machine, for the pad the track has selected, as the Library would aim. A
+ * pad named with no track is on whichever track has it. A named track or pad
+ * the song does not have is {@link MISSING_SLOT}, never the selection in its
+ * place (GRV-129): a pad a proposal adds is found once it is applied. Null
+ * when the track has no slot a one-shot can play through (a synth, a loop
+ * track, an empty kit) or there is no track at all.
  */
 export function recommendationSlot(
   project: Project,
@@ -88,14 +104,17 @@ export function recommendationSlot(
   padId: string | null,
   selected: Track | null,
   padSelection: PadSelection,
-): RecommendationSlot | null {
-  const named = project.song.tracks.find((track) => track.id === trackId);
-  const track = named ?? selected;
-  if (!track) return null;
-  const namedPad =
-    track.instrument?.kind === "drumMachine"
-      ? track.instrument.pads.find((pad) => pad.id === padId)
-      : undefined;
+): RecommendationAim {
+  const tracks = project.song.tracks;
+  const named = trackId === null ? null : tracks.find((track) => track.id === trackId);
+  if (named === undefined) return MISSING_SLOT;
+  const track = named ?? (padId === null ? selected : trackWithPad(tracks, padId));
+  if (!track) return padId === null ? null : MISSING_SLOT;
+  const kit = track.instrument?.kind === "drumMachine" ? track.instrument : null;
+  const namedPad = padId === null ? null : kit?.pads.find((pad) => pad.id === padId);
+  // A pad named on a kit that has pads but not that one is missing; a pad
+  // named on a sampler, or on a kit with none, is ignored as the editor does.
+  if (namedPad === undefined && kit && kit.pads.length > 0) return MISSING_SLOT;
   const aim = libraryAim(
     track,
     namedPad?.id ?? selectedPadOf(padSelection, track),
@@ -104,11 +123,12 @@ export function recommendationSlot(
   if (aim.kind !== "target") return null;
   const { target } = aim;
   if (target.kind === "pad") {
-    const pads = track.instrument?.kind === "drumMachine" ? track.instrument.pads : [];
-    const pad = pads.find((entry) => entry.id === target.padId);
+    const pad = kit?.pads.find((entry) => entry.id === target.padId);
+    const label = pad?.name ?? track.name;
     return {
       target,
-      label: pad?.name ?? track.name,
+      label,
+      heading: `${track.name} · ${label}`,
       address: controlAddress(target.padId, CONTROL_PARTS.sample),
       preview: { trackId: target.trackId, padId: target.padId },
     };
@@ -117,11 +137,23 @@ export function recommendationSlot(
     return {
       target,
       label: track.name,
+      heading: track.name,
       address: controlAddress(target.trackId, CONTROL_PARTS.sample),
       preview: { trackId: target.trackId },
     };
   }
   return null;
+}
+
+/** The track whose drum machine has pad `padId`, if any. */
+function trackWithPad(tracks: readonly Track[], padId: string): Track | null {
+  return (
+    tracks.find(
+      (track) =>
+        track.instrument?.kind === "drumMachine" &&
+        track.instrument.pads.some((pad) => pad.id === padId),
+    ) ?? null
+  );
 }
 
 /** Whether `slot` is still in the song: its track, and for a pad, the pad. */

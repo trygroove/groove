@@ -4,6 +4,7 @@ import { PlayIcon, StopIcon } from "../../components/icons";
 import PackCover from "../../library/PackCover";
 import { editorViewSpec } from "../editorViews";
 import { ERROR_HEADING, ERROR_REASSURANCE } from "./assistantErrorCopy";
+import { moreAfterThis } from "./cardQueue";
 import type {
   AssistantRecommendations,
   RecommendationCard as Card,
@@ -14,7 +15,12 @@ export interface RecommendationCardProps {
   readonly recommendations: AssistantRecommendations;
   /** Whether Refresh can ask now: not while a reply streams, nor signed out. */
   readonly canAsk: boolean;
+  /** How many of the turn's cards wait behind this one (GRV-129). */
+  readonly heldAfter?: number;
 }
+
+/** What a card says when the pad it names is not in the song (GRV-129). */
+export const MISSING_PAD = "That pad isn't in the song";
 
 /** What a failed recommendation says, under the conversation's error heading. */
 export const REFUSED_RECOMMENDATION =
@@ -31,6 +37,8 @@ export function recommendationStatusText(card: Card): string {
   const say = (() => {
     switch (card.status) {
       case "ready":
+        if (card.missing)
+          return `${MISSING_PAD}, so there's nothing to try these on. Nothing has changed.`;
         return slot && sound
           ? `Nothing has changed yet. Try ${sound} on ${slot} to hear it in the beat.`
           : "Nothing has changed yet. Select a drum pad or a sampler to try one of these in the beat.";
@@ -121,6 +129,16 @@ export default function RecommendationCard(props: RecommendationCardProps): JSX.
     return status;
   });
   const recommendation = () => current().recommendation;
+  /** Turns the card down; the turn's next card, if any, comes up. */
+  const DismissButton = () => (
+    <button
+      type="button"
+      class="assistant-button"
+      onClick={act(props.recommendations.dismiss)}
+    >
+      Dismiss
+    </button>
+  );
 
   return (
     <Show when={card() !== undefined}>
@@ -144,7 +162,8 @@ export default function RecommendationCard(props: RecommendationCardProps): JSX.
           >
             <div class="assistant-proposal-head">
               <span class="assistant-entry-label">
-                Recommended pack · {current().scopeLabel}
+                Recommended pack
+                {current().slot ? ` · ${current().slot?.heading}` : ""}
               </span>
             </div>
             <div class="assistant-pack-top">
@@ -198,6 +217,18 @@ export default function RecommendationCard(props: RecommendationCardProps): JSX.
                   >
                     {tryLabel()}
                   </button>
+                  <DismissButton />
+                </Match>
+                {/* A card that names a pad the song does not have offers
+                    nothing to try it on (GRV-129). */}
+                <Match when={offer() === "ready" && current().missing}>
+                  <button type="button" class="assistant-button-primary" disabled>
+                    Try
+                  </button>
+                  <DismissButton />
+                </Match>
+                <Match when={offer() === "ready"}>
+                  <DismissButton />
                 </Match>
                 <Match when={offer() === "trying"}>
                   <button
@@ -238,13 +269,7 @@ export default function RecommendationCard(props: RecommendationCardProps): JSX.
                       Refresh
                     </button>
                   </Show>
-                  <button
-                    type="button"
-                    class="assistant-button"
-                    onClick={act(props.recommendations.dismiss)}
-                  >
-                    Dismiss
-                  </button>
+                  <DismissButton />
                 </Match>
               </Switch>
               <button
@@ -274,6 +299,9 @@ export default function RecommendationCard(props: RecommendationCardProps): JSX.
                 {recommendationStatusText(current())}
               </output>
             </div>
+            <Show when={(props.heldAfter ?? 0) > 0}>
+              <p class="assistant-card-more">{moreAfterThis(props.heldAfter ?? 0)}</p>
+            </Show>
           </section>
         )}
       </Show>
