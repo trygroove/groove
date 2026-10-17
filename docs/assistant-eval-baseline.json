@@ -1,6 +1,7 @@
 {
   "generatedAt": "2026-10-17T19:48:14.049Z",
   "model": "claude-sonnet-5",
+  "thinkingEffort": "medium",
   "promptVersion": "2026-10-16.2",
   "toolsetVersion": 8,
   "runsPerCase": 3,
