@@ -238,7 +238,9 @@ export default defineConfig({
       "posthog-js",
       "tone",
       "nanoid",
-      "zod",
+      // Not bare `zod`: that is aliased to `src/zodConfig.ts` below, which
+      // re-exports this same build once it has configured it.
+      "zod/v4",
       "since-time-ago",
     ],
   },
@@ -255,8 +257,18 @@ export default defineConfig({
   server: { port: 3000 },
   preview: { port: 3000 },
   resolve: {
-    alias: {
-      "~": new URL("./src", import.meta.url).pathname,
-    },
+    alias: [
+      { find: "~", replacement: new URL("./src", import.meta.url).pathname },
+      // Every `import ... from "zod"` in the client gets Zod already configured
+      // for the Content-Security-Policy (GRV-7): `src/zodConfig.ts` turns off
+      // Zod's `new Function` probe and re-exports `zod/v4`, the same build.
+      // Being Zod's own entry point, the config is a dependency of every
+      // module that builds a schema, so no chunk can evaluate a schema before
+      // it, whatever order the bundler lays the chunks out in.
+      {
+        find: /^zod$/,
+        replacement: new URL("./src/zodConfig.ts", import.meta.url).pathname,
+      },
+    ],
   },
 });
