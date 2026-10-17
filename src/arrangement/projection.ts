@@ -3,6 +3,7 @@ import type {
   AutomationLane,
   Clip,
   NoteEvent,
+  Placement,
   Project,
   Track,
 } from "../domain/entities";
@@ -60,7 +61,7 @@ export type PlacementPreview =
  * any pitched rows.
  */
 export interface NotePreview {
-  /** Relative to the clip start. */
+  /** Relative to the placement start, repeated across it when looped. */
   readonly startTicks: number;
   readonly durationTicks: number;
   readonly lane: number;
@@ -205,7 +206,7 @@ export function buildArrangementProjection(
       // `color` is not what the arrangement shows.
       color: track.color,
       label: clip.name,
-      preview: buildPreview(clip, assetsById, track),
+      preview: buildPreview(clip, placement, assetsById, track),
       // The track is folded in because colour and the drum-pad preview rows
       // both read it: a track edit must invalidate its placements' geometry.
       revision: combineRevisions(
@@ -278,6 +279,7 @@ export function buildArrangementProjection(
 
 function buildPreview(
   clip: Clip,
+  placement: Placement,
   assetsById: ReadonlyMap<AssetId, Asset>,
   track: Track | undefined,
 ): PlacementPreview {
@@ -289,11 +291,13 @@ function buildPreview(
       assetRevision: asset ? revisionOf(asset) : 0,
     };
   }
-  return buildNotesPreview(clip.content.events, track);
+  return buildNotesPreview(clip, clip.content.events, placement, track);
 }
 
 function buildNotesPreview(
+  clip: Clip,
   events: readonly NoteEvent[],
+  placement: Placement,
   track: Track | undefined,
 ): PlacementPreview {
   let minPitch = Number.POSITIVE_INFINITY;
@@ -322,15 +326,48 @@ function buildNotesPreview(
   return {
     kind: "notes",
     laneCount: pitchLanes + padLanes.size,
-    notes: events.map((event) => ({
-      startTicks: event.startTicks,
-      durationTicks: event.durationTicks,
+    notes: repeatAcrossPlacement(events, clip.lengthTicks, placement).map((note) => ({
+      ...note,
       lane:
-        event.trigger.kind === "pitch"
-          ? maxPitch - event.trigger.pitch
-          : (padLanes.get(event.trigger.padId) ?? 0),
+        note.event.trigger.kind === "pitch"
+          ? maxPitch - note.event.trigger.pitch
+          : (padLanes.get(note.event.trigger.padId) ?? 0),
     })),
   };
+}
+
+/**
+ * The notes the placement sounds, positioned from the placement's start. This
+ * mirrors `computePlacementSchedule` (`src/audio/scheduling.ts`): a looped
+ * placement repeats the clip's notes end to end across its whole length, and
+ * the clip offset trims the material in from the left, so the arrangement
+ * draws the notes the producer hears (GRV-133).
+ */
+function repeatAcrossPlacement(
+  events: readonly NoteEvent[],
+  clipLengthTicks: number,
+  placement: Placement,
+): { event: NoteEvent; startTicks: number; durationTicks: number }[] {
+  const { durationTicks, clipOffsetTicks } = placement;
+  const repeatCount =
+    placement.looped && clipLengthTicks > 0
+      ? Math.max(1, Math.ceil((durationTicks + clipOffsetTicks) / clipLengthTicks))
+      : 1;
+  const notes: { event: NoteEvent; startTicks: number; durationTicks: number }[] = [];
+  for (let repeat = 0; repeat < repeatCount; repeat += 1) {
+    const repeatOffset = repeat * clipLengthTicks;
+    if (repeatOffset - clipOffsetTicks >= durationTicks) break;
+    for (const event of events) {
+      const startTicks = event.startTicks - clipOffsetTicks + repeatOffset;
+      if (startTicks < 0 || startTicks >= durationTicks) continue;
+      notes.push({
+        event,
+        startTicks,
+        durationTicks: Math.min(event.durationTicks, durationTicks - startTicks),
+      });
+    }
+  }
+  return notes;
 }
 
 function arrangementLengthTicks(project: Project): number {
