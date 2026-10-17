@@ -15,7 +15,7 @@ import {
   createSliceFixtureProject,
 } from "../domain/fixtures";
 import { createSeededIdFactory } from "../domain/ids";
-import { TICKS_PER_BAR } from "../domain/time";
+import { TICKS_PER_BAR, toTicks } from "../domain/time";
 import type { RowMetrics } from "./geometry";
 import {
   buildArrangementProjection,
@@ -72,6 +72,35 @@ describe("buildArrangementProjection", () => {
     if (placement.preview.kind !== "notes") throw new Error("expected notes");
     expect(placement.preview.laneCount).toBe(13);
     expect(placement.preview.notes.map((note) => note.lane)).toEqual([12, 8, 5, 0]);
+  });
+
+  it("repeats a looped placement's notes across its whole length (GRV-133)", () => {
+    const base = createPianoRollFixtureProject();
+    const [placement] = base.song.placements;
+    const clip = base.clips.find((candidate) => candidate.id === placement.clipId);
+    if (!clip || clip.content.kind !== "notes") throw new Error("expected notes");
+    const noteCount = clip.content.events.length;
+    const project: Project = {
+      ...base,
+      song: {
+        ...base.song,
+        placements: [
+          {
+            ...placement,
+            looped: true,
+            clipOffsetTicks: toTicks(0),
+            durationTicks: toTicks(clip.lengthTicks * 4),
+          },
+          ...base.song.placements.slice(1),
+        ],
+      },
+    };
+    const projection = buildArrangementProjection(project, rowMetrics);
+    const geometry = projection.placementsById.get(placement.id);
+    if (geometry?.preview.kind !== "notes") throw new Error("expected notes");
+    expect(geometry.preview.notes).toHaveLength(noteCount * 4);
+    const starts = geometry.preview.notes.map((note) => note.startTicks);
+    expect(Math.max(...starts)).toBeGreaterThanOrEqual(clip.lengthTicks * 3);
   });
 
   it("labels an audioLoop clip's placement with a waveform preview", () => {
