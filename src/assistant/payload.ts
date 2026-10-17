@@ -3,9 +3,9 @@
  * assistant projections and cut down to the allowlist, field by field:
  *
  * - from `buildAssistantContext`: the project's name, tempo, swing, time signature
- *   and length; its sections; its tracks with their mixer state and where
- *   their placements sit; a description of the selection; and the
- *   selection's raw notes;
+ *   and length; its sections; its tracks with their mixer state, where
+ *   their placements sit and a drum machine's pads with their hit counts; a
+ *   description of the selection; and the selection's raw notes;
  * - from `buildProjectAnalysis`: derived note statistics (register, mean
  *   velocity, density, repetition).
  *
@@ -71,7 +71,7 @@ export function buildAssistantPayload(
       placementCount: track.placementCount,
       pads: track.pads
         .slice(0, MAX_CONTEXT_PADS)
-        .map((pad) => ({ id: pad.id, name: pad.name })),
+        .map((pad) => ({ id: pad.id, name: pad.name, noteCount: pad.noteCount })),
       placements: track.placements.slice(0, MAX_CONTEXT_PLACEMENTS).map((placement) => ({
         id: placement.id,
         clipId: placement.clipId,

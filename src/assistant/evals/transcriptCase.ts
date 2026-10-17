@@ -1,6 +1,6 @@
 /**
  * A kept assistant turn as an eval case file (GRV-98): a real failure becomes
- * a regression case for `bun run eval:assistant -- --from-transcript <file>`
+ * a regression case for `bun run assistant:eval -- --from-transcript <file>`
  * (`evalCaseFromTranscript` in `cases.ts` turns the file into the case).
  *
  * The admin transcript viewer downloads a turn as an

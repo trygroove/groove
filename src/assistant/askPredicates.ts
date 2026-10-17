@@ -23,6 +23,16 @@ function track(project: Project, trackId: string): Track | undefined {
   return project.song.tracks.find((candidate) => candidate.id === trackId);
 }
 
+/** Whether a clip on the track holds at least one note. */
+function hasNotes(project: Project, trackId: string): boolean {
+  return project.clips.some(
+    (clip) =>
+      clip.trackId === trackId &&
+      clip.content.kind === "notes" &&
+      clip.content.events.length > 0,
+  );
+}
+
 function matchingTracks(
   project: Project,
   predicate: Extract<AskPredicate, { kind: "trackAdded" }>,
@@ -31,7 +41,8 @@ function matchingTracks(
     (candidate) =>
       (predicate.trackType === undefined || candidate.type === predicate.trackType) &&
       (predicate.instrumentKind === undefined ||
-        candidate.instrument?.kind === predicate.instrumentKind),
+        candidate.instrument?.kind === predicate.instrumentKind) &&
+      (!predicate.withNotes || hasNotes(project, candidate.id)),
   ).length;
 }
 

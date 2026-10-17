@@ -96,6 +96,8 @@ export function RetentionSettings(props: {
     const want = event.currentTarget.checked;
     // The box shows what is stored, not what was clicked, until it is stored.
     event.currentTarget.checked = props.retention.retain() === true;
+    // Never `disabled` while saving: that drops keyboard focus to the document.
+    if (props.retention.saving()) return;
     setConfirmation(null);
     if (await props.retention.answer(want)) {
       setConfirmation(want ? OPTED_IN_CONFIRMATION : OPTED_OUT_CONFIRMATION);
@@ -119,7 +121,7 @@ export function RetentionSettings(props: {
             <input
               type="checkbox"
               checked={props.retention.retain() === true}
-              disabled={props.retention.saving()}
+              aria-disabled={props.retention.saving() ? "true" : undefined}
               aria-describedby="assistant-setting-scope"
               onChange={(event) => void change(event)}
             />

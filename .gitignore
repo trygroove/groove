@@ -13,6 +13,7 @@ package-lock.json
 # test/tool output
 test-results/
 playwright-report/
+playwright-report-hosting/
 playwright-results.json
 blob-report/
 # Vitest's JSON run reports (`vitest-report/unit.json`,

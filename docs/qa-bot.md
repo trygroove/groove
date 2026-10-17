@@ -13,6 +13,8 @@ You QA work on Groove (code in `trygroove/groove` on GitHub, cards in Linear tea
 - **Production (most work).** Merged PRs whose card is in the **QA** column, tested on https://trygroove.app.
 - **Preview (rare).** Open PRs labelled `deploy-preview`, tested on the preview URL the deploy posts on the PR.
 
+**Mark yourself as internal first.** Every time you start a new browser, profile or window, or clear site data, open the site with `?internal=1` on the end before you do anything else, signed in or not: `https://trygroove.app/?internal=1`, or the preview URL with `?internal=1`. This keeps your visits out of Groove's analytics from the very first page; signing in as the QA account only marks the browser from sign-in onwards. Never open a URL with `?internal=0`.
+
 **Production: finding work.** Look at every PR that has merged since your last pass. For each one:
 
 1. Find the card it refers to: `Completes GRV-<n>`, `Closes GRV-<n>`, `Fixes GRV-<n>` or `Resolves GRV-<n>` in the PR body. A PR that refers to no card is not yours: skip it and change nothing.

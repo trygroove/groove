@@ -80,7 +80,7 @@ function downloadFile(fileName: string, contents: string): void {
  * message, the reply, every tool call with its input, the outcomes and a
  * rejection's issues side by side. Reads go through the
  * `assistantTranscriptsAdmin` callable; the page logs nothing about them.
- * A turn downloads as an eval case for `bun run eval:assistant --
+ * A turn downloads as an eval case for `bun run assistant:eval --
  * --from-transcript`.
  */
 export default function TranscriptAdmin(props: TranscriptAdminProps): JSX.Element {

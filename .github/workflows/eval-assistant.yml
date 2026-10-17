@@ -1,6 +1,6 @@
 name: Assistant evals
 
-# The assistant's musical capability evals (GRV-6), `bun run eval:assistant`,
+# The assistant's musical capability evals (GRV-6), `bun run assistant:eval`,
 # against the live model. On demand only, from the Actions tab ("Run
 # workflow"): every run spends real API credit, so it never runs per push or
 # on a schedule. It needs the `ANTHROPIC_API_KEY` Actions secret; the script
@@ -65,7 +65,7 @@ jobs:
           EVAL_MODEL: ${{ inputs.model }}
         run: |
           read -r -a cases <<< "$EVAL_CASES"
-          bun run eval:assistant -- "${cases[@]}" --runs "$EVAL_RUNS" --model "$EVAL_MODEL" --out tmp/assistant-evals/run
+          bun run assistant:eval -- "${cases[@]}" --runs "$EVAL_RUNS" --model "$EVAL_MODEL" --out tmp/assistant-evals/run
       - name: Add the report to the run summary
         if: ${{ !cancelled() && hashFiles('tmp/assistant-evals/run/report.md') != '' }}
         run: cat tmp/assistant-evals/run/report.md >> "$GITHUB_STEP_SUMMARY"
