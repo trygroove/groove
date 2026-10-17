@@ -327,7 +327,8 @@ function buildNotesPreview(
     kind: "notes",
     laneCount: pitchLanes + padLanes.size,
     notes: repeatAcrossPlacement(events, clip.lengthTicks, placement).map((note) => ({
-      ...note,
+      startTicks: note.startTicks,
+      durationTicks: note.durationTicks,
       lane:
         note.event.trigger.kind === "pitch"
           ? maxPitch - note.event.trigger.pitch
