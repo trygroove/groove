@@ -685,8 +685,10 @@
 
 .assistant-panel-input {
   box-sizing: border-box;
-  height: 56px;
+  /* Two lines at rest; `fitComposer` grows it to its text, up to ten lines,
+     and past that it scrolls (GRV-115). */
   padding: 8px 10px;
+  overflow-y: auto;
   resize: none;
   border: none;
   border-radius: 0;

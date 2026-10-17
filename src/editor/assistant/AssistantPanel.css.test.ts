@@ -63,3 +63,11 @@ describe("assistant composer type", () => {
     expect(css).not.toMatch(/::placeholder/);
   });
 });
+
+describe("assistant composer height (GRV-115)", () => {
+  it("rests at two lines with no fixed height, so it can grow with its text", () => {
+    const declarations = declarationsOf(".assistant-panel-input");
+    expect(declarations.some((d) => d.startsWith("height:"))).toBe(false);
+    expect(declarations).toContain("overflow-y: auto");
+  });
+});
