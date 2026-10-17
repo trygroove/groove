@@ -17,7 +17,16 @@ import { encodeProject, projectDocumentPath, songDocumentPath } from "./document
  */
 const backend = vi.hoisted(() => {
   const documents = new Map<string, Record<string, unknown>>();
-  const state = { lostAcknowledgements: 0 };
+  const state = {
+    lostAcknowledgements: 0,
+    /**
+     * Another writer's save, landing between a transaction's read and its
+     * commit. The emulator's rules then refuse the stale commit with
+     * `permission-denied` before its preconditions are checked (GRV-7), which
+     * is what this reproduces.
+     */
+    racingWrite: null as null | (() => void),
+  };
 
   class FakeFirestoreError extends Error {
     readonly code: string;
@@ -86,6 +95,12 @@ const backend = vi.hoisted(() => {
           },
         };
         const result = await update(tx);
+        if (state.racingWrite) {
+          const race = state.racingWrite;
+          state.racingWrite = null;
+          race();
+          throw new FakeFirestoreError("permission-denied", "PERMISSION_DENIED");
+        }
         try {
           commit(writes);
           return result;
@@ -170,6 +185,40 @@ describe("FirestoreProjectRepository revision-checked writes", () => {
   beforeEach(() => {
     backend.documents.clear();
     backend.state.lostAcknowledgements = 0;
+    backend.state.racingWrite = null;
+  });
+
+  it("reports a conflict when the rules refuse a commit another save overtook", async () => {
+    const project = createSliceFixtureProject();
+    const id = project.metadata.id;
+    expect((await repository().createProject(project)).ok).toBe(true);
+    backend.state.racingWrite = () => {
+      const path = projectDocumentPath(id);
+      const stored = backend.documents.get(path) as Record<string, number>;
+      backend.documents.set(path, { ...stored, revision: stored.revision + 1 });
+    };
+
+    const saved = await repository().saveClip(
+      id,
+      project.clips[0],
+      project.metadata.revision,
+    );
+
+    expect(saved).toMatchObject({ ok: false, reason: "revision_conflict" });
+  });
+
+  it("still reports a refusal as one when the revision has not moved", async () => {
+    const project = createSliceFixtureProject();
+    expect((await repository().createProject(project)).ok).toBe(true);
+    backend.state.racingWrite = () => {};
+
+    const saved = await repository().saveClip(
+      project.metadata.id,
+      project.clips[0],
+      project.metadata.revision,
+    );
+
+    expect(saved).toMatchObject({ ok: false, reason: "unavailable", retryable: false });
   });
 
   it("reports a saved clip when the commit landed but its acknowledgement was lost", async () => {
