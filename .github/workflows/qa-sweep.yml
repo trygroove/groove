@@ -78,6 +78,9 @@ jobs:
     name: Walk ${{ matrix.flow.id }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    # The QA sign-in service account lives in the `prod` environment; a job
+    # that does not declare it sees that secret as an empty string.
+    environment: prod
     # Read-only on purpose: an agent gets a list of the open issues to check
     # duplicates against but no Linear key, so it can file, comment or push
     # nothing. The `file` job does every write, which is what makes the issue
