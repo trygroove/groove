@@ -12,7 +12,8 @@
  *
  * The gateway expands them ({@link createNoteExpander}) before a call joins
  * the proposal, minting each note's ID from the turn's ID stem in the order
- * the calls came, so the proposal the browser validates, previews, applies,
+ * the calls came ({@link gatewayNoteId}: a counter the model's own IDs never
+ * use, so the two cannot collide), so the proposal the browser validates, previews, applies,
  * undoes and keeps in a transcript is made of ordinary note events and
  * ordinary command payloads, exactly as before. Nothing outside the gateway
  * ever sees a compact note.
@@ -30,7 +31,7 @@ import {
   parameterValueSchema,
 } from "../domain/parameters";
 import { durationTickSchema, tickSchema } from "../domain/time";
-import { NEW_ID_COUNTER_DIGITS, newId } from "./prompt";
+import { NEW_ID_COUNTER_DIGITS } from "./prompt";
 import type { AssistantToolCall } from "./protocol";
 
 /** What the tools say a note is, wherever they take one. */
@@ -46,6 +47,8 @@ export const compactNoteSchema = z
     parameterValueSchema(NOTE_VELOCITY),
     parameterValueSchema(NOTE_PROBABILITY).nullable().optional(),
   ])
+  // Nothing after the probability: the offered schema says so too.
+  .rest(z.never())
   .describe(COMPACT_NOTE_DESCRIPTION);
 export type CompactNote = z.infer<typeof compactNoteSchema>;
 
@@ -66,13 +69,36 @@ export const compactNoteAddSchema = z.strictObject({
   notes: compactNotesSchema.min(1),
 });
 
-/** The most notes one turn may write: what the ID counter can number. */
-export const MAX_TURN_NOTES = 10 ** NEW_ID_COUNTER_DIGITS - 1;
+/**
+ * What starts the counter of a note ID the gateway mints. The model's new IDs
+ * end in a counter of digits only (`prompt.ts`), notes_duplicate's included,
+ * so a counter that starts with a letter is one it never makes.
+ */
+const GATEWAY_NOTE_MARK = "n";
+
+/** The digits after {@link GATEWAY_NOTE_MARK}, so the ID keeps its length. */
+const GATEWAY_NOTE_DIGITS = NEW_ID_COUNTER_DIGITS - GATEWAY_NOTE_MARK.length;
+
+/** The most notes one turn may write: what the gateway's counter can number. */
+export const MAX_TURN_NOTES = 10 ** GATEWAY_NOTE_DIGITS - 1;
+
+/** The `index`th note ID the gateway mints in a turn given `stem`, from 1. */
+export function gatewayNoteId(stem: string, index: number): string {
+  return `${ID_PREFIXES.event}_${stem}${GATEWAY_NOTE_MARK}${String(index).padStart(GATEWAY_NOTE_DIGITS, "0")}`;
+}
 
 /** A call with its compact notes written out, or why they could not be. */
 export type ExpandedCall =
-  | { readonly ok: true; readonly call: AssistantToolCall }
+  | {
+      readonly ok: true;
+      readonly call: AssistantToolCall;
+      /** The IDs given to the notes it wrote out, in the order it gave them. */
+      readonly noteIds: readonly string[];
+    }
   | { readonly ok: false; readonly message: string };
+
+/** Why an expanded call is refused, or null when it is accepted. */
+export type ExpandedCheck = (call: AssistantToolCall) => string | null;
 
 /** Where each tool that takes notes keeps them in its input. */
 const NOTE_FIELDS: Readonly<Record<string, (input: Record<string, unknown>) => NotesAt>> =
@@ -124,25 +150,32 @@ export interface NoteExpander {
    * `call` with every compact note it carries written out as a note event
    * with a new ID, or why one of them is not a note. A call that carries
    * none comes back as it is.
+   *
+   * `check`, when given, judges the written-out call; one it refuses comes
+   * back refused, and only a call it accepts uses up note IDs, so a refused
+   * call sent again corrected gets the IDs it would have had.
    */
-  expand(call: AssistantToolCall): ExpandedCall;
+  expand(call: AssistantToolCall, check?: ExpandedCheck): ExpandedCall;
 }
 
 /**
  * The expander for one turn: note IDs come from `stem` as every other new ID
- * the turn makes does (`prompt.ts`), counted up across the turn in the order
- * the calls are expanded, so the same calls always expand to the same notes.
+ * the turn makes does, in a counter of their own ({@link gatewayNoteId}),
+ * counted up across the turn in the order the calls are accepted, so the same
+ * calls always expand to the same notes.
  */
 export function createNoteExpander(stem: string): NoteExpander {
   let minted = 0;
   return {
-    expand(call) {
+    expand(call, check) {
       const field = isRecord(call.input) ? NOTE_FIELDS[call.name] : undefined;
       const at = field && isRecord(call.input) ? field(call.input) : null;
       if (!at || !Array.isArray(at.notes) || !at.notes.some(Array.isArray)) {
-        return { ok: true, call };
+        const refused = check?.(call) ?? null;
+        return refused === null ? { ok: true, call, noteIds: [] } : refusedCall(refused);
       }
       const events: unknown[] = [];
+      const noteIds: string[] = [];
       for (const [index, note] of at.notes.entries()) {
         if (!Array.isArray(note)) {
           events.push(note);
@@ -157,16 +190,24 @@ export function createNoteExpander(stem: string): NoteExpander {
             message: `${where}: ${issue?.message ?? "not a note"}; a note is [startTicks, pitch or padId, durationTicks, velocity]`,
           };
         }
-        if (minted >= MAX_TURN_NOTES) {
-          return {
-            ok: false,
-            message: `One proposal may write at most ${MAX_TURN_NOTES} notes; loop a short clip instead`,
-          };
+        if (minted + noteIds.length >= MAX_TURN_NOTES) {
+          return refusedCall(
+            `One proposal may write at most ${MAX_TURN_NOTES} notes; loop a short clip instead`,
+          );
         }
-        minted += 1;
-        events.push(noteEventOf(parsed.data, newId(ID_PREFIXES.event, stem, minted)));
+        const id = gatewayNoteId(stem, minted + noteIds.length + 1);
+        noteIds.push(id);
+        events.push(noteEventOf(parsed.data, id));
       }
-      return { ok: true, call: { ...call, input: at.write(events) } };
+      const expanded = { ...call, input: at.write(events) };
+      const refused = check?.(expanded) ?? null;
+      if (refused !== null) return refusedCall(refused);
+      minted += noteIds.length;
+      return { ok: true, call: expanded, noteIds };
     },
   };
+}
+
+function refusedCall(message: string): ExpandedCall {
+  return { ok: false, message };
 }

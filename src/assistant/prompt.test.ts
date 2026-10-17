@@ -168,9 +168,12 @@ describe("the assistant's system prompt", () => {
     );
     expect(ids.text).toContain(`the stem ${"S".repeat(17)}`);
     expect(ids.text).toContain(newId(ID_PREFIXES.clip, "S".repeat(17), 2));
-    // Notes take no ID (GRV-131): the gateway mints theirs from the stem.
-    expect(ids.text).not.toContain(`${ID_PREFIXES.event}_`);
-    expect(ids.text).toContain("New notes take no ID.");
+    // Notes take no ID (GRV-131): the gateway mints theirs from the stem,
+    // and the model makes one only for notes_duplicate.
+    expect(ids.text).toContain(newId(ID_PREFIXES.event, "S".repeat(17), 1));
+    expect(ids.text).toContain(
+      "A note ID is only for notes_duplicate's newIds: the notes you write in clip_create and note_add take none.",
+    );
     // The fixed prompt never asks for an ID to be counted out by hand.
     expect(ASSISTANT_SYSTEM_PROMPT).not.toMatch(/padding .* zeros/);
   });

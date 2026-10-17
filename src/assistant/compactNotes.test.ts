@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
+import { ID_PREFIXES } from "../domain/ids";
 import {
   compactClipSchema,
+  compactNoteSchema,
   createNoteExpander,
+  gatewayNoteId,
   MAX_TURN_NOTES,
   noteEventOf,
 } from "./compactNotes";
+import { NEW_ID_COUNTER_DIGITS, newId } from "./prompt";
 import {
   assistantTools,
   CREATE_EXAMPLES,
@@ -56,9 +61,9 @@ describe("createNoteExpander", () => {
         : [],
     );
     expect(ids).toEqual([
-      "evt_Stem00000000000000001",
-      "evt_Stem00000000000000002",
-      "evt_Stem00000000000000003",
+      "evt_Stem0000000000000n001",
+      "evt_Stem0000000000000n002",
+      "evt_Stem0000000000000n003",
     ]);
     // A fresh turn with the same stem and calls makes the same notes.
     expect(
@@ -94,12 +99,12 @@ describe("createNoteExpander", () => {
     };
     const mute = { id: "toolu_3", name: "track_setFlag", input: { flag: "muted" } };
     for (const call of [written, audio, mute, noteAdd([])]) {
-      expect(notes.expand(call)).toEqual({ ok: true, call });
+      expect(notes.expand(call)).toEqual({ ok: true, call, noteIds: [] });
     }
     // None of them used up a note ID.
     const next = notes.expand(noteAdd([[0, 36, 192, 0.8]]));
     expect(next.ok && JSON.stringify(next.call.input)).toContain(
-      "evt_Stem00000000000000001",
+      "evt_Stem0000000000000n001",
     );
   });
 
@@ -128,6 +133,33 @@ describe("createNoteExpander", () => {
     }
   });
 
+  it("numbers its notes where the model's own new IDs never reach", () => {
+    // The model counts in digits only (notes_duplicate's newIds); the
+    // gateway's counter starts with a letter, so no index meets another.
+    const model = new Set(
+      Array.from({ length: 10 ** NEW_ID_COUNTER_DIGITS - 1 }, (_, index) =>
+        newId(ID_PREFIXES.event, STEM, index + 1),
+      ),
+    );
+    for (const index of [1, 2, 10, 100, MAX_TURN_NOTES]) {
+      const id = gatewayNoteId(STEM, index);
+      expect(id).toHaveLength(newId(ID_PREFIXES.event, STEM, 1).length);
+      expect(model.has(id)).toBe(false);
+    }
+  });
+
+  it("uses up note IDs only for a call its check accepts", () => {
+    const notes = createNoteExpander(STEM);
+    const refused = notes.expand(noteAdd([[0, 36, 192, 0.8]]), () => "no such clip");
+    expect(refused).toEqual({ ok: false, message: "no such clip" });
+    const accepted = notes.expand(noteAdd([[0, 36, 192, 0.8]]), () => null);
+    expect(accepted).toMatchObject({ ok: true, noteIds: [gatewayNoteId(STEM, 1)] });
+    // A call with no compact notes is judged by the check too.
+    expect(
+      notes.expand({ id: "toolu_2", name: "track_setFlag", input: {} }, () => "bad"),
+    ).toEqual({ ok: false, message: "bad" });
+  });
+
   it("refuses more notes in a turn than its IDs can number", () => {
     const notes = createNoteExpander(STEM);
     const many = Array.from({ length: MAX_TURN_NOTES }, (_, index) => [
@@ -138,6 +170,16 @@ describe("createNoteExpander", () => {
     ]);
     expect(notes.expand(noteAdd(many)).ok).toBe(true);
     expect(notes.expand(noteAdd([[0, 36, 1, 0.5]]))).toMatchObject({ ok: false });
+  });
+});
+
+describe("compactNoteSchema", () => {
+  it("takes nothing after the probability, and says so in the schema it offers", () => {
+    expect(compactNoteSchema.safeParse([0, 36, 192, 0.8, 0.5]).success).toBe(true);
+    expect(compactNoteSchema.safeParse([0, 36, 192, 0.8, 0.5, 1]).success).toBe(false);
+    expect(z.toJSONSchema(compactNoteSchema, { io: "input" })).toMatchObject({
+      items: { not: {} },
+    });
   });
 });
 

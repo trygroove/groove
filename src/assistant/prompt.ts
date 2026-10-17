@@ -103,8 +103,9 @@
  *
  * 2026-10-17.2 (GRV-131): tool set 9. A note in clip_create and note_add is
  * a short array with no ID, a drum hit's pad ID in place of its pitch, and
- * the new-ID examples no longer number notes: output was half of what a turn
- * cost, and most of a sketch's output was whole note events.
+ * the model makes a note ID only for notes_duplicate's newIds: output was
+ * half of what a turn cost, and most of a sketch's output was whole note
+ * events.
  */
 import { customAlphabet } from "nanoid";
 import { ASSISTANT_NAME } from "../../site.config.mjs";
@@ -217,7 +218,7 @@ A genre, a reference or the song's current style is a starting point, never a ru
 ## How the tools address things
 
 - IDs are a prefix, an underscore and exactly ${ID_SUFFIX_LENGTH} letters, digits, "_" or "-". Tracks ${ID_PREFIXES.track}_, clips ${ID_PREFIXES.clip}_, notes ${ID_PREFIXES.event}_, placements ${ID_PREFIXES.placement}_, devices ${ID_PREFIXES.device}_, drum pads ${ID_PREFIXES.pad}_, returns ${ID_PREFIXES.return}_. Copy an existing ID exactly. Make a new one only from the stem given after the project description, as it says there: never by counting out characters yourself, and never reuse one.
-- A new note, in clip_create and note_add, is an array with no ID: [startTicks, pitch, durationTicks, velocity], e.g. [0, 36, 192, 0.8]; a drum hit has its pad's ID in place of the pitch, e.g. [0, "pad_...", 48, 0.9]; an optional fifth number is its probability. Groove gives each new note its ID, so never make one for a note. An existing note keeps the ID the description gives it, for note_update and note_remove.
+- A new note, in clip_create and note_add, is an array with no ID: [startTicks, pitch, durationTicks, velocity], e.g. [0, 36, 192, 0.8]; a drum hit has its pad's ID in place of the pitch, e.g. [0, "pad_...", 48, 0.9]; an optional fifth number is its probability. Groove gives each note you write its ID, and the answer to the call lists them; never make one for a note you write. An existing note keeps the ID the description gives it, for note_update and note_remove. The one time you make a note ID is notes_duplicate's newIds, one per note it copies, from the stem as below.
 - parameter_set takes the full parameter ID at song, track, master, send and return scope: ${SONG_TEMPO.id} (${SONG_TEMPO.min} to ${SONG_TEMPO.max}) and ${SONG_SWING.id} (${SONG_SWING.min} straight to ${SONG_SWING.max}) on the song; ${TRACK_VOLUME.id} (${TRACK_VOLUME.min} to ${TRACK_VOLUME.max} dB) and ${TRACK_PAN.id} on a track; ${MASTER_VOLUME.id} on the master; ${TRACK_SEND_LEVEL.id} (0 to 1) on a send; ${RETURN_VOLUME.id} and ${RETURN_PAN.id} on a return. At instrument and device scope it takes the bare key listed below (cutoff, threshold).
 - A bar of 4/4 is ${TICKS_PER_BAR} ticks and a sixteenth ${TICKS_PER_SIXTEENTH}. A clip's notes sit at ticks inside the clip; a clip is at most ${MAX_CLIP_LENGTH_BARS} bars long. A placement puts a clip on its track's timeline at startTicks for durationTicks, and looped: true repeats the clip to fill it. Placements on one track may not overlap: each track's placements are in the description, so put a new one where nothing on its track is playing, or shorten or move the one in the way with placement_update in the same call.
 - A track's order runs from 0 and a new one goes at the end, at the number of tracks the description lists. A device's order is its place in its chain; 0 puts it first, which is always valid.
@@ -278,8 +279,9 @@ export function newIdInstructions(stem: string): string {
     newId(ID_PREFIXES.clip, stem, 1),
     newId(ID_PREFIXES.clip, stem, 2),
     newId(ID_PREFIXES.placement, stem, 1),
+    newId(ID_PREFIXES.event, stem, 1),
   ];
-  return `New IDs this turn: the prefix, an underscore, the stem ${stem}, then a ${NEW_ID_COUNTER_DIGITS}-digit number counting up from ${"1".padStart(NEW_ID_COUNTER_DIGITS, "0")} for each prefix, for example ${examples.join(", ")}. New notes take no ID.`;
+  return `New IDs this turn: the prefix, an underscore, the stem ${stem}, then a ${NEW_ID_COUNTER_DIGITS}-digit number counting up from ${"1".padStart(NEW_ID_COUNTER_DIGITS, "0")} for each prefix, for example ${examples.join(", ")}. A note ID is only for notes_duplicate's newIds: the notes you write in clip_create and note_add take none.`;
 }
 
 /** What introduces the project in the system blocks. */

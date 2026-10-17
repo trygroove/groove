@@ -3,7 +3,13 @@ import { ASK_PRODUCER_TOOL_NAME } from "./ask";
 import { createNoteExpander } from "./compactNotes";
 import { REMEMBER_TOOL_NAME } from "./memory";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
-import { ADDED_RESULT, answerStep, continuesAfter, expandCalls } from "./steps";
+import {
+  ADDED_RESULT,
+  addedResult,
+  answerStep,
+  continuesAfter,
+  expandCalls,
+} from "./steps";
 import { CREATE_EXAMPLES, EXPLAIN_TOOL_NAME, OFFERED_CLIP_EXAMPLE } from "./tools";
 
 const STEM = "BassNote000000000";
@@ -59,10 +65,36 @@ describe("compact notes (GRV-131)", () => {
     expect(results[0]).toEqual({
       type: "tool_result",
       tool_use_id: "toolu_5",
-      content: ADDED_RESULT,
+      content: `${ADDED_RESULT} Its note's ID is evt_BassNote000000000n001.`,
     });
     // The stem the example's own note ID is made from, so it expands to it.
     expect(kept).toEqual([{ ...compactClip, input: CREATE_EXAMPLES.clip }]);
+  });
+
+  it("tells the model its new notes' IDs, and numbers only the calls it adds", () => {
+    const refused = {
+      id: "toolu_8",
+      name: "note_add",
+      input: { clipId: "not-a-clip", notes: [[0, 36, 192, 0.8]] },
+    };
+    const added = {
+      id: "toolu_9",
+      name: "note_add",
+      input: {
+        clipId: CREATE_EXAMPLES.clip.id,
+        notes: [
+          [0, 36, 192, 0.8],
+          [192, 38, 192, 0.8],
+          [384, 40, 192, 0.8],
+        ],
+      },
+    };
+    const { results } = answerStep([refused, added], createNoteExpander(STEM));
+    expect(results[0]).toMatchObject({ is_error: true });
+    expect(results[1]?.content).toBe(
+      `${ADDED_RESULT} Its 3 notes' IDs, in the order you gave them, count up from evt_BassNote000000000n001 to evt_BassNote000000000n003.`,
+    );
+    expect(addedResult([])).toBe(ADDED_RESULT);
   });
 
   it("refuses a note that is not one, saying where and what a note is", () => {
