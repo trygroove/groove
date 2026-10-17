@@ -1,0 +1,14 @@
+{
+  "id": "GRV-115",
+  "title": "The composer beside a question card",
+  "steps": [
+    {
+      "file": "01-ten-lines-in-the-composer-with-the-quest.png",
+      "caption": "Ten lines in the composer, with the question card above it"
+    },
+    {
+      "file": "02-chromium-scroll-bar-before-and-after.png",
+      "caption": "A scroll bar in Chromium, 4x: before, thin but with arrow buttons; after, an 8px thumb with none"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "GRV-98",
+  "title": "Rejected proposals",
+  "steps": [
+    {
+      "file": "01-the-card-says-which-change-didn-t-fit.png",
+      "caption": "The card says which change didn't fit"
+    },
+    {
+      "file": "02-the-admin-page-lists-rejected-turns-with.png",
+      "caption": "The admin page lists rejected turns with their issue codes"
+    },
+    {
+      "file": "03-the-admin-page-opens-the-rejected-turn-b.png",
+      "caption": "The admin page opens the rejected turn beside its issues"
+    }
+  ]
+}

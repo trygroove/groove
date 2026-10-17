@@ -1,0 +1,18 @@
+{
+  "id": "GRV-8",
+  "title": "Assistant disclosure",
+  "steps": [
+    {
+      "file": "01-before-the-first-message-what-is-sent-wh.png",
+      "caption": "Before the first message: what is sent, what is kept"
+    },
+    {
+      "file": "02-the-setting-with-its-scope-beside-it.png",
+      "caption": "The setting, with its scope beside it"
+    },
+    {
+      "file": "03-turned-off-kept-conversations-are-delete.png",
+      "caption": "Turned off: kept conversations are deleted"
+    }
+  ]
+}
