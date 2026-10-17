@@ -1280,3 +1280,97 @@ describe("runAssistantTurn: a turn in steps", () => {
     expect(after.requestsRemaining).toBe((before.requestsRemaining ?? 0) - 1);
   });
 });
+
+describe("runAssistantTurn: compact notes (GRV-131)", () => {
+  const project = createReferenceProject();
+  const noteClip = project.clips.find((clip) => clip.content.kind === "notes");
+  if (!noteClip) throw new Error("the reference project has a note clip");
+  const explainCall = {
+    name: EXPLAIN_TOOL_NAME,
+    input: { goal: "A fuller part", technique: "Fill the gaps" },
+  };
+
+  it("writes the turn's notes out as note events, numbered from its stem in call order", async () => {
+    const addCall = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[0, 40, 96, 0.8]] },
+    };
+    const clipCall = {
+      name: "clip_create",
+      input: {
+        id: "clp_Stem00000000000000001",
+        trackId: noteClip.trackId,
+        name: "Answer",
+        color: "#808080",
+        lengthTicks: 768,
+        content: {
+          kind: "notes",
+          events: [
+            [0, 43, 192, 0.7],
+            [384, 45, 192, 0.6, 0.5],
+          ],
+        },
+      },
+    };
+    const h = harness([toolUseEvents("First a note.", [addCall])], {}, [
+      toolUseEvents("Then an answer.", [clipCall, explainCall]),
+    ]);
+    const result = await runAssistantTurn(
+      { ...h.deps, idStem: () => "Stem0000000000000" },
+      SIGNED_IN,
+      request(),
+      { signal: new AbortController().signal, onChunk: () => {} },
+    );
+    const [added, created] = result.proposal?.calls ?? [];
+    expect(added.input).toEqual({
+      clipId: noteClip.id,
+      notes: [
+        {
+          id: "evt_Stem00000000000000001",
+          trigger: { kind: "pitch", pitch: 40 },
+          startTicks: 0,
+          durationTicks: 96,
+          velocity: 0.8,
+          probability: null,
+        },
+      ],
+    });
+    expect(
+      (created.input as { content: { events: { id: string; probability: unknown }[] } })
+        .content.events,
+    ).toMatchObject([
+      { id: "evt_Stem00000000000000002", probability: null },
+      { id: "evt_Stem00000000000000003", probability: 0.5 },
+    ]);
+    // What the browser receives is ordinary payloads, and it applies.
+    const validation = validateProposal(project, result.proposal);
+    expect(validation.ok).toBe(true);
+    // The model was offered the compact notes, and saw its own call back as sent.
+    const offered = h.provider.requests[0].tools.find((tool) => tool.name === "note_add");
+    expect(JSON.stringify(offered?.input_schema)).toContain("prefixItems");
+    const [assistant] = h.provider.requests[1].messages.slice(-2);
+    expect(JSON.stringify(assistant)).toContain("[0,40,96,0.8]");
+  });
+
+  it("refuses a malformed note back to the model, which sends it again", async () => {
+    const bad = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[0, 400, 96, 0.8]] },
+    };
+    const good = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[0, 40, 96, 0.8]] },
+    };
+    const h = harness([toolUseEvents("A note.", [bad])], {}, [
+      toolUseEvents("Fixed.", [good, explainCall]),
+    ]);
+    const result = await run(h);
+    const answers = h.provider.requests[1].messages.at(-1);
+    expect(JSON.stringify(answers)).toContain("notes.0.1:");
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([
+      "note_add",
+      EXPLAIN_TOOL_NAME,
+    ]);
+    expect(validateProposal(project, result.proposal).ok).toBe(true);
+  });
+});

@@ -45,6 +45,7 @@
  * every search that finds nothing YouTube vouches for dropped.
  */
 import { type AssistantAsk, askProducerTool, isAskCall, parseAskCall } from "./ask";
+import { createNoteExpander } from "./compactNotes";
 import {
   ASSISTANT_CALL_LIMITS,
   ASSISTANT_HEARTBEAT_INTERVAL_MS,
@@ -84,7 +85,7 @@ import { admitCall, type QuotaLimits, quotaExceededMessage } from "./quota";
 import { recommendationTool } from "./recommendation";
 import { recordTurn, type TranscriptWrite } from "./retention";
 import { costMicroUsd, spendDay, usdToMicro } from "./spend";
-import { answerStep, continuesAfter } from "./steps";
+import { answerStep, continuesAfter, expandCalls } from "./steps";
 import { NO_USAGE, type ProviderUsage, StreamReader } from "./streamEvents";
 import { type AssistantTurnLog, toTurnLog } from "./telemetry";
 import {
@@ -615,13 +616,17 @@ export async function runAssistantTurn(
     if (!(await deps.guards.isEnabled())) {
       throw new AssistantGatewayError("assistant_disabled", DISABLED_MESSAGE);
     }
+    const idStem = (deps.idStem ?? createIdStem)();
     const prepared = await prepare(
       model,
       uid,
       turn,
-      (deps.idStem ?? createIdStem)(),
+      idStem,
       deps.findVideo !== undefined,
     );
+    // Notes come as short arrays and join the proposal as note events, their
+    // IDs from the turn's stem (`compactNotes.ts`, GRV-131).
+    const notes = createNoteExpander(idStem);
     history = prepared.history;
 
     const cancelled = () =>
@@ -705,12 +710,12 @@ export async function runAssistantTurn(
       // The last step allowed hands its calls on as they came, as a turn of
       // one call does: the browser refuses whatever does not fit.
       if (!continuesAfter(outcome.stopReason, outcome.toolCalls) || step >= maxSteps) {
-        calls.push(...outcome.toolCalls);
+        calls.push(...expandCalls(outcome.toolCalls, notes));
         // A turn whose steps made calls stopped for them, as one call's would.
         stopReason = calls.length > 0 ? "tool_use" : outcome.stopReason;
         break;
       }
-      const answered = answerStep(outcome.toolCalls);
+      const answered = answerStep(outcome.toolCalls, notes);
       calls.push(...answered.kept);
       messages = [
         ...messages,

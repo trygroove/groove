@@ -16,6 +16,7 @@
  * (whether an ID exists in the open project) is still the browser's to refuse.
  */
 import { isAskCall } from "./ask";
+import type { NoteExpander } from "./compactNotes";
 import { isRememberCall } from "./memory";
 import type { AssistantStopReason, AssistantToolCall } from "./protocol";
 import type { ProviderToolResultBlock } from "./providerRequest";
@@ -77,18 +78,47 @@ export interface AnsweredStep {
 }
 
 /**
- * Answers a step the turn continues after: each change call that fits its
- * tool joins the proposal and is told so; one that does not is refused, with
- * why, and left out. Any other call is noted and kept.
+ * The calls of a step the turn does not answer (its last), handed on with
+ * their compact notes written out. A call whose notes do not parse goes on
+ * as it came, for the browser to refuse.
  */
-export function answerStep(calls: readonly AssistantToolCall[]): AnsweredStep {
+export function expandCalls(
+  calls: readonly AssistantToolCall[],
+  notes: NoteExpander,
+): AssistantToolCall[] {
+  return calls.map((call) => {
+    if (!isChangeCall(call)) return call;
+    const expanded = notes.expand(call);
+    return expanded.ok ? expanded.call : call;
+  });
+}
+
+/**
+ * Answers a step the turn continues after: each change call that fits its
+ * tool, once its compact notes are written out, joins the proposal written
+ * out and is told so; one that does not is refused, with why, and left out.
+ * Any other call is noted and kept.
+ */
+export function answerStep(
+  calls: readonly AssistantToolCall[],
+  notes: NoteExpander,
+): AnsweredStep {
   const kept: AssistantToolCall[] = [];
   const results = calls.map((call): ProviderToolResultBlock => {
     if (!isChangeCall(call)) {
       kept.push(call);
       return { type: "tool_result", tool_use_id: call.id, content: NOTED_RESULT };
     }
-    const resolution = resolveToolCall(call.name, call.input);
+    const expanded = notes.expand(call);
+    if (!expanded.ok) {
+      return {
+        type: "tool_result",
+        tool_use_id: call.id,
+        content: refusal(expanded.message),
+        is_error: true,
+      };
+    }
+    const resolution = resolveToolCall(expanded.call.name, expanded.call.input);
     if (!resolution.ok) {
       return {
         type: "tool_result",
@@ -97,7 +127,7 @@ export function answerStep(calls: readonly AssistantToolCall[]): AnsweredStep {
         is_error: true,
       };
     }
-    kept.push(call);
+    kept.push(expanded.call);
     return { type: "tool_result", tool_use_id: call.id, content: ADDED_RESULT };
   });
   return { kept, results };

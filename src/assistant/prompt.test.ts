@@ -167,9 +167,20 @@ describe("the assistant's system prompt", () => {
       `The open project, as JSON:\n${JSON.stringify(MINIMAL_ASSISTANT_CONTEXT)}`,
     );
     expect(ids.text).toContain(`the stem ${"S".repeat(17)}`);
-    expect(ids.text).toContain(newId(ID_PREFIXES.event, "S".repeat(17), 2));
+    expect(ids.text).toContain(newId(ID_PREFIXES.clip, "S".repeat(17), 2));
+    // Notes take no ID (GRV-131): the gateway mints theirs from the stem.
+    expect(ids.text).not.toContain(`${ID_PREFIXES.event}_`);
+    expect(ids.text).toContain("New notes take no ID.");
     // The fixed prompt never asks for an ID to be counted out by hand.
     expect(ASSISTANT_SYSTEM_PROMPT).not.toMatch(/padding .* zeros/);
+  });
+
+  it("writes new notes as short arrays with no ID (GRV-131)", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "[startTicks, pitch, durationTicks, velocity], e.g. [0, 36, 192, 0.8]",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain('[0, "pad_...", 48, 0.9]');
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain('{"kind": "pad", "padId"');
   });
 
   it("puts the request ahead of genre habits (PRD principle 10)", () => {
