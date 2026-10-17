@@ -17,6 +17,7 @@ import {
 import { continuesTurn } from "../providerRequest";
 import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
 import { EVAL_CASES, type EvalCase } from "./cases";
+import { evalModel } from "./cli";
 import { createHouseLoopProject } from "./fixtures";
 import {
   formatTally,
@@ -56,6 +57,23 @@ function compressorCall(seed: string, threshold: number) {
 const fixedNow = () => Date.parse("2026-10-09T12:00:00Z");
 
 describe("runEvals", () => {
+  it("runs the model at the effort it is given and says so in the report (GRV-131)", async () => {
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("A Compressor on the master to glue it.", [compressorCall("a", -18)]),
+    ]);
+    const report = await runEvals({
+      provider,
+      model: evalModel("claude-sonnet-5", "low"),
+      cases: [glue],
+      runs: 1,
+      now: fixedNow,
+    });
+    expect(provider.requests[0].output_config).toEqual({ effort: "low" });
+    expect(report.thinkingEffort).toBe("low");
+    expect(report.model).toBe("claude-sonnet-5");
+    expect(renderSummaryMarkdown(summaryOf(report))).toContain("- Thinking effort: low");
+  });
+
   it("runs each case N times through the gateway and judges every check", async () => {
     const project = createHouseLoopProject();
     const bass = project.song.tracks.find((track) => track.name === "Bass");

@@ -10,6 +10,7 @@ import {
   ASSISTANT_MODEL_ID,
   ASSISTANT_MODELS,
   type AssistantModelId,
+  type AssistantModelProfile,
 } from "../config";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { DEFAULT_TURN_TIMEOUT_MS, type EvalRecord } from "./run";
@@ -26,6 +27,12 @@ export interface EvalCliOptions {
   readonly set: EvalSelection | null;
   readonly runs: number;
   readonly model: AssistantModelId;
+  /**
+   * The thinking effort to run the model at instead of its configured one
+   * (GRV-131), or null for production's. Only a model that thinks adaptively
+   * takes one.
+   */
+  readonly effort: ThinkingEffort | null;
   readonly out: string | null;
   readonly replay: string | null;
   /** A saved `report.json` or `summary.json` to print the scorecard against. */
@@ -39,6 +46,9 @@ export interface EvalCliOptions {
   readonly maxSteps: number | null;
 }
 
+export const THINKING_EFFORTS = ["low", "medium", "high"] as const;
+export type ThinkingEffort = (typeof THINKING_EFFORTS)[number];
+
 export type ParsedEvalArgs =
   | { readonly kind: "help"; readonly text: string }
   | { readonly kind: "run"; readonly options: EvalCliOptions };
@@ -51,7 +61,7 @@ export class EvalUsageError extends Error {
   }
 }
 
-export const EVAL_USAGE = `Usage: bun run assistant:eval -- [case ...] [--set ${EVAL_SELECTIONS.join("|")}] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS] [--steps N]`;
+export const EVAL_USAGE = `Usage: bun run assistant:eval -- [case ...] [--set ${EVAL_SELECTIONS.join("|")}] [--runs N] [--model ID] [--effort ${THINKING_EFFORTS.join("|")}] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS] [--steps N]`;
 
 const DEFAULT_TURN_TIMEOUT_SECONDS = DEFAULT_TURN_TIMEOUT_MS / 1000;
 
@@ -74,6 +84,7 @@ export function parseEvalArgs(
   let set: string | null = null;
   let runs = Number(env.EVAL_RUNS ?? 3);
   let model: string = ASSISTANT_MODEL_ID;
+  let effort: string | null = null;
   let out: string | null = null;
   let replay: string | null = null;
   let baseline: string | null = null;
@@ -92,6 +103,7 @@ export function parseEvalArgs(
     if (arg === "--runs") runs = Number(value());
     else if (arg === "--set") set = value();
     else if (arg === "--model") model = value();
+    else if (arg === "--effort") effort = value();
     else if (arg === "--out") out = value();
     else if (arg === "--replay") replay = value();
     else if (arg === "--baseline") baseline = value();
@@ -120,6 +132,18 @@ export function parseEvalArgs(
       `Unknown model "${model}". Configured: ${Object.keys(ASSISTANT_MODELS).join(", ")}`,
     );
   }
+  if (effort !== null) {
+    if (!(THINKING_EFFORTS as readonly string[]).includes(effort)) {
+      throw new EvalUsageError(
+        `Unknown effort "${effort}". Efforts: ${THINKING_EFFORTS.join(", ")}`,
+      );
+    }
+    if (ASSISTANT_MODELS[model as AssistantModelId].thinking.kind !== "adaptive") {
+      throw new EvalUsageError(
+        `${model} takes a thinking budget, not an effort: drop --effort`,
+      );
+    }
+  }
   return {
     kind: "run",
     options: {
@@ -127,6 +151,7 @@ export function parseEvalArgs(
       set: set as EvalSelection | null,
       runs,
       model: model as AssistantModelId,
+      effort: effort as ThinkingEffort | null,
       out,
       replay,
       baseline,
@@ -136,6 +161,20 @@ export function parseEvalArgs(
       maxSteps,
     },
   };
+}
+
+/**
+ * The model to run: the configured one, at `effort` instead of its own when
+ * one is given. Its ID and price are unchanged, so it scores and costs as the
+ * configured model does.
+ */
+export function evalModel(
+  id: AssistantModelId,
+  effort: ThinkingEffort | null,
+): AssistantModelProfile {
+  const model: AssistantModelProfile = ASSISTANT_MODELS[id];
+  if (effort === null || model.thinking.kind !== "adaptive") return model;
+  return { ...model, thinking: { kind: "adaptive", effort } };
 }
 
 /**

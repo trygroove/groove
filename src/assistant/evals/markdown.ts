@@ -158,6 +158,7 @@ function numberLines(
     "",
     `- Run: ${report.generatedAt}`,
     `- Model: \`${report.model}\``,
+    ...(report.thinkingEffort ? [`- Thinking effort: ${report.thinkingEffort}`] : []),
     `- Prompt version: \`${report.promptVersion}\``,
     `- Tool set version: ${report.toolsetVersion}`,
     `- Runs per case: ${report.runsPerCase}; cases: ${report.caseIds.length}; turns: ${report.scorecard.headline.turns}; errored turns: ${report.summary.errored.total}`,

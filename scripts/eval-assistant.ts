@@ -14,6 +14,7 @@
  *   bun run assistant:eval -- --set heavyOutput  the heavy-output sketches and arrangements (GRV-131)
  *   bun run assistant:eval -- --runs 5           N runs per case
  *   bun run assistant:eval -- --model claude-haiku-4-5
+ *   bun run assistant:eval -- --effort low       another thinking effort than the model's configured one (GRV-131)
  *   bun run assistant:eval -- --out tmp/evals    where the report goes
  *   bun run assistant:eval -- --timeout 180      per-turn limit in seconds (default 540, production's)
  *   bun run assistant:eval -- --steps 1          steps a turn may take (default production's; 1 is one call)
@@ -40,12 +41,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createAnthropicProvider } from "../functions/src/anthropicProvider";
-import { ASSISTANT_MAX_STEPS, ASSISTANT_MODELS } from "../src/assistant/config";
+import { ASSISTANT_MAX_STEPS } from "../src/assistant/config";
 import { evalCaseFromTranscript } from "../src/assistant/evals/cases";
 import { CHECK_IDS, CHECK_LABELS } from "../src/assistant/evals/checks";
 import {
   type EvalCliOptions,
   EvalUsageError,
+  evalModel,
   type LoadedBaseline,
   loadBaseline,
   parseEvalArgs,
@@ -196,6 +198,7 @@ async function replay(path: string, options: EvalCliOptions): Promise<EvalReport
   const report = buildReport(records, cases, {
     generatedAt: new Date().toISOString(),
     model: saved.model,
+    ...(saved.thinkingEffort ? { thinkingEffort: saved.thinkingEffort } : {}),
     promptVersion: saved.promptVersion,
     toolsetVersion: saved.toolsetVersion,
     runsPerCase: saved.runsPerCase,
@@ -238,9 +241,11 @@ async function live(options: EvalCliOptions): Promise<EvalReport> {
   const apiKey = requireApiKey(process.env);
   // Read before the run, so a bad path costs no model calls.
   const baseline = await readBaseline(options.baseline);
-  const model = ASSISTANT_MODELS[options.model];
+  const model = evalModel(options.model, options.effort);
+  const effort =
+    model.thinking.kind === "adaptive" ? `, effort ${model.thinking.effort}` : "";
   console.log(
-    `Running ${cases.length} cases x ${options.runs} runs against ${model.id} (the live model), up to ${options.maxSteps ?? ASSISTANT_MAX_STEPS} steps a turn...`,
+    `Running ${cases.length} cases x ${options.runs} runs against ${model.id}${effort} (the live model), up to ${options.maxSteps ?? ASSISTANT_MAX_STEPS} steps a turn...`,
   );
   const report = await runEvals({
     provider: createAnthropicProvider({ apiKey }),

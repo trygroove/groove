@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { buildTestReport, testRecord } from "../../testing/evalRecords";
-import { ASSISTANT_MODEL_ID } from "../config";
+import { ASSISTANT_MODEL_ID, ASSISTANT_MODELS } from "../config";
 import { EVAL_CASES } from "./cases";
 import {
   EvalUsageError,
+  evalModel,
   loadBaseline,
   parseEvalArgs,
   requireApiKey,
@@ -25,6 +26,7 @@ describe("parseEvalArgs", () => {
       set: null,
       runs: 3,
       model: ASSISTANT_MODEL_ID,
+      effort: null,
       out: null,
       replay: null,
       baseline: null,
@@ -86,6 +88,27 @@ describe("parseEvalArgs", () => {
   it("reads the set to run", () => {
     expect(options(["--set", "basicActions"]).set).toBe("basicActions");
     expect(options(["--set", "heavyOutput"]).set).toBe("heavyOutput");
+  });
+
+  it("takes another thinking effort for a model that thinks adaptively (GRV-131)", () => {
+    expect(options(["--effort", "low"]).effort).toBe("low");
+    expect(() => options(["--effort", "max"])).toThrow(
+      'Unknown effort "max". Efforts: low, medium, high',
+    );
+    expect(() => options(["--model", "claude-haiku-4-5", "--effort", "low"])).toThrow(
+      "claude-haiku-4-5 takes a thinking budget, not an effort",
+    );
+  });
+
+  it("runs the configured model at the effort asked for, its ID and price unchanged", () => {
+    const sonnet = ASSISTANT_MODELS["claude-sonnet-5"];
+    expect(evalModel("claude-sonnet-5", null)).toBe(sonnet);
+    expect(evalModel("claude-sonnet-5", "low")).toEqual({
+      ...sonnet,
+      thinking: { kind: "adaptive", effort: "low" },
+    });
+    // Production's own profile is untouched.
+    expect(sonnet.thinking).toEqual({ kind: "adaptive", effort: "medium" });
   });
 
   it("takes the run count from EVAL_RUNS unless --runs says otherwise", () => {

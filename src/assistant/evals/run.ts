@@ -172,6 +172,12 @@ export type Tally = Record<CheckResult["status"], number>;
 export interface EvalReport {
   readonly generatedAt: string;
   readonly model: string;
+  /**
+   * The thinking effort the model ran at, for a model that thinks adaptively
+   * (GRV-131: `--effort` tries another); absent from reports saved before it
+   * was recorded, and for a model with a thinking budget instead.
+   */
+  readonly thinkingEffort?: string;
   readonly promptVersion: string;
   readonly toolsetVersion: number;
   readonly runsPerCase: number;
@@ -604,6 +610,7 @@ export function summarize(records: readonly EvalRecord[]): EvalReport["summary"]
 export interface ReportMeta {
   readonly generatedAt: string;
   readonly model: string;
+  readonly thinkingEffort?: string;
   readonly promptVersion?: string;
   readonly toolsetVersion?: number;
   readonly runsPerCase: number;
@@ -623,6 +630,7 @@ export function buildReport(
   return {
     generatedAt: meta.generatedAt,
     model: meta.model,
+    ...(meta.thinkingEffort ? { thinkingEffort: meta.thinkingEffort } : {}),
     promptVersion: meta.promptVersion ?? ASSISTANT_PROMPT_VERSION,
     toolsetVersion: meta.toolsetVersion ?? ASSISTANT_TOOLSET_VERSION,
     runsPerCase: meta.runsPerCase,
@@ -737,6 +745,9 @@ export async function runEvals(options: RunEvalsOptions): Promise<EvalReport> {
     {
       generatedAt: new Date(now()).toISOString(),
       model: model.id,
+      ...(model.thinking.kind === "adaptive"
+        ? { thinkingEffort: model.thinking.effort }
+        : {}),
       runsPerCase: options.runs,
       aborted,
     },
