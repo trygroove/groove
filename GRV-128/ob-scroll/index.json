@@ -1,0 +1,10 @@
+{
+  "id": "ob-scroll",
+  "title": "Onboarding scrolls each question to the centre",
+  "steps": [
+    {
+      "file": "01-several-questions-in-history-fades-under.png",
+      "caption": "Several questions in: history fades under the fixed Cue header"
+    }
+  ]
+}
