@@ -1,13 +1,16 @@
 /**
  * The scorecard as the eval report prints it (GRV-102): the headline first,
  * then the secondary numbers for the run and per case, and, given a baseline,
- * every number beside the baseline's with its delta. `report.md`, the console
+ * every number beside the baseline's with its delta; and the heavy set
+ * (GRV-131), beside the baseline's too. `report.md`, the console
  * summary and `docs/assistant-eval-baseline.md` all read from here.
  */
 import {
   type Comparison,
   formatDelta,
   formatMetric,
+  HEAVY_SET_METRICS,
+  heavySetOf,
   type Rate,
   type Scorecard,
   type Secondary,
@@ -57,6 +60,57 @@ export function setLines(card: Scorecard): string[] {
         `| ${setLabel(set)} | ${cases} | ${formatRate(headline.applies)} | ${formatRate(headline.overall)} | ${formatRate(headline.expectMatch)} | ${headline.errored} of ${headline.turns} |`,
     ),
     "",
+  ];
+}
+
+/**
+ * The heavy set's three numbers (GRV-131), beside the baseline's when there
+ * is one; nothing for a run with no heavy case.
+ */
+export function heavySetLines(
+  card: Scorecard,
+  comparisons?: readonly Comparison[] | null,
+): string[] {
+  const heavy = heavySetOf(card);
+  if (!heavy) return [];
+  const intro = [
+    "## Heavy set",
+    "",
+    `The mean of each case's figure over the ${heavy.caseIds.length} heavy-output cases this run scored (${heavy.caseIds.map((id) => `\`${id}\``).join(", ")}), every case weighing the same.`,
+    "",
+  ];
+  if (comparisons) {
+    return [
+      ...intro,
+      "| Number | This run | Baseline | Delta | |",
+      "| --- | --- | --- | --- | --- |",
+      ...comparisons.map(
+        (row) =>
+          `| ${row.label} | ${formatMetric(row.kind, row.current)} | ${formatMetric(row.kind, row.baseline)} | ${formatDelta(row.kind, row.delta)} | ${row.verdict} |`,
+      ),
+      "",
+    ];
+  }
+  return [
+    ...intro,
+    "| Number | Value |",
+    "| --- | --- |",
+    ...HEAVY_SET_METRICS.map(
+      (metric) =>
+        `| ${metric.label} | ${formatMetric(metric.kind, metric.value(heavy))} |`,
+    ),
+    "",
+  ];
+}
+
+/** The heavy set beside the baseline's, as fixed-width console lines. */
+export function heavySetConsoleLines(comparisons: readonly Comparison[]): string[] {
+  return [
+    "  Heavy set:",
+    ...comparisons.map(
+      (row) =>
+        `  ${row.label.padEnd(28)} ${formatMetric(row.kind, row.current).padStart(10)}  was ${formatMetric(row.kind, row.baseline).padStart(10)}  ${formatDelta(row.kind, row.delta).padStart(10)}  ${row.verdict}`,
+    ),
   ];
 }
 

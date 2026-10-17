@@ -2,16 +2,23 @@ import { describe, expect, it } from "vitest";
 import { buildTestReport, testRecord } from "../../testing/evalRecords";
 import { ASSISTANT_MODELS } from "../config";
 import {
+  compareHeavySets,
   compareScorecards,
   formatDelta,
   formatMetric,
+  heavySetOf,
   percentile,
   SCORECARD_METRICS,
   scorecardOf,
   secondaryOf,
   turnCostUsd,
 } from "./scorecard";
-import { comparisonConsoleLines, comparisonLines } from "./scorecardMarkdown";
+import {
+  comparisonConsoleLines,
+  comparisonLines,
+  heavySetConsoleLines,
+  heavySetLines,
+} from "./scorecardMarkdown";
 
 const sonnet = ASSISTANT_MODELS["claude-sonnet-5"];
 
@@ -307,6 +314,93 @@ describe("compareScorecards", () => {
     expect(
       compareScorecards(current, older).find((entry) => entry.label === "Cost per turn"),
     ).toMatchObject({ baseline: null, delta: null, verdict: "n/a" });
+  });
+});
+
+describe("the heavy set (GRV-131)", () => {
+  const heavyRun = buildTestReport([
+    // sketch-house: 2,000 and 4,000 output tokens, so 3,000 a turn; p50 10 s.
+    testRecord({
+      caseId: "sketch-house",
+      durationMs: 10_000,
+      usage: { outputTokens: 2_000 },
+    }),
+    testRecord({
+      caseId: "sketch-house",
+      durationMs: 30_000,
+      usage: { outputTokens: 4_000 },
+    }),
+    // density-hats: one turn of 1,000 tokens in 50 s.
+    testRecord({
+      caseId: "density-hats",
+      durationMs: 50_000,
+      usage: { outputTokens: 1_000 },
+    }),
+    // Not a heavy case: left out of the heavy set.
+    testRecord({ caseId: "mute", durationMs: 1_000, usage: { outputTokens: 10 } }),
+  ]).scorecard;
+
+  it("averages each heavy case's own figure, every case weighing the same", () => {
+    const heavy = heavySetOf(heavyRun);
+    expect(heavy?.caseIds).toEqual(["sketch-house", "density-hats"]);
+    // (3,000 + 1,000) / 2, not (2,000 + 4,000 + 1,000) / 3.
+    expect(heavy?.outputTokens).toBe(2_000);
+    expect(heavy?.latencyP50Ms).toBe(30_000);
+    const perTurn = (id: string) => heavyRun.cases[id].costUsd.perTurn ?? 0;
+    expect(heavy?.costPerTurnUsd).toBeCloseTo(
+      (perTurn("sketch-house") + perTurn("density-hats")) / 2,
+      12,
+    );
+  });
+
+  it("is absent from a run with no heavy case", () => {
+    const light = buildTestReport([testRecord({ caseId: "mute" })]).scorecard;
+    expect(heavySetOf(light)).toBeNull();
+    expect(heavySetLines(light)).toEqual([]);
+    expect(compareHeavySets(light, heavyRun)).toBeNull();
+  });
+
+  it("compares with the baseline over the heavy cases this run has", () => {
+    const now = buildTestReport([
+      testRecord({
+        caseId: "sketch-house",
+        durationMs: 5_000,
+        usage: { outputTokens: 1_500 },
+      }),
+    ]).scorecard;
+    const rows = compareHeavySets(now, heavyRun) ?? [];
+    expect(rows.map((row) => row.label)).toEqual([
+      "Mean output tokens per turn",
+      "Mean latency p50",
+      "Mean cost per turn",
+    ]);
+    // Against the baseline's sketch-house alone, not its density-hats too.
+    expect(rows[0]).toMatchObject({
+      current: 1_500,
+      baseline: 3_000,
+      delta: -1_500,
+      verdict: "better",
+    });
+    expect(rows[1]).toMatchObject({ current: 5_000, baseline: 10_000 });
+    const lines = heavySetLines(now, rows);
+    expect(lines[0]).toBe("## Heavy set");
+    expect(lines).toContain(
+      "| Mean output tokens per turn | 1,500 | 3,000 | -1,500 | better |",
+    );
+    expect(heavySetConsoleLines(rows)[0]).toBe("  Heavy set:");
+  });
+
+  it("prints its numbers alone without a baseline", () => {
+    expect(heavySetLines(heavyRun)).toContain("| Mean output tokens per turn | 2,000 |");
+    expect(heavySetLines(heavyRun)).toContain("| Mean latency p50 | 30.0 s |");
+  });
+
+  it("reads n/a for a baseline with none of this run's heavy cases", () => {
+    const other = buildTestReport([testRecord({ caseId: "mute" })]).scorecard;
+    const rows = compareHeavySets(heavyRun, other) ?? [];
+    expect(rows.every((row) => row.verdict === "n/a" && row.baseline === null)).toBe(
+      true,
+    );
   });
 });
 
