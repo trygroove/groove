@@ -13,6 +13,7 @@ import { fitComposer } from "./composerHeight";
 import MemoryProposalCard from "./MemoryProposalCard";
 import ProposalCard from "./ProposalCard";
 import RecommendationCard from "./RecommendationCard";
+import ReplyRating from "./ReplyRating";
 import type { AssistantChat } from "./useAssistantChat";
 import { type ConversationEntry, MAX_MESSAGE_CHARS } from "./useAssistantConversation";
 import VideoCard from "./VideoCard";
@@ -367,6 +368,14 @@ function Entry(props: {
                 so the answer below reads against what was asked. */}
             <Show when={!props.asking && reply().ask}>
               {(ask) => <p class="assistant-reply-asked">Asked: {ask().question}</p>}
+            </Show>
+            {/* A finished answer can be rated (GRV-103); one still on its way
+                or cut off by a failure cannot. */}
+            <Show when={!reply().streaming && !reply().failed && reply().text.length > 0}>
+              <ReplyRating
+                rating={reply().rating}
+                onRate={(rating) => props.chat.rateReply(reply().id, rating)}
+              />
             </Show>
           </div>
         )}

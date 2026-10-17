@@ -13,6 +13,7 @@ import {
   conversationStorageKey,
   createConversationStore,
   parseConversation,
+  serializeConversation,
 } from "./conversationStore";
 import { useAssistantConversation } from "./useAssistantConversation";
 
@@ -193,6 +194,37 @@ describe("the conversation across a reload (GRV-42)", () => {
       expect(mounted.conversation.pendingAsk()).toBeNull();
       mounted.dispose();
     }
+  });
+
+  it("keeps a reply's transcript turn and rating, but not its turn of the old session (GRV-103)", () => {
+    const stored = parseConversation(
+      serializeConversation(
+        [
+          {
+            kind: "reply",
+            id: "entry-2",
+            text: "Fine.",
+            streaming: false,
+            stopped: false,
+            turnId: "turn-00000001",
+            sessionTurn: { session: 1, index: 1 },
+            rating: "down",
+          },
+        ],
+        null,
+      ),
+    );
+    expect(stored?.entries).toEqual([
+      {
+        kind: "reply",
+        id: "entry-2",
+        text: "Fine.",
+        streaming: false,
+        stopped: false,
+        turnId: "turn-00000001",
+        rating: "down",
+      },
+    ]);
   });
 
   it("carries on in memory when storage throws", async () => {

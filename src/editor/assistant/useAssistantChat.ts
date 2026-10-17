@@ -10,10 +10,13 @@ import { type Accessor, createEffect, createMemo, createSignal } from "solid-js"
 import type { Analytics } from "../../analytics/analytics";
 import type { AssistantClient } from "../../assistant/assistantClient";
 import type { AssistantRetentionClient } from "../../assistant/retentionClient";
+import { createSessionHealth, type SessionTurn } from "../../assistant/sessionHealth";
+import type { ReplyRating } from "../../assistant/transcripts";
 import type { Project } from "../../domain/entities";
 import { memoryContext } from "../../memory/memoryEdits";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import type { Suggestion } from "../../projection/projectAnalysisProjection";
+import { type Clock, systemClock } from "../../shared/clock";
 import type { EditorViewName } from "../editorViews";
 import type { AskEditorLink } from "./askReferences";
 import { type AssistantLibrary, libraryContext } from "./assistantLibrary";
@@ -110,6 +113,8 @@ export interface UseAssistantChatOptions {
   readonly conversationKey?: Accessor<string | null>;
   /** The store it is kept in; this tab's session storage by default. */
   readonly conversationStore?: ConversationStore;
+  /** What times a proposal's undo against its apply (GRV-103); the real clock by default. */
+  readonly clock?: Clock;
   /**
    * The producer's profile (GRV-25): what Cue remembers, sent with every
    * turn, and where a confirmed memory card is saved. Without it turns carry
@@ -143,6 +148,12 @@ export interface AssistantChat {
   readonly nudge: CueNudge | null;
   /** The account's answer about keeping conversations, when it is asked for. */
   readonly retention: AssistantRetention | null;
+  /**
+   * Thumbs up or down on a reply (GRV-103): the same thumb again clears it.
+   * Logs each change, counts a down towards a sad session, and tells a kept
+   * transcript.
+   */
+  rateReply(replyId: string, rating: ReplyRating): void;
   /** What a card logs its own actions through (a video's Play, GRV-16). */
   readonly analytics?: () => Analytics;
 }
@@ -185,6 +196,20 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     : null;
   /** The turn each proposal card came from, so its outcome reaches the right record. */
   const turnOfEntry = new Map<string, string>();
+  /** Which turn of the session each proposal card came from (GRV-103). */
+  const sessionTurnOfEntry = new Map<string, SessionTurn>();
+  const detector = createSessionHealth({
+    clock: options.clock ?? systemClock,
+    analytics: options.analytics,
+  });
+  // A new conversation forgets the old one's cards along with its session.
+  const health = {
+    ...detector,
+    reset() {
+      sessionTurnOfEntry.clear();
+      detector.reset();
+    },
+  };
 
   const editor = options.editor;
   const proposals = editor
@@ -198,6 +223,12 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         onOutcome: (entryId, outcome, issues) => {
           const turnId = turnOfEntry.get(entryId);
           if (turnId) retention?.reportOutcome(turnId, outcome, issues);
+          const sessionTurn = sessionTurnOfEntry.get(entryId);
+          if (sessionTurn !== undefined) {
+            health.proposalOutcome(entryId, outcome, sessionTurn, {
+              stale: issues?.some((issue) => issue.code === "stale_revision") ?? false,
+            });
+          }
         },
       })
     : null;
@@ -234,6 +265,9 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     onProposal: proposals
       ? (entryId, proposal, origin) => {
           if (origin.turnId) turnOfEntry.set(entryId, origin.turnId);
+          if (origin.sessionTurn !== undefined) {
+            sessionTurnOfEntry.set(entryId, origin.sessionTurn);
+          }
           proposals.receive(entryId, proposal, origin);
         }
       : undefined,
@@ -270,6 +304,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     persistence: options.conversationKey
       ? { key: options.conversationKey, store: options.conversationStore }
       : undefined,
+    health,
   });
 
   const nudge = profile
@@ -296,6 +331,28 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     return assistantSuggestions(project, options.view(), scope());
   });
 
+  function rateReply(replyId: string, rating: ReplyRating): void {
+    const current = conversation
+      .entries()
+      .find((entry) => entry.id === replyId && entry.kind === "reply");
+    if (current?.kind !== "reply") return;
+    // The same thumb again takes the rating back.
+    const next = current.rating === rating ? null : rating;
+    conversation.rateReply(replyId, next);
+    if (current.turnId) retention?.reportRating(current.turnId, next);
+    if (next === null) return;
+    if (next === "down" && current.sessionTurn !== undefined) {
+      health.rated("down", current.sessionTurn);
+    }
+    try {
+      const analytics = options.analytics();
+      analytics.log("assistant_reply_rated", { rating: next });
+      analytics.logFeatureFirstUse("assistant_rating");
+    } catch {
+      // The rating stands; an analytics failure is not this feature's.
+    }
+  }
+
   return {
     conversation,
     scope,
@@ -319,6 +376,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     memory,
     nudge,
     retention,
+    rateReply,
     analytics: options.analytics,
   };
 }

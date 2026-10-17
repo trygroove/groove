@@ -18,6 +18,7 @@ export const ASSISTANT_FEATURE_KEYS = [
   "assistant_ask",
   "assistant_retention",
   "assistant_video",
+  "assistant_rating",
 ] as const;
 
 /**
@@ -132,6 +133,32 @@ export const ASSISTANT_REJECTED_CAPABILITIES = [
   ...ASSISTANT_PROPOSAL_CAPABILITIES,
   "unknown",
 ] as const;
+
+/**
+ * Why an assistant session went sad (GRV-103), as `assistant_session_sad`'s
+ * `reason`: a turn that failed, was cut off or refused; a proposal rejected
+ * as invalid or stale; one undone within a minute of applying or turned
+ * down; or a reply rated down.
+ */
+export const ASSISTANT_SAD_REASONS = [
+  "turn_error",
+  "max_tokens",
+  "refusal",
+  "proposal_invalid",
+  "proposal_stale",
+  "proposal_undone_fast",
+  "proposal_cancelled",
+  "rated_down",
+] as const;
+
+/**
+ * Who a sad signal blames: the system (`hard`), the producer's reaction to a
+ * proposal (`soft`), or the producer's own rating (`explicit`).
+ */
+export const ASSISTANT_SAD_SIGNAL_CLASSES = ["hard", "soft", "explicit"] as const;
+
+/** The two sad-session rates an `assistant_session_sad` counts towards. */
+export const ASSISTANT_SAD_RATES = ["full", "hard"] as const;
 
 /** The most issues `assistant_proposal_rejected` counts (`MAX_TRANSCRIPT_ISSUES`). */
 const MAX_PROPOSAL_ISSUES = 20;
@@ -324,6 +351,42 @@ export const ASSISTANT_EVENTS = {
     phase: 3,
     owners: ["GRV-16"],
     params: {},
+  },
+
+  /**
+   * A conversation's first sent message (GRV-103): the denominator of the
+   * sad-session rate. Never the conversation's ID or anything it said.
+   */
+  assistant_session_started: {
+    phase: 3,
+    owners: ["GRV-103"],
+    params: {},
+  },
+
+  /**
+   * A conversation had a bad response (GRV-103): the numerator of the
+   * sad-session rate. At most twice per conversation: once with
+   * `counts_for: full` on its first bad signal of any class, and once with
+   * `counts_for: hard` on its first hard or explicit one (both on the same
+   * signal when the first is hard or explicit). `turn_index_bucket` is the
+   * turn the signal came from.
+   */
+  assistant_session_sad: {
+    phase: 3,
+    owners: ["GRV-103"],
+    params: {
+      reason: enumParam(ASSISTANT_SAD_REASONS),
+      signal_class: enumParam(ASSISTANT_SAD_SIGNAL_CLASSES),
+      turn_index_bucket: bucketParam("turn_index"),
+      counts_for: enumParam(ASSISTANT_SAD_RATES),
+    },
+  },
+
+  /** Thumbs up or down on a reply (GRV-103), once per change; clearing logs nothing. */
+  assistant_reply_rated: {
+    phase: 3,
+    owners: ["GRV-103"],
+    params: { rating: enumParam(["up", "down"]) },
   },
 
   /**

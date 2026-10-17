@@ -12,7 +12,7 @@ import type {
   TranscriptAdminClient,
   TranscriptListQuery,
 } from "../../assistant/transcriptAdminClient";
-import type { TranscriptRecord } from "../../assistant/transcripts";
+import type { ReplyRating, TranscriptRecord } from "../../assistant/transcripts";
 import { getTranscriptAdminClient } from "../../assistantClientProvider";
 import DataTable from "../DataTable";
 import TapeLoader from "../TapeLoader";
@@ -40,6 +40,17 @@ const OUTCOME_OPTIONS: readonly (readonly [TranscriptOutcomeFilter | "", string]
   ["none", "No outcome"],
 ];
 
+const RATING_OPTIONS: readonly (readonly [ReplyRating | "", string])[] = [
+  ["", "Any"],
+  ["down", "Rated down"],
+  ["up", "Rated up"],
+];
+
+/** How the producer rated a reply, as the table reads it (GRV-103). */
+function ratingLabel(rating: ReplyRating | null | undefined): string {
+  return rating === "down" ? "Down" : rating === "up" ? "Up" : "";
+}
+
 const TRAFFIC_OPTIONS = [
   ["", "Everyone"],
   ["external", "Producers only"],
@@ -65,7 +76,7 @@ function downloadFile(fileName: string, contents: string): void {
 
 /**
  * Kept assistant turns, for admins (GRV-98): the newest turns, narrowed by
- * account, project, outcome and traffic, and one opened beside them with the
+ * account, project, outcome, rating (GRV-103) and traffic, and one opened beside them with the
  * message, the reply, every tool call with its input, the outcomes and a
  * rejection's issues side by side. Reads go through the
  * `assistantTranscriptsAdmin` callable; the page logs nothing about them.
@@ -79,6 +90,7 @@ export default function TranscriptAdmin(props: TranscriptAdminProps): JSX.Elemen
   const [uid, setUid] = createSignal("");
   const [projectId, setProjectId] = createSignal("");
   const [outcome, setOutcome] = createSignal<TranscriptOutcomeFilter | "">("");
+  const [rating, setRating] = createSignal<ReplyRating | "">("");
   const [traffic, setTraffic] = createSignal<"" | "external" | "internal">("");
   const [loading, setLoading] = createSignal(true);
   const [loadError, setLoadError] = createSignal(false);
@@ -90,6 +102,7 @@ export default function TranscriptAdmin(props: TranscriptAdminProps): JSX.Elemen
     uid: uid().trim() || undefined,
     projectId: projectId().trim() || undefined,
     outcome: outcome() || undefined,
+    rating: rating() || undefined,
     internal: traffic() === "" ? undefined : traffic() === "internal",
   });
 
@@ -168,6 +181,18 @@ export default function TranscriptAdmin(props: TranscriptAdminProps): JSX.Elemen
           </select>
         </label>
         <label>
+          <span class="allowlist-label">Rating</span>
+          <select
+            class="transcripts-input"
+            value={rating()}
+            onChange={(event) => setRating(event.currentTarget.value as ReplyRating | "")}
+          >
+            <For each={RATING_OPTIONS}>
+              {(option) => <option value={option[0]}>{option[1]}</option>}
+            </For>
+          </select>
+        </label>
+        <label>
           <span class="allowlist-label">Traffic</span>
           <select
             class="transcripts-input"
@@ -210,6 +235,7 @@ export default function TranscriptAdmin(props: TranscriptAdminProps): JSX.Elemen
                 { label: "Message" },
                 { label: "Outcome", width: "110px" },
                 { label: "Issues", width: "170px" },
+                { label: "Rating", width: "80px" },
                 { label: "Open", width: "84px", hideLabel: true },
               ]}
             >
@@ -230,6 +256,7 @@ export default function TranscriptAdmin(props: TranscriptAdminProps): JSX.Elemen
                     </td>
                     <td>{outcomeLabel(turn().outcome)}</td>
                     <td class="allowlist-email">{turn().issueCodes.join(", ")}</td>
+                    <td>{ratingLabel(turn().rating)}</td>
                     <td>
                       <button
                         type="button"
@@ -294,6 +321,16 @@ function TurnDetail(props: {
           </dd>
           <dt>Stopped</dt>
           <dd>{props.turn.stopReason}</dd>
+          <Show when={props.turn.rating}>
+            {(rated) => (
+              <>
+                <dt>Rated</dt>
+                <dd>
+                  {ratingLabel(rated().rating)} at {formatTime(rated().at)}
+                </dd>
+              </>
+            )}
+          </Show>
         </dl>
         <button type="button" onClick={() => props.onDownload()}>
           Download eval case

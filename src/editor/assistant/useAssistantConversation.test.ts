@@ -268,3 +268,104 @@ describe("a conversation that recommends a video (GRV-16)", () => {
     dispose();
   });
 });
+
+describe("a conversation's session health (GRV-103)", () => {
+  const project = createSliceFixtureProject();
+  const scope: AssistantScope = {
+    level: "song",
+    label: "Song",
+    catalogScope: "song",
+    selection: null,
+    track: null,
+  };
+
+  function talk() {
+    const client = createFakeAssistantClient();
+    const health = {
+      messageSent: vi.fn(() => ({
+        session: 1,
+        index: health.messageSent.mock.calls.length,
+      })),
+      turnEnded: vi.fn(),
+      proposalOutcome: vi.fn(),
+      rated: vi.fn(),
+      reset: vi.fn(),
+    };
+    let conversation: AssistantConversation | undefined;
+    const dispose = createRoot((dispose) => {
+      conversation = useAssistantConversation({
+        client: async () => client,
+        project: () => project,
+        scope: () => scope,
+        canSend: () => true,
+        analytics: () =>
+          new Analytics({
+            transport: createRecordingTransport(),
+            storage: memoryStorage(),
+          }),
+        health,
+      });
+      return dispose;
+    });
+    flush();
+    if (!conversation) throw new Error("no conversation");
+    return { conversation, client, health, dispose };
+  }
+
+  it("tells it each message and how each turn ended, numbered by turn, retries included", async () => {
+    const { conversation, client, health, dispose } = talk();
+    conversation.send("One");
+    await vi.waitFor(() => expect(client.turns).toHaveLength(1));
+    client.last().text("Fine.");
+    client.last().done();
+    flush();
+    conversation.send("Two");
+    await vi.waitFor(() => expect(client.turns).toHaveLength(2));
+    client.last().fail({ code: "timeout", retryable: true });
+    flush();
+    expect(conversation.retry()).toBe(true);
+    await vi.waitFor(() => expect(client.turns).toHaveLength(3));
+    client.last().emit({
+      type: "done",
+      stopped: false,
+      stopReason: "max_tokens",
+      requestsRemaining: null,
+    });
+    expect(health.messageSent).toHaveBeenCalledTimes(2);
+    expect(health.turnEnded.mock.calls).toEqual([
+      [
+        { kind: "done", stopped: false, stopReason: "end_turn" },
+        { session: 1, index: 1 },
+      ],
+      [
+        { kind: "error", code: "timeout" },
+        { session: 1, index: 2 },
+      ],
+      [
+        { kind: "done", stopped: false, stopReason: "max_tokens" },
+        { session: 1, index: 2 },
+      ],
+    ]);
+    dispose();
+  });
+
+  it("sets, changes and clears a reply's rating", async () => {
+    const { conversation, client, dispose } = talk();
+    conversation.send("One");
+    await vi.waitFor(() => expect(client.turns).toHaveLength(1));
+    client.last().text("Fine.");
+    client.last().done();
+    flush();
+    const replyId = conversation.entries()[1]?.id ?? "";
+    expect(conversation.rateReply(replyId, "down")).toMatchObject({
+      sessionTurn: { session: 1, index: 1 },
+    });
+    flush();
+    expect(conversation.entries()[1]).toMatchObject({ rating: "down" });
+    conversation.rateReply(replyId, null);
+    flush();
+    expect(conversation.entries()[1]).not.toHaveProperty("rating");
+    expect(conversation.rateReply("nothing", "up")).toBeNull();
+    dispose();
+  });
+});

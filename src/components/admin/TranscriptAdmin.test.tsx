@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-lib
 import { flush } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryTranscriptStore } from "../../assistant/inMemoryTranscriptStore";
-import { recordOutcome } from "../../assistant/retention";
+import { recordOutcome, recordRating } from "../../assistant/retention";
 import { handleTranscriptAdminRequest } from "../../assistant/transcriptAdmin";
 import { createTranscriptAdminClient } from "../../assistant/transcriptAdminClient";
 import { type TranscriptRecord, transcriptRecordFor } from "../../assistant/transcripts";
@@ -66,6 +66,7 @@ async function setUp() {
       message: 'track.instrument.assetId: Expected a "ast_" prefixed id',
     },
   ]);
+  await recordRating(store, "producer-uid", "turn-0002", "down", AT + 2);
   const requests: unknown[] = [];
   const client = createTranscriptAdminClient((request) => {
     requests.push(request);
@@ -112,6 +113,17 @@ describe("TranscriptAdmin (GRV-98)", () => {
       outcome: "rejected",
       internal: false,
     });
+  });
+
+  it("narrows to replies rated down, and shows each turn's rating (GRV-103)", async () => {
+    const { requests } = await setUp();
+    expect(rows()[0]).toHaveTextContent("Down");
+    fireEvent.change(screen.getByLabelText("Rating"), { target: { value: "down" } });
+    flush();
+    fireEvent.click(screen.getByRole("button", { name: "Show" }));
+    await vi.waitFor(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0]).toHaveTextContent("Make the kick louder");
+    expect(requests.at(-1)).toEqual({ op: "list", rating: "down" });
   });
 
   it("opens a turn: message, reply, tool calls with input, and the rejection's issues side by side", async () => {

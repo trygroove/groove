@@ -121,8 +121,8 @@ beside the other proposal rates in analytics. A kept turn also records the
 validator's own path and message (GRV-98).
 
 To see one, sign in to `/admin` with the `admin` claim: **Assistant
-transcripts** lists the newest kept turns (filter by account, project, outcome
-and internal traffic) through the `assistantTranscriptsAdmin` callable, and
+transcripts** lists the newest kept turns (filter by account, project, outcome,
+rating and internal traffic) through the `assistantTranscriptsAdmin` callable, and
 **Open** shows the message, the reply, every tool call with its input, and the
 outcomes with their issues. No client reads the collection directly, admins
 included.
@@ -132,6 +132,51 @@ and run `bun run eval:assistant -- --from-transcript <file>`. A transcript
 does not keep the song, so the file names an eval fixture to run the message
 against (`house-loop` unless edited to `kit-sketch` or `arrangement`). The file
 carries the producer's words: keep it off the repository.
+
+## Sad assistant sessions
+
+The production measure of assistant quality (GRV-103): the share of
+conversations that went wrong at least once. A conversation's first sent
+message logs `assistant_session_started`; its first bad response logs
+`assistant_session_sad` (`src/assistant/sessionHealth.ts`). Each carries a
+`reason` and a `signal_class`:
+
+| `reason` | `signal_class` | What happened |
+| --- | --- | --- |
+| `turn_error` | `hard` | The turn failed: provider, timeout, quota, spend guard |
+| `max_tokens` | `hard` | The reply was cut off |
+| `refusal` | `hard` | The model refused |
+| `proposal_invalid` | `hard` | A proposal did not fit the song |
+| `proposal_stale` | `hard` | A proposal arrived after the song moved on |
+| `proposal_undone_fast` | `soft` | A proposal was undone within 60 s of applying |
+| `proposal_cancelled` | `soft` | A proposal was turned down |
+| `rated_down` | `explicit` | The producer gave a reply a thumbs-down |
+
+`assistant_session_sad` fires at most twice per conversation: with
+`counts_for: full` on its first bad signal of any class, and with
+`counts_for: hard` on its first hard or explicit one (both on the same signal
+when that comes first). A conversation stays sad after it recovers, and a
+thumbs-down changed to a thumbs-up does not take its event back.
+
+The events go to PostHog (ADR 0011, GRV-106). The insight is defined here for
+the product owner to create in the PostHog project. One **Trends** insight,
+weekly, with the project's "filter out internal and test users" setting on
+(it excludes events whose `internal` property is `true`) for every series:
+
+- **A**: `assistant_session_started`, total count.
+- **B**: `assistant_session_sad` where `counts_for` = `full`, total count.
+- **C**: `assistant_session_sad` where `counts_for` = `hard`, total count.
+- Formulas: `B / A` (**full rate**) and `C / A` (**hard rate**), shown side by
+  side, with A, B and C hidden.
+
+A second insight breaks the full rate down by cause: `assistant_session_sad`
+where `counts_for` = `full`, weekly, broken down by `reason`. The breakdown
+counts each sad conversation once, under its first reason. Link both here once
+they exist.
+
+To read the conversations behind a thumbs-down, filter **Assistant
+transcripts** in `/admin` to **Rated down**. A rating is only kept on a turn
+the account lets Groove keep.
 
 ## Rotating the key
 

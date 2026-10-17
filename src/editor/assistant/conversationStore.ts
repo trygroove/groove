@@ -15,6 +15,7 @@
  */
 import { z } from "zod";
 import { type AssistantAsk, assistantAskSchema } from "../../assistant/ask";
+import { REPLY_RATINGS, sessionIdSchema } from "../../assistant/transcripts";
 import type { ConversationEntry } from "./useAssistantConversation";
 
 /** The prefix of every stored conversation's key. */
@@ -46,6 +47,8 @@ const storedEntrySchema = z.discriminatedUnion("kind", [
     stopped: z.boolean(),
     failed: z.boolean().optional(),
     ask: assistantAskSchema.optional(),
+    turnId: sessionIdSchema.optional(),
+    rating: z.enum(REPLY_RATINGS).optional(),
   }),
 ]);
 
@@ -105,6 +108,8 @@ export function serializeConversation(
             stopped: entry.stopped,
             ...(entry.failed ? { failed: true } : {}),
             ...(entry.ask ? { ask: entry.ask } : {}),
+            ...(entry.turnId ? { turnId: entry.turnId } : {}),
+            ...(entry.rating ? { rating: entry.rating } : {}),
           },
     ),
     pendingAskReplyId: pending,

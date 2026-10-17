@@ -26,7 +26,11 @@ import {
   type AssistantRetentionClient,
   answered as isAnswered,
 } from "../../assistant/retentionClient";
-import type { ProposalOutcome, TranscriptIssue } from "../../assistant/transcripts";
+import type {
+  ProposalOutcome,
+  ReplyRating,
+  TranscriptIssue,
+} from "../../assistant/transcripts";
 
 export type RetentionStatus = "idle" | "loading" | "ready" | "failed";
 
@@ -56,6 +60,11 @@ export interface AssistantRetention {
     outcome: ProposalOutcome,
     issues?: readonly TranscriptIssue[],
   ): void;
+  /**
+   * Tells a kept turn how the producer rated its reply, or that the rating
+   * was cleared (GRV-103), if the account keeps any.
+   */
+  reportRating(turnId: string, rating: ReplyRating | null): void;
 }
 
 export interface UseAssistantRetentionOptions {
@@ -79,6 +88,29 @@ export function useAssistantRetention(
   const [saving, setSaving] = createSignal(false);
   const [saveFailed, setSaveFailed] = createSignal(false);
   let generation = 0;
+  /**
+   * The rating each turn is to end up with, while a call for it is on its
+   * way (GRV-103). Calls for one turn go one at a time, the latest rating
+   * once the one before settles, so quick clicks cannot land out of order.
+   */
+  const ratingsDue = new Map<string, { rating: ReplyRating | null; due: boolean }>();
+
+  async function sendRatings(
+    turnId: string,
+    slot: { rating: ReplyRating | null; due: boolean },
+  ) {
+    while (slot.due) {
+      slot.due = false;
+      const rating = slot.rating;
+      try {
+        const client = await options.client();
+        await client.rate(turnId, rating);
+      } catch {
+        // Best-effort, like an outcome: the rating on screen stands.
+      }
+    }
+    ratingsDue.delete(turnId);
+  }
 
   function load(): void {
     generation += 1;
@@ -161,6 +193,20 @@ export function useAssistantRetention(
         .client()
         .then((client) => client.outcome(turnId, outcome, issues))
         .catch(() => {});
+    },
+    reportRating(turnId, rating) {
+      if (state()?.preference?.retain !== true) return;
+      const sending = ratingsDue.get(turnId);
+      if (sending) {
+        // Sent as soon as the call on its way settles, in place of any other
+        // change still waiting.
+        sending.rating = rating;
+        sending.due = true;
+        return;
+      }
+      const slot = { rating, due: true };
+      ratingsDue.set(turnId, slot);
+      void sendRatings(turnId, slot);
     },
   };
 }
