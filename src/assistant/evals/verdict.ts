@@ -7,7 +7,15 @@
  *   guardrail holds.
  * - **no win**: a guardrail failed (the variant is refused, whatever the goal
  *   did), or the interval lies wholly on the worse side.
- * - **inconclusive**: every guardrail holds and the interval crosses zero.
+ * - **inconclusive**: every guardrail holds and the interval crosses zero,
+ *   or fewer than {@link MIN_PAIRED_CASES} cases ran on both sides, too few
+ *   for a bootstrap over cases to say anything.
+ *
+ * A **cut** (GRV-110 section 5a) is judged by {@link analyzeCut} instead: it
+ * needs no gain, only the bar. It is **keep** when every guardrail holds and
+ * its goal is no worse than the control's beyond noise (the worse end of its
+ * interval stays within `cutMarginPercent`, 2% by default, of the control's
+ * value), and **restore** otherwise. Never inconclusive, since neutral passes.
  *
  * Both reports must come from the same cases run the same way: an experiment
  * phase runs every variant in one interleaved pass (`experimentRun.ts`).
@@ -20,12 +28,20 @@ import {
   pairedBootstrap,
 } from "./bootstrap";
 import { CHECK_IDS } from "./checks";
-import type { ExperimentGoal, ExperimentGuardrails } from "./experiment";
+import type { ExperimentGoal, ExperimentGuardrails, VariantKind } from "./experiment";
 import type { EvalRecord, EvalReport } from "./run";
 import { type MetricKind, type Rate, type ScoreView, stopReasonOf } from "./scorecard";
 import { setLabel } from "./sets";
 
 export type ExperimentVerdict = "win" | "no win" | "inconclusive";
+
+/** A cut's verdict: it stays out (keep the cut), or it goes back in (restore). */
+export type CutVerdict = "keep" | "restore";
+
+export type VariantVerdict = ExperimentVerdict | CutVerdict;
+
+/** The fewest paired cases an interval is read from; fewer is inconclusive. */
+export const MIN_PAIRED_CASES = 3;
 
 /** One goal: how to read it off a whole report, and off one case of it. */
 export interface GoalMetric {
@@ -129,7 +145,10 @@ export function judgeGoal(
     change: differences.length === 0 ? null : mean(differences),
     interval,
     pairedCases: differences.length,
-    outcome: intervalOutcome(interval, metric.higherIsBetter),
+    outcome:
+      differences.length < MIN_PAIRED_CASES
+        ? "inconclusive"
+        : intervalOutcome(interval, metric.higherIsBetter),
   };
 }
 
@@ -307,39 +326,49 @@ export function checkGuardrails(
 export interface VariantAnalysis {
   readonly variant: string;
   readonly overrides: Readonly<Record<string, string>>;
+  readonly kind: VariantKind;
   readonly goal: GoalResult;
   readonly guardrails: readonly GuardrailResult[];
-  readonly verdict: ExperimentVerdict;
+  /** An improve's win, no win or inconclusive; a cut's keep or restore. */
+  readonly verdict: VariantVerdict;
   /** One line on why. */
   readonly why: string;
+  /** A cut's noise margin: how much worse its goal may be, in the goal's unit. */
+  readonly cutMargin?: number | null;
+}
+
+/** A variant as the analyses take it. */
+export interface AnalyzedVariant {
+  readonly name: string;
+  readonly overrides: Readonly<Record<string, string>>;
+  readonly kind?: VariantKind;
+}
+
+function refusedWhy(failed: readonly GuardrailResult[]): string {
+  return `Refused by ${failed.length === 1 ? "a guardrail" : `${failed.length} guardrails`}: ${failed.map((guardrail) => guardrail.label).join("; ")}.`;
 }
 
 /** One variant against the control: its goal, its guardrails, its verdict. */
 export function analyzeVariant(
-  variant: {
-    readonly name: string;
-    readonly overrides: Readonly<Record<string, string>>;
-  },
+  variant: AnalyzedVariant,
   goal: ExperimentGoal,
   control: EvalReport,
   report: EvalReport,
   limits: ExperimentGuardrails,
 ): VariantAnalysis {
+  if (variant.kind === "cut") return analyzeCut(variant, goal, control, report, limits);
   const goalResult = judgeGoal(goal, control, report);
   const guardrails = checkGuardrails(control, report, limits);
   const failed = guardrails.filter((guardrail) => !guardrail.pass);
   const base = {
     variant: variant.name,
     overrides: variant.overrides,
+    kind: "improve" as const,
     goal: goalResult,
     guardrails,
   };
   if (failed.length > 0) {
-    return {
-      ...base,
-      verdict: "no win",
-      why: `Refused by ${failed.length === 1 ? "a guardrail" : `${failed.length} guardrails`}: ${failed.map((guardrail) => guardrail.label).join("; ")}.`,
-    };
+    return { ...base, verdict: "no win", why: refusedWhy(failed) };
   }
   if (goalResult.outcome === "worse") {
     return { ...base, verdict: "no win", why: `${goalResult.label} got worse.` };
@@ -351,13 +380,76 @@ export function analyzeVariant(
       why:
         goalResult.pairedCases === 0
           ? "No case ran on both sides, so there is nothing to compare."
-          : `The interval on ${goalResult.label.toLowerCase()} crosses zero.`,
+          : goalResult.pairedCases < MIN_PAIRED_CASES
+            ? `Only ${goalResult.pairedCases} ${goalResult.pairedCases === 1 ? "case" : "cases"} ran on both sides, fewer than the ${MIN_PAIRED_CASES} an interval is read from.`
+            : `The interval on ${goalResult.label.toLowerCase()} crosses zero.`,
     };
   }
   return {
     ...base,
     verdict: "win",
     why: `${goalResult.label} improved, and every guardrail held.`,
+  };
+}
+
+/**
+ * How far the worse end of a goal's interval lies on the worse side of zero,
+ * in the goal's unit (negative when the whole interval is better); null with
+ * no interval.
+ */
+export function worseBound(goal: GoalResult): number | null {
+  if (!goal.interval) return null;
+  return goal.higherIsBetter ? -goal.interval.low : goal.interval.high;
+}
+
+/**
+ * One cut against the control: **keep** when every guardrail holds and the
+ * worse end of its goal's interval stays within `cutMarginPercent` of the
+ * control's value, over at least {@link MIN_PAIRED_CASES} paired cases;
+ * **restore** otherwise.
+ */
+export function analyzeCut(
+  variant: AnalyzedVariant,
+  goal: ExperimentGoal,
+  control: EvalReport,
+  report: EvalReport,
+  limits: ExperimentGuardrails,
+): VariantAnalysis {
+  const goalResult = judgeGoal(goal, control, report);
+  const guardrails = checkGuardrails(control, report, limits);
+  const failed = guardrails.filter((guardrail) => !guardrail.pass);
+  const margin =
+    goalResult.control === null
+      ? null
+      : (Math.abs(goalResult.control) * limits.cutMarginPercent) / 100;
+  const base = {
+    variant: variant.name,
+    overrides: variant.overrides,
+    kind: "cut" as const,
+    goal: goalResult,
+    guardrails,
+    cutMargin: margin,
+  };
+  if (failed.length > 0) return { ...base, verdict: "restore", why: refusedWhy(failed) };
+  const bound = worseBound(goalResult);
+  if (bound === null || margin === null || goalResult.pairedCases < MIN_PAIRED_CASES) {
+    return {
+      ...base,
+      verdict: "restore",
+      why: `Only ${goalResult.pairedCases} ${goalResult.pairedCases === 1 ? "case" : "cases"} ran on both sides, too few to show it costs nothing.`,
+    };
+  }
+  if (bound > margin + EPSILON) {
+    return {
+      ...base,
+      verdict: "restore",
+      why: `${goalResult.label} may be worse than the control by more than ${limits.cutMarginPercent}% of its value.`,
+    };
+  }
+  return {
+    ...base,
+    verdict: "keep",
+    why: `Every guardrail held, and ${goalResult.label.toLowerCase()} is no worse than the control's beyond noise.`,
   };
 }
 

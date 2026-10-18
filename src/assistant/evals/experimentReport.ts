@@ -2,8 +2,9 @@
  * An experiment's report (GRV-110): Markdown for the card's comment, the run
  * summary and `docs/experiments/<id>.md`, and JSON for the artifact.
  *
- * It leads with the verdict and the winner, then, phase by phase, each
- * variant against the control: the goal's change with its paired interval,
+ * It leads with the verdict, the winner and the cuts kept, then, phase by
+ * phase, each variant against the control (cuts with their keep or restore,
+ * their held-out run and every combined run, then a line per cut): the goal's change with its paired interval,
  * every guardrail, and every scorecard number beside the control's in
  * GRV-102's diff format (the control standing where the baseline does). The
  * JSON keeps every number and no reply, so it stays small; each variant's
@@ -11,7 +12,12 @@
  */
 
 import { CONTROL, describeCases, type ExperimentVariant } from "./experiment";
-import type { ExperimentGate, ExperimentPhase, ExperimentResult } from "./experimentRun";
+import type {
+  CombinedCutRun,
+  ExperimentGate,
+  ExperimentPhase,
+  ExperimentResult,
+} from "./experimentRun";
 import { type EvalSummary, summaryOf } from "./run";
 import {
   compareHeavySets,
@@ -30,6 +36,8 @@ export interface ExperimentLinks {
   readonly commit: string | null;
   /** The held PR a win opened. */
   readonly pullRequestUrl?: string | null;
+  /** Why the held PR a win should have opened did not open. */
+  readonly pullRequestError?: string | null;
 }
 
 /** A variant's tactic values as the report names them; the control is production's. */
@@ -62,12 +70,19 @@ function analysisLines(
   const control = phase.reports[CONTROL];
   const variant = phase.reports[analysis.variant];
   const heavy = compareHeavySets(variant.scorecard, control.scorecard);
+  const cutMargin =
+    analysis.kind === "cut" && analysis.cutMargin != null
+      ? [
+          `- A cut keeps if the worse end of that interval is within ${formatMetric(analysis.goal.kind, analysis.cutMargin)} of the control (${formatMetric(analysis.goal.kind, analysis.goal.control)}).`,
+        ]
+      : [];
   return [
-    `${heading} \`${analysis.variant}\` against the control: ${analysis.verdict}`,
+    `${heading} ${analysis.kind === "cut" ? "cut " : ""}\`${analysis.variant}\` against the control: ${analysis.verdict}`,
     "",
     `Tactics: ${variantTactics({ name: analysis.variant, overrides: analysis.overrides })}. ${analysis.why}`,
     "",
     `- Goal: ${goalLine(analysis)}`,
+    ...cutMargin,
     "",
     "| Guardrail | | Control to variant |",
     "| --- | --- | --- |",
@@ -115,6 +130,51 @@ function gateLines(gate: ExperimentGate): string[] {
   ];
 }
 
+function combinedLines(run: CombinedCutRun, index: number): string[] {
+  const heading = `### Combined run ${index + 1}: ${run.cuts.map((cut) => `\`${cut}\``).join(" + ")}, ${run.held ? "held" : "failed"}`;
+  return [
+    heading,
+    "",
+    ...phaseIntro(run.train.phase, "train case"),
+    ...analysisLines(run.train.analysis, run.train.phase, "#### Train:"),
+    ...(run.heldout
+      ? [
+          ...phaseIntro(run.heldout.phase, "held-out case"),
+          ...analysisLines(run.heldout.analysis, run.heldout.phase, "#### Held out:"),
+        ]
+      : ["Not run on held-out: it did not keep on train.", ""]),
+  ];
+}
+
+function cutLines(result: ExperimentResult): string[] {
+  if (result.cuts.length === 0) return [];
+  const { cutGate } = result;
+  return [
+    "## Cuts",
+    "",
+    "A cut needs no gain: it keeps when it holds every guardrail on train and on held-out and its goal is no worse than the control's beyond noise, and the cuts that keep alone must keep together too.",
+    "",
+    "| Cut | Verdict | Why |",
+    "| --- | --- | --- |",
+    ...result.cuts.map(
+      (cut) =>
+        `| \`${cut.name}\` | **${cut.verdict}** | ${cut.why.replace(/\|/g, "\\|")} |`,
+    ),
+    "",
+    ...(cutGate
+      ? [
+          "### Cuts on held-out",
+          "",
+          ...phaseIntro(cutGate.phase, "held-out case"),
+          ...cutGate.analyses.flatMap((analysis) =>
+            analysisLines(analysis, cutGate.phase, "####"),
+          ),
+        ]
+      : []),
+    ...result.combined.flatMap(combinedLines),
+  ];
+}
+
 /** The report as Markdown. */
 export function renderExperimentMarkdown(
   result: ExperimentResult,
@@ -133,13 +193,26 @@ export function renderExperimentMarkdown(
     ...(result.winner
       ? [`- Winner: \`${result.winner.name}\` (${variantTactics(result.winner)})`]
       : []),
+    ...(result.cuts.length > 0
+      ? [
+          `- Cuts kept: ${result.keptCuts.length === 0 ? "none" : result.keptCuts.map((cut) => `\`${cut.name}\` (${variantTactics(cut)})`).join(", ")}`,
+        ]
+      : []),
     ...(links.pullRequestUrl
       ? [`- Held PR with the new defaults: ${links.pullRequestUrl}`]
       : []),
+    ...(links.pullRequestError
+      ? [`- **The held PR did not open:** ${links.pullRequestError}`]
+      : []),
     `- Goal: ${goal.label.toLowerCase()} (${goal.higherIsBetter ? "higher" : "lower"} is better)`,
-    `- Variants: ${experiment.variants.map((variant) => `\`${variant.name}\` (${variantTactics(variant)})`).join(", ")}`,
+    `- Variants: ${experiment.variants.map((variant) => `\`${variant.name}\` (${variant.kind === "cut" ? "a cut: " : ""}${variantTactics(variant)})`).join(", ")}`,
+    ...(experiment.atDefaults.length > 0
+      ? [
+          `- Not run, production's defaults already: ${experiment.atDefaults.map((name) => `\`${name}\``).join(", ")}`,
+        ]
+      : []),
     `- Cases: ${describeCases(experiment.cases)}: ${experiment.train.length} train, ${experiment.heldout.length} held out`,
-    `- Guardrails: checks 1 and 8 within ${experiment.guardrails.maxCheckDropPoints} points per set, the overall pass rate within ${experiment.guardrails.maxOverallDropPoints}, no case passing to failing in most runs, no rise in max_tokens stops or errored turns`,
+    `- Guardrails: checks 1 and 8 within ${experiment.guardrails.maxCheckDropPoints} points per set, the overall pass rate within ${experiment.guardrails.maxOverallDropPoints}, no case passing to failing in most runs, no rise in max_tokens stops or errored turns${result.cuts.length > 0 ? `; a cut's goal no worse than ${experiment.guardrails.cutMarginPercent}% of the control's` : ""}`,
     `- Model: \`${result.model}\`; prompt \`${control.promptVersion}\`; tool set ${control.toolsetVersion}`,
     `- Commit: ${links.commit ? `\`${links.commit}\`` : "unknown"}; run: ${links.runUrl ?? "local"}`,
     `- Spend: $${result.spentUsd.toFixed(2)} of a $${result.budgetUsd.toFixed(2)} budget`,
@@ -158,12 +231,15 @@ export function renderExperimentMarkdown(
     "",
     ...(result.gates.length === 0
       ? [
-          result.trainAnalyses.some((analysis) => analysis.verdict === "win")
-            ? "Not run: the experiment stopped first."
-            : "Not run: no variant won on train.",
+          !result.trainAnalyses.some((analysis) => analysis.kind === "improve")
+            ? "Not run: every variant is a cut (below)."
+            : result.trainAnalyses.some((analysis) => analysis.verdict === "win")
+              ? "Not run: the experiment stopped first."
+              : "Not run: no variant won on train.",
           "",
         ]
       : result.gates.flatMap(gateLines)),
+    ...cutLines(result),
   ];
   return `${lines.join("\n").trimEnd()}\n`;
 }
@@ -197,10 +273,14 @@ export function experimentJson(result: ExperimentResult, links: ExperimentLinks)
       heldout: experiment.heldout.map((entry) => entry.id),
       guardrails: experiment.guardrails,
       runs: experiment.runs,
+      budgetUsd: experiment.budgetUsd,
+      atDefaults: experiment.atDefaults,
     },
     verdict: result.verdict,
     reason: result.reason,
     winner: result.winner,
+    keptCuts: result.keptCuts,
+    cuts: result.cuts,
     stopped: result.stopped,
     model: result.model,
     generatedAt: result.generatedAt,
@@ -214,5 +294,17 @@ export function experimentJson(result: ExperimentResult, links: ExperimentLinks)
       phase: phaseSummary(gate.phase),
     })),
     train: phaseSummary(result.train),
+    cutGate: result.cutGate
+      ? { analyses: result.cutGate.analyses, phase: phaseSummary(result.cutGate.phase) }
+      : null,
+    combined: result.combined.map((run) => ({
+      cuts: run.cuts,
+      variant: run.variant,
+      held: run.held,
+      train: { analysis: run.train.analysis, phase: phaseSummary(run.train.phase) },
+      heldout: run.heldout
+        ? { analysis: run.heldout.analysis, phase: phaseSummary(run.heldout.phase) }
+        : null,
+    })),
   };
 }

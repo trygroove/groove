@@ -1,10 +1,12 @@
 /**
  * The experiment framework's dry runs (GRV-110): a scripted provider and
- * planted tactics, through the gateway's own turn, the verdict, the gate and
- * the PR plan, with a recorder in place of the comment poster and the PR
- * opener so nothing is posted or opened.
+ * planted tactics, through the gateway's own turn, the verdict, the gate, the
+ * cuts and the PR plan, with a recorder in place of the comment poster and
+ * the PR opener so nothing is posted or opened. Every pool has at least three
+ * train and three held-out cases, the fewest an interval is read from.
  */
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { addDevice } from "../../commands";
 import { createDevice } from "../../domain/devices";
@@ -17,19 +19,26 @@ import {
 } from "../../testing/scriptedAssistantProvider";
 import type { AssistantProvider } from "../provider";
 import { continuesTurn } from "../providerRequest";
-import type { TacticDefinition } from "../tactics";
+import {
+  TACTIC_DEFAULTS,
+  TACTICS,
+  type TacticDefinition,
+  type TacticOverrides,
+} from "../tactics";
 import { toolNameFor } from "../tools";
-import { validateExperiment } from "./experiment";
+import { experimentIds, loadExperiment, validateExperiment } from "./experiment";
 import {
   concludeExperiment,
   type ExperimentPublisher,
   PROMPT_PATH,
+  planWinPullRequest,
   TACTICS_PATH,
   type WinPullRequest,
 } from "./experimentPr";
 import { renderExperimentMarkdown } from "./experimentReport";
 import {
   BUDGET_STOP_REASON,
+  COMBINED_CUT_RETRIES,
   type ExperimentTurnRunner,
   experimentExitCode,
   gatewayTurnRunner,
@@ -38,45 +47,73 @@ import {
 import { AUTH_ABORT_REASON, runCaseTurn } from "./run";
 
 /** Tactics no production code knows: the scripted model is what reads them. */
+const off = (description: string, alters: TacticDefinition["alters"]) => ({
+  description,
+  values: ["off", "on"],
+  default: "off",
+  alters,
+});
 const PLANTED: Readonly<Record<string, TacticDefinition>> = {
-  terseNotes: {
-    description: "Planted: the same proposal in fewer output tokens.",
-    values: ["off", "on"],
-    default: "off",
-    alters: ["prompt"],
-  },
-  noop: {
-    description: "Planted: changes nothing at all.",
-    values: ["off", "on"],
-    default: "off",
-    alters: ["request"],
-  },
-  skipTools: {
-    description: "Planted: answers in words and calls no tool, so check 1 fails.",
-    values: ["off", "on"],
-    default: "off",
-    alters: ["tools"],
-  },
+  terseNotes: off("Planted: the same proposal in fewer output tokens.", ["prompt"]),
+  noop: off("Planted: changes nothing at all.", ["request"]),
+  skipTools: off("Planted: answers in words and calls no tool, so check 1 fails.", [
+    "tools",
+  ]),
+  trimNothing: off("Planted cut: removes something that changes nothing.", ["prompt"]),
+  trimBreaks: off("Planted cut: removes something check 1 needs.", ["prompt"]),
+  trimA: off("Planted cut: 1% more tokens alone; with another cut, no tool call.", [
+    "prompt",
+  ]),
+  trimB: off("Planted cut: 1% fewer tokens alone; with another cut, no tool call.", [
+    "prompt",
+  ]),
+  trimC: off("Planted cut: 0.5% more tokens alone; with another cut, no tool call.", [
+    "prompt",
+  ]),
+  trimD: off("Planted cut: 0.5% fewer tokens alone; with another cut, no tool call.", [
+    "prompt",
+  ]),
+};
+
+/** The cuts that clash: any two of them on together, and the reply calls no tool. */
+const CLASHING: Readonly<Record<string, number>> = {
+  trimA: 1_010,
+  trimB: 990,
+  trimC: 1_005,
+  trimD: 995,
 };
 
 /** A registry source the win PR rewrites, as `tactics.ts` lays its entries out. */
 const PLANTED_SOURCE = `export const TACTICS = {
-  terseNotes: {
+${Object.entries(PLANTED)
+  .map(
+    ([id, tactic]) => `  ${id}: {
     description: "Planted.",
     values: ["off", "on"],
     default: "off",
-    alters: ["prompt"],
-  },
-  noop: {
-    description: "Planted.",
-    values: ["off", "on"],
-    default: "off",
-    alters: ["request"],
-  },
+    alters: ${JSON.stringify(tactic.alters)},
+  },`,
+  )
+  .join("\n")}
 } as const;
 `;
 
 const PROMPT_SOURCE = `export const ASSISTANT_PROMPT_VERSION = "2026-10-17.2";\n`;
+
+/** Train: four musical cases. Held out: three. */
+const POOL = [
+  "process-crushed",
+  "balance-clean",
+  "density-hats",
+  "variation-mangled",
+  "process-glue",
+  "balance-lopsided",
+  "variation-fill",
+];
+
+/** 2026-10-18 15:55:20 UTC, the run's clock. */
+const NOW = Date.UTC(2026, 9, 18, 15, 55, 20);
+const fixedNow = () => NOW;
 
 function compressorCall(seed: string) {
   const device = {
@@ -91,15 +128,27 @@ function compressorCall(seed: string) {
   return { name: toolNameFor(command.type), input: command.payload };
 }
 
+/** A few tokens' difference from case to case, so no interval is a single point. */
+function caseWobble(caseId: string): number {
+  return (caseId.length % 3) * 20;
+}
+
 /** The turn's script: a compressor on the master, in fewer tokens when terse. */
-function plantedScript(tactics: Readonly<Record<string, string>>) {
-  if (tactics.skipTools === "on") {
+function plantedScript(tactics: Readonly<Record<string, string>>, caseId: string) {
+  const clashing = Object.keys(CLASHING).filter((id) => tactics[id] === "on");
+  if (tactics.skipTools === "on" || tactics.trimBreaks === "on" || clashing.length > 1) {
     return replyEvents(["I would put a compressor on the master."], {
       outputTokens: 300,
     });
   }
+  const outputTokens =
+    tactics.terseNotes === "on"
+      ? 600 + caseWobble(caseId)
+      : clashing.length === 1
+        ? CLASHING[clashing[0]]
+        : 1_000;
   return toolUseEvents("A Compressor on the master to glue it.", [compressorCall("c")], {
-    outputTokens: tactics.terseNotes === "on" ? 600 : 1_000,
+    outputTokens,
   });
 }
 
@@ -108,15 +157,12 @@ function plantedTurns(calls: string[] = []): ExperimentTurnRunner {
   return (evalCase, tactics) => {
     calls.push(`${evalCase.id} ${JSON.stringify(tactics)}`);
     return runCaseTurn(evalCase, {
-      provider: createScriptedAssistantProvider([plantedScript(tactics)]),
+      provider: createScriptedAssistantProvider([plantedScript(tactics, evalCase.id)]),
     });
   };
 }
 
-function planted(
-  variants: Readonly<Record<string, Readonly<Record<string, string>>>>,
-  caseIds = ["process-crushed", "process-glue"],
-) {
+function planted(variants: Readonly<Record<string, unknown>>, caseIds = POOL) {
   return validateExperiment(
     {
       id: "planted",
@@ -130,8 +176,10 @@ function planted(
   );
 }
 
+const cut = (tactics: Readonly<Record<string, string>>) => ({ kind: "cut", tactics });
+
 /** Records what would have been posted and opened. */
-function recorder() {
+function recorder(options: { failPullRequest?: string } = {}) {
   const comments: { card: string; body: string }[] = [];
   const pulls: WinPullRequest[] = [];
   const publisher: ExperimentPublisher = {
@@ -140,6 +188,7 @@ function recorder() {
       return "https://linear.app/comment";
     },
     openPullRequest: async (plan) => {
+      if (options.failPullRequest) throw new Error(options.failPullRequest);
       pulls.push(plan);
       return "https://github.com/trygroove/groove/pull/1";
     },
@@ -165,38 +214,63 @@ function planOptions(sources: Record<string, string>, tactics = PLANTED) {
   };
 }
 
+const SOURCES = { [TACTICS_PATH]: PLANTED_SOURCE, [PROMPT_PATH]: PROMPT_SOURCE };
+
+/** `PLANTED_SOURCE` with these tactics' defaults turned on. */
+function turnedOn(...ids: string[]): string {
+  return ids.reduce(
+    (source, id) =>
+      source.replace(
+        new RegExp(`(  ${id}: \\{\\n[^}]*?default: )"off"`),
+        (_, head) => `${head}"on"`,
+      ),
+    PLANTED_SOURCE,
+  );
+}
+
 describe("an experiment's dry run (GRV-110)", () => {
-  it("wins with a tactic that lowers output tokens on one case and leaves quality alone, and opens one held PR", async () => {
+  it("wins with a tactic that lowers output tokens and leaves quality alone, and opens one held PR", async () => {
     const result = await runExperiment(planted({ terse: { terseNotes: "on" } }), {
       runTurn: plantedTurns(),
+      now: fixedNow,
     });
 
     expect(result.trainAnalyses).toHaveLength(1);
     const [train] = result.trainAnalyses;
-    expect(train.goal).toMatchObject({ control: 1_000, variant: 600, change: -400 });
+    expect(train.goal.control).toBe(1_000);
+    expect(train.goal.pairedCases).toBe(4);
+    expect(train.goal.change).toBeLessThan(-300);
+    expect(train.goal.outcome).toBe("better");
     expect(train.guardrails.every((guardrail) => guardrail.pass)).toBe(true);
     expect(train.verdict).toBe("win");
-    // The gate: the control and the winner on the held-out case, 5 runs each.
+    // The gate: the control and the winner on the held-out cases, 5 runs each.
     expect(result.gates).toHaveLength(1);
-    expect(result.gates[0].phase.caseIds).toEqual(["process-glue"]);
+    expect(result.gates[0].phase.caseIds).toEqual([
+      "process-glue",
+      "balance-lopsided",
+      "variation-fill",
+    ]);
     expect(result.gates[0].phase.runsPerCase).toBe(5);
-    expect(result.gates[0].phase.reports.terse.records).toHaveLength(5);
+    expect(result.gates[0].phase.label).toBe("gate-terse");
+    expect(result.gates[0].phase.reports.terse.records).toHaveLength(15);
     expect(result.gates[0].analysis.verdict).toBe("win");
     expect(result.verdict).toBe("win");
-    expect(result.winner).toEqual({ name: "terse", overrides: { terseNotes: "on" } });
+    expect(result.winner).toEqual({
+      name: "terse",
+      overrides: { terseNotes: "on" },
+      kind: "improve",
+    });
+    expect(result.cuts).toEqual([]);
     expect(result.spentUsd).toBeGreaterThan(0);
     expect(experimentExitCode(result)).toBe(0);
 
     const { comments, pulls, publisher } = recorder();
-    const concluded = await concludeExperiment(
-      result,
-      publisher,
-      planOptions({ [TACTICS_PATH]: PLANTED_SOURCE, [PROMPT_PATH]: PROMPT_SOURCE }),
-    );
+    const concluded = await concludeExperiment(result, publisher, planOptions(SOURCES));
     expect(pulls).toHaveLength(1);
     const [pull] = pulls;
     expect(pull.labels).toEqual(["hold"]);
-    expect(pull.branch).toBe("claude/grv-110-experiment-planted");
+    // One branch per run, from the run's own clock.
+    expect(pull.branch).toBe("claude/grv-110-experiment-planted-20261018-155520");
     expect(pull.title).toBe(
       "Implement GRV-110: Default to terseNotes=on (experiment planted)",
     );
@@ -207,18 +281,14 @@ describe("an experiment's dry run (GRV-110)", () => {
       "docs/experiments/planted.md",
     ]);
     // Only the winning tactic's default moved; the prompt it alters is a new version.
-    expect(pull.files[0].content).toBe(
-      PLANTED_SOURCE.replace(
-        'default: "off",\n    alters: ["prompt"]',
-        'default: "on",\n    alters: ["prompt"]',
-      ),
-    );
+    expect(pull.files[0].content).toBe(turnedOn("terseNotes"));
     expect(pull.files[1].content).toBe(
       `export const ASSISTANT_PROMPT_VERSION = "2026-10-18.1";\n`,
     );
     expect(pull.files[2].content).toBe(renderExperimentMarkdown(result, LINKS));
     // The comment goes on the card, after the PR, and links it.
     expect(comments).toEqual([{ card: "GRV-110", body: concluded.markdown }]);
+    expect(concluded.pullRequestError).toBeNull();
     expect(concluded.markdown).toMatch(/^# Experiment `planted`: win/);
     expect(concluded.markdown).toContain(
       "- Held PR with the new defaults: https://github.com/trygroove/groove/pull/1",
@@ -227,8 +297,20 @@ describe("an experiment's dry run (GRV-110)", () => {
     expect(concluded.markdown).toContain("- Winner: `terse` (terseNotes=on)");
     expect(concluded.markdown).toContain("| Number | Variant | Control | Delta | |");
     expect(concluded.markdown).toContain(
-      "1 train case (`process-crushed`), 3 runs a case, 6 turns.",
+      "4 train cases (`process-crushed`, `balance-clean`, `density-hats`, `variation-mangled`), 3 runs a case, 24 turns.",
     );
+  });
+
+  it("is inconclusive on fewer than three paired cases, however clear the change", async () => {
+    const result = await runExperiment(
+      planted({ terse: { terseNotes: "on" } }, ["process-crushed", "process-glue"]),
+      { runTurn: plantedTurns() },
+    );
+    expect(result.trainAnalyses[0].goal.change).toBeLessThan(0);
+    expect(result.trainAnalyses[0].verdict).toBe("inconclusive");
+    expect(result.trainAnalyses[0].why).toMatch(/Only 1 case ran on both sides/);
+    expect(result.verdict).toBe("inconclusive");
+    expect(result.gates).toEqual([]);
   });
 
   it("gives no win or inconclusive for a planted no-op, and opens nothing", async () => {
@@ -266,25 +348,60 @@ describe("an experiment's dry run (GRV-110)", () => {
     expect(pulls).toEqual([]);
   });
 
+  it("posts the report even when the win's PR fails to open, and says why", async () => {
+    const result = await runExperiment(planted({ terse: { terseNotes: "on" } }), {
+      runTurn: plantedTurns(),
+    });
+    const { comments, publisher } = recorder({
+      failPullRequest: "Command failed: gh pr create\nHTTP 403",
+    });
+    const concluded = await concludeExperiment(result, publisher, planOptions(SOURCES));
+    expect(concluded.pullRequestUrl).toBeNull();
+    expect(concluded.pullRequestError).toBe("Command failed: gh pr create HTTP 403");
+    expect(comments).toHaveLength(1);
+    expect(comments[0].body).toContain(
+      "- **The held PR did not open:** Command failed: gh pr create HTTP 403",
+    );
+  });
+
+  it("turns a turn runner that throws into an errored record, not a failed run", async () => {
+    const result = await runExperiment(planted({ terse: { terseNotes: "on" } }), {
+      runTurn: async () => {
+        throw new Error("fixture exploded");
+      },
+    });
+    const records = result.train.reports.control.records;
+    expect(records).toHaveLength(12);
+    expect(records.every((record) => record.error?.includes("fixture exploded"))).toBe(
+      true,
+    );
+    expect(experimentExitCode(result)).toBe(1);
+  });
+
   it("runs the real thinkingEffort tactic through the gateway, and its win flips the registry's default", async () => {
-    // The scripted model writes less when the request asks for low effort.
+    // Read off the registry, so this holds whichever effort production uses.
+    const DEFAULT = TACTIC_DEFAULTS.thinkingEffort;
+    const OFF = TACTICS.thinkingEffort.values.find(
+      (value) => value !== DEFAULT,
+    ) as string;
+    // The scripted model writes less when the request asks for the other effort.
     const provider: AssistantProvider = {
       stream(request, signal) {
         const script = continuesTurn(request)
           ? []
           : toolUseEvents("A Compressor on the master.", [compressorCall("e")], {
-              outputTokens: request.output_config?.effort === "low" ? 500 : 900,
+              outputTokens: request.output_config?.effort === OFF ? 500 : 900,
             });
         return createScriptedAssistantProvider([script]).stream(request, signal);
       },
     };
     const experiment = validateExperiment({
-      id: "effort-low",
+      id: "effort-off",
       card: "GRV-110",
-      hypothesis: "Low effort writes fewer tokens.",
-      variants: { low: { thinkingEffort: "low" } },
+      hypothesis: "Another effort writes fewer tokens.",
+      variants: { other: { thinkingEffort: OFF } },
       goal: "outputTokens",
-      cases: { caseIds: ["process-crushed", "process-glue"] },
+      cases: { caseIds: POOL },
     });
     const result = await runExperiment(experiment, {
       runTurn: gatewayTurnRunner({
@@ -293,39 +410,58 @@ describe("an experiment's dry run (GRV-110)", () => {
       }),
     });
     expect(result.verdict).toBe("win");
-    expect(result.train.reports.low.tactics?.thinkingEffort).toBe("low");
-    expect(result.train.reports.control.tactics?.thinkingEffort).toBe("medium");
+    expect(result.train.reports.other.tactics?.thinkingEffort).toBe(OFF);
+    expect(result.train.reports.control.tactics?.thinkingEffort).toBe(DEFAULT);
 
-    const { pulls, publisher } = recorder();
-    const { TACTICS } = await import("../tactics");
-    await concludeExperiment(
-      result,
-      publisher,
-      planOptions({ [TACTICS_PATH]: readFileSync(TACTICS_PATH, "utf8") }, TACTICS),
-    );
-    const [pull] = pulls;
-    // thinkingEffort alters the request alone: no version moves.
-    expect(pull.files.map((file) => file.path)).toEqual([
-      TACTICS_PATH,
-      "docs/experiments/effort-low.md",
-    ]);
     const before = readFileSync(TACTICS_PATH, "utf8");
-    expect(pull.files[0].content).toBe(
-      before.replace('    default: "medium",', '    default: "low",'),
+    const plan = planWinPullRequest(
+      result,
+      planOptions({ [TACTICS_PATH]: before }, TACTICS),
     );
+    if (!plan) throw new Error("expected a win's PR");
+    // thinkingEffort alters the request alone: no version moves.
+    expect(plan.files.map((file) => file.path)).toEqual([
+      TACTICS_PATH,
+      "docs/experiments/effort-off.md",
+    ]);
+    expect(plan.files[0].content).toBe(
+      before.replace(`    default: "${DEFAULT}",`, `    default: "${OFF}",`),
+    );
+
+    // Apply the PR's registry in a scratch copy: it still loads, its default
+    // is the winner's, and every experiment file still validates against it,
+    // GRV-110's own included, now with its variant production's default.
+    mkdirSync(resolve("tmp"), { recursive: true });
+    const dir = mkdtempSync(join(resolve("tmp"), "win-pr-"));
+    try {
+      writeFileSync(join(dir, "tactics.ts"), plan.files[0].content);
+      const flipped = (await import(/* @vite-ignore */ join(dir, "tactics.ts"))) as {
+        TACTICS: Readonly<Record<string, TacticDefinition>>;
+        TACTIC_DEFAULTS: TacticOverrides;
+      };
+      expect(flipped.TACTIC_DEFAULTS.thinkingEffort).toBe(OFF);
+      for (const tactic of Object.values(flipped.TACTICS)) {
+        expect(tactic.values).toContain(tactic.default);
+      }
+      for (const id of experimentIds()) {
+        await expect(
+          loadExperiment(id, undefined, { tactics: flipped.TACTICS }),
+        ).resolves.toMatchObject({ id });
+      }
+      const own = validateExperiment(
+        { ...(await import("../../../evals/experiments/thinking-effort-low")).default },
+        { tactics: flipped.TACTICS },
+      );
+      if (OFF === "low") expect(own.atDefaults).toEqual(["low"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("interleaves the variants case by case and run by run", async () => {
     const calls: string[] = [];
     await runExperiment(
-      {
-        ...planted({ terse: { terseNotes: "on" } }, [
-          "process-crushed",
-          "balance-clean",
-          "process-glue",
-        ]),
-        runs: 2,
-      },
+      { ...planted({ terse: { terseNotes: "on" } }), runs: 2 },
       { runTurn: plantedTurns(calls), concurrency: 1, gateRuns: 1 },
     );
     expect(calls.slice(0, 8)).toEqual([
@@ -384,5 +520,155 @@ describe("an experiment's dry run (GRV-110)", () => {
     expect(calls).toHaveLength(1);
     expect(result.stopped).toBe(AUTH_ABORT_REASON);
     expect(experimentExitCode(result)).toBe(1);
+  });
+});
+
+describe("keeping cuts in a dry run (GRV-110 section 5a)", () => {
+  it("keeps a cut that changes nothing measurable and restores one that breaks check 1", async () => {
+    const result = await runExperiment(
+      planted({
+        nothing: cut({ trimNothing: "on" }),
+        breaks: cut({ trimBreaks: "on" }),
+      }),
+      { runTurn: plantedTurns(), now: fixedNow },
+    );
+    const [nothing, breaks] = result.trainAnalyses;
+    expect(nothing).toMatchObject({ kind: "cut", verdict: "keep" });
+    expect(nothing.goal.change).toBe(0);
+    expect(nothing.cutMargin).toBe(20);
+    expect(breaks).toMatchObject({ kind: "cut", verdict: "restore" });
+    expect(breaks.why).toMatch(/^Refused by/);
+    // Never inconclusive: neutral is a pass.
+    expect(result.trainAnalyses.map((analysis) => analysis.verdict)).not.toContain(
+      "inconclusive",
+    );
+    // Only the cut that kept on train goes on to held-out; one cut needs no combined run.
+    expect(result.cutGate?.phase.caseIds).toHaveLength(3);
+    expect(Object.keys(result.cutGate?.phase.reports ?? {})).toEqual([
+      "control",
+      "nothing",
+    ]);
+    expect(result.combined).toEqual([]);
+    expect(result.cuts).toEqual([
+      { name: "nothing", verdict: "keep", why: "Held the bar on train and held-out." },
+      {
+        name: "breaks",
+        verdict: "restore",
+        why: expect.stringMatching(/^On train: Refused by/),
+      },
+    ]);
+    expect(result.keptCuts.map((entry) => entry.name)).toEqual(["nothing"]);
+    // A kept cut lands with no improve winner: the verdict is a win, and the held PR opens.
+    expect(result.winner).toBeNull();
+    expect(result.verdict).toBe("win");
+
+    const { pulls, publisher } = recorder();
+    const concluded = await concludeExperiment(result, publisher, planOptions(SOURCES));
+    expect(pulls).toHaveLength(1);
+    expect(pulls[0].files[0].content).toBe(turnedOn("trimNothing"));
+    expect(pulls[0].body).toContain("The cut `nothing` (trimNothing=on) held the bar");
+    expect(pulls[0].body).toContain("- Restored, not in this PR: `breaks`.");
+    expect(concluded.markdown).toContain("- Cuts kept: `nothing` (trimNothing=on)");
+    expect(concluded.markdown).toContain("| `nothing` | **keep** |");
+    expect(concluded.markdown).toContain("| `breaks` | **restore** |");
+  });
+
+  it("catches two cuts that pass alone but fail together, and drops the worse one", async () => {
+    const result = await runExperiment(
+      planted({ a: cut({ trimA: "on" }), b: cut({ trimB: "on" }) }),
+      { runTurn: plantedTurns(), now: fixedNow },
+    );
+    // Each alone: within 2% of the control's 1,000 tokens, so both keep.
+    expect(result.trainAnalyses.map((analysis) => analysis.verdict)).toEqual([
+      "keep",
+      "keep",
+    ]);
+    expect(result.cutGate?.analyses.map((analysis) => analysis.verdict)).toEqual([
+      "keep",
+      "keep",
+    ]);
+    // Together they break check 1: the combined run catches it on train.
+    expect(result.combined).toHaveLength(1);
+    const [together] = result.combined;
+    expect(together.cuts).toEqual(["a", "b"]);
+    expect(together.variant.overrides).toEqual({ trimA: "on", trimB: "on" });
+    expect(together.train.analysis.verdict).toBe("restore");
+    expect(together.heldout).toBeNull();
+    expect(together.held).toBe(false);
+    // `a` wrote more tokens than `b`, so it is the one dropped; `b` alone already held.
+    expect(result.cuts).toEqual([
+      {
+        name: "a",
+        verdict: "restore",
+        why: expect.stringMatching(/failed together in combined run 1.*worst/),
+      },
+      { name: "b", verdict: "keep", why: "Held the bar on train and held-out." },
+    ]);
+    expect(result.keptCuts.map((entry) => entry.name)).toEqual(["b"]);
+    expect(result.verdict).toBe("win");
+
+    const { pulls, publisher } = recorder();
+    const concluded = await concludeExperiment(result, publisher, planOptions(SOURCES));
+    expect(pulls[0].files[0].content).toBe(turnedOn("trimB"));
+    expect(concluded.markdown).toContain("### Combined run 1: `a` + `b`, failed");
+  });
+
+  it("retries a failing combination at most twice, then keeps none of it", async () => {
+    const result = await runExperiment(
+      planted({
+        a: cut({ trimA: "on" }),
+        b: cut({ trimB: "on" }),
+        c: cut({ trimC: "on" }),
+        d: cut({ trimD: "on" }),
+      }),
+      { runTurn: plantedTurns(), gateRuns: 1, runs: 1 },
+    );
+    expect(result.combined.map((run) => run.cuts)).toEqual([
+      ["a", "b", "c", "d"],
+      ["b", "c", "d"],
+      ["b", "d"],
+    ]);
+    expect(result.combined).toHaveLength(1 + COMBINED_CUT_RETRIES);
+    expect(result.keptCuts).toEqual([]);
+    expect(result.cuts.map((entry) => entry.verdict)).toEqual([
+      "restore",
+      "restore",
+      "restore",
+      "restore",
+    ]);
+    expect(result.verdict).toBe("no win");
+    const { pulls, publisher } = recorder();
+    await concludeExperiment(result, publisher, planOptions(SOURCES));
+    expect(pulls).toEqual([]);
+  });
+
+  it("lands the winning improve with every kept cut in one held PR", async () => {
+    const result = await runExperiment(
+      planted({ terse: { terseNotes: "on" }, nothing: cut({ trimNothing: "on" }) }),
+      { runTurn: plantedTurns(), now: fixedNow },
+    );
+    expect(result.winner?.name).toBe("terse");
+    expect(result.keptCuts.map((entry) => entry.name)).toEqual(["nothing"]);
+    expect(result.verdict).toBe("win");
+    const { pulls, publisher } = recorder();
+    await concludeExperiment(result, publisher, planOptions(SOURCES));
+    expect(pulls).toHaveLength(1);
+    expect(pulls[0].files[0].content).toBe(turnedOn("terseNotes", "trimNothing"));
+    expect(pulls[0].title).toBe(
+      "Implement GRV-110: Default to terseNotes=on, trimNothing=on (experiment planted)",
+    );
+  });
+
+  it("restores every cut not yet proven when the budget runs out", async () => {
+    const result = await runExperiment(planted({ nothing: cut({ trimNothing: "on" }) }), {
+      runTurn: plantedTurns(),
+      budgetUsd: 0.05,
+      concurrency: 1,
+    });
+    expect(result.stopped).toBe(BUDGET_STOP_REASON);
+    expect(result.cuts).toEqual([
+      { name: "nothing", verdict: "restore", why: expect.stringMatching(/^Unfinished/) },
+    ]);
+    expect(result.verdict).toBe("inconclusive");
   });
 });

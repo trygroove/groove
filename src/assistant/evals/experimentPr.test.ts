@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ASSISTANT_PROMPT_VERSION } from "../prompt";
-import { TACTICS } from "../tactics";
+import { TACTIC_DEFAULTS, TACTICS } from "../tactics";
 import { ASSISTANT_TOOLSET_VERSION } from "../tools";
 import {
   bumpPromptVersion,
@@ -15,15 +15,19 @@ import {
 describe("a win's file changes (GRV-110)", () => {
   it("moves one tactic's default line in the real registry and nothing else", () => {
     const source = readFileSync(TACTICS_PATH, "utf8");
-    const changed = setTacticDefault(source, "thinkingEffort", "low");
+    // Whichever effort production uses now, and one it does not.
+    const DEFAULT = TACTIC_DEFAULTS.thinkingEffort;
+    const OFF = TACTICS.thinkingEffort.values.find(
+      (value) => value !== DEFAULT,
+    ) as string;
+    const changed = setTacticDefault(source, "thinkingEffort", OFF);
     const before = source.split("\n");
     const after = changed.split("\n");
     expect(after).toHaveLength(before.length);
     const moved = after.flatMap((line, index) =>
       line === before[index] ? [] : [[before[index], line]],
     );
-    expect(moved).toEqual([['    default: "medium",', '    default: "low",']]);
-    expect(TACTICS.thinkingEffort.default).toBe("medium");
+    expect(moved).toEqual([[`    default: "${DEFAULT}",`, `    default: "${OFF}",`]]);
   });
 
   it("refuses a tactic the source has no entry or default line for", () => {

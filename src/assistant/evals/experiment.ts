@@ -9,7 +9,14 @@
  * - **Variants** are named sets of tactic values (`tactics.ts`). The
  *   **control**, production's defaults, is always there and never written;
  *   a variant that sets several tactics is a combination. A variant must
- *   differ from the control and from every other variant.
+ *   differ from every other variant. One whose values production already
+ *   runs (a win made them the defaults) is kept as written and set aside as
+ *   {@link Experiment.atDefaults}, so a file stays valid after its own win;
+ *   {@link assertRunnable} refuses to run one with nothing left to compare.
+ * - A variant is an **improve** (the default), which must beat the control,
+ *   or a **cut** (`{ kind: "cut", tactics: {...} }`), which removes something
+ *   and only has to hold the bar (`verdict.ts`, "Keeping cuts"). A cut sets
+ *   tactics no other variant sets, so the cuts that pass can run together.
  * - The **goal** is one metric to improve: `quality` (the overall pass rate),
  *   `outputTokens`, `latencyP50` or `cost` (per turn), or `firstTextP50`.
  * - The **cases** are a pool, the whole suite, a set or group (`sets.ts`), or
@@ -18,8 +25,10 @@
  * - The **guardrails** start at GRV-131's bar (checks 1 and 8 within 3
  *   points per set, the overall pass rate within 2, no case passing in most
  *   runs going to failing in most, no rise in `max_tokens` stops or errored
- *   turns). An experiment may tighten the two point limits, never loosen
- *   them.
+ *   turns). An experiment may tighten the two point limits, and a cut's
+ *   2% margin, never loosen them.
+ * - An optional **budget** in dollars overrides the $25 default; the
+ *   command's `--budget` (the workflow's input) still wins over it.
  */
 import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -41,6 +50,13 @@ export type ExperimentGoal = (typeof EXPERIMENT_GOALS)[number];
 /** The variant every experiment has: production's defaults. */
 export const CONTROL = "control";
 
+/** What a variant is for: beating the control, or removing something without losing to it. */
+export const VARIANT_KINDS = ["improve", "cut"] as const;
+export type VariantKind = (typeof VARIANT_KINDS)[number];
+
+/** The name the framework gives the cuts it reruns together; no file may use it. */
+export const COMBINED_CUTS = "combined-cuts";
+
 /** Runs per case on train, unless the experiment or the command says otherwise. */
 export const DEFAULT_RUNS_PER_CASE = 3;
 
@@ -53,11 +69,17 @@ export const DEFAULT_GUARDRAILS = {
   maxCheckDropPoints: 3,
   /** The overall pass rate may fall this far. */
   maxOverallDropPoints: 2,
+  /**
+   * A cut's goal may be worse than the control's by at most this share of the
+   * control's value, in percent, at the worse end of its interval.
+   */
+  cutMarginPercent: 2,
 } as const;
 
 export interface ExperimentGuardrails {
   readonly maxCheckDropPoints: number;
   readonly maxOverallDropPoints: number;
+  readonly cutMarginPercent: number;
 }
 
 /** Which cases an experiment draws its train and held-out cases from. */
@@ -74,14 +96,25 @@ export interface ExperimentDefinition {
   readonly card: string;
   /** One line: what it expects to happen, and why. */
   readonly hypothesis: string;
-  /** Each variant's name and the tactic values it sets; the control is implicit. */
-  readonly variants: Readonly<Record<string, TacticOverrides>>;
+  /**
+   * Each variant's name and the tactic values it sets, or `{ kind, tactics }`
+   * to say what kind it is (an improve when not said); the control is implicit.
+   */
+  readonly variants: Readonly<Record<string, TacticOverrides | VariantDefinition>>;
   readonly goal: ExperimentGoal;
   readonly cases: ExperimentCases;
   /** Tighter limits than {@link DEFAULT_GUARDRAILS}; never looser. */
   readonly guardrails?: Partial<ExperimentGuardrails>;
   /** Runs per case on train; {@link DEFAULT_RUNS_PER_CASE} when absent. */
   readonly runs?: number;
+  /** Dollars it may spend; the $25 default when absent, and `--budget` beats it. */
+  readonly budget?: number;
+}
+
+/** A variant with its kind written out. */
+export interface VariantDefinition {
+  readonly kind?: VariantKind;
+  readonly tactics: TacticOverrides;
 }
 
 /** Types an experiment file's default export; {@link validateExperiment} checks it. */
@@ -96,6 +129,8 @@ export interface ExperimentVariant {
   readonly name: string;
   /** The values it sets away from production's; none for the control. */
   readonly overrides: VariantTactics;
+  /** An improve must beat the control; a cut must only hold the bar. The control is an improve. */
+  readonly kind: VariantKind;
 }
 
 /** An experiment checked and resolved: its variants, the control first, and its cases. */
@@ -110,6 +145,10 @@ export interface Experiment {
   readonly heldout: readonly EvalCase[];
   readonly guardrails: ExperimentGuardrails;
   readonly runs: number;
+  /** The file's own budget in dollars, or null for the default. */
+  readonly budgetUsd: number | null;
+  /** The variants whose values production already runs, so they are not run. */
+  readonly atDefaults: readonly string[];
 }
 
 /** What is wrong with an experiment file, every issue at once. */
@@ -133,7 +172,13 @@ const definitionSchema = z.strictObject({
     .refine((text) => !/\n/.test(text), "one line"),
   variants: z.record(
     z.string().regex(KEBAB, "lower-case words joined by hyphens"),
-    z.record(z.string(), z.string()),
+    z.union([
+      z.strictObject({
+        kind: z.enum(VARIANT_KINDS).optional(),
+        tactics: z.record(z.string(), z.string()),
+      }),
+      z.record(z.string(), z.string()),
+    ]),
   ),
   goal: z.enum(EXPERIMENT_GOALS),
   cases: z.union([
@@ -159,9 +204,15 @@ const definitionSchema = z.strictObject({
           "may tighten the bar, never loosen it",
         )
         .optional(),
+      cutMarginPercent: z
+        .number()
+        .min(0)
+        .max(DEFAULT_GUARDRAILS.cutMarginPercent, "may tighten the bar, never loosen it")
+        .optional(),
     })
     .optional(),
   runs: z.number().int().min(1).max(20).optional(),
+  budget: z.number().positive().finite().optional(),
 });
 
 export interface ValidateOptions {
@@ -169,6 +220,23 @@ export interface ValidateOptions {
   readonly cases?: readonly EvalCase[];
   /** The tactics its variants may set; the registry by default. Tests plant their own. */
   readonly tactics?: Readonly<Record<string, TacticDefinition>>;
+}
+
+/** A variant as the file wrote it, plain tactic values or `{ kind, tactics }`. */
+function writtenVariant(
+  name: string,
+  value:
+    | VariantTactics
+    | { readonly kind?: VariantKind; readonly tactics: VariantTactics },
+): { name: string; kind: VariantKind; values: VariantTactics } {
+  if (typeof value.tactics === "object") {
+    const spelled = value as {
+      readonly kind?: VariantKind;
+      readonly tactics: VariantTactics;
+    };
+    return { name, kind: spelled.kind ?? "improve", values: spelled.tactics };
+  }
+  return { name, kind: "improve", values: value as VariantTactics };
 }
 
 /** Why one variant's values are wrong, against `registry`. */
@@ -250,26 +318,54 @@ export function validateExperiment(
   const definition = parsed.data;
   const registry = options.tactics ?? TACTICS;
   const issues: string[] = [];
-  const names = Object.keys(definition.variants);
+  const written = Object.entries(definition.variants).map(([name, value]) =>
+    writtenVariant(name, value),
+  );
+  const names = written.map((variant) => variant.name);
   if (names.length === 0) issues.push("variants: name at least one beside the control");
-  if (names.includes(CONTROL)) {
-    issues.push(`variants: "${CONTROL}" is production's defaults, and is always run`);
+  for (const reserved of [CONTROL, COMBINED_CUTS]) {
+    if (names.includes(reserved)) {
+      issues.push(
+        reserved === CONTROL
+          ? `variants: "${CONTROL}" is production's defaults, and is always run`
+          : `variants: "${COMBINED_CUTS}" is the name the passing cuts rerun under`,
+      );
+    }
   }
   const keys = new Map<string, string>();
-  for (const name of names) {
-    const values = definition.variants[name];
+  const atDefaults: string[] = [];
+  const runnable: ExperimentVariant[] = [];
+  for (const { name, kind, values } of written) {
     const own = variantIssues(name, values, registry);
     issues.push(...own);
     if (own.length > 0) continue;
-    const key = JSON.stringify(overridesOf(values, registry));
+    if (Object.keys(values).length === 0) {
+      issues.push(`variants.${name}: sets no tactic, so it is the control`);
+      continue;
+    }
+    const overrides = overridesOf(values, registry);
+    const key = JSON.stringify(overrides);
     if (key === "{}") {
-      issues.push(
-        `variants.${name}: sets every tactic to its default, so it is the control`,
-      );
+      // Production runs these values now; most likely this experiment's own win.
+      atDefaults.push(name);
     } else if (keys.has(key)) {
       issues.push(`variants.${name}: sets the same values as ${keys.get(key)}`);
     } else {
       keys.set(key, name);
+      runnable.push({ name, overrides, kind });
+    }
+  }
+  // Cuts that pass are rerun together, so none may set a tactic another variant sets.
+  for (const cut of written.filter((variant) => variant.kind === "cut")) {
+    for (const id of Object.keys(cut.values)) {
+      const other = written.find(
+        (variant) => variant !== cut && Object.hasOwn(variant.values, id),
+      );
+      if (other) {
+        issues.push(
+          `variants.${cut.name}: a cut sets ${id}, which ${other.name} sets too, so they cannot run together`,
+        );
+      }
     }
   }
   const pool = poolOf(definition.cases, options.cases ?? EVAL_CASES, issues);
@@ -291,19 +387,27 @@ export function validateExperiment(
     card: definition.card,
     hypothesis: definition.hypothesis.trim(),
     goal: definition.goal,
-    variants: [
-      { name: CONTROL, overrides: {} },
-      ...names.map((name) => ({
-        name,
-        overrides: overridesOf(definition.variants[name], registry),
-      })),
-    ],
+    variants: [{ name: CONTROL, overrides: {}, kind: "improve" }, ...runnable],
     cases: definition.cases,
     train,
     heldout,
     guardrails: { ...DEFAULT_GUARDRAILS, ...definition.guardrails },
     runs: definition.runs ?? DEFAULT_RUNS_PER_CASE,
+    budgetUsd: definition.budget ?? null,
+    atDefaults,
   };
+}
+
+/**
+ * Throws an {@link ExperimentError} when an experiment has no variant left
+ * to run against the control: every one it names is production's defaults
+ * now. A valid file, but nothing to compare.
+ */
+export function assertRunnable(experiment: Experiment): void {
+  if (experiment.variants.length > 1) return;
+  throw new ExperimentError(
+    `Experiment "${experiment.id}" has nothing to run: production's defaults already are ${experiment.atDefaults.map((name) => `\`${name}\``).join(", ")}'s values.`,
+  );
 }
 
 /** Where experiment files live, from the repository root the tools run in. */

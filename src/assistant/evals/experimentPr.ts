@@ -1,9 +1,10 @@
 /**
  * What an experiment does with its verdict (GRV-110): it posts the report on
  * its card, and on a win opens one PR labelled `hold` that makes the winning
- * tactic values production's defaults and commits the report as
- * `docs/experiments/<id>.md`. On no win or an inconclusive one there is no
- * PR, just the comment.
+ * improve's tactic values, and every cut's that kept together, production's
+ * defaults, and commits the report as `docs/experiments/<id>.md`. On no win
+ * or an inconclusive one there is no PR, just the comment. A PR that fails to
+ * open is said so in the comment, which is posted regardless.
  *
  * The PR's changes are worked out here, as plain file contents, so they are
  * tested without git: each winning tactic's `default:` line in
@@ -13,7 +14,7 @@
  * recorders, so no test ever opens a PR.
  */
 import type { TacticDefinition, TacticSurface } from "../tactics";
-import { CONTROL } from "./experiment";
+import { CONTROL, type ExperimentVariant } from "./experiment";
 import {
   type ExperimentLinks,
   goalLine,
@@ -100,16 +101,34 @@ export interface WinPlanOptions {
   readonly day: string;
 }
 
+/** The run's time as a branch suffix: `20261018-155520`. */
+function stamp(generatedAt: string): string {
+  return generatedAt.slice(0, 19).replace(/[-:]/g, "").replace("T", "-").toLowerCase();
+}
+
+/** What a win lands: the improve that won, if any, then every cut that kept. */
+export function landedVariants(result: ExperimentResult): ExperimentVariant[] {
+  return [
+    ...(result.winner && result.winner.name !== CONTROL ? [result.winner] : []),
+    ...result.keptCuts,
+  ];
+}
+
 /** The PR a win opens; null for an experiment without one. */
 export function planWinPullRequest(
   result: ExperimentResult,
   options: WinPlanOptions,
 ): WinPullRequest | null {
   const { winner, experiment } = result;
-  if (result.verdict !== "win" || !winner || winner.name === CONTROL) return null;
+  const landed = landedVariants(result);
+  if (result.verdict !== "win" || landed.length === 0) return null;
+  const overrides: Record<string, string> = Object.assign(
+    {},
+    ...landed.map((variant) => variant.overrides),
+  );
   let tactics = options.readFile(TACTICS_PATH);
   const surfaces = new Set<TacticSurface>();
-  for (const [id, value] of Object.entries(winner.overrides)) {
+  for (const [id, value] of Object.entries(overrides)) {
     tactics = setTacticDefault(tactics, id, value);
     for (const surface of options.tactics[id]?.alters ?? []) surfaces.add(surface);
   }
@@ -131,23 +150,41 @@ export function planWinPullRequest(
   }
   const report = renderExperimentMarkdown(result, options.links);
   files.push({ path: experimentDocPath(experiment.id), content: report });
-  const values = Object.entries(winner.overrides)
+  const values = Object.entries(overrides)
     .map(([id, value]) => `${id}=${value}`)
     .join(", ");
-  const gate = result.gates.find((entry) => entry.variant === winner.name);
-  const train = result.trainAnalyses.find((entry) => entry.variant === winner.name);
+  const gate = winner && result.gates.find((entry) => entry.variant === winner.name);
+  const train =
+    winner && result.trainAnalyses.find((entry) => entry.variant === winner.name);
   const card = experiment.card.toLowerCase();
+  const cuts = result.keptCuts;
   const body = [
     "## What & why",
     "",
-    `Experiment \`${experiment.id}\` found a win, so this makes \`${winner.name}\`'s tactic values production's defaults: ${variantTactics(winner)}.`,
+    `Experiment \`${experiment.id}\` ${winner ? "found a win" : "kept cuts"}, so this makes these tactic values production's defaults: ${values}.`,
     "",
     `> ${experiment.hypothesis}`,
     "",
-    ...(train ? [`- Train: ${goalLine(train)}`] : []),
-    ...(gate ? [`- Held out: ${goalLine(gate.analysis)}`] : []),
-    "- Every guardrail held on both.",
-    "",
+    ...(winner
+      ? [
+          `The improve \`${winner.name}\` (${variantTactics(winner)}) won:`,
+          "",
+          ...(train ? [`- Train: ${goalLine(train)}`] : []),
+          ...(gate ? [`- Held out: ${goalLine(gate.analysis)}`] : []),
+          "- Every guardrail held on both.",
+          "",
+        ]
+      : []),
+    ...(cuts.length > 0
+      ? [
+          `${cuts.length === 1 ? "The cut" : "The cuts"} ${cuts.map((cut) => `\`${cut.name}\` (${variantTactics(cut)})`).join(", ")} held the bar on train and held-out${cuts.length > 1 ? ", alone and together" : ""}, no worse than the control beyond noise.`,
+          "",
+          ...result.cuts
+            .filter((cut) => cut.verdict === "restore")
+            .map((cut) => `- Restored, not in this PR: \`${cut.name}\`. ${cut.why}`),
+          ...(result.cuts.some((cut) => cut.verdict === "restore") ? [""] : []),
+        ]
+      : []),
     `It changes the defaults in \`${TACTICS_PATH}\`${bumps.length > 0 ? `, bumps ${bumps.join(" and ")} because the tactic alters them,` : ""} and commits the report as \`${experimentDocPath(experiment.id)}\`.`,
     "",
     `Refs ${experiment.card}`,
@@ -170,7 +207,8 @@ export function planWinPullRequest(
     "",
   ].join("\n");
   return {
-    branch: `claude/${card}-experiment-${experiment.id}`,
+    // One branch per run, so a second win of the same experiment never collides.
+    branch: `claude/${card}-experiment-${experiment.id}-${stamp(result.generatedAt)}`,
     title: `Implement ${experiment.card}: Default to ${values} (experiment ${experiment.id})`,
     body,
     commitMessage: `Default to ${values}: experiment ${experiment.id} won (${experiment.card})`,
@@ -190,21 +228,36 @@ export interface ExperimentPublisher {
 export interface Concluded {
   readonly markdown: string;
   readonly pullRequestUrl: string | null;
+  /** Why the win's PR did not open, or null when it did or there was none. */
+  readonly pullRequestError: string | null;
   readonly commentUrl: string | null;
 }
 
 /**
- * Opens the win's PR, if there is one, then posts the report (linking it) on
- * the card. Returns the report as posted and what was opened.
+ * Opens the win's PR, if there is one, then posts the report (linking it, or
+ * saying why it did not open) on the card. Returns the report as posted and
+ * what was opened; a PR that failed to open is in `pullRequestError`, so the
+ * caller can fail the run after the comment is up.
  */
 export async function concludeExperiment(
   result: ExperimentResult,
   publisher: ExperimentPublisher,
   options: WinPlanOptions,
 ): Promise<Concluded> {
-  const plan = planWinPullRequest(result, options);
-  const pullRequestUrl = plan ? await publisher.openPullRequest(plan) : null;
-  const markdown = renderExperimentMarkdown(result, { ...options.links, pullRequestUrl });
+  let pullRequestUrl: string | null = null;
+  let pullRequestError: string | null = null;
+  try {
+    const plan = planWinPullRequest(result, options);
+    if (plan) pullRequestUrl = await publisher.openPullRequest(plan);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    pullRequestError = message.replace(/\s+/g, " ").trim().slice(0, 500);
+  }
+  const markdown = renderExperimentMarkdown(result, {
+    ...options.links,
+    pullRequestUrl,
+    pullRequestError,
+  });
   const commentUrl = await publisher.postComment(result.experiment.card, markdown);
-  return { markdown, pullRequestUrl, commentUrl };
+  return { markdown, pullRequestUrl, pullRequestError, commentUrl };
 }

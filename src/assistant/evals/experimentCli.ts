@@ -5,6 +5,11 @@
  * **Assistant experiments** workflow passes its inputs through the
  * environment (`EXPERIMENT_ID`, `EXPERIMENT_BUDGET`, `EXPERIMENT_RUNS`),
  * never into the script's text.
+ *
+ * The budget is the command's `--budget` (or `EXPERIMENT_BUDGET`) when one is
+ * given, else the experiment file's own `budget`, else $25
+ * ({@link resolveBudget}); a blank `EXPERIMENT_BUDGET`, which is what the
+ * workflow passes when its input is left empty, is not given.
  */
 import { ASSISTANT_MODEL_ID, ASSISTANT_MODELS, type AssistantModelId } from "../config";
 import { EvalUsageError } from "./cli";
@@ -13,7 +18,8 @@ import { DEFAULT_TURN_TIMEOUT_MS } from "./run";
 
 export interface ExperimentCliOptions {
   readonly id: string;
-  readonly budgetUsd: number;
+  /** `--budget` or `EXPERIMENT_BUDGET`; null when neither is given. */
+  readonly budgetUsd: number | null;
   /** Runs per case on train; null for the experiment's own. */
   readonly runs: number | null;
   readonly model: AssistantModelId;
@@ -29,7 +35,7 @@ export type ParsedExperimentArgs =
   | { readonly kind: "run"; readonly options: ExperimentCliOptions };
 
 export const EXPERIMENT_USAGE =
-  "Usage: bun run assistant:experiment -- <experiment-id> [--budget USD] [--runs N] [--model ID] [--concurrency N] [--timeout SECONDS] [--out DIR] [--no-post]";
+  "Usage: bun run assistant:experiment -- <experiment-id> [--budget USD (default: the experiment's, else 25)] [--runs N] [--model ID] [--concurrency N] [--timeout SECONDS] [--out DIR] [--no-post]";
 
 function positive(value: number, option: string, whole: boolean): number {
   if (!Number.isFinite(value) || value <= 0 || (whole && !Number.isInteger(value))) {
@@ -98,10 +104,7 @@ export function parseExperimentArgs(
     kind: "run",
     options: {
       id,
-      budgetUsd:
-        budget === null
-          ? DEFAULT_BUDGET_USD
-          : positive(Number(budget), "--budget", false),
+      budgetUsd: budget === null ? null : positive(Number(budget), "--budget", false),
       runs: runs === null ? null : positive(Number(runs), "--runs", true),
       model: model as AssistantModelId,
       concurrency: positive(Number(concurrency), "--concurrency", true),
@@ -110,4 +113,15 @@ export function parseExperimentArgs(
       noPost,
     },
   };
+}
+
+/**
+ * The dollars an experiment may spend: the command's when given, else the
+ * file's `budget`, else {@link DEFAULT_BUDGET_USD}.
+ */
+export function resolveBudget(
+  given: number | null,
+  experiment: { readonly budgetUsd: number | null },
+): number {
+  return given ?? experiment.budgetUsd ?? DEFAULT_BUDGET_USD;
 }

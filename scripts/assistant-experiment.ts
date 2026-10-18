@@ -11,27 +11,31 @@
  * provider, the disk, Linear and GitHub.
  *
  *   bun run assistant:experiment -- thinking-effort-low
- *   bun run assistant:experiment -- <id> --budget 10   stop at $10 (default $25)
+ *   bun run assistant:experiment -- <id> --budget 10   stop at $10 (default the file's budget, else $25)
  *   bun run assistant:experiment -- <id> --runs 2      runs per train case (default the experiment's)
  *   bun run assistant:experiment -- <id> --no-post     write the report; post and open nothing
  *   bun run assistant:experiment -- <id> --out DIR     where the report goes
  *
  * It needs ANTHROPIC_API_KEY (and says so, calling nothing, without it). It
  * writes `experiment.md` and `experiment.json`, and each phase's variant
- * reports under `train/<variant>/` and `gate/<variant>/`, to
+ * reports under `<phase>/<variant>/` (`train`, `gate-<variant>`, `cut-gate`,
+ * `combined-<n>-train`, ...), to
  * `tmp/assistant-experiments/<id>-<time>/` unless `--out` says otherwise.
  * Then, unless `--no-post`:
  *
  * - on a **win** it opens one PR labelled `hold` from a new branch off the
  *   commit it ran on (`git` and `gh`, so `GH_TOKEN` must be able to push and
- *   open PRs) that makes the winner's tactic values the defaults and commits
- *   the report as `docs/experiments/<id>.md`;
+ *   open PRs) that makes the winning improve's tactic values, and every cut's
+ *   that kept together, the defaults and commits the report as
+ *   `docs/experiments/<id>.md`;
  * - either way it posts the report on the experiment's card
  *   (`.github/scripts/linear.mjs`, which needs `LINEAR_API_KEY`; without it
- *   the comment is skipped, and said so).
+ *   the comment is skipped, and said so), saying so when the PR failed to open.
  *
- * It exits 1 when the key was refused, the account ran out of credit, or
- * every turn errored; a "no win" is a finding, not a failure.
+ * The budget is `--budget` (or `EXPERIMENT_BUDGET`) when given, else the
+ * file's `budget`, else $25. It exits 1 when the key was refused, the account
+ * ran out of credit, every turn errored, or a win's PR failed to open; a
+ * "no win" is a finding, not a failure.
  */
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -41,8 +45,12 @@ import { createAnthropicProvider } from "../functions/src/anthropicProvider";
 import { ASSISTANT_MODELS } from "../src/assistant/config";
 import { EvalUsageError, requireApiKey } from "../src/assistant/evals/cli";
 import { recordLines } from "../src/assistant/evals/consoleOutput";
-import { ExperimentError, loadExperiment } from "../src/assistant/evals/experiment";
-import { parseExperimentArgs } from "../src/assistant/evals/experimentCli";
+import {
+  assertRunnable,
+  ExperimentError,
+  loadExperiment,
+} from "../src/assistant/evals/experiment";
+import { parseExperimentArgs, resolveBudget } from "../src/assistant/evals/experimentCli";
 import {
   concludeExperiment,
   type ExperimentPublisher,
@@ -57,6 +65,7 @@ import {
   type ExperimentPhase,
   type ExperimentResult,
   experimentExitCode,
+  experimentPhases,
   gatewayTurnRunner,
   runExperiment,
 } from "../src/assistant/evals/experimentRun";
@@ -89,7 +98,7 @@ function linksFromEnvironment(): ExperimentLinks {
 
 async function writePhase(dir: string, phase: ExperimentPhase): Promise<void> {
   for (const [variant, report] of Object.entries(phase.reports)) {
-    const out = join(dir, phase.phase, variant);
+    const out = join(dir, phase.label, variant);
     await mkdir(out, { recursive: true });
     await writeFile(join(out, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
     await writeFile(join(out, "report.md"), renderMarkdown(report));
@@ -107,8 +116,7 @@ async function writeResult(
     `${JSON.stringify(experimentJson(result, links), null, 2)}\n`,
   );
   await writeFile(join(dir, "experiment.md"), renderExperimentMarkdown(result, links));
-  await writePhase(dir, result.train);
-  for (const gate of result.gates) await writePhase(dir, gate.phase);
+  for (const phase of experimentPhases(result)) await writePhase(dir, phase);
 }
 
 /** Posts on the card through the one Linear client, if it has a key. */
@@ -193,13 +201,15 @@ async function main(): Promise<number> {
     const { options } = parsed;
     // Checked before the key, so a typo in the file costs nothing.
     const experiment = await loadExperiment(options.id);
+    assertRunnable(experiment);
+    const budgetUsd = resolveBudget(options.budgetUsd, experiment);
     const apiKey = requireApiKey(process.env, {
       name: "Assistant experiments",
       example: `bun run assistant:experiment -- ${options.id}`,
     });
     const model = ASSISTANT_MODELS[options.model];
     console.log(
-      `Experiment ${experiment.id} (${experiment.card}): ${experiment.variants.map((variant) => variant.name).join(" vs ")} on ${experiment.train.length} train cases against ${model.id}, a $${options.budgetUsd} budget...`,
+      `Experiment ${experiment.id} (${experiment.card}): ${experiment.variants.map((variant) => variant.name).join(" vs ")} on ${experiment.train.length} train cases against ${model.id}, a $${budgetUsd} budget...`,
     );
     const result = await runExperiment(experiment, {
       runTurn: gatewayTurnRunner({
@@ -208,7 +218,7 @@ async function main(): Promise<number> {
         turnTimeoutMs: options.turnTimeoutMs,
       }),
       model,
-      budgetUsd: options.budgetUsd,
+      budgetUsd,
       concurrency: options.concurrency,
       ...(options.runs === null ? {} : { runs: options.runs }),
       onRecord: (phase, variant, record) => {
@@ -239,13 +249,14 @@ async function main(): Promise<number> {
     // The posted copy links the PR; keep that one.
     await writeFile(join(dir, "experiment.md"), concluded.markdown);
     console.log(`\nVerdict: ${result.verdict}. ${result.reason}`);
-    console.log(
-      `Spend: $${result.spentUsd.toFixed(2)} of $${options.budgetUsd.toFixed(2)}`,
-    );
+    if (concluded.pullRequestError) {
+      console.error(`The held PR did not open: ${concluded.pullRequestError}`);
+    }
+    console.log(`Spend: $${result.spentUsd.toFixed(2)} of $${budgetUsd.toFixed(2)}`);
     console.log(
       `Report: ${join(dir, "experiment.md")} and ${join(dir, "experiment.json")}`,
     );
-    return experimentExitCode(result);
+    return concluded.pullRequestError ? 1 : experimentExitCode(result);
   } catch (error) {
     if (error instanceof EvalUsageError || error instanceof ExperimentError) {
       console.error(error.message);

@@ -4,9 +4,16 @@ import {
   type TestRecordOptions,
   testRecord,
 } from "../../testing/evalRecords";
-import { DEFAULT_GUARDRAILS } from "./experiment";
+import { DEFAULT_GUARDRAILS, type ExperimentGuardrails } from "./experiment";
 import type { EvalReport } from "./run";
-import { analyzeVariant, caseRegressions, checkGuardrails, judgeGoal } from "./verdict";
+import {
+  analyzeCut,
+  analyzeVariant,
+  caseRegressions,
+  checkGuardrails,
+  judgeGoal,
+  MIN_PAIRED_CASES,
+} from "./verdict";
 
 /** Three runs of each case, each run built by `run(caseId, index)`. */
 function report(
@@ -57,6 +64,25 @@ describe("judgeGoal (GRV-110)", () => {
     expect(goal.change).toBeCloseTo(-1 / 9);
     // Two of three cases fell, one did not: the interval reaches zero.
     expect(goal.outcome).toBe("inconclusive");
+  });
+
+  it("is inconclusive on fewer than three paired cases, however clear the change", () => {
+    expect(MIN_PAIRED_CASES).toBe(3);
+    const two = ["case-a", "case-b"];
+    const goal = judgeGoal(
+      "outputTokens",
+      report(two),
+      report(two, () => ({ usage: { outputTokens: 10 } })),
+    );
+    expect(goal).toMatchObject({ change: -90, pairedCases: 2, outcome: "inconclusive" });
+    const analysis = analyzeVariant(
+      variant,
+      "outputTokens",
+      report(two),
+      report(two, () => ({ usage: { outputTokens: 10 } })),
+      DEFAULT_GUARDRAILS,
+    );
+    expect(analysis.why).toMatch(/Only 2 cases ran on both sides/);
   });
 
   it("is inconclusive with no case on both sides", () => {
@@ -203,5 +229,76 @@ describe("analyzeVariant (GRV-110)", () => {
       analyzeVariant(variant, "outputTokens", control, report(CASES), DEFAULT_GUARDRAILS)
         .verdict,
     ).toBe("inconclusive");
+  });
+});
+
+describe("analyzeCut (GRV-110 section 5a)", () => {
+  const trim = { name: "trim", overrides: { trimRules: "on" }, kind: "cut" as const };
+  const cutOf = (
+    current: EvalReport,
+    limits: ExperimentGuardrails = DEFAULT_GUARDRAILS,
+  ) => analyzeCut(trim, "outputTokens", control, current, limits);
+
+  it("keeps a cut that changes nothing: neutral is a pass, never inconclusive", () => {
+    const analysis = cutOf(report(CASES));
+    expect(analysis).toMatchObject({ kind: "cut", verdict: "keep", cutMargin: 2 });
+    // analyzeVariant hands a cut to the same rule.
+    expect(
+      analyzeVariant(trim, "outputTokens", control, report(CASES), DEFAULT_GUARDRAILS)
+        .verdict,
+    ).toBe("keep");
+  });
+
+  it("keeps a cut whose worse end stays within 2% of the control, and restores one past it", () => {
+    // 100 tokens a turn: 2% is 2 tokens.
+    expect(cutOf(report(CASES, () => ({ usage: { outputTokens: 102 } }))).verdict).toBe(
+      "keep",
+    );
+    const over = cutOf(report(CASES, () => ({ usage: { outputTokens: 103 } })));
+    expect(over.verdict).toBe("restore");
+    expect(over.why).toMatch(/worse than the control by more than 2% of its value/);
+    // A tighter margin restores what 2% kept.
+    expect(
+      cutOf(
+        report(CASES, () => ({ usage: { outputTokens: 102 } })),
+        {
+          ...DEFAULT_GUARDRAILS,
+          cutMarginPercent: 1,
+        },
+      ).verdict,
+    ).toBe("restore");
+    // Better is fine too: a cut needs no gain, and turns none away.
+    expect(cutOf(report(CASES, () => ({ usage: { outputTokens: 50 } }))).verdict).toBe(
+      "keep",
+    );
+  });
+
+  it("restores a cut that breaks a guardrail, and one with too few cases to show anything", () => {
+    const broken = cutOf(report(CASES, () => ({ valid: "fail" })));
+    expect(broken.verdict).toBe("restore");
+    expect(broken.why).toMatch(/^Refused by/);
+    const few = analyzeCut(
+      trim,
+      "outputTokens",
+      report(["case-a"]),
+      report(["case-a"]),
+      DEFAULT_GUARDRAILS,
+    );
+    expect(few.verdict).toBe("restore");
+    expect(few.why).toMatch(/Only 1 case ran on both sides/);
+  });
+
+  it("reads the worse end the other way for a goal where higher is better", () => {
+    const worse = report(CASES, (caseId, index) => ({
+      valid: caseId === "case-a" && index === 0 ? "fail" : "pass",
+    }));
+    const analysis = analyzeCut(trim, "quality", control, worse, {
+      ...DEFAULT_GUARDRAILS,
+      maxOverallDropPoints: 100,
+      maxCheckDropPoints: 100,
+    });
+    expect(analysis.goal.higherIsBetter).toBe(true);
+    expect(analysis.verdict).toBe("restore");
+    expect(analysis.why).toMatch(/Overall pass rate may be worse/);
   });
 });
