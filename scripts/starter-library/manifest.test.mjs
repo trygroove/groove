@@ -16,7 +16,7 @@ import { storageKeyFor } from "./wav.mjs";
 
 // Rendering all 200 assets takes ~20s, which is too slow for the suite that
 // runs on every save. The full catalogue is rendered and validated by
-// `bun run library:validate` in CI; here we render a few representative assets
+// `bun run library:validate`; here we render a few representative assets
 // and drive the validation rules with fixtures.
 //
 // The handful of tests that actually render audio (each calls `buildAsset`)
