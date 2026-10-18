@@ -111,11 +111,11 @@ import {
 } from "./tools";
 import {
   type AssistantTraceSink,
+  aiSessionIdFor,
   type GenerationCall,
   type GenerationResult,
   generationEvents,
   traceConsent,
-  traceIdFor,
 } from "./traces";
 import { permitsRetention, type TranscriptStore } from "./transcripts";
 import {
@@ -191,7 +191,7 @@ export interface AssistantGatewayDeps {
    * Observability, from the Cloud Function. Without one, nothing is traced.
    */
   readonly traces?: AssistantTraceSink;
-  /** A fresh trace ID for a turn whose request names no conversation; random by default. */
+  /** A fresh trace ID for a turn whose request names no session; random by default. */
   readonly traceId?: () => string;
 }
 
@@ -689,8 +689,8 @@ export async function runAssistantTurn(
       const events = generationEvents(
         {
           uid,
-          traceId: traceIdFor(turn, turnKey),
-          turnKey,
+          traceId: turnKey,
+          aiSessionId: aiSessionIdFor(turn),
           sessionId: turn.analytics?.sessionId ?? null,
           model: model.id,
           promptVersion: ASSISTANT_PROMPT_VERSION,

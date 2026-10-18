@@ -116,7 +116,7 @@ async function declineRetention(store: InMemoryTranscriptStore) {
 const CONTENT_KEYS = ["$ai_input", "$ai_tools", "$ai_output_choices"];
 
 describe("the gateway's traces", () => {
-  it("sends one event per provider call, as the turn's UID, in its conversation's trace", async () => {
+  it("sends one event per provider call, as the turn's UID, in its turn's trace and its conversation's session", async () => {
     const h = harness([replyEvents(["Here ", "you go."], { inputTokens: 120 })]);
     const result = await run(h);
 
@@ -125,7 +125,8 @@ describe("the gateway's traces", () => {
     expect(event?.event).toBe("$ai_generation");
     expect(event?.distinctId).toBe(UID);
     expect(event?.properties).toMatchObject({
-      $ai_trace_id: CONVERSATION,
+      $ai_trace_id: TURN,
+      $ai_session_id: CONVERSATION,
       $ai_span_id: `${TURN}-1`,
       $ai_model: result.model,
       $ai_provider: "anthropic",
@@ -153,6 +154,9 @@ describe("the gateway's traces", () => {
     expect(h.events).toHaveLength(2);
     const [failed, retried] = h.events.map((event) => event.properties);
     expect(new Set(h.events.map((event) => event.properties.$ai_trace_id))).toEqual(
+      new Set([TURN]),
+    );
+    expect(new Set(h.events.map((event) => event.properties.$ai_session_id))).toEqual(
       new Set([CONVERSATION]),
     );
     expect(failed).toMatchObject({
@@ -200,13 +204,30 @@ describe("the gateway's traces", () => {
     ]);
   });
 
-  it("traces a turn with no session under an ID of its own", async () => {
+  it("traces a turn with no session under an ID of its own, in no AI session", async () => {
     const h = harness([replyEvents(["Hi."])]);
     await run(h, request({ session: undefined }));
     expect(h.events[0]?.properties).toMatchObject({
       $ai_trace_id: "generated-trace",
+      $ai_session_id: null,
       $ai_span_id: "generated-trace-1",
     });
+  });
+
+  it("puts a conversation's turns in one AI session, each its own trace", async () => {
+    const h = harness([replyEvents(["Hi."]), replyEvents(["Again."])]);
+    const first = request();
+    if (!first.session) throw new Error("the request has a session");
+    await run(h, first);
+    await run(h, request({ session: { ...first.session, turnId: "turn_secondtt" } }));
+    expect(h.events.map((event) => event.properties.$ai_session_id)).toEqual([
+      CONVERSATION,
+      CONVERSATION,
+    ]);
+    expect(h.events.map((event) => event.properties.$ai_trace_id)).toEqual([
+      TURN,
+      "turn_secondtt",
+    ]);
   });
 
   it("marks internal traffic, by the account's claim or the browser's flag", async () => {

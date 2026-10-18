@@ -1,7 +1,7 @@
 /**
  * The assistant's traces for PostHog's AI Observability (GRV-126, ADR 0011
  * decision 4): one `$ai_generation` event per provider call, retries
- * included, grouped into one trace per conversation.
+ * included, grouped into one trace per turn and one session per conversation.
  *
  * Firebase-free and SDK-free, like the gateway: the gateway records each call
  * as a {@link GenerationCall}, this module turns a finished turn's calls into
@@ -76,10 +76,13 @@ export interface GenerationCall {
 export interface TraceTurn {
   /** The Firebase UID: the event's `distinct_id`, as the browser identifies it. */
   readonly uid: string;
-  /** The conversation's ID, or the turn's own when the request named no session. */
+  /** The turn's ID: its trace, and what each call's span ID is made from. */
   readonly traceId: string;
-  /** What each call's span ID is made from: unique to the turn. */
-  readonly turnKey: string;
+  /**
+   * The conversation's ID, PostHog's `$ai_session_id`, grouping its turns'
+   * traces; `null` for a turn the request named no conversation for.
+   */
+  readonly aiSessionId: string | null;
   /** PostHog's `$session_id` in the browser, linking the trace to its replay. */
   readonly sessionId: string | null;
   readonly model: string;
@@ -112,9 +115,12 @@ export function traceConsent(turn: AssistantTurnRequest): boolean {
   return turn.analytics?.productAnalytics === true;
 }
 
-/** The trace a turn belongs to: its conversation, or the turn alone. */
-export function traceIdFor(turn: AssistantTurnRequest, fallback: string): string {
-  return turn.session?.conversationId ?? fallback;
+/**
+ * The AI session a turn's trace belongs to: its conversation, or `null`,
+ * which tells PostHog the trace stands alone.
+ */
+export function aiSessionIdFor(turn: AssistantTurnRequest): string | null {
+  return turn.session?.conversationId ?? null;
 }
 
 /** The failure a call's `failure_kind` names, or `null` for one that completed. */
@@ -221,7 +227,8 @@ export function generationEvent(
     event: AI_GENERATION_EVENT,
     properties: {
       $ai_trace_id: turn.traceId,
-      $ai_span_id: `${turn.turnKey}-${call.attempt}`,
+      $ai_session_id: turn.aiSessionId,
+      $ai_span_id: `${turn.traceId}-${call.attempt}`,
       $ai_model: call.request.model,
       $ai_provider: AI_PROVIDER,
       $ai_input_tokens: call.usage.inputTokens,
