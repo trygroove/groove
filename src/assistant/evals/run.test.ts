@@ -15,6 +15,7 @@ import {
   newId,
 } from "../prompt";
 import { continuesTurn } from "../providerRequest";
+import { describeTactics, TACTIC_DEFAULTS } from "../tactics";
 import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { createHouseLoopProject } from "./fixtures";
@@ -376,7 +377,7 @@ describe("runEvals", () => {
     );
     expect(report.tactics).toEqual({ thinkingEffort: "low" });
     expect(renderMarkdown(report)).toContain(
-      "- Tactics: thinkingEffort=low (default medium)",
+      `- Tactics: ${describeTactics({ thinkingEffort: "low" })}`,
     );
     expect(renderSummaryMarkdown(summaryOf(report))).toContain(
       "- Tactics: thinkingEffort=low",
@@ -390,7 +391,7 @@ describe("runEvals", () => {
       runs: 1,
       now: fixedNow,
     });
-    expect(production.tactics).toEqual({ thinkingEffort: "medium" });
+    expect(production.tactics).toEqual(TACTIC_DEFAULTS);
   });
 });
 

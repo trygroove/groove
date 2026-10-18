@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildTestReport, testRecord } from "../../testing/evalRecords";
 import { ASSISTANT_MODEL_ID } from "../config";
+import { TACTIC_DEFAULTS } from "../tactics";
 import { EVAL_CASES } from "./cases";
 import {
   EvalUsageError,
@@ -201,7 +202,7 @@ describe("loadBaseline", () => {
       generatedAt: report.generatedAt,
       model: report.model,
       promptVersion: report.promptVersion,
-      tactics: { thinkingEffort: "medium" },
+      tactics: TACTIC_DEFAULTS,
     });
   });
 

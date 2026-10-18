@@ -21,6 +21,14 @@ import {
   type TacticOverrides,
 } from "./tactics";
 
+/**
+ * These tests are written against production's current default, never a
+ * literal, so the framework's win PR (which flips a default) leaves them
+ * green. `OFF` is a value that is not the default.
+ */
+const DEFAULT = TACTIC_DEFAULTS.thinkingEffort;
+const OFF = TACTICS.thinkingEffort.values.find((value) => value !== DEFAULT) as string;
+
 const parts: ProviderRequestParts = {
   system: [{ type: "text", text: "system" }],
   messages: [{ role: "user", content: "hello" }],
@@ -65,25 +73,19 @@ describe("the tactic registry", () => {
     }
   });
 
-  it("starts thinkingEffort at production's medium, of low, medium and high", () => {
+  it("offers thinkingEffort as low, medium and high, production's default among them", () => {
     expect(TACTICS.thinkingEffort.values).toEqual(["low", "medium", "high"]);
-    expect(TACTIC_DEFAULTS.thinkingEffort).toBe("medium");
+    expect(TACTICS.thinkingEffort.values as readonly string[]).toContain(DEFAULT);
   });
 
   it("resolves overrides over the defaults, and names only the values that differ", () => {
     expect(resolveTactics()).toEqual(TACTIC_DEFAULTS);
-    expect(resolveTactics({ thinkingEffort: "low" })).toEqual({
-      ...TACTIC_DEFAULTS,
-      thinkingEffort: "low",
-    });
-    expect(nonDefaultTactics({ thinkingEffort: "medium" })).toEqual({});
-    expect(nonDefaultTactics({ thinkingEffort: "high" })).toEqual({
-      thinkingEffort: "high",
-    });
-    expect(describeTactics(TACTIC_DEFAULTS)).toBe("thinkingEffort=medium");
-    expect(describeTactics({ thinkingEffort: "low" })).toBe(
-      "thinkingEffort=low (default medium)",
-    );
+    const off = { thinkingEffort: OFF } as TacticOverrides;
+    expect(resolveTactics(off)).toEqual({ ...TACTIC_DEFAULTS, ...off });
+    expect(nonDefaultTactics({ thinkingEffort: DEFAULT })).toEqual({});
+    expect(nonDefaultTactics(off)).toEqual(off);
+    expect(describeTactics(TACTIC_DEFAULTS)).toBe(`thinkingEffort=${DEFAULT}`);
+    expect(describeTactics(off)).toBe(`thinkingEffort=${OFF} (default ${DEFAULT})`);
   });
 
   it("parses id=value, and refuses an unknown tactic or value", () => {
@@ -111,17 +113,20 @@ describe("a tactic's default", () => {
       );
       expect(
         JSON.stringify(
-          buildProviderRequest(
-            model,
-            parts,
-            resolveTactics({ thinkingEffort: "medium" }),
-          ),
+          buildProviderRequest(model, parts, resolveTactics({ thinkingEffort: DEFAULT })),
         ),
       ).toBe(production);
     }
-    // Pinned as production sent it before tactics existed.
+    // Pinned as production sent it before tactics existed, built with that
+    // effort spelled out so a later change of default leaves the pin standing.
     expect(
-      JSON.stringify(buildProviderRequest(ASSISTANT_MODELS["claude-sonnet-5"], parts)),
+      JSON.stringify(
+        buildProviderRequest(
+          ASSISTANT_MODELS["claude-sonnet-5"],
+          parts,
+          resolveTactics({ thinkingEffort: "medium" }),
+        ),
+      ),
     ).toBe(
       '{"model":"claude-sonnet-5","max_tokens":16000,"stream":true,"system":[{"type":"text","text":"system","cache_control":{"type":"ephemeral"}}],"messages":[{"role":"user","content":"hello"}],"cache_control":{"type":"ephemeral"},"tools":[],"metadata":{"user_id":"abc123"},"thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"medium"}}',
     );
@@ -131,9 +136,9 @@ describe("a tactic's default", () => {
     const production = await openingRequest();
     expect(await openingRequest({})).toBe(production);
     expect(await openingRequest(TACTIC_DEFAULTS)).toBe(production);
-    const low = await openingRequest({ thinkingEffort: "low" });
-    expect(low).not.toBe(production);
-    expect(low.replace('"effort":"low"', '"effort":"medium"')).toBe(production);
+    const off = await openingRequest({ thinkingEffort: OFF } as TacticOverrides);
+    expect(off).not.toBe(production);
+    expect(off.replace(`"effort":"${OFF}"`, `"effort":"${DEFAULT}"`)).toBe(production);
   });
 
   it("is not an effort a budget-thinking model is sent", () => {
