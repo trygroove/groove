@@ -35,10 +35,14 @@ export function recommendationStatusText(card: Card): string {
   const slot = card.slot?.label ?? null;
   const sound = card.sound?.name ?? null;
   const say = (() => {
+    // A card that offers Try says first that its pad is gone (GRV-129).
+    if (
+      card.missing &&
+      (card.status === "ready" || card.status === "put-back" || card.status === "undone")
+    )
+      return `${MISSING_PAD}, so there's nothing to try these on. Nothing has changed.`;
     switch (card.status) {
       case "ready":
-        if (card.missing)
-          return `${MISSING_PAD}, so there's nothing to try these on. Nothing has changed.`;
         return slot && sound
           ? `Nothing has changed yet. Try ${sound} on ${slot} to hear it in the beat.`
           : "Nothing has changed yet. Select a drum pad or a sampler to try one of these in the beat.";
@@ -209,6 +213,14 @@ export default function RecommendationCard(props: RecommendationCardProps): JSX.
             </ul>
             <div class="assistant-proposal-actions">
               <Switch>
+                {/* A card that names a pad the song does not have, or whose
+                    pad an undo took away, offers nothing to try it on (GRV-129). */}
+                <Match when={offer() === "ready" && current().missing}>
+                  <button type="button" class="assistant-button-primary" disabled>
+                    Try
+                  </button>
+                  <DismissButton />
+                </Match>
                 <Match when={offer() === "ready" && current().slot && current().sound}>
                   <button
                     type="button"
@@ -216,14 +228,6 @@ export default function RecommendationCard(props: RecommendationCardProps): JSX.
                     onClick={act(props.recommendations.tryOn, "Keep")}
                   >
                     {tryLabel()}
-                  </button>
-                  <DismissButton />
-                </Match>
-                {/* A card that names a pad the song does not have offers
-                    nothing to try it on (GRV-129). */}
-                <Match when={offer() === "ready" && current().missing}>
-                  <button type="button" class="assistant-button-primary" disabled>
-                    Try
                   </button>
                   <DismissButton />
                 </Match>
