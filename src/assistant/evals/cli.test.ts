@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildTestReport, testRecord } from "../../testing/evalRecords";
 import { ASSISTANT_MODEL_ID } from "../config";
+import { TACTIC_DEFAULTS } from "../tactics";
 import { EVAL_CASES } from "./cases";
 import {
   EvalUsageError,
@@ -32,7 +33,27 @@ describe("parseEvalArgs", () => {
       concurrency: 3,
       turnTimeoutMs: 540_000,
       maxSteps: null,
+      tactics: {},
     });
+  });
+
+  it("takes any number of --tactic id=value, and refuses one the registry does not know (GRV-110)", () => {
+    expect(options(["--tactic", "thinkingEffort=low"]).tactics).toEqual({
+      thinkingEffort: "low",
+    });
+    // The last assignment of a tactic wins.
+    expect(
+      options(["--tactic", "thinkingEffort=low", "--tactic", "thinkingEffort=high"])
+        .tactics,
+    ).toEqual({ thinkingEffort: "high" });
+    expect(() => options(["--tactic", "thinkingEffort=extreme"])).toThrow(
+      /thinkingEffort takes low \| medium \| high/,
+    );
+    expect(() => options(["--tactic", "terseness=on"])).toThrow(
+      /Unknown tactic "terseness"/,
+    );
+    expect(() => options(["--tactic", "thinkingEffort"])).toThrow(EvalUsageError);
+    expect(() => options(["--tactic"])).toThrow("--tactic needs a value");
   });
 
   it("takes the most steps a turn may take, 1 for a turn of one call", () => {
@@ -181,7 +202,17 @@ describe("loadBaseline", () => {
       generatedAt: report.generatedAt,
       model: report.model,
       promptVersion: report.promptVersion,
+      tactics: TACTIC_DEFAULTS,
     });
+  });
+
+  it("labels a baseline saved before reports named their tactics by its hand-written effort, or as unknown", () => {
+    const saved = JSON.parse(JSON.stringify(summaryOf(report)));
+    delete saved.tactics;
+    expect(loadBaseline(saved, "s.json").label.tactics).toBeNull();
+    expect(
+      loadBaseline({ ...saved, thinkingEffort: "medium" }, "s.json").label.tactics,
+    ).toEqual({ thinkingEffort: "medium" });
   });
 
   it("takes a summary.json's scorecard as it is", () => {

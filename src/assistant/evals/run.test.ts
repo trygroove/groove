@@ -15,6 +15,7 @@ import {
   newId,
 } from "../prompt";
 import { continuesTurn } from "../providerRequest";
+import { describeTactics, TACTIC_DEFAULTS } from "../tactics";
 import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { createHouseLoopProject } from "./fixtures";
@@ -358,6 +359,39 @@ describe("runEvals", () => {
     // 100 input at $2/M and 20 output at $10/M on claude-sonnet-5.
     expect(report.scorecard.secondary.costUsd.total).toBeCloseTo(0.0004, 10);
     expect(Object.keys(report).slice(-3)).toEqual(["scorecard", "summary", "records"]);
+  });
+
+  it("runs every turn with the tactics given, and names every value in the report (GRV-110)", async () => {
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("A Compressor on the master to glue it.", [compressorCall("t", -18)]),
+    ]);
+    const report = await runEvals({
+      provider,
+      cases: [glue],
+      runs: 1,
+      now: fixedNow,
+      tactics: { thinkingEffort: "low" },
+    });
+    expect(provider.requests.every((sent) => sent.output_config?.effort === "low")).toBe(
+      true,
+    );
+    expect(report.tactics).toEqual({ thinkingEffort: "low" });
+    expect(renderMarkdown(report)).toContain(
+      `- Tactics: ${describeTactics({ thinkingEffort: "low" })}`,
+    );
+    expect(renderSummaryMarkdown(summaryOf(report))).toContain(
+      "- Tactics: thinkingEffort=low",
+    );
+
+    const production = await runEvals({
+      provider: createScriptedAssistantProvider([
+        toolUseEvents("Glue.", [compressorCall("u", -18)]),
+      ]),
+      cases: [glue],
+      runs: 1,
+      now: fixedNow,
+    });
+    expect(production.tactics).toEqual(TACTIC_DEFAULTS);
   });
 });
 

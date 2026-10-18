@@ -17,6 +17,9 @@
  *   bun run assistant:eval -- --out tmp/evals    where the report goes
  *   bun run assistant:eval -- --timeout 180      per-turn limit in seconds (default 540, production's)
  *   bun run assistant:eval -- --steps 1          steps a turn may take (default production's; 1 is one call)
+ *   bun run assistant:eval -- --tactic thinkingEffort=low
+ *       run with a tactic (`src/assistant/tactics.ts`, GRV-110) set away from
+ *       production's default; repeat it for several. The report names every value
  *   bun run assistant:eval -- --replay <report.json>
  *       re-judge a saved report's proposals with the current checks (no model call)
  *   bun run assistant:eval -- --baseline docs/assistant-eval-baseline.json
@@ -79,9 +82,11 @@ import {
   comparisonConsoleLines,
   formatRate,
   heavySetConsoleLines,
+  tacticsText,
 } from "../src/assistant/evals/scorecardMarkdown";
 import { setLabel } from "../src/assistant/evals/sets";
 import { parseTranscriptCase } from "../src/assistant/evals/transcriptCase";
+import { resolveTactics } from "../src/assistant/tactics";
 
 async function readBaseline(path: string | null): Promise<LoadedBaseline | null> {
   if (!path) return null;
@@ -132,7 +137,7 @@ function printSummary(
   const { errored } = report.summary;
   const { headline, secondary } = report.scorecard;
   console.log(
-    `\nModel ${report.model}, prompt ${report.promptVersion}, ${report.records.length} turns, ${errored.total} errored`,
+    `\nModel ${report.model}, prompt ${report.promptVersion}, tactics ${tacticsText(report.tactics)}, ${report.records.length} turns, ${errored.total} errored`,
   );
   console.log(
     `\nHeadline: applies ${formatRate(headline.applies)}, overall ${formatRate(headline.overall)}, expected outcome ${formatRate(headline.expectMatch)}`,
@@ -149,7 +154,7 @@ function printSummary(
   }
   if (baseline) {
     console.log(
-      `\nAgainst ${baseline.label.path} (${baseline.label.model}, prompt ${baseline.label.promptVersion}):`,
+      `\nAgainst ${baseline.label.path} (${baseline.label.model}, prompt ${baseline.label.promptVersion}, tactics ${tacticsText(baseline.label.tactics)}):`,
     );
     for (const line of comparisonConsoleLines(baseline.comparisons)) console.log(line);
     if (baseline.heavy) {
@@ -198,6 +203,7 @@ async function replay(path: string, options: EvalCliOptions): Promise<EvalReport
     model: saved.model,
     promptVersion: saved.promptVersion,
     toolsetVersion: saved.toolsetVersion,
+    tactics: saved.tactics ?? null,
     runsPerCase: saved.runsPerCase,
     aborted: saved.aborted ?? null,
   });
@@ -240,13 +246,14 @@ async function live(options: EvalCliOptions): Promise<EvalReport> {
   const baseline = await readBaseline(options.baseline);
   const model = ASSISTANT_MODELS[options.model];
   console.log(
-    `Running ${cases.length} cases x ${options.runs} runs against ${model.id} (the live model), up to ${options.maxSteps ?? ASSISTANT_MAX_STEPS} steps a turn...`,
+    `Running ${cases.length} cases x ${options.runs} runs against ${model.id} (the live model), up to ${options.maxSteps ?? ASSISTANT_MAX_STEPS} steps a turn, tactics ${tacticsText(resolveTactics(options.tactics))}...`,
   );
   const report = await runEvals({
     provider: createAnthropicProvider({ apiKey }),
     model,
     cases,
     runs: options.runs,
+    tactics: options.tactics,
     concurrency: options.concurrency,
     turnTimeoutMs: options.turnTimeoutMs,
     ...(options.maxSteps === null ? {} : { maxSteps: options.maxSteps }),

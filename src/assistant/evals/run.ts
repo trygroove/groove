@@ -41,6 +41,7 @@ import { type AssistantProvider, ProviderFailure } from "../provider";
 import { continuesTurn, type ProviderMessagesRequest } from "../providerRequest";
 import { splitRecommendations } from "../recommendation";
 import type { ProviderUsage } from "../streamEvents";
+import { resolveTactics, type TacticOverrides, type TacticValues } from "../tactics";
 import type { AssistantTurnLog } from "../telemetry";
 import { ASSISTANT_TOOLSET_VERSION } from "../tools";
 import { caseChecksFor, checkOutcome, runCaseCheck } from "./caseChecks";
@@ -174,6 +175,11 @@ export type Tally = Record<CheckResult["status"], number>;
 export interface EvalReport {
   readonly generatedAt: string;
   readonly model: string;
+  /**
+   * Every tactic's value the turns ran with (GRV-110), production's defaults
+   * unless `--tactic` said otherwise. Absent from reports saved before it.
+   */
+  readonly tactics?: TacticValues;
   readonly promptVersion: string;
   readonly toolsetVersion: number;
   readonly runsPerCase: number;
@@ -250,6 +256,8 @@ const EVAL_CALLER = { uid: "assistant-evals", signInProvider: "password" } as co
 export interface RunTurnOptions {
   readonly provider: AssistantProvider;
   readonly model?: AssistantModelProfile;
+  /** The tactics every turn runs with, any left out at production's default (GRV-110). */
+  readonly tactics?: TacticOverrides;
   readonly now?: () => number;
   /** Aborts a turn that runs longer, as an errored turn. Default {@link DEFAULT_TURN_TIMEOUT_MS}. */
   readonly turnTimeoutMs?: number;
@@ -375,6 +383,7 @@ export async function runCaseTurn(
           },
           now,
           model: options.model,
+          tactics: options.tactics,
           guardLimits: EVAL_GUARD_LIMITS,
           ...(options.maxSteps === undefined
             ? {}
@@ -614,6 +623,11 @@ export function summarize(records: readonly EvalRecord[]): EvalReport["summary"]
 export interface ReportMeta {
   readonly generatedAt: string;
   readonly model: string;
+  /**
+   * The overrides the turns ran with, production's defaults filling the rest;
+   * null when they are not known (a replayed report saved before tactics).
+   */
+  readonly tactics?: TacticOverrides | null;
   readonly promptVersion?: string;
   readonly toolsetVersion?: number;
   readonly runsPerCase: number;
@@ -633,6 +647,7 @@ export function buildReport(
   return {
     generatedAt: meta.generatedAt,
     model: meta.model,
+    ...(meta.tactics === null ? {} : { tactics: resolveTactics(meta.tactics) }),
     promptVersion: meta.promptVersion ?? ASSISTANT_PROMPT_VERSION,
     toolsetVersion: meta.toolsetVersion ?? ASSISTANT_TOOLSET_VERSION,
     runsPerCase: meta.runsPerCase,
@@ -747,6 +762,7 @@ export async function runEvals(options: RunEvalsOptions): Promise<EvalReport> {
     {
       generatedAt: new Date(now()).toISOString(),
       model: model.id,
+      tactics: options.tactics,
       runsPerCase: options.runs,
       aborted,
     },

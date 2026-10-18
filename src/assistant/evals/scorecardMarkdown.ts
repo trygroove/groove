@@ -5,6 +5,8 @@
  * (GRV-131), beside the baseline's too. `report.md`, the console
  * summary and `docs/assistant-eval-baseline.md` all read from here.
  */
+
+import { describeTactics, type TacticOverrides } from "../tactics";
 import {
   type Comparison,
   formatDelta,
@@ -156,6 +158,13 @@ export interface BaselineLabel {
   readonly generatedAt: string;
   readonly model: string;
   readonly promptVersion: string;
+  /** The tactic values it ran with (GRV-110); null for a baseline saved before reports named them. */
+  readonly tactics: TacticOverrides | null;
+}
+
+/** A report's tactic values as one line, or "unknown" for a report that names none. */
+export function tacticsText(tactics: TacticOverrides | null | undefined): string {
+  return tactics ? describeTactics(tactics) || "none" : "unknown";
 }
 
 /** The rows grouped by set, in the order they come; one group with no set. */
@@ -187,7 +196,7 @@ export function comparisonLines(
   return [
     "## Against the baseline",
     "",
-    `Baseline: \`${baseline.path}\` (run ${baseline.generatedAt}, model \`${baseline.model}\`, prompt \`${baseline.promptVersion}\`).`,
+    `Baseline: \`${baseline.path}\` (run ${baseline.generatedAt}, model \`${baseline.model}\`, prompt \`${baseline.promptVersion}\`, tactics ${tacticsText(baseline.tactics)}).`,
     "",
     ...bySet(comparisons).flatMap(({ set, rows }) =>
       set === undefined ? table(rows) : [`### ${setLabel(set)}`, "", ...table(rows)],

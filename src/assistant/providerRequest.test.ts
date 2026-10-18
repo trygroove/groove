@@ -5,6 +5,7 @@ import {
   type ProviderRequestParts,
   providerTools,
 } from "./providerRequest";
+import { TACTIC_DEFAULTS } from "./tactics";
 import { assistantTools } from "./tools";
 
 const parts: ProviderRequestParts = {
@@ -43,7 +44,9 @@ const PINNED: Record<AssistantModelId, () => void> = {
       cache_control: { type: "ephemeral" },
       // Summarized, so a long think streams rather than going silent (GRV-6).
       thinking: { type: "adaptive", display: "summarized" },
-      output_config: { effort: "medium" },
+      // The `thinkingEffort` tactic's default (GRV-110), not a literal, so a
+      // win PR flipping it leaves this pin standing.
+      output_config: { effort: TACTIC_DEFAULTS.thinkingEffort },
     });
   },
   "claude-haiku-4-5": () => {
