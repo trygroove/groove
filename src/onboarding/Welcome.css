@@ -4,6 +4,19 @@
    (AssistantPanel.css); this only lays them out on a page. No blur, no
    depth, no hue. */
 
+/* The page scrolls, so the root's snapport is what clears the fixed header
+   (about 190px) and the screen's bottom edge: focus, centring and Page Down
+   all stop short of both. */
+:root:has(.welcome) {
+  scroll-padding: 200px 0 32px;
+}
+
+/* A control that takes focus also clears most of the fade below the header,
+   rather than stopping where the history is still dimmed. */
+.welcome-body :is(a, button, input, textarea, [tabindex]) {
+  scroll-margin-top: 100px;
+}
+
 .welcome {
   box-sizing: border-box;
   min-height: 100vh;
@@ -73,9 +86,14 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  /* Room below the last card, so a new question can be scrolled to the
-     middle of the screen rather than stopping at the page's end. */
-  padding-bottom: 50vh;
+}
+
+/* Room below the last control, so a new question can be scrolled to the
+   middle of the screen rather than stopping at the page's end. Its height is
+   set from script (`runout.ts`) to just that room and no more. */
+.welcome-runout {
+  flex: none;
+  height: 0;
 }
 
 /* The panel's log, but grown to the page rather than scrolled in a box. */

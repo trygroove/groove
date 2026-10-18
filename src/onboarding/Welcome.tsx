@@ -25,6 +25,7 @@ import { scrollBehavior } from "../shared/motion";
 import { useShortcuts } from "../shortcuts/useShortcuts";
 import CueMark from "./CueMark";
 import { MemoryCard } from "./MemoryCard";
+import { fitRunout } from "./runout";
 import { type Onboarding, useOnboarding } from "./useOnboarding";
 import "../editor/assistant/AssistantPanel.css";
 import "./Welcome.css";
@@ -116,13 +117,50 @@ export default function Welcome(props: WelcomeProps): JSX.Element {
 
   // Each new question scrolls to the middle of the screen, the history
   // moving up under the fixed header. Keyed on the question's reply, so
-  // typing or choosing within one question never scrolls.
+  // typing or choosing within one question never scrolls. The run-out below
+  // the page is sized first, to just the room that centring needs.
   let askSlot: HTMLDivElement | undefined;
+  let runout: HTMLDivElement | undefined;
   createEffect(
     () => onboarding.pendingAsk()?.replyId,
     (replyId) => {
-      if (replyId === undefined) return;
-      askSlot?.scrollIntoView?.({ block: "center", behavior: scrollBehavior() });
+      if (replyId === undefined || !askSlot) return;
+      if (runout) fitRunout(askSlot, runout);
+      askSlot.scrollIntoView?.({ block: "center", behavior: scrollBehavior() });
+    },
+  );
+
+  // A resize changes the room centring needs; it re-sizes the run-out
+  // without scrolling.
+  createEffect(
+    () => undefined,
+    () => {
+      const refit = () => {
+        if (askSlot && runout && onboarding.pendingAsk()) fitRunout(askSlot, runout);
+      };
+      window.addEventListener("resize", refit);
+      return () => window.removeEventListener("resize", refit);
+    },
+  );
+
+  // Once the answers are saved there is nothing left to centre: the run-out
+  // goes, and Open the studio scrolls up clear of the screen's bottom edge.
+  // Keyed on the conversation too, so it follows Cue's last reply in.
+  let actions: HTMLDivElement | undefined;
+  createEffect(
+    () =>
+      (onboarding.stage() === "saved" || onboarding.stage() === "save_failed") &&
+      !onboarding.streaming()
+        ? onboarding.entries().length
+        : 0,
+    (settled) => {
+      if (!settled) return;
+      if (runout) runout.style.height = "0px";
+      // A frame on, once the memory card and the button have laid out.
+      const frame = requestAnimationFrame(() =>
+        actions?.scrollIntoView?.({ block: "nearest", behavior: scrollBehavior() }),
+      );
+      return () => cancelAnimationFrame(frame);
     },
   );
 
@@ -197,7 +235,7 @@ export default function Welcome(props: WelcomeProps): JSX.Element {
             )}
           </Show>
         </div>
-        <div class="welcome-actions">
+        <div class="welcome-actions" ref={actions}>
           <Switch>
             {/* A failed save still lets them in: the card offers the retry,
                 and the welcome comes back next time if it never lands. */}
@@ -227,6 +265,7 @@ export default function Welcome(props: WelcomeProps): JSX.Element {
             </Match>
           </Switch>
         </div>
+        <div class="welcome-runout" ref={runout} aria-hidden="true" />
       </div>
     </main>
   );
