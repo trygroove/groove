@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildTestReport, testRecord } from "../../testing/evalRecords";
 import { ASSISTANT_MODELS } from "../config";
+import { describeTactics } from "../tactics";
 import {
   compareHeavySets,
   compareScorecards,
@@ -293,7 +294,9 @@ describe("compareScorecards", () => {
       tactics: { thinkingEffort: "low" },
     });
     expect(lines).toContain("### Musical capability");
-    expect(lines.join("\n")).toContain("tactics thinkingEffort=low (default medium)");
+    expect(lines.join("\n")).toContain(
+      `tactics ${describeTactics({ thinkingEffort: "low" })}`,
+    );
     expect(lines).toContain("### Basic production actions");
     expect(comparisonConsoleLines(compared)).toContain("  Basic production actions:");
     // A baseline with sets is compared set by set as well.
