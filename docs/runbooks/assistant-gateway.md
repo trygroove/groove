@@ -182,7 +182,9 @@ the account lets Groove keep.
 
 `assistantTurn` sends one `$ai_generation` event per provider call, retries
 included, to PostHog (GRV-126, ADR 0011 decision 4), grouped into one trace
-per conversation and linked to the session's replay through `$session_id`.
+per turn, the traces into one AI session per conversation (`$ai_session_id`,
+the Sessions tab), and linked to the browser session's replay through
+`$session_id`.
 Nothing is sent when the browser says product analytics is declined. The
 request and the reply (`$ai_input`, `$ai_tools`, `$ai_output_choices`) are in
 the event only for an account that lets Groove keep its conversations; any

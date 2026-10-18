@@ -5,11 +5,11 @@ import { buildAssistantPayload } from "./payload";
 import { assistantTurnRequestSchema, turnAnalytics } from "./protocol";
 import { buildProviderRequest } from "./providerRequest";
 import {
+  aiSessionIdFor,
   type GenerationCall,
   generationEvent,
   type TraceTurn,
   traceConsent,
-  traceIdFor,
   traceInput,
 } from "./traces";
 
@@ -39,8 +39,8 @@ const request = buildProviderRequest(model, {
 
 const TURN: TraceTurn = {
   uid: "uid-1",
-  traceId: "conv_1",
-  turnKey: "turn_1",
+  traceId: "turn_1",
+  aiSessionId: "conv_1",
   sessionId: null,
   model: model.id,
   promptVersion: "v1",
@@ -66,9 +66,11 @@ function call(result: GenerationCall["result"]): GenerationCall {
 }
 
 describe("generationEvent", () => {
-  it("maps tokens, latency in seconds, and the span", () => {
+  it("maps tokens, latency in seconds, the trace, the AI session and the span", () => {
     const { properties } = generationEvent(TURN, call({ kind: "timed_out" }));
     expect(properties).toMatchObject({
+      $ai_trace_id: "turn_1",
+      $ai_session_id: "conv_1",
       $ai_span_id: "turn_1-3",
       $ai_input_tokens: 1,
       $ai_output_tokens: 2,
@@ -76,6 +78,14 @@ describe("generationEvent", () => {
       $ai_cache_read_input_tokens: 4,
       $ai_latency: 1.5,
     });
+  });
+
+  it("sends a turn with no conversation's AI session as null", () => {
+    const { properties } = generationEvent(
+      { ...TURN, aiSessionId: null },
+      call({ kind: "timed_out" }),
+    );
+    expect(properties).toHaveProperty("$ai_session_id", null);
   });
 
   it.each([
@@ -161,22 +171,19 @@ describe("the turn's analytics (GRV-126)", () => {
     expect(traceConsent({ ...parsed, analytics: { productAnalytics: true } })).toBe(true);
   });
 
-  it("is traced under its conversation, or the fallback", () => {
+  it("is in its conversation's AI session, or none", () => {
     const parsed = assistantTurnRequestSchema.parse(turn);
-    expect(traceIdFor(parsed, "fallback")).toBe("fallback");
+    expect(aiSessionIdFor(parsed)).toBeNull();
     expect(
-      traceIdFor(
-        {
-          ...parsed,
-          session: {
-            conversationId: "conv_abcdefgh",
-            turnId: "turn_abcdefgh",
-            projectId: "p",
-            internal: false,
-          },
+      aiSessionIdFor({
+        ...parsed,
+        session: {
+          conversationId: "conv_abcdefgh",
+          turnId: "turn_abcdefgh",
+          projectId: "p",
+          internal: false,
         },
-        "fallback",
-      ),
+      }),
     ).toBe("conv_abcdefgh");
   });
 
