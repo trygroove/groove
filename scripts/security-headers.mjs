@@ -166,6 +166,10 @@ export const CSP_DIRECTIVES = [
         "Firebase Analytics' installation ID",
       ],
       ["https://firebase.googleapis.com", "Firebase Analytics' web config"],
+      [
+        "https://apis.google.com",
+        "Google sign-in's gapi iframe sends its gen_204 beacon here (GRV-136)",
+      ],
       [cloudFunctionsOrigin, "the callable Cloud Functions, the assistant's included"],
       ["https://*.googletagmanager.com", "GA4's tag configuration"],
       ["https://*.google-analytics.com", "GA4's collection endpoint"],

@@ -85,6 +85,13 @@ describe("firebase.json's security headers", () => {
     expect(new URL(declared[group]).protocol).toBe("https:");
   });
 
+  it("allow Google sign-in's beacon to apis.google.com in connect-src", () => {
+    // gapi's iframe sends gen_204 beacons to apis.google.com during sign-in
+    // (GRV-136). script-src already allows the host; connect-src must too, or
+    // the browser blocks the beacon and files a CSP report.
+    expect(directiveSources(csp(), "connect-src")).toContain("https://apis.google.com");
+  });
+
   it("allow the Firebase services the production project is configured for", () => {
     expect(directiveSources(csp(), "frame-src")).toContain(
       `https://${FIREBASE_PROJECT_ID}.firebaseapp.com`,
