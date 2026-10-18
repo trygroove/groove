@@ -9,18 +9,21 @@ name: Assistant experiments
 # every variant runs in this one job against that commit, interleaved case by
 # case. The experiment ID, the budget and the runs per case reach the script
 # through the environment, never its text. The API key and the budget cap stay
-# in this workflow, so whoever dispatches it never holds the key.
+# in this workflow, so whoever dispatches it never holds the key. Leave the
+# budget blank to use the experiment file's own `budget` (else $25); a value
+# given here wins over the file's.
 #
 # The verdict and the report are posted as a comment on the experiment's card
 # (`LINEAR_API_KEY`). On a win it opens one PR labelled `hold`, from a new
-# branch off this commit, that makes the winning tactic values the defaults and
-# commits the report as `docs/experiments/<id>.md`. It pushes and opens that PR
+# branch off this commit, that makes the winning tactic values (and every cut
+# that kept) the defaults and commits the report as `docs/experiments/<id>.md`. It pushes and opens that PR
 # with `RESTACK_TOKEN` when it is set, because GitHub starts no workflows (CI,
 # the merge gate) for a PR `GITHUB_TOKEN` opens. `experiment.md` lands in the
 # run summary and the whole report directory as an artifact.
 #
 # The job fails only when the script does: the key was refused, the account
-# ran out of credit, or every turn errored. "No win" is a finding.
+# ran out of credit, every turn errored, or a win's PR failed to open (the
+# comment still goes up and says so). "No win" is a finding.
 
 on:
   workflow_dispatch:
@@ -29,9 +32,9 @@ on:
         description: "Experiment ID (evals/experiments/<id>.ts)"
         required: true
       budget:
-        description: "Budget in US dollars: no turn starts past it"
+        description: "Budget in US dollars, no turn starts past it (blank for the experiment's own budget, else $25)"
         required: false
-        default: "25"
+        default: ""
       runs:
         description: "Runs per train case (blank for the experiment's own)"
         required: false
