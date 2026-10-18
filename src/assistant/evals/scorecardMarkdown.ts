@@ -180,9 +180,14 @@ function bySet(
   return groups;
 }
 
-export function comparisonLines(
+/**
+ * The comparison's tables, each set's under a heading at `level`: GRV-102's
+ * diff format, which an experiment's report (GRV-110) reuses with the
+ * control as the baseline.
+ */
+export function comparisonTables(
   comparisons: readonly Comparison[],
-  baseline: BaselineLabel,
+  level = "###",
 ): string[] {
   const table = (rows: readonly Comparison[]) => [
     "| Number | This run | Baseline | Delta | |",
@@ -193,14 +198,21 @@ export function comparisonLines(
     ),
     "",
   ];
+  return bySet(comparisons).flatMap(({ set, rows }) =>
+    set === undefined ? table(rows) : [`${level} ${setLabel(set)}`, "", ...table(rows)],
+  );
+}
+
+export function comparisonLines(
+  comparisons: readonly Comparison[],
+  baseline: BaselineLabel,
+): string[] {
   return [
     "## Against the baseline",
     "",
     `Baseline: \`${baseline.path}\` (run ${baseline.generatedAt}, model \`${baseline.model}\`, prompt \`${baseline.promptVersion}\`, tactics ${tacticsText(baseline.tactics)}).`,
     "",
-    ...bySet(comparisons).flatMap(({ set, rows }) =>
-      set === undefined ? table(rows) : [`### ${setLabel(set)}`, "", ...table(rows)],
-    ),
+    ...comparisonTables(comparisons),
   ];
 }
 

@@ -15,8 +15,9 @@
  * Adding a tactic switched off (its default the behaviour production already
  * has) bumps nothing. Changing a default that alters the prompt bumps
  * `ASSISTANT_PROMPT_VERSION`, and one that alters the tools or their expansion
- * bumps `ASSISTANT_TOOLSET_VERSION`, in the same change. A change to the
- * request alone is recorded by the tactic values every eval report names.
+ * bumps `ASSISTANT_TOOLSET_VERSION`, in the same change; an experiment's win
+ * PR does both (`evals/experimentPr.ts`). A change to the request alone is
+ * recorded by the tactic values every eval report names.
  *
  * Like `config.ts`, this module imports nothing from Firebase, Tone, Solid or
  * the provider's SDK.
