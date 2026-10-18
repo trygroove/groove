@@ -4,6 +4,7 @@
  * its usage, its stop and two checks), so an aggregate can be worked out by
  * hand beside the test.
  */
+
 import type { CheckResult } from "../assistant/evals/checks";
 import {
   type EvalRecord,
@@ -14,6 +15,7 @@ import {
 import { scorecardOf } from "../assistant/evals/scorecard";
 import type { AssistantStopReason } from "../assistant/protocol";
 import type { ProviderUsage } from "../assistant/streamEvents";
+import { TACTIC_DEFAULTS } from "../assistant/tactics";
 
 export interface TestRecordOptions {
   readonly caseId?: string;
@@ -88,6 +90,7 @@ export function buildTestReport(
   return {
     generatedAt: "2026-10-12T00:00:00.000Z",
     model,
+    tactics: TACTIC_DEFAULTS,
     promptVersion: "test-prompt",
     toolsetVersion: 1,
     runsPerCase: 1,
