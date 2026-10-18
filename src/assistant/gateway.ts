@@ -101,6 +101,7 @@ import {
   misaimedIn,
 } from "./steps";
 import { NO_USAGE, type ProviderUsage, StreamReader } from "./streamEvents";
+import { resolveTactics, type TacticOverrides, type TacticValues } from "./tactics";
 import { type AssistantTurnLog, toTurnLog } from "./telemetry";
 import {
   ASSISTANT_TOOLSET_VERSION,
@@ -161,6 +162,12 @@ export interface AssistantGatewayDeps {
   /** Waits `ms`, or rejects once `signal` aborts. */
   readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   readonly model?: AssistantModelProfile;
+  /**
+   * The tactics the turn runs with (`tactics.ts`, GRV-110), any left out at
+   * production's default. Production passes none; the evals and experiments
+   * pass the values they are measuring.
+   */
+  readonly tactics?: TacticOverrides;
   /** The stem the turn's new IDs are made from (`prompt.ts`); random by default. */
   readonly idStem?: () => string;
   readonly limits?: AssistantCallLimits;
@@ -270,6 +277,7 @@ interface PreparedTurn {
 
 async function prepare(
   model: AssistantModelProfile,
+  tactics: TacticValues,
   uid: string,
   turn: AssistantTurnRequest,
   idStem: string,
@@ -296,15 +304,19 @@ async function prepare(
       "The selection and message are too large for the assistant to read at once.",
     );
   }
-  const request = buildProviderRequest(model, {
-    system,
-    messages: history.messages.map((message) => ({
-      role: message.role,
-      content: message.text,
-    })),
-    tools,
-    pseudonymousUserId: await pseudonymousUserId(uid),
-  });
+  const request = buildProviderRequest(
+    model,
+    {
+      system,
+      messages: history.messages.map((message) => ({
+        role: message.role,
+        content: message.text,
+      })),
+      tools,
+      pseudonymousUserId: await pseudonymousUserId(uid),
+    },
+    tactics,
+  );
   return { request, history };
 }
 
@@ -651,6 +663,8 @@ export async function runAssistantTurn(
   options: AssistantTurnOptions,
 ): Promise<AssistantTurnResult> {
   const model = deps.model ?? ASSISTANT_MODELS[ASSISTANT_MODEL_ID];
+  // Every tactic value the turn reads comes from here (GRV-110).
+  const tactics = resolveTactics(deps.tactics);
   const limits = deps.limits ?? ASSISTANT_CALL_LIMITS;
   const sleep = deps.sleep ?? defaultSleep;
   const guardLimits = deps.guardLimits ?? ASSISTANT_LIMITS;
@@ -737,6 +751,7 @@ export async function runAssistantTurn(
     const idStem = (deps.idStem ?? createIdStem)();
     const prepared = await prepare(
       model,
+      tactics,
       uid,
       turn,
       idStem,

@@ -11,6 +11,11 @@ import {
   ASSISTANT_MODELS,
   type AssistantModelId,
 } from "../config";
+import {
+  parseTacticAssignment,
+  type TacticOverrides,
+  type TacticValues,
+} from "../tactics";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { DEFAULT_TURN_TIMEOUT_MS, type EvalRecord } from "./run";
 import { type Scorecard, type ScorecardSource, scorecardOf } from "./scorecard";
@@ -37,6 +42,8 @@ export interface EvalCliOptions {
   readonly turnTimeoutMs: number;
   /** The most steps a turn may take (`steps.ts`); null for production's. */
   readonly maxSteps: number | null;
+  /** `--tactic id=value`, any number of them (GRV-110); the rest at production's default. */
+  readonly tactics: TacticOverrides;
 }
 
 export type ParsedEvalArgs =
@@ -51,7 +58,7 @@ export class EvalUsageError extends Error {
   }
 }
 
-export const EVAL_USAGE = `Usage: bun run assistant:eval -- [case ...] [--set ${EVAL_SELECTIONS.join("|")}] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS] [--steps N]`;
+export const EVAL_USAGE = `Usage: bun run assistant:eval -- [case ...] [--set ${EVAL_SELECTIONS.join("|")}] [--runs N] [--model ID] [--out DIR] [--replay REPORT] [--from-transcript FILE] [--baseline REPORT] [--concurrency N] [--timeout SECONDS] [--steps N] [--tactic ID=VALUE ...]`;
 
 const DEFAULT_TURN_TIMEOUT_SECONDS = DEFAULT_TURN_TIMEOUT_MS / 1000;
 
@@ -81,6 +88,7 @@ export function parseEvalArgs(
   let concurrency = 3;
   let timeoutSeconds = DEFAULT_TURN_TIMEOUT_SECONDS;
   let maxSteps: number | null = null;
+  let tactics: TacticOverrides = {};
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const value = (): string => {
@@ -99,6 +107,7 @@ export function parseEvalArgs(
     else if (arg === "--concurrency") concurrency = Number(value());
     else if (arg === "--timeout") timeoutSeconds = Number(value());
     else if (arg === "--steps") maxSteps = wholeNumber(Number(value()), "--steps");
+    else if (arg === "--tactic") tactics = { ...tactics, ...tactic(value()) };
     else if (arg === "--help" || arg === "-h") {
       return { kind: "help", text: `${EVAL_USAGE}\n\nCases: ${caseList(EVAL_CASES)}` };
     } else if (arg.startsWith("--")) throw new EvalUsageError(`Unknown option ${arg}`);
@@ -134,8 +143,20 @@ export function parseEvalArgs(
       concurrency,
       turnTimeoutMs: timeoutSeconds * 1000,
       maxSteps,
+      tactics,
     },
   };
+}
+
+/** One `--tactic` assignment, or a usage error saying what is wrong with it. */
+function tactic(text: string): TacticOverrides {
+  try {
+    return parseTacticAssignment(text);
+  } catch (error) {
+    throw new EvalUsageError(
+      `--tactic ${text}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 /**
@@ -191,6 +212,9 @@ export function loadBaseline(saved: unknown, path: string): LoadedBaseline {
     generatedAt?: string;
     promptVersion?: string;
     scorecard?: Scorecard;
+    tactics?: TacticValues;
+    /** Written in by hand on a baseline saved before reports named their tactics. */
+    thinkingEffort?: TacticValues["thinkingEffort"];
   };
   if (
     typeof report !== "object" ||
@@ -205,6 +229,9 @@ export function loadBaseline(saved: unknown, path: string): LoadedBaseline {
     generatedAt: report.generatedAt ?? "unknown",
     model: report.model,
     promptVersion: report.promptVersion ?? "unknown",
+    tactics:
+      report.tactics ??
+      (report.thinkingEffort ? { thinkingEffort: report.thinkingEffort } : null),
   };
   if (Array.isArray(report.records)) {
     return {

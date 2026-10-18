@@ -38,6 +38,7 @@
  *   refused by `validateProposal` like any other invalid call.
  */
 import type { AssistantModelProfile } from "./config";
+import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 import type { AssistantToolDefinition } from "./tools";
 
 /** A prompt-cache breakpoint: the prefix up to and including its block is cached. */
@@ -115,7 +116,7 @@ export interface ProviderMessagesRequest {
    */
   readonly tools: ProviderTool[];
   readonly thinking: ProviderThinking;
-  readonly output_config?: { readonly effort: "low" | "medium" | "high" };
+  readonly output_config?: { readonly effort: TacticValues["thinkingEffort"] };
   /** Automatic caching: a breakpoint on the last cacheable block, moving with the turn. */
   readonly cache_control: ProviderCacheControl;
   /** A pseudonymous ID for the account, for the provider's abuse detection. */
@@ -150,10 +151,16 @@ export function providerTools(tools: readonly OfferedTool[]): ProviderTool[] {
   });
 }
 
-/** The request body for one provider call to `model`. */
+/**
+ * The request body for one provider call to `model`, shaped by the turn's
+ * tactics (`tactics.ts`, GRV-110): production's defaults unless an eval or an
+ * experiment says otherwise. An adaptive model thinks as hard as
+ * `thinkingEffort` says; a budget one has no effort to set.
+ */
 export function buildProviderRequest(
   model: AssistantModelProfile,
   parts: ProviderRequestParts,
+  tactics: TacticValues = TACTIC_DEFAULTS,
 ): ProviderMessagesRequest {
   const base = {
     model: model.id,
@@ -170,7 +177,7 @@ export function buildProviderRequest(
       return {
         ...base,
         thinking: { type: "adaptive", display: "summarized" },
-        output_config: { effort: model.thinking.effort },
+        output_config: { effort: tactics.thinkingEffort },
       };
     case "budget":
       return {

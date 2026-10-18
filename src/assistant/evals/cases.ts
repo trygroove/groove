@@ -45,6 +45,7 @@ import {
 } from "./fixtures";
 import { FIXTURE_NAME, jsonFixturesDir, namedFixture } from "./namedFixtures";
 import type { EvalSetId } from "./sets";
+import { EVAL_SPLITS, type EvalSplit } from "./splits";
 import type { ExportedTranscriptCase, TranscriptCaseFixture } from "./transcriptCase";
 
 /** The capabilities asked once conventionally and once at an extreme (check 6). */
@@ -109,6 +110,11 @@ export interface EvalCase {
   readonly id: string;
   /** The set the scorecard scores it in; the musical one when absent. */
   readonly set?: EvalSetId;
+  /**
+   * Whether experiments train on it or hold it out (GRV-110). A case written
+   * here takes its split from `splits.ts`; a JSON case may name its own.
+   */
+  readonly split?: EvalSplit;
   readonly capability: EvalCapability;
   readonly axis: EvalAxis;
   /** The producer's words, sent as the turn's last message. */
@@ -571,6 +577,7 @@ const evalSelectionSchema = z.union([
  */
 export const jsonEvalCaseSchema = z.strictObject({
   id: z.string().regex(FIXTURE_NAME, "lower-case words joined by hyphens"),
+  split: z.enum(EVAL_SPLITS).optional(),
   capability: z.enum(EVAL_CAPABILITIES),
   axis: z.enum(["conventional", "extreme"]),
   request: z.string().min(1),

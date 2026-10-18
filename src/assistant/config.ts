@@ -19,12 +19,13 @@
  * do not take the same request (ADR 0006 decision 3):
  *
  * - `adaptive`: `thinking: { type: "adaptive" }` with the depth set by
- *   `output_config.effort`. Claude Sonnet 5.
+ *   `output_config.effort`, which is the `thinkingEffort` tactic's value
+ *   (`tactics.ts`, GRV-110), not the model's. Claude Sonnet 5.
  * - `budget`: `thinking: { type: "enabled", budget_tokens }`, and **no**
  *   `effort`, which this model rejects. Claude Haiku 4.5.
  */
 export type ThinkingShape =
-  | { readonly kind: "adaptive"; readonly effort: "low" | "medium" | "high" }
+  | { readonly kind: "adaptive" }
   | { readonly kind: "budget"; readonly budgetTokens: number };
 
 /** One model the gateway can be pointed at, and the request it takes. */
@@ -58,7 +59,7 @@ export const ASSISTANT_MODELS = {
     id: "claude-sonnet-5",
     contextWindowTokens: 1_000_000,
     maxOutputTokens: 16_000,
-    thinking: { kind: "adaptive", effort: "medium" },
+    thinking: { kind: "adaptive" },
     priceUsdPerMillionTokens: { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
   },
   "claude-haiku-4-5": {

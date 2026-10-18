@@ -290,8 +290,10 @@ describe("compareScorecards", () => {
       generatedAt: "then",
       model: "m",
       promptVersion: "p",
+      tactics: { thinkingEffort: "low" },
     });
     expect(lines).toContain("### Musical capability");
+    expect(lines.join("\n")).toContain("tactics thinkingEffort=low (default medium)");
     expect(lines).toContain("### Basic production actions");
     expect(comparisonConsoleLines(compared)).toContain("  Basic production actions:");
     // A baseline with sets is compared set by set as well.

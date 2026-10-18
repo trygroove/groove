@@ -17,6 +17,7 @@ import {
   heavySetLines,
   secondaryLines,
   setLines,
+  tacticsText,
 } from "./scorecardMarkdown";
 
 /** A baseline to print the scorecard against. */
@@ -158,6 +159,7 @@ function numberLines(
     "",
     `- Run: ${report.generatedAt}`,
     `- Model: \`${report.model}\``,
+    `- Tactics: ${tacticsText(report.tactics)}`,
     `- Prompt version: \`${report.promptVersion}\``,
     `- Tool set version: ${report.toolsetVersion}`,
     `- Runs per case: ${report.runsPerCase}; cases: ${report.caseIds.length}; turns: ${report.scorecard.headline.turns}; errored turns: ${report.summary.errored.total}`,
