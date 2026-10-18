@@ -78,6 +78,7 @@
     "test:watch": "vitest --project=domain --project=audio --project=ui --project=data --project=platform --project=functions",
     "test:ui": "vitest --ui",
     "assistant:eval": "bun scripts/eval-assistant.ts",
+    "assistant:experiment": "bun scripts/assistant-experiment.ts",
     "assistant:try": "bun scripts/assistant-try.ts",
     "assistant:fixture": "bun scripts/access/assistantFixture.ts",
     "test:emulator": "firebase emulators:exec --only firestore,storage --project demo-solid-groove \"vitest run --config tests/emulator/vitest.config.ts\"",
