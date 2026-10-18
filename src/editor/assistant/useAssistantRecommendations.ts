@@ -180,9 +180,15 @@ export interface AssistantRecommendations {
   packInProject(entryId: string): boolean;
   /**
    * Whether a card has been decided (GRV-129): kept, dismissed, refused, or
-   * asked for again, so the panel can show the next one. Reactive.
+   * asked for again, so the panel can show the next one. A keep undone is not:
+   * the card is the one to decide again. Reactive.
    */
   decided(entryId: string): boolean;
+  /**
+   * The card is held off screen again behind one taken back (GRV-129): a
+   * sound it is trying goes back, and the editor with it.
+   */
+  hold(entryId: string): void;
   /** A recommendation arrived in a reply: check it against `library` and show it. */
   receive(
     entryId: string,
@@ -263,13 +269,29 @@ export function useAssistantRecommendations(
     const aim = aimOf(card);
     return aim === MISSING_SLOT ? null : aim;
   }
-  /** The card as shown: with the slot it would try on now, or missing one. */
+  /**
+   * The card as shown: with the slot it would try on now, or missing one. A
+   * card given a slot is missing it while the song does not have it (an undo
+   * took the pad away) and offers Try on it again once it does (a redo).
+   */
   function asShown(card: RecommendationCard | undefined): RecommendationCard | undefined {
-    if (!card || card.slot || !card.recommendation) return card;
+    if (!card || !card.recommendation) return card;
+    if (card.slot) {
+      const project = options.project();
+      const gone = offersTry(card) && project !== null && !slotExists(project, card.slot);
+      return gone === card.missing ? card : { ...card, missing: gone };
+    }
     const aim = aimOf(card);
     if (aim === MISSING_SLOT) return card.missing ? card : { ...card, missing: true };
     const shown = card.missing ? { ...card, missing: false } : card;
     return aim ? { ...shown, slot: aim } : shown;
+  }
+
+  /** Whether the card offers Try: shown, put back or undone. */
+  function offersTry(card: RecommendationCard): boolean {
+    return (
+      card.status === "ready" || card.status === "put-back" || card.status === "undone"
+    );
   }
 
   // Hearing a sound and the pack demo share one engine, made on first use.
@@ -374,14 +396,7 @@ export function useAssistantRecommendations(
   function tryOn(entryId: string): void {
     const card = cards().get(entryId);
     const entry = entries.get(entryId);
-    if (!card || !entry || !card.sound) return;
-    if (
-      card.status !== "ready" &&
-      card.status !== "put-back" &&
-      card.status !== "undone"
-    ) {
-      return;
-    }
+    if (!card || !entry || !card.sound || !offersTry(card)) return;
     const slot = slotOf(card);
     if (!slot) return;
     const project = options.project();
@@ -513,7 +528,6 @@ export function useAssistantRecommendations(
     if (!card) return false;
     switch (card.status) {
       case "kept":
-      case "undone":
       case "dismissed":
       case "invalid":
         return true;
@@ -522,6 +536,17 @@ export function useAssistantRecommendations(
       default:
         return false;
     }
+  }
+
+  function hold(entryId: string): void {
+    const card = cards().get(entryId);
+    const entry = entries.get(entryId);
+    if (!card || !entry || card.status !== "trying" || card.keeping) return;
+    const location = entry.location;
+    entry.location = null;
+    endTry(entryId);
+    if (location) controls.restoreView(location);
+    update(entryId, { status: "put-back", returnView: null });
   }
 
   function stopDemo(): void {
@@ -665,6 +690,7 @@ export function useAssistantRecommendations(
     trying: () => [...cards().values()].some((card) => card.status === "trying"),
     packInProject: (entryId) => packInProjectNow(cards().get(entryId)),
     decided,
+    hold,
     receive,
     tryOn,
     keep,
