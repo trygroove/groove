@@ -76,14 +76,22 @@ describe("TelemetryDisclosure (PRD OPS-02, section 10 Security and privacy)", ()
       expect(screen.queryByText(/masked out as the recording is made/)).toBeNull();
     });
 
-    // ADR 0003 decision 2: retained first-party, never sent to a third-party
-    // processor, and deletion follows the project.
-    it("discloses that assistant conversations are stored, and stay with us", () => {
+    // ADR 0003 decision 2, as amended by GRV-126: a kept conversation also
+    // goes to PostHog while product analytics is allowed, never to Sentry, and
+    // PostHog's copies expire rather than being deleted. It must agree with
+    // the Cue settings disclosure (`retentionCopy.ts`), never contradict it.
+    it("discloses that kept assistant conversations also go to PostHog", () => {
       setup();
       const body =
-        screen.getByText(/conversations with Cue are stored/).textContent ?? "";
-      expect(body).toContain("never sent to PostHog or Sentry");
-      expect(body).toContain("deleting a project deletes its conversations");
+        screen.getByText(/Groove keeps your\s+conversations with Cue/).textContent ?? "";
+      expect(body).toContain("also goes to PostHog");
+      expect(body).toContain("only if you allow product analytics");
+      expect(body).toContain("never sent to Sentry");
+      expect(body).toContain("expire under PostHog's data");
+      expect(screen.queryByText(/never sent to PostHog/)).toBeNull();
+      expect(
+        screen.queryByText(/deleting a project deletes its conversations/),
+      ).toBeNull();
     });
 
     it("turns replay off with the same single control (ADR 0002 decision 4)", async () => {

@@ -105,13 +105,17 @@ const TelemetryDisclosure: Component<{
         </p>
         <p>
           Names and typed text stay hidden. Event reports, error reports, and replays
-          carry no project, track, or clip names, no audio, no messages to{" "}
-          {ASSISTANT_NAME}, and no text you type.
+          carry no project, track, or clip names, no audio, and no text you type. The one
+          exception is your conversations with {ASSISTANT_NAME}, below.
         </p>
         <p>
-          Your conversations with {ASSISTANT_NAME} are stored with your project so we can
-          tell whether it is helping. They stay with us — never sent to PostHog or Sentry
-          — and deleting a project deletes its conversations.
+          Unless you tell it not to in {ASSISTANT_NAME} settings, Groove keeps your
+          conversations with {ASSISTANT_NAME} so we can tell whether it is helping. While
+          it does, and only if you allow product analytics, each one — together with what
+          is sent to Anthropic for it — also goes to PostHog, so we can see where{" "}
+          {ASSISTANT_NAME} goes wrong. They are never sent to Sentry. Copies in PostHog
+          are not deleted when Groove deletes its own: they expire under PostHog's data
+          retention.
         </p>
         <label class="telemetry-disclosure-toggle">
           <input
