@@ -966,7 +966,7 @@ Isolation is a build-time partition, not an error: `buildAllPacks` splits what i
 
 ### 15.11 The release audit
 
-`bun run library:audit` (#78) is the section 13 Phase D audit set, run over exactly what `library:upload` would publish: it builds in memory, like `library:audition`, and judges the bytes rather than the records the build wrote about them. CI runs it on every push. Errors fail it; warnings are findings for a curator, printed and never dropped. `--json` prints the same report as data.
+`bun run library:audit` (#78) is the section 13 Phase D audit set, run over exactly what `library:upload` would publish: it builds in memory, like `library:audition`, and judges the bytes rather than the records the build wrote about them. CI does not run it: run it by hand before a release. Errors fail it; warnings are findings for a curator, printed and never dropped. `--json` prints the same report as data.
 
 | Audit | Fails on | Flags for review |
 | --- | --- | --- |

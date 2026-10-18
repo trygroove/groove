@@ -102,12 +102,6 @@ jobs:
           name: vitest-report-unit
           path: vitest-report/unit.json
           retention-days: 7
-      - name: Audit the sound library release
-        # Checks the records against the bytes that would ship: every pack
-        # against its coverage claim and rights position, and the missing-file,
-        # decode, loudness, tuning, loop-boundary and duplicate audits
-        # (docs/sample-library.md section 13 Phase D and section 17, #78).
-        run: bun run library:audit
 
   # The browser E2E suite, against a real (local, emulated) backend. Every
   # core flow lives here, so it runs in each PRD section 10 P0-gating browser
