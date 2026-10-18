@@ -31,11 +31,20 @@ import { createStarterProject } from "../starterProject";
 import { createAssistantLibrary, libraryContext } from "./assistantLibrary";
 import {
   editTouchesSlot,
+  MISSING_SLOT,
+  type RecommendationAim,
+  type RecommendationSlot,
   recommendationSlot,
   resolveRecommendation,
   slotExists,
   soundToTry,
 } from "./recommendationCardModel";
+
+/** A slot `recommendationSlot` aimed at, or a failure when it found none. */
+function slotted(aim: RecommendationAim): RecommendationSlot {
+  if (aim === null || aim === MISSING_SLOT) throw new Error(`no slot: ${aim}`);
+  return aim;
+}
 
 const project = createStarterProject("uid-1");
 const bd = project.song.tracks[0] as Track;
@@ -66,6 +75,7 @@ describe("recommendationSlot (GRV-23)", () => {
     expect(slot).toEqual({
       target: { kind: "pad", trackId: bd.id, padId: kickPad.id },
       label: "BD",
+      heading: "BD · BD",
       address: controlAddress(kickPad.id, CONTROL_PARTS.sample),
       preview: { trackId: bd.id, padId: kickPad.id },
     });
@@ -80,8 +90,8 @@ describe("recommendationSlot (GRV-23)", () => {
       null,
       withSelectedPad(emptyPadSelection, bd.id, snareId),
     );
-    expect(slot?.label).toBe("SD");
-    expect(slot?.preview).toEqual({ trackId: bd.id, padId: snareId });
+    expect(slotted(slot).label).toBe("SD");
+    expect(slotted(slot).preview).toEqual({ trackId: bd.id, padId: snareId });
   });
 
   it("tries on the pad a recommendation names, not the selected one (a kick on BD)", () => {
@@ -93,42 +103,92 @@ describe("recommendationSlot (GRV-23)", () => {
     if (!bdPad || !sdPad) throw new Error("the kit lacks BD or SD");
     const sdSelected = withSelectedPad(emptyPadSelection, drums.id, sdPad.id);
     const slot = recommendationSlot(kitProject, drums.id, bdPad.id, null, sdSelected);
-    expect(slot?.label).toBe("BD");
-    expect(slot?.target).toEqual({ kind: "pad", trackId: drums.id, padId: bdPad.id });
-    expect(slot?.preview).toEqual({ trackId: drums.id, padId: bdPad.id });
-    // Naming no pad, or one the kit lacks, falls back to the selected pad.
-    expect(recommendationSlot(kitProject, drums.id, null, null, sdSelected)?.label).toBe(
-      "SD",
-    );
+    expect(slotted(slot).label).toBe("BD");
+    expect(slotted(slot).target).toEqual({
+      kind: "pad",
+      trackId: drums.id,
+      padId: bdPad.id,
+    });
+    expect(slotted(slot).preview).toEqual({ trackId: drums.id, padId: bdPad.id });
+    // Naming no pad falls back to the selected pad; naming one the kit lacks
+    // does not (GRV-129): that pad is missing, not the selected one.
     expect(
-      recommendationSlot(kitProject, drums.id, "pad_gone", null, sdSelected)?.label,
-    ).toBe("SD");
+      recommendationSlot(kitProject, drums.id, null, null, sdSelected),
+    ).toMatchObject({ label: "SD" });
+    expect(recommendationSlot(kitProject, drums.id, "pad_gone", null, sdSelected)).toBe(
+      "missing",
+    );
   });
 
   it("ignores a pad named on a sampler track", () => {
     const slice = createSliceFixtureProject();
     const sampler = slice.song.tracks[0] as Track;
     const slot = recommendationSlot(slice, sampler.id, "pad_x", null, emptyPadSelection);
-    expect(slot?.target).toEqual({ kind: "sampler", trackId: sampler.id });
+    expect(slotted(slot).target).toEqual({ kind: "sampler", trackId: sampler.id });
   });
 
   it("tries on a sampler's sample, named for its track", () => {
     const slice = createSliceFixtureProject();
     const sampler = slice.song.tracks[0] as Track;
     const slot = recommendationSlot(slice, sampler.id, null, null, emptyPadSelection);
-    expect(slot?.target).toEqual({ kind: "sampler", trackId: sampler.id });
-    expect(slot?.address).toEqual(controlAddress(sampler.id, CONTROL_PARTS.sample));
-    expect(slot?.label).toBe(sampler.name);
+    expect(slotted(slot).target).toEqual({ kind: "sampler", trackId: sampler.id });
+    expect(slotted(slot).address).toEqual(
+      controlAddress(sampler.id, CONTROL_PARTS.sample),
+    );
+    expect(slotted(slot).label).toBe(sampler.name);
   });
 
-  it("uses the selected track when the recommendation names none, or one the song lacks", () => {
-    expect(recommendationSlot(project, null, null, bd, emptyPadSelection)?.label).toBe(
-      "BD",
+  it("uses the selected track when the recommendation names none", () => {
+    expect(recommendationSlot(project, null, null, bd, emptyPadSelection)).toMatchObject({
+      label: "BD",
+    });
+    expect(recommendationSlot(project, null, null, null, emptyPadSelection)).toBeNull();
+  });
+
+  it("never falls back to the selection for a track or pad the song lacks (GRV-129)", () => {
+    expect(recommendationSlot(project, "trk_gone", null, bd, emptyPadSelection)).toBe(
+      "missing",
     );
     expect(
-      recommendationSlot(project, "trk_gone", null, bd, emptyPadSelection)?.label,
-    ).toBe("BD");
-    expect(recommendationSlot(project, null, null, null, emptyPadSelection)).toBeNull();
+      recommendationSlot(project, "trk_gone", kickPad.id, bd, emptyPadSelection),
+    ).toBe("missing");
+    // A pad named with no track: on whichever track has it, or missing.
+    expect(recommendationSlot(project, null, "pad_gone", bd, emptyPadSelection)).toBe(
+      "missing",
+    );
+    expect(
+      recommendationSlot(project, null, kickPad.id, null, emptyPadSelection),
+    ).toMatchObject({ target: { kind: "pad", trackId: bd.id, padId: kickPad.id } });
+  });
+
+  it("finds a pad a proposal adds once the proposal is applied, not before (GRV-129)", () => {
+    const { project: before, snareId } = withSnarePad();
+    const withoutSnare = {
+      ...before,
+      song: {
+        ...before.song,
+        tracks: before.song.tracks.map((track) =>
+          track.id === bd.id && track.instrument?.kind === "drumMachine"
+            ? {
+                ...track,
+                instrument: {
+                  ...track.instrument,
+                  pads: track.instrument.pads.filter((pad) => pad.id !== snareId),
+                },
+              }
+            : track,
+        ),
+      },
+    };
+    expect(recommendationSlot(withoutSnare, bd.id, snareId, bd, emptyPadSelection)).toBe(
+      "missing",
+    );
+    expect(
+      recommendationSlot(before, bd.id, snareId, bd, emptyPadSelection),
+    ).toMatchObject({
+      label: "SD",
+      target: { kind: "pad", trackId: bd.id, padId: snareId },
+    });
   });
 
   it("has no slot on a synth", () => {
@@ -145,7 +205,7 @@ describe("recommendationSlot (GRV-23)", () => {
 
   it("knows when its slot has left the song", () => {
     const slot = recommendationSlot(project, bd.id, null, null, emptyPadSelection);
-    if (!slot) throw new Error("no slot");
+    if (!slot || slot === MISSING_SLOT) throw new Error("no slot");
     expect(slotExists(project, slot)).toBe(true);
     const emptied = {
       ...project,
@@ -212,7 +272,7 @@ describe("editTouchesSlot (GRV-23)", () => {
   it("counts any edit to the pad a sound is tried on: its level and its pitch too", () => {
     const { project: twoPads, snareId } = withSnarePad();
     const slot = recommendationSlot(twoPads, bd.id, kickPad.id, null, emptyPadSelection);
-    if (!slot) throw new Error("no slot");
+    if (!slot || slot === MISSING_SLOT) throw new Error("no slot");
     expect(
       touches(slot, twoPads, setPadParameter(bd.id, kickPad.id, TRACK_VOLUME.id, -1)),
     ).toBe(true);
@@ -252,7 +312,7 @@ describe("editTouchesSlot (GRV-23)", () => {
       null,
       emptyPadSelection,
     );
-    if (!slot) throw new Error("no slot");
+    if (!slot || slot === MISSING_SLOT) throw new Error("no slot");
     expect(
       touches(
         slot,

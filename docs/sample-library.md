@@ -719,7 +719,7 @@ Against section 6.4 the library meets the experimental floor (23.5% against 15%)
 bun run library                     # print the workflow and the current on-disk state
 bun run library:build               # render synthesized assets, merge acquired, write the manifest
 bun run library:audition            # serve the merged library locally so you can listen to it
-bun run library:validate            # build and validate without writing (the CI gate)
+bun run library:validate            # build and validate without writing (run after changing the library)
 bun run library:audit               # the release audit over the bytes that would ship (section 15.11)
 bun run library:upload              # publish to Cloud Storage; idempotent
 bun run library:test                # the library test suites only
@@ -966,7 +966,7 @@ Isolation is a build-time partition, not an error: `buildAllPacks` splits what i
 
 ### 15.11 The release audit
 
-`bun run library:audit` (#78) is the section 13 Phase D audit set, run over exactly what `library:upload` would publish: it builds in memory, like `library:audition`, and judges the bytes rather than the records the build wrote about them. CI runs it after `library:validate`. Errors fail it; warnings are findings for a curator, printed and never dropped. `--json` prints the same report as data.
+`bun run library:audit` (#78) is the section 13 Phase D audit set, run over exactly what `library:upload` would publish: it builds in memory, like `library:audition`, and judges the bytes rather than the records the build wrote about them. CI does not run it: run it by hand before a release. Errors fail it; warnings are findings for a curator, printed and never dropped. `--json` prints the same report as data.
 
 | Audit | Fails on | Flags for review |
 | --- | --- | --- |

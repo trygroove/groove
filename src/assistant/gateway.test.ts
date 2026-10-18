@@ -5,7 +5,10 @@ import {
   setParameter,
   setTrackFlag,
 } from "../commands";
-import { createReferenceProject } from "../domain/fixtures";
+import {
+  createDenseStepFixtureProject,
+  createReferenceProject,
+} from "../domain/fixtures";
 import { TRACK_VOLUME } from "../domain/parameters";
 import { previewCommands } from "../editor/assistant/askReferences";
 import { buildAssistantLibrary } from "../testing/assistantLibrary";
@@ -54,6 +57,7 @@ import { type AssistantTurnLog, TURN_LOG_KEYS } from "./telemetry";
 import {
   ASSISTANT_TOOLSET_VERSION,
   assistantTools,
+  CREATE_EXAMPLES,
   EXPLAIN_TOOL_NAME,
   toolNameFor,
 } from "./tools";
@@ -1632,5 +1636,147 @@ describe("runAssistantTurn: compact notes (GRV-131)", () => {
     // A preview whose notes are not notes is refused, as any bad call is.
     expect(broken.calls).toEqual([notANote]);
     expect(previewCommands(project, broken)).toBeNull();
+  });
+});
+
+describe("runAssistantTurn: where a recommendation is aimed (GRV-129)", () => {
+  // A kit of BD, SD and HH: its track and pads are in the context.
+  const project = createDenseStepFixtureProject();
+  const [kit] = project.song.tracks;
+  if (kit?.instrument?.kind !== "drumMachine") throw new Error("not a kit");
+  const [bdPad] = kit.instrument.pads;
+  const kitRequest = (overrides: Partial<AssistantTurnRequest> = {}) =>
+    request({
+      projectRevision: project.metadata.revision,
+      context: buildAssistantPayload(project),
+      library: buildAssistantLibrary(),
+      ...overrides,
+    });
+  const recommend = (target: { trackId?: string; padId?: string }) => ({
+    name: RECOMMEND_SOUNDS_TOOL,
+    input: {
+      packId: "pak_drums00000000000000",
+      soundIds: ["snare-dusty"],
+      reason: "A snare for the backbeat.",
+      ...target,
+    },
+  });
+  const explainCall = {
+    name: EXPLAIN_TOOL_NAME,
+    input: { goal: "A backbeat", technique: "A snare on 2 and 4" },
+  };
+  const newKit = {
+    ...CREATE_EXAMPLES.track,
+    id: "trk_SnareHat0000000000001",
+    name: "Snare & Hat",
+    instrument: {
+      kind: "drumMachine",
+      parameters: {},
+      pads: [
+        {
+          id: "pad_Snare0000000000000001",
+          name: "Snare",
+          assetId: null,
+          chokeGroup: null,
+          parameters: {},
+          mixer: { volume: 0, pan: 0, muted: false, soloed: false },
+        },
+      ],
+    },
+  };
+  const createKit = { name: "track_create", input: newKit };
+
+  it("refuses a recommendation for a track neither the project nor the turn has, and keeps the corrected one", async () => {
+    const h = harness(
+      [
+        toolUseEvents("A snare.", [
+          recommend({ trackId: "trk_Nowhere00000000000001" }),
+          explainCall,
+        ]),
+      ],
+      {},
+      [toolUseEvents("Fixed.", [recommend({ trackId: kit.id, padId: bdPad?.id })])],
+    );
+    const result = await run(h, kitRequest());
+    expect(h.provider.requests).toHaveLength(2);
+    const answers = h.provider.requests[1].messages.at(-1);
+    expect(answers?.content).toEqual([
+      expect.objectContaining({ tool_use_id: "toolu_1", is_error: true }),
+      expect.objectContaining({ tool_use_id: "toolu_2", content: "Noted." }),
+    ]);
+    expect(JSON.stringify(answers?.content)).toContain("trk_Nowhere00000000000001");
+    const recommended = result.proposal?.calls.filter(
+      (entry) => entry.name === RECOMMEND_SOUNDS_TOOL,
+    );
+    expect(recommended?.map((entry) => entry.input)).toEqual([
+      recommend({ trackId: kit.id, padId: bdPad?.id }).input,
+    ]);
+  });
+
+  it("refuses a pad the named track does not have", async () => {
+    const h = harness(
+      [
+        toolUseEvents("A snare.", [
+          recommend({ trackId: kit.id, padId: "pad_Nowhere00000000000001" }),
+          explainCall,
+        ]),
+      ],
+      {},
+      [toolUseEvents("Fixed.", [recommend({ trackId: kit.id, padId: bdPad?.id })])],
+    );
+    await run(h, kitRequest());
+    expect(h.provider.requests).toHaveLength(2);
+    expect(h.provider.requests[1].messages.at(-1)?.content).toEqual([
+      expect.objectContaining({ tool_use_id: "toolu_1", is_error: true }),
+      expect.objectContaining({ tool_use_id: "toolu_2" }),
+    ]);
+  });
+
+  it("accepts a pad a track_create made earlier in the same turn, in one step", async () => {
+    const aimed = recommend({ trackId: newKit.id, padId: "pad_Snare0000000000000001" });
+    const h = harness([toolUseEvents("A snare.", [createKit, aimed, explainCall])]);
+    const result = await run(h, kitRequest());
+    expect(h.provider.requests).toHaveLength(1);
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([
+      "track_create",
+      RECOMMEND_SOUNDS_TOOL,
+      EXPLAIN_TOOL_NAME,
+    ]);
+  });
+
+  it("accepts a pad a track_create made in an earlier step", async () => {
+    const aimed = recommend({ trackId: newKit.id, padId: "pad_Snare0000000000000001" });
+    const h = harness([toolUseEvents("A kit.", [createKit])], {}, [
+      toolUseEvents("A snare.", [aimed, explainCall]),
+    ]);
+    const result = await run(h, kitRequest());
+    expect(h.provider.requests).toHaveLength(2);
+    expect(h.provider.requests[1].messages.at(-1)?.content).toEqual([
+      { type: "tool_result", tool_use_id: "toolu_1", content: ADDED_RESULT },
+    ]);
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([
+      "track_create",
+      RECOMMEND_SOUNDS_TOOL,
+      EXPLAIN_TOOL_NAME,
+    ]);
+  });
+
+  it("refuses a recommendation aimed at a track created only later in the turn", async () => {
+    const aimed = recommend({ trackId: newKit.id, padId: "pad_Snare0000000000000001" });
+    const h = harness([toolUseEvents("A snare.", [aimed, createKit])], {}, [
+      toolUseEvents("Again.", [aimed, explainCall]),
+    ]);
+    await run(h, kitRequest());
+    expect(h.provider.requests[1].messages.at(-1)?.content).toEqual([
+      expect.objectContaining({ tool_use_id: "toolu_1", is_error: true }),
+      { type: "tool_result", tool_use_id: "toolu_2", content: ADDED_RESULT },
+    ]);
+  });
+
+  it("lets a recommendation that names no track or pad through: it is for the selection", async () => {
+    const h = harness([toolUseEvents("A snare.", [recommend({}), explainCall])]);
+    const result = await run(h, kitRequest());
+    expect(h.provider.requests).toHaveLength(1);
+    expect(result.proposal?.calls).toHaveLength(2);
   });
 });

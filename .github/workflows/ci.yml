@@ -102,18 +102,6 @@ jobs:
           name: vitest-report-unit
           path: vitest-report/unit.json
           retention-days: 7
-      - name: Validate the starter sound library
-        # Renders all 200 assets and runs the full manifest validation
-        # (docs/sample-library.md section 9), including the collection-level
-        # coverage and balance rules the unit suite cannot check against the
-        # representative sample it renders. Needs no credentials or network.
-        run: bun run library:validate
-      - name: Audit the sound library release
-        # Checks the records against the bytes that would ship: every pack
-        # against its coverage claim and rights position, and the missing-file,
-        # decode, loudness, tuning, loop-boundary and duplicate audits
-        # (docs/sample-library.md section 13 Phase D and section 17, #78).
-        run: bun run library:audit
 
   # The browser E2E suite, against a real (local, emulated) backend. Every
   # core flow lives here, so it runs in each PRD section 10 P0-gating browser

@@ -447,6 +447,31 @@ function bdTrack(context: DomainFactoryContext, volume: number) {
 }
 
 /**
+ * A new project as "New Project" makes it (`createStarterProject`, GRV-129):
+ * the BD drum machine with its one BD pad and a bar of four-on-the-floor
+ * kicks placed once, by seeded IDs so every run and its judging read the same.
+ */
+export function createStarterFixtureProject(): Project {
+  const context = evalContext("eval-starter");
+  const bd = bdTrack(context, 0);
+  const song: Song = {
+    ...createEmptySong(120),
+    master: createNewProjectMaster(context),
+    tracks: [bd.track],
+    placements: [
+      createPlacement(context, {
+        clipId: bd.clip.id,
+        trackId: bd.track.id,
+        startTicks: 0,
+        durationTicks: TICKS_PER_BAR,
+      }),
+    ],
+    assets: [bd.asset],
+  };
+  return project(context, "Mood Energy", song, [bd.clip]);
+}
+
+/**
  * Only the BD drum-machine track, at `volumeDb` (0 dB unless said), with a
  * bar of kicks placed for four bars: what QA sent its requests against.
  */

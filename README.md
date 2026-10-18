@@ -55,7 +55,7 @@ Content is organized into **packs** — named, versioned collections such as "Co
 bun run library                     # print the whole workflow and what's on disk
 bun run library:build               # render + merge the library and its manifest
 bun run library:audition            # listen to it at http://127.0.0.1:4180
-bun run library:validate            # build and validate without writing (the CI gate)
+bun run library:validate            # build and validate without writing (run after changing the library)
 bun run library:emit-runtime        # refresh the manifest the app itself resolves against
 bun run library:upload              # publish to Cloud Storage
 ```

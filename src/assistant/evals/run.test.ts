@@ -154,7 +154,7 @@ describe("runEvals", () => {
     const markdown = renderMarkdown(report);
     expect(markdown).toContain("**Errored turns: 1 of 2**");
     expect(markdown).toContain(
-      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | 0/0 | - | - | - | 0/0 | 1 |",
+      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | 0/0 | - | - | - | 0/0 | - | 1 |",
     );
     expect(markdown).toContain(
       "**Run 2** (0 s): errored, not judged: provider_error: The assistant could not take that request. (provider: rejected, HTTP 400)",
@@ -670,5 +670,109 @@ describe("renderMarkdown", () => {
   it("formats a tally over the proposals a check could judge", () => {
     expect(formatTally({ pass: 2, fail: 1, skip: 0 })).toBe("2/3 (67%)");
     expect(formatTally(undefined)).toBe("n/a");
+  });
+});
+
+describe("the sound-pick cases (GRV-129)", () => {
+  const find = (id: string) => EVAL_CASES.find((entry) => entry.id === id) as EvalCase;
+  const base = { durationMs: 1, error: null, stopReason: null, text: "" };
+  const KIT = "trk_EvalSnareHat000000001";
+  const SNARE = "pad_EvalSnare000000000001";
+  const HAT = "pad_EvalHat00000000000001";
+  const pad = (id: string, name: string) => ({
+    id,
+    name,
+    assetId: null,
+    chokeGroup: null,
+    parameters: {},
+    mixer: { volume: 0, pan: 0, muted: false, soloed: false },
+  });
+  const createKit = {
+    name: "track_create",
+    input: {
+      id: KIT,
+      name: "Snare & Hat",
+      color: "#808080",
+      order: 1,
+      type: "instrument",
+      instrument: {
+        kind: "drumMachine",
+        parameters: {},
+        pads: [pad(SNARE, "Snare"), pad(HAT, "Hat")],
+      },
+      devices: [],
+      sendConfig: [],
+      mixer: { volume: 0, pan: 0, muted: false, soloed: false },
+    },
+  };
+  const recommend = (soundId: string, trackId: string, padId: string) => ({
+    name: "recommend_sounds",
+    input: {
+      packId: "pak_SdlN_OazweXrwury0j27Y",
+      soundIds: [soundId],
+      reason: "Fits.",
+      trackId,
+      padId,
+    },
+  });
+
+  it("sends the library with a case that asks for it, and not with one that does not", async () => {
+    const provider = createScriptedAssistantProvider([
+      replyEvents(["Sure."]),
+      replyEvents(["Sure."]),
+    ]);
+    await runEvals({
+      provider,
+      cases: [find("snare-hats-sounds"), glue],
+      runs: 1,
+      now: fixedNow,
+    });
+    const offered = provider.requests.map((request) =>
+      request.tools.some((tool) => tool.name === "recommend_sounds"),
+    );
+    expect(offered).toEqual([true, false]);
+  });
+
+  it("judges the changes without the recommendations, and each sound on its own pad", () => {
+    const evalCase = find("snare-hats-sounds");
+    const project = evalCase.fixture();
+    const bd = project.song.tracks[0];
+    const kick = bd?.instrument?.kind === "drumMachine" ? bd.instrument.pads[0] : null;
+    if (!bd || !kick) throw new Error("the starter fixture has no BD pad");
+    const proposal = {
+      baseRevision: project.metadata.revision,
+      toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+      calls: [
+        createKit,
+        recommend("sg-one-shot-drums-kick-0002", bd.id, kick.id),
+        recommend("sg-one-shot-drums-snare-0001", KIT, SNARE),
+        recommend("sg-one-shot-drums-closed-hat-0001", KIT, HAT),
+      ],
+    };
+    const record = evaluateTurn(evalCase, 1, { ...base, proposal } as never);
+    expect(record.checks.valid?.status).toBe("pass");
+    expect(record.checks.recommendationTargets?.status).toBe("pass");
+  });
+
+  it("fails a snare and a hat both aimed at BD's pad, as the panel used to land them", () => {
+    const evalCase = find("first-beat-lesson");
+    const project = evalCase.fixture();
+    const bd = project.song.tracks[0];
+    const kick = bd?.instrument?.kind === "drumMachine" ? bd.instrument.pads[0] : null;
+    if (!bd || !kick) throw new Error("the starter fixture has no BD pad");
+    const proposal = {
+      baseRevision: project.metadata.revision,
+      toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+      calls: [
+        createKit,
+        recommend("sg-one-shot-drums-snare-0001", bd.id, kick.id),
+        recommend("sg-one-shot-drums-closed-hat-0001", bd.id, kick.id),
+      ],
+    };
+    const record = evaluateTurn(evalCase, 1, { ...base, proposal } as never);
+    expect(record.checks.recommendationTargets).toEqual({
+      status: "fail",
+      detail: expect.stringMatching(/hat and the snare are both aimed at/),
+    });
   });
 });

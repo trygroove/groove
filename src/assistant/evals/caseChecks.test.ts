@@ -19,8 +19,10 @@ import {
   checkOutcome,
   checkPadSound,
   checkPointsToGenerate,
+  checkRecommendationTargets,
   runCaseCheck,
 } from "./caseChecks";
+import { evalLibrary } from "./evalLibrary";
 import { createTechnoDrumsProject, createTechnoLoopProject } from "./fixtures";
 
 const context = (seed: string) =>
@@ -418,6 +420,91 @@ describe("runCaseCheck", () => {
       nothingElse: "fail",
       // The fixture's pad clip is placed.
       clipsPlaced: "pass",
+      // GRV-129's: the turn recommended no sounds.
+      recommendationTargets: "fail",
     });
+  });
+});
+
+describe("checkRecommendationTargets (GRV-129)", () => {
+  const project = createTechnoDrumsProject();
+  const drums = project.song.tracks[0];
+  const pads = drums?.instrument?.kind === "drumMachine" ? drums.instrument.pads : [];
+  const library = evalLibrary();
+  const recommend = (soundId: string, target: { trackId?: string; padId?: string }) => ({
+    id: `toolu_${soundId}`,
+    name: "recommend_sounds",
+    input: {
+      packId: "pak_SdlN_OazweXrwury0j27Y",
+      soundIds: [soundId],
+      reason: "Fits.",
+      ...target,
+    },
+  });
+
+  it("fails a turn that recommended nothing", () => {
+    expect(checkRecommendationTargets(project, [], library)).toEqual({
+      status: "fail",
+      detail: "The turn recommended no sounds",
+    });
+  });
+
+  it("passes a kick, a snare and a hat each on a pad of their own", () => {
+    const [kick, snare, hat] = pads;
+    const result = checkRecommendationTargets(
+      project,
+      [
+        recommend("sg-one-shot-drums-kick-0002", { trackId: drums?.id, padId: kick?.id }),
+        recommend("sg-one-shot-drums-snare-0001", {
+          trackId: drums?.id,
+          padId: snare?.id,
+        }),
+        recommend("sg-one-shot-drums-closed-hat-0001", {
+          trackId: drums?.id,
+          padId: hat?.id,
+        }),
+      ],
+      library,
+    );
+    expect(result.status).toBe("pass");
+  });
+
+  it("fails one aimed at a track the song does not have", () => {
+    const result = checkRecommendationTargets(
+      project,
+      [
+        recommend("sg-one-shot-drums-snare-0001", {
+          trackId: "trk_Nowhere00000000000001",
+        }),
+      ],
+      library,
+    );
+    expect(result.status).toBe("fail");
+    expect(result.detail).toMatch(/no track/);
+  });
+
+  it("fails two parts on one pad, and on the selected pad when neither names one", () => {
+    const [kick] = pads;
+    const onKick = checkRecommendationTargets(
+      project,
+      [
+        recommend("sg-one-shot-drums-kick-0002", { trackId: drums?.id, padId: kick?.id }),
+        recommend("sg-one-shot-drums-snare-0001", {
+          trackId: drums?.id,
+          padId: kick?.id,
+        }),
+      ],
+      library,
+    );
+    expect(onKick.detail).toMatch(/snare and the kick are both aimed at/);
+    const unnamed = checkRecommendationTargets(
+      project,
+      [
+        recommend("sg-one-shot-drums-kick-0002", {}),
+        recommend("sg-one-shot-drums-closed-hat-0001", {}),
+      ],
+      library,
+    );
+    expect(unnamed.status).toBe("fail");
   });
 });

@@ -138,6 +138,28 @@ describe("the welcome (GRV-25)", () => {
     }
   });
 
+  it("scrolls Open the studio clear of the screen's bottom edge once saved (GRV-128)", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      renderWelcome();
+      answerEverything();
+      const open = await screen.findByRole("button", { name: OPEN_STUDIO_LABEL });
+      await waitFor(() =>
+        expect(
+          scrollIntoView.mock.contexts.some((element) =>
+            (element as Element).contains(open),
+          ),
+        ).toBe(true),
+      );
+      expect(scrollIntoView).toHaveBeenLastCalledWith(
+        expect.objectContaining({ block: "nearest" }),
+      );
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
   it("sends the typed answer when Enter is pressed in the text box", () => {
     renderWelcome();
     clickAndFlush(option("House"));

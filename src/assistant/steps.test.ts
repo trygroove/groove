@@ -9,6 +9,8 @@ import {
   answerStep,
   continuesAfter,
   expandCalls,
+  goesOnToReaim,
+  misaimedIn,
 } from "./steps";
 import { CREATE_EXAMPLES, EXPLAIN_TOOL_NAME, OFFERED_CLIP_EXAMPLE } from "./tools";
 
@@ -43,6 +45,7 @@ describe("answerStep", () => {
     const remember = other(REMEMBER_TOOL_NAME, "toolu_4");
     const { kept, results } = answerStep(
       [change, wrapped, remember],
+      new Map(),
       createNoteExpander(STEM),
     );
     expect(kept).toEqual([change, remember]);
@@ -61,7 +64,11 @@ describe("compact notes (GRV-131)", () => {
   const compactClip = { id: "toolu_5", name: "clip_create", input: OFFERED_CLIP_EXAMPLE };
 
   it("adds a clip whose notes are arrays, written out as the note events they stand for", () => {
-    const { kept, results } = answerStep([compactClip], createNoteExpander(STEM));
+    const { kept, results } = answerStep(
+      [compactClip],
+      new Map(),
+      createNoteExpander(STEM),
+    );
     expect(results[0]).toEqual({
       type: "tool_result",
       tool_use_id: "toolu_5",
@@ -89,7 +96,7 @@ describe("compact notes (GRV-131)", () => {
         ],
       },
     };
-    const { results } = answerStep([refused, added], createNoteExpander(STEM));
+    const { results } = answerStep([refused, added], new Map(), createNoteExpander(STEM));
     expect(results[0]).toMatchObject({ is_error: true });
     expect(results[1]?.content).toBe(
       `${ADDED_RESULT} Its 3 notes' IDs, in the order you gave them, count up from evt_BassNote000000000n001 to evt_BassNote000000000n003.`,
@@ -109,7 +116,7 @@ describe("compact notes (GRV-131)", () => {
         ],
       },
     };
-    const { kept, results } = answerStep([bad], createNoteExpander(STEM));
+    const { kept, results } = answerStep([bad], new Map(), createNoteExpander(STEM));
     expect(kept).toEqual([]);
     expect(results[0]).toMatchObject({ is_error: true });
     expect(results[0]?.content).toContain("notes.1.1:");
@@ -135,5 +142,63 @@ describe("compact notes (GRV-131)", () => {
       },
       other(EXPLAIN_TOOL_NAME),
     ]);
+  });
+});
+
+describe("answerStep: where a recommendation is aimed (GRV-129)", () => {
+  const recommend = (id: string, target: { trackId?: string; padId?: string }) => ({
+    id,
+    name: RECOMMEND_SOUNDS_TOOL,
+    input: { packId: "pak_x", soundIds: ["a"], reason: "Fits.", ...target },
+  });
+  const known = new Map([
+    ["trk_Kit00000000000000000001", new Set(["pad_Kick0000000000000000001"])],
+  ]);
+
+  it("notes one aimed at a track and pad the project has, and refuses one aimed at neither", () => {
+    const good = recommend("toolu_1", {
+      trackId: "trk_Kit00000000000000000001",
+      padId: "pad_Kick0000000000000000001",
+    });
+    const bad = recommend("toolu_2", { trackId: "trk_Gone" });
+    const answered = answerStep([good, bad], known, createNoteExpander(STEM));
+    expect(answered.kept).toEqual([good]);
+    expect(answered.misaimed).toBe(1);
+    expect(answered.results[0]).toEqual({
+      type: "tool_result",
+      tool_use_id: "toolu_1",
+      content: "Noted.",
+    });
+    expect(answered.results[1]).toMatchObject({ tool_use_id: "toolu_2", is_error: true });
+    expect(goesOnToReaim("tool_use", [good, bad], answered)).toBe(true);
+    expect(misaimedIn([good, bad], known)).toBe(1);
+    expect(
+      goesOnToReaim(
+        "tool_use",
+        [good],
+        answerStep([good], known, createNoteExpander(STEM)),
+      ),
+    ).toBe(false);
+  });
+
+  it("knows the track a track_create earlier in the step made", () => {
+    const aimed = recommend("toolu_2", { trackId: CREATE_EXAMPLES.track.id });
+    const answered = answerStep([change, aimed], known, createNoteExpander(STEM));
+    expect(answered.misaimed).toBe(0);
+    expect(answered.kept).toEqual([change, aimed]);
+    expect(answered.targets.has(CREATE_EXAMPLES.track.id)).toBe(true);
+    expect(misaimedIn([change, aimed], known)).toBe(0);
+  });
+
+  it("does not go on to re-aim a step that asked a question", () => {
+    const bad = recommend("toolu_1", { trackId: "trk_Gone" });
+    const ask = other(ASK_PRODUCER_TOOL_NAME);
+    expect(
+      goesOnToReaim(
+        "tool_use",
+        [bad, ask],
+        answerStep([bad, ask], known, createNoteExpander(STEM)),
+      ),
+    ).toBe(false);
   });
 });

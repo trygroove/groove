@@ -14,6 +14,13 @@
  * one is refused back to the model, which can send it again, rather than
  * sinking the whole proposal in the browser. What the gateway cannot check
  * (whether an ID exists in the open project) is still the browser's to refuse.
+ *
+ * A `recommend_sounds` call is checked for where it is aimed (GRV-129): a
+ * track or pad it names must be in the project context or made by a change
+ * call earlier in the turn (`recommendationTargets.ts`). One aimed at nothing
+ * is refused back to the model, even on the step that would have ended the
+ * turn, so it can name the right pad rather than leave the browser a card
+ * for a pad that does not exist.
  */
 import { isAskCall } from "./ask";
 import type { ExpandedCall, NoteExpander } from "./compactNotes";
@@ -21,6 +28,11 @@ import { isRememberCall } from "./memory";
 import type { AssistantStopReason, AssistantToolCall } from "./protocol";
 import type { ProviderToolResultBlock } from "./providerRequest";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
+import {
+  misaimedRecommendation,
+  type RecommendationTargets,
+  withCreatedTargets,
+} from "./recommendationTargets";
 import { EXPLAIN_TOOL_NAME, resolveToolCall } from "./tools";
 import { isVideoCall } from "./video";
 
@@ -92,6 +104,10 @@ function refusal(message: string): string {
 export interface AnsweredStep {
   readonly kept: readonly AssistantToolCall[];
   readonly results: readonly ProviderToolResultBlock[];
+  /** The tracks and pads a recommendation may name after this step. */
+  readonly targets: RecommendationTargets;
+  /** How many recommendations were refused for naming a track or pad that is not there. */
+  readonly misaimed: number;
 }
 
 /**
@@ -123,15 +139,33 @@ export function expandCalls(
 /**
  * Answers a step the turn continues after: each change call that fits its
  * tool, once its compact notes are written out, joins the proposal written
- * out and is told so; one that does not is refused, with why, and left out.
- * Any other call is noted and kept.
+ * out and is told so; one that does not is refused, with why, and left out. A
+ * recommendation aimed at a track or pad that is neither in `targets` nor
+ * made by an earlier call is refused the same way. Any other call is noted
+ * and kept.
  */
 export function answerStep(
   calls: readonly AssistantToolCall[],
+  targets: RecommendationTargets,
   notes: NoteExpander,
 ): AnsweredStep {
   const kept: AssistantToolCall[] = [];
+  let known = targets;
+  let misaimed = 0;
+  const refuse = (call: AssistantToolCall, message: string): ProviderToolResultBlock => ({
+    type: "tool_result",
+    tool_use_id: call.id,
+    content: refusal(message),
+    is_error: true,
+  });
   const results = calls.map((call): ProviderToolResultBlock => {
+    if (call.name === RECOMMEND_SOUNDS_TOOL) {
+      const problem = misaimedRecommendation(call, known);
+      if (problem) {
+        misaimed += 1;
+        return refuse(call, problem);
+      }
+    }
     if (!isChangeCall(call)) {
       kept.push(call);
       return { type: "tool_result", tool_use_id: call.id, content: NOTED_RESULT };
@@ -146,20 +180,46 @@ export function answerStep(
             const resolution = resolveToolCall(written.name, written.input);
             return resolution.ok ? null : resolution.message;
           });
-    if (!expanded.ok) {
-      return {
-        type: "tool_result",
-        tool_use_id: call.id,
-        content: refusal(expanded.message),
-        is_error: true,
-      };
-    }
+    if (!expanded.ok) return refuse(call, expanded.message);
     kept.push(expanded.call);
+    known = withCreatedTargets(known, expanded.call);
     return {
       type: "tool_result",
       tool_use_id: call.id,
       content: addedResult(expanded.noteIds),
     };
   });
-  return { kept, results };
+  return { kept, results, targets: known, misaimed };
+}
+
+/**
+ * How many of a step's recommendations name a track or pad that is neither
+ * in `targets` nor made by an earlier call of the step: what
+ * {@link answerStep} would count, without numbering any notes, so the turn
+ * can tell whether the step is its last before answering it.
+ */
+export function misaimedIn(
+  calls: readonly AssistantToolCall[],
+  targets: RecommendationTargets,
+): number {
+  let known = targets;
+  let misaimed = 0;
+  for (const call of calls) {
+    if (misaimedRecommendation(call, known)) misaimed += 1;
+    else if (isChangeCall(call)) known = withCreatedTargets(known, call);
+  }
+  return misaimed;
+}
+
+/**
+ * Whether a step the turn would have ended on goes on after all: it
+ * recommended a sound for a track or pad that is not there, and asked
+ * nothing, so the model is told and can aim it again.
+ */
+export function goesOnToReaim(
+  stopReason: AssistantStopReason,
+  calls: readonly AssistantToolCall[],
+  answered: Pick<AnsweredStep, "misaimed">,
+): boolean {
+  return stopReason === "tool_use" && answered.misaimed > 0 && !calls.some(isAskCall);
 }

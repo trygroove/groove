@@ -44,7 +44,9 @@
  * a malformed reply. A turn that carries the published library is offered
  * `recommend_sounds` as well (GRV-23); its calls come back among the
  * proposal's, and the browser takes them out and checks their IDs against the
- * library it sent. A turn whose gateway can search YouTube is offered
+ * library it sent. One aimed at a track or pad that neither the project nor
+ * the turn's earlier calls have is refused back to the model (GRV-129,
+ * `steps.ts`). A turn whose gateway can search YouTube is offered
  * `recommend_video` too (GRV-16, ADR 0009): its calls are taken out of the
  * proposal, searched for here, and returned as the turn's `videos`, with
  * every search that finds nothing YouTube vouches for dropped.
@@ -88,9 +90,16 @@ import {
 } from "./providerRequest";
 import { admitCall, type QuotaLimits, quotaExceededMessage } from "./quota";
 import { recommendationTool } from "./recommendation";
+import { contextTargets } from "./recommendationTargets";
 import { recordTurn, type TranscriptWrite } from "./retention";
 import { costMicroUsd, spendDay, usdToMicro } from "./spend";
-import { answerStep, continuesAfter, expandCalls } from "./steps";
+import {
+  answerStep,
+  continuesAfter,
+  expandCalls,
+  goesOnToReaim,
+  misaimedIn,
+} from "./steps";
 import { NO_USAGE, type ProviderUsage, StreamReader } from "./streamEvents";
 import { type AssistantTurnLog, toTurnLog } from "./telemetry";
 import {
@@ -813,6 +822,9 @@ export async function runAssistantTurn(
     const calls: AssistantToolCall[] = [];
     let requestsRemaining = 0;
     let stopReason: AssistantStopReason;
+    // What a recommendation may be aimed at: the project's tracks and pads,
+    // and those the turn's kept change calls make (GRV-129).
+    let targets = contextTargets(turn.context);
     for (let step = 1; ; step += 1) {
       const said = texts.some((text) => text.trim().length > 0);
       const { outcome, remaining } = await callProvider(
@@ -827,15 +839,23 @@ export async function runAssistantTurn(
         throw new AssistantGatewayError("reply_too_long", TOO_LONG_MESSAGE);
       }
       texts.push(outcome.text);
+      // Whether the step is the last is settled before it is answered, so a
+      // last step's notes are numbered once, by `expandCalls`.
+      const goesOn =
+        continuesAfter(outcome.stopReason, outcome.toolCalls) ||
+        goesOnToReaim(outcome.stopReason, outcome.toolCalls, {
+          misaimed: misaimedIn(outcome.toolCalls, targets),
+        });
       // The last step allowed hands its calls on as they came, as a turn of
       // one call does: the browser refuses whatever does not fit.
-      if (!continuesAfter(outcome.stopReason, outcome.toolCalls) || step >= maxSteps) {
+      if (!goesOn || step >= maxSteps) {
         calls.push(...expandCalls(outcome.toolCalls, notes));
         // A turn whose steps made calls stopped for them, as one call's would.
         stopReason = calls.length > 0 ? "tool_use" : outcome.stopReason;
         break;
       }
-      const answered = answerStep(outcome.toolCalls, notes);
+      const answered = answerStep(outcome.toolCalls, targets, notes);
+      targets = answered.targets;
       calls.push(...answered.kept);
       messages = [
         ...messages,
