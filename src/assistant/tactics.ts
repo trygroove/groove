@@ -46,7 +46,7 @@ export const TACTICS = {
     description:
       "How hard an adaptive-thinking model thinks before it answers (`output_config.effort`); a budget-thinking model ignores it.",
     values: ["low", "medium", "high"],
-    default: "medium",
+    default: "low",
     alters: ["request"],
   },
 } as const satisfies Readonly<Record<string, TacticDefinition>>;
