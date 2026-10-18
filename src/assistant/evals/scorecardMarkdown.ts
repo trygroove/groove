@@ -188,9 +188,13 @@ function bySet(
 export function comparisonTables(
   comparisons: readonly Comparison[],
   level = "###",
+  columns: { readonly current: string; readonly baseline: string } = {
+    current: "This run",
+    baseline: "Baseline",
+  },
 ): string[] {
   const table = (rows: readonly Comparison[]) => [
-    "| Number | This run | Baseline | Delta | |",
+    `| Number | ${columns.current} | ${columns.baseline} | Delta | |`,
     "| --- | --- | --- | --- | --- |",
     ...rows.map(
       (row) =>

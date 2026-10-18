@@ -19,7 +19,7 @@ import {
   formatDelta,
   formatMetric,
 } from "./scorecard";
-import { comparisonTables, tacticsText } from "./scorecardMarkdown";
+import { comparisonTables } from "./scorecardMarkdown";
 import { GOAL_METRICS, type VariantAnalysis } from "./verdict";
 
 /** Where the run happened and what it opened, for the report's links. */
@@ -37,7 +37,9 @@ export function variantTactics(
   variant: Pick<ExperimentVariant, "name" | "overrides">,
 ): string {
   if (variant.name === CONTROL) return "production's defaults";
-  return tacticsText(variant.overrides);
+  return Object.entries(variant.overrides)
+    .map(([id, value]) => `${id}=${value}`)
+    .join(", ");
 }
 
 function intervalText(analysis: VariantAnalysis): string {
@@ -76,10 +78,23 @@ function analysisLines(
     "",
     `#### Every number beside the control's`,
     "",
-    ...comparisonTables(compareScorecards(variant.scorecard, control.scorecard), "#####"),
-    ...(heavy ? ["##### Heavy set", "", ...comparisonTables(heavy)] : []),
+    ...comparisonTables(
+      compareScorecards(variant.scorecard, control.scorecard),
+      "#####",
+      COLUMNS,
+    ),
+    ...(heavy
+      ? ["##### Heavy set", "", ...comparisonTables(heavy, "#####", COLUMNS)]
+      : []),
     "",
   ];
+}
+
+/** The diff tables' columns: the variant where the run is, the control where the baseline is. */
+const COLUMNS = { current: "Variant", baseline: "Control" } as const;
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 function phaseIntro(phase: ExperimentPhase, cases: string): string[] {
@@ -88,14 +103,14 @@ function phaseIntro(phase: ExperimentPhase, cases: string): string[] {
     0,
   );
   return [
-    `${phase.caseIds.length} ${cases} (${phase.caseIds.map((id) => `\`${id}\``).join(", ")}), ${phase.runsPerCase} runs a case, ${turns} turns.${phase.stopped ? ` **Stopped early:** ${phase.stopped}` : ""}`,
+    `${plural(phase.caseIds.length, cases)} (${phase.caseIds.map((id) => `\`${id}\``).join(", ")}), ${plural(phase.runsPerCase, "run")} a case, ${plural(turns, "turn")}.${phase.stopped ? ` **Stopped early:** ${phase.stopped}` : ""}`,
     "",
   ];
 }
 
 function gateLines(gate: ExperimentGate): string[] {
   return [
-    ...phaseIntro(gate.phase, "held-out cases"),
+    ...phaseIntro(gate.phase, "held-out case"),
     ...analysisLines(gate.analysis, gate.phase, "### Gate:"),
   ];
 }
@@ -135,7 +150,7 @@ export function renderExperimentMarkdown(
       : []),
     "## Train",
     "",
-    ...phaseIntro(result.train, "train cases"),
+    ...phaseIntro(result.train, "train case"),
     ...result.trainAnalyses.flatMap((analysis) =>
       analysisLines(analysis, result.train, "###"),
     ),

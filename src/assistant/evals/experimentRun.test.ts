@@ -224,6 +224,11 @@ describe("an experiment's dry run (GRV-110)", () => {
       "- Held PR with the new defaults: https://github.com/trygroove/groove/pull/1",
     );
     expect(concluded.markdown).toContain(`run: ${LINKS.runUrl}`);
+    expect(concluded.markdown).toContain("- Winner: `terse` (terseNotes=on)");
+    expect(concluded.markdown).toContain("| Number | Variant | Control | Delta | |");
+    expect(concluded.markdown).toContain(
+      "1 train case (`process-crushed`), 3 runs a case, 6 turns.",
+    );
   });
 
   it("gives no win or inconclusive for a planted no-op, and opens nothing", async () => {
