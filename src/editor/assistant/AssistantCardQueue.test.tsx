@@ -32,6 +32,7 @@ import { emptyPadSelection } from "../padSelection";
 import { createStarterProject } from "../starterProject";
 import AssistantPanel from "./AssistantPanel";
 import { createAssistantLibrary } from "./assistantLibrary";
+import { MISSING_PAD } from "./RecommendationCard";
 import { recommendationSlot } from "./recommendationCardModel";
 import { useAssistantChat } from "./useAssistantChat";
 import { useAssistantPanel } from "./useAssistantPanel";
@@ -327,6 +328,62 @@ describe("a turn's cards, one at a time (GRV-129)", () => {
     expect(panel()).toHaveTextContent(
       "Skipped 2 sound suggestions for the declined track",
     );
+  });
+
+  it("disables Try on a shown card whose pad an undo took away, and brings it back on redo", async () => {
+    const { firstBeat, session } = await setUp();
+    await firstBeat();
+    await press(
+      within(proposals()[0] as HTMLElement).getByRole("button", { name: "Apply" }),
+    );
+    await vi.waitFor(() => expect(cards()).toHaveLength(1));
+    await press(cardButton("Dismiss"));
+    await vi.waitFor(() => expect(cards()).toHaveLength(2));
+    expect(cardButton("Try on Snare")).toBeEnabled();
+
+    // Undoing the proposal takes the Snare & Hat track, and its pads, away.
+    fireAndFlush(() => session.undo());
+    await settle();
+    flush();
+    expect(within(newest()).queryByRole("button", { name: "Try on Snare" })).toBeNull();
+    expect(cardButton("Try")).toBeDisabled();
+    expect(within(newest()).getByRole("status")).toHaveTextContent(MISSING_PAD);
+
+    fireAndFlush(() => session.redo());
+    await settle();
+    flush();
+    expect(cardButton("Try on Snare")).toBeEnabled();
+    expect(within(newest()).getByRole("status")).not.toHaveTextContent(MISSING_PAD);
+  });
+
+  it("holds the later cards back again when a Keep is undone", async () => {
+    const { firstBeat, session } = await setUp();
+    await firstBeat();
+    await press(
+      within(proposals()[0] as HTMLElement).getByRole("button", { name: "Apply" }),
+    );
+    await vi.waitFor(() => expect(cards()).toHaveLength(1));
+    await tryAndKeep("BD");
+    await vi.waitFor(() => expect(cards()).toHaveLength(2));
+    await press(cardButton("Try on Snare"));
+    expect(cardButton("Keep")).toBeEnabled();
+
+    // The kick's keep is undone: its card is the one to decide again, so the
+    // snare's waits behind it, its try put back, and the hat's with it.
+    fireAndFlush(() => session.undo());
+    await settle();
+    flush();
+    expect(cards()).toHaveLength(1);
+    expect(newest()).toHaveTextContent("BD · BD");
+    expect(within(newest()).getByRole("status")).toHaveTextContent(/Undone/);
+    expect(newest()).toHaveTextContent("2 more after this");
+
+    // Keeping the kick again brings the snare back, nothing tried on it.
+    await tryAndKeep("BD");
+    await vi.waitFor(() => expect(cards()).toHaveLength(2));
+    expect(newest()).toHaveTextContent("Snare & Hat · Snare");
+    expect(cardButton("Try on Snare")).toBeEnabled();
+    expect(newest()).toHaveTextContent("1 more after this");
   });
 
   it("shows the next card once one is dismissed", async () => {
