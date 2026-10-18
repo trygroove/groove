@@ -132,6 +132,8 @@ export function finishedEvents(): ScriptStep[] {
 export function toolUseEvents(
   text: string,
   calls: readonly { readonly name: string; readonly input: unknown }[],
+  /** The reply's token counts, as {@link replyEvents} takes them. */
+  usage: { readonly inputTokens?: number; readonly outputTokens?: number } = {},
 ): ScriptStep[] {
   const toolBlocks = calls.flatMap((call, index): ScriptStep[] => {
     const json = JSON.stringify(call.input);
@@ -160,7 +162,7 @@ export function toolUseEvents(
       { event: { type: "content_block_stop", index: blockIndex } },
     ];
   });
-  const reply = replyEvents([text], { stopReason: "tool_use" });
+  const reply = replyEvents([text], { ...usage, stopReason: "tool_use" });
   // The text block, then the tool blocks, then the stop.
   return [...reply.slice(0, -2), ...toolBlocks, ...reply.slice(-2)];
 }
