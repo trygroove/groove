@@ -1,0 +1,26 @@
+{
+  "id": "CF-035",
+  "title": "A new producer meets Cue and opens the studio",
+  "steps": [
+    {
+      "file": "01-cue-says-hello-and-asks-what-music-you-l.png",
+      "caption": "Cue says hello and asks what music you love"
+    },
+    {
+      "file": "02-answer-with-genres-and-an-artist.png",
+      "caption": "Answer with genres and an artist"
+    },
+    {
+      "file": "03-saved-to-memory-and-the-offer-of-a-first.png",
+      "caption": "Saved to memory, and the offer of a first lesson"
+    },
+    {
+      "file": "04-the-studio-opens-and-the-conversation-ca.png",
+      "caption": "The studio opens, and the conversation carries on in Cue's panel"
+    },
+    {
+      "file": "05-back-on-the-dashboard-not-asked-again.png",
+      "caption": "Back on the dashboard, not asked again"
+    }
+  ]
+}
