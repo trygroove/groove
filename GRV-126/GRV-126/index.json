@@ -1,0 +1,10 @@
+{
+  "id": "GRV-126",
+  "title": "Privacy panel",
+  "steps": [
+    {
+      "file": "01-the-privacy-panel-kept-cue-conversations.png",
+      "caption": "The Privacy panel: kept Cue conversations also go to PostHog"
+    }
+  ]
+}
