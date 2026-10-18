@@ -35,6 +35,7 @@ import { createStarterProject } from "../starterProject";
 import AssistantPanel, { TRYING_STATUS } from "./AssistantPanel";
 import { createAssistantLibrary } from "./assistantLibrary";
 import {
+  MISSING_PAD,
   PACK_IN_PROJECT,
   PACK_JOINS,
   REFUSED_RECOMMENDATION,
@@ -587,5 +588,40 @@ describe("the recommended pack card (GRV-23)", () => {
         (event) => event.params?.feature === "assistant_recommendation",
       ),
     ).toHaveLength(1);
+  });
+
+  it("names the track and pad it tries on in its header, as its Try button does (GRV-129)", async () => {
+    const { recommend } = await setUp();
+    await recommend();
+    expect(card()).toHaveTextContent("Recommended pack · BD · BD");
+    expect(cardButton("Try on BD")).toBeEnabled();
+  });
+
+  it("does not aim a pad the song lacks at the selected one: nothing to try (GRV-129)", async () => {
+    const { recommend, track, port, session, project } = await setUp();
+    await recommend({
+      packId: DRUMS,
+      soundIds: [SOFT_KICK],
+      reason: "For a pad that is not there.",
+      trackId: track.id,
+      padId: "pad_NotInTheSong0000000001",
+    });
+    expect(cardButton("Try")).toBeDisabled();
+    expect(within(card()).queryByRole("button", { name: /^Try on/ })).toBeNull();
+    expect(cardStatus()).toHaveTextContent(MISSING_PAD);
+    expect(card()).not.toHaveTextContent("Recommended pack · BD");
+    expect(port.previewInSlot).not.toHaveBeenCalled();
+    await press(cardButton("Dismiss"));
+    expect(cardStatus()).toHaveTextContent("Dismissed. Nothing changed.");
+    expect(session.committedProject).toBe(project);
+  });
+
+  it("can be dismissed before anything is tried, and changes nothing (GRV-129)", async () => {
+    const { recommend, session, project } = await setUp();
+    await recommend();
+    await press(cardButton("Dismiss"));
+    expect(cardStatus()).toHaveTextContent("Dismissed. Nothing changed.");
+    expect(within(card()).queryByRole("button", { name: /^Try on/ })).toBeNull();
+    expect(session.committedProject).toBe(project);
   });
 });

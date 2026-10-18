@@ -138,6 +138,14 @@ export interface AssistantProposals {
   card(entryId: string): ProposalCard | undefined;
   /** Whether any card is previewing, for the panel's status. Reactive. */
   readonly previewing: Accessor<boolean>;
+  /**
+   * Whether a card has been decided (GRV-129): applied, declined, refused as
+   * not fitting the song, or asked for again, so the panel can show the
+   * turn's next card. Reactive.
+   */
+  decided(entryId: string): boolean;
+  /** Whether a card was turned down, or never fitted the song. Reactive. */
+  declined(entryId: string): boolean;
   /** A proposal arrived in a reply: validate it and show its card. */
   receive(entryId: string, proposal: AssistantProposal, origin: TurnOrigin): void;
   preview(entryId: string): void;
@@ -480,8 +488,30 @@ export function useAssistantProposals(
     () => reconcile(),
   );
 
+  function decided(entryId: string): boolean {
+    const card = cards().get(entryId);
+    switch (card?.status) {
+      case "applied":
+      case "undone":
+      case "cancelled":
+      case "invalid":
+        return true;
+      case "stale":
+        return card.refreshed;
+      default:
+        return false;
+    }
+  }
+
+  function declined(entryId: string): boolean {
+    const status = cards().get(entryId)?.status;
+    return status === "cancelled" || status === "invalid";
+  }
+
   return {
     card: (entryId) => cards().get(entryId),
+    decided,
+    declined,
     previewing: () => [...cards().values()].some((card) => card.status === "previewing"),
     receive,
     preview,

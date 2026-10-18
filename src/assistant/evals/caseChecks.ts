@@ -15,6 +15,9 @@
  *   release, playing a sparse 4-bar clip placed on it.
  * - {@link checkDissonant}: a chord on the new synth track holds a minor 2nd,
  *   a major 7th or a tritone.
+ * - {@link checkRecommendationTargets} (GRV-129): the turn recommended
+ *   sounds, every one is aimed at a track and pad the song has once the
+ *   proposal is applied, and its kick, snare and hat land on different pads.
  *
  * GRV-107's four (`addsTracks`, `endsAt`, `noEmptyClips`, `noNoOps`) and
  * `clipsPlaced` are in `caseChecksQa.ts`; GRV-119's two (`exactEdit`, `nothingElse`), which judge
@@ -30,6 +33,12 @@ import {
   SYNTH_AMP_RELEASE,
 } from "../../domain/parameters";
 import { TICKS_PER_BAR } from "../../domain/time";
+import type { AssistantLibraryContext, AssistantToolCall } from "../protocol";
+import {
+  misaimedRecommendation,
+  namedTarget,
+  projectTargets,
+} from "../recommendationTargets";
 import { type BasicAction, checkNothingElse } from "./basicActionChecks";
 import {
   checkAddsTracks,
@@ -40,6 +49,7 @@ import {
   type ExpectedValue,
 } from "./caseChecksQa";
 import type { CheckResult } from "./checks";
+import { drumPartOf } from "./evalLibrary";
 
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });
 const fail = (detail: string): CheckResult => ({ status: "fail", detail });
@@ -68,6 +78,8 @@ export const CASE_CHECK_IDS = [
   "nothingElse",
   // A proposal that stops partway: a clip made and never placed.
   "clipsPlaced",
+  // GRV-129: where the turn's sound recommendations are aimed.
+  "recommendationTargets",
 ] as const;
 export type CaseCheckId = (typeof CASE_CHECK_IDS)[number];
 
@@ -490,6 +502,47 @@ export function checkDissonant(before: Project, after: Project): CheckResult {
 }
 
 // ---------------------------------------------------------------------------
+// GRV-129: where the turn's sound recommendations are aimed
+// ---------------------------------------------------------------------------
+
+/**
+ * The turn recommended at least one sound, and every recommendation is aimed
+ * at a track and pad `after` has, the project once the proposal is applied,
+ * so one for a pad the proposal adds counts. A kick, a snare (or clap) and a
+ * hat, read from the library's role for the first sound, each land on a pad
+ * of their own: two parts on one pad is the bug GRV-129 fixed in the panel.
+ */
+export function checkRecommendationTargets(
+  after: Project,
+  recommendations: readonly AssistantToolCall[],
+  library: AssistantLibraryContext | null,
+): CheckResult {
+  if (recommendations.length === 0) return fail("The turn recommended no sounds");
+  const targets = projectTargets(after);
+  const aimed: string[] = [];
+  const padOfPart = new Map<string, string>();
+  for (const call of recommendations) {
+    const problem = misaimedRecommendation(call, targets);
+    if (problem) return fail(problem);
+    const { trackId, padId } = namedTarget(call.input);
+    const soundId = (call.input as { soundIds?: unknown }).soundIds;
+    const first =
+      Array.isArray(soundId) && typeof soundId[0] === "string" ? soundId[0] : null;
+    const role =
+      library?.packs.flatMap((pack) => pack.sounds).find((sound) => sound.id === first)
+        ?.role ?? "";
+    const part = drumPartOf(role);
+    const pad = `${trackId ?? "the selected track"} · ${padId ?? "the selected pad"}`;
+    aimed.push(`${part ?? (role || "a sound")} on ${pad}`);
+    if (!part) continue;
+    const taken = [...padOfPart].find(([other, on]) => other !== part && on === pad);
+    if (taken) return fail(`The ${part} and the ${taken[0]} are both aimed at ${pad}`);
+    padOfPart.set(part, pad);
+  }
+  return pass(`Every recommendation lands on a pad the song has: ${aimed.join("; ")}`);
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch
 // ---------------------------------------------------------------------------
 
@@ -501,6 +554,10 @@ export interface CaseCheckInputs {
   readonly expectedValue?: ExpectedValue;
   /** The case's basic production action, for `exactEdit` and `nothingElse`. */
   readonly action?: BasicAction;
+  /** The turn's `recommend_sounds` calls, for `recommendationTargets`. */
+  readonly recommendations?: readonly AssistantToolCall[];
+  /** The library the turn was sent with, which names each sound's part. */
+  readonly library?: AssistantLibraryContext | null;
 }
 
 /** Runs the case check `id` on an applied proposal. */
@@ -540,5 +597,11 @@ export function runCaseCheck(
         : fail("The case names no action");
     case "clipsPlaced":
       return checkClipsPlaced(before, after);
+    case "recommendationTargets":
+      return checkRecommendationTargets(
+        after,
+        inputs.recommendations ?? [],
+        inputs.library ?? null,
+      );
   }
 }

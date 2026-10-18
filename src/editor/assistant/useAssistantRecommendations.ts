@@ -22,6 +22,14 @@
  * A recommendation naming a pack or a sound the library does not hold is
  * refused and shown as a failed reply, never as a card.
  *
+ * A card works out its slot when it is shown, against the song as it then
+ * stands (GRV-129): the panel holds a turn's later cards back until the one
+ * before is decided (`cardQueue.ts`), so a recommendation for a pad the
+ * turn's proposal adds is shown once that proposal is applied, and lands on
+ * the new pad. A card that names a track or pad the song does not have is
+ * shown with nothing to try, never aimed at the selection in its place. Its
+ * header names the slot it tries on, as its Try button does.
+ *
  * Analytics: `assistant_recommendation_*`, with whether the pack was the
  * project's already and, for a decision, how long it took. Never a pack's or a
  * sound's name, nor what the producer asked.
@@ -54,6 +62,8 @@ import type { LibraryInsertOutcome } from "../libraryInsert";
 import { type AssistantLibrary, projectHasPack } from "./assistantLibrary";
 import {
   editTouchesSlot,
+  MISSING_SLOT,
+  type RecommendationAim,
   type RecommendationSlot,
   type ResolvedRecommendation,
   resolveRecommendation,
@@ -88,7 +98,6 @@ export interface RecommendationCard {
   readonly status: RecommendationStatus;
   /** What the producer asked for. */
   readonly title: string;
-  readonly scopeLabel: string;
   /** The pack and sounds, as the library holds them; null when it was refused. */
   readonly recommendation: ResolvedRecommendation | null;
   /**
@@ -97,6 +106,11 @@ export interface RecommendationCard {
    * drum pad or a sampler afterwards gives it one.
    */
   readonly slot: RecommendationSlot | null;
+  /**
+   * It names a track or pad the song does not have (GRV-129), so there is
+   * nothing to try it on until the song has it again.
+   */
+  readonly missing: boolean;
   /** The sound Try plays: the first suggested one-shot. */
   readonly sound: LibraryAsset | null;
   /** While trying, the view Put back returns to. */
@@ -117,8 +131,11 @@ export interface RecommendationCard {
 
 /** What the cards need from the editor around them. */
 export interface RecommendationEditorPort {
-  /** The slot a recommendation for `trackId` (and `padId`) tries its sound in. */
-  slotFor(trackId: string | null, padId: string | null): RecommendationSlot | null;
+  /**
+   * The slot a recommendation for `trackId` (and `padId`) tries its sound in
+   * now, or {@link MISSING_SLOT} when the song does not have what it names.
+   */
+  slotFor(trackId: string | null, padId: string | null): RecommendationAim;
   /** The library's hot-swap: an audio-only override of the slot's sound. */
   previewInSlot(slot: PreviewSlot, sound: LibraryAsset): boolean;
   clearPreview(): void;
@@ -161,6 +178,11 @@ export interface AssistantRecommendations {
   readonly trying: Accessor<boolean>;
   /** Whether a card's pack is one of the project's now. Reactive. */
   packInProject(entryId: string): boolean;
+  /**
+   * Whether a card has been decided (GRV-129): kept, dismissed, refused, or
+   * asked for again, so the panel can show the next one. Reactive.
+   */
+  decided(entryId: string): boolean;
   /** A recommendation arrived in a reply: check it against `library` and show it. */
   receive(
     entryId: string,
@@ -230,18 +252,24 @@ export function useAssistantRecommendations(
     setCards((current) => new Map(current).set(entryId, card));
 
   /**
-   * The card's slot: the one it was given, or, when it arrived with none,
+   * The card's slot: the one it was given, or, when it was shown with none,
    * wherever the editor would aim it now. Reactive through `editor.slotFor`.
    */
-  function slotOf(card: RecommendationCard): RecommendationSlot | null {
+  function aimOf(card: RecommendationCard): RecommendationAim {
     if (card.slot || !card.recommendation) return card.slot;
     return editor.slotFor(card.recommendation.trackId, card.recommendation.padId);
   }
-  /** The card as shown: with the slot it would try on now. */
+  function slotOf(card: RecommendationCard): RecommendationSlot | null {
+    const aim = aimOf(card);
+    return aim === MISSING_SLOT ? null : aim;
+  }
+  /** The card as shown: with the slot it would try on now, or missing one. */
   function asShown(card: RecommendationCard | undefined): RecommendationCard | undefined {
     if (!card || card.slot || !card.recommendation) return card;
-    const slot = slotOf(card);
-    return slot ? { ...card, slot } : card;
+    const aim = aimOf(card);
+    if (aim === MISSING_SLOT) return card.missing ? card : { ...card, missing: true };
+    const shown = card.missing ? { ...card, missing: false } : card;
+    return aim ? { ...shown, slot: aim } : shown;
   }
 
   // Hearing a sound and the pack demo share one engine, made on first use.
@@ -285,9 +313,9 @@ export function useAssistantRecommendations(
   ): void {
     const base: Omit<RecommendationCard, "status"> = {
       title: origin.text,
-      scopeLabel: origin.scope.label,
       recommendation: null,
       slot: null,
+      missing: false,
       sound: null,
       returnView: null,
       refreshed: false,
@@ -314,11 +342,14 @@ export function useAssistantRecommendations(
       return;
     }
     entries.set(entryId, blankEntry(clock.now()));
+    // Aimed now, as the card is shown, against the song as it stands.
+    const aim = editor.slotFor(resolved.trackId, resolved.padId);
     const card: RecommendationCard = {
       ...base,
       status: "ready",
       recommendation: resolved,
-      slot: editor.slotFor(resolved.trackId, resolved.padId),
+      slot: aim === MISSING_SLOT ? null : aim,
+      missing: aim === MISSING_SLOT,
       sound: soundToTry(resolved.sounds),
     };
     show(entryId, card);
@@ -460,9 +491,37 @@ export function useAssistantRecommendations(
     if (options.refresh(entryId)) update(entryId, { refreshed: true });
   }
 
+  /**
+   * Turns a card down: one out of date, or one not tried or put back, so a
+   * turn's next card can be shown (GRV-129). Nothing changes.
+   */
   function dismiss(entryId: string): void {
-    if (cards().get(entryId)?.status !== "stale") return;
+    const status = cards().get(entryId)?.status;
+    if (
+      status !== "stale" &&
+      status !== "ready" &&
+      status !== "put-back" &&
+      status !== "undone"
+    ) {
+      return;
+    }
     update(entryId, { status: "dismissed" });
+  }
+
+  function decided(entryId: string): boolean {
+    const card = cards().get(entryId);
+    if (!card) return false;
+    switch (card.status) {
+      case "kept":
+      case "undone":
+      case "dismissed":
+      case "invalid":
+        return true;
+      case "stale":
+        return card.refreshed;
+      default:
+        return false;
+    }
   }
 
   function stopDemo(): void {
@@ -605,6 +664,7 @@ export function useAssistantRecommendations(
     card: (entryId) => asShown(cards().get(entryId)),
     trying: () => [...cards().values()].some((card) => card.status === "trying"),
     packInProject: (entryId) => packInProjectNow(cards().get(entryId)),
+    decided,
     receive,
     tryOn,
     keep,

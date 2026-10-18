@@ -9,6 +9,7 @@ import {
   RetentionSettings,
 } from "./AssistantRetention";
 import { ERROR_HEADING, ERROR_REASSURANCE, errorMessage } from "./assistantErrorCopy";
+import { skippedLine } from "./cardQueue";
 import { fitComposer } from "./composerHeight";
 import MemoryProposalCard from "./MemoryProposalCard";
 import ProposalCard from "./ProposalCard";
@@ -382,7 +383,10 @@ function Entry(props: {
           </div>
         )}
       </Match>
-      <Match when={props.entry.kind === "proposal"}>
+      {/* A turn's later cards wait until the one before is decided (GRV-129). */}
+      <Match
+        when={props.entry.kind === "proposal" && !props.chat.cards.held(props.entry.id)}
+      >
         <Show
           when={props.chat.proposals}
           fallback={
@@ -395,17 +399,27 @@ function Entry(props: {
           }
         >
           {(proposals) => (
-            <ProposalCard
-              entryId={props.entry.id}
-              proposals={proposals()}
-              canAsk={
-                props.chat.account().registered && !props.chat.conversation.streaming()
-              }
-            />
+            <>
+              <ProposalCard
+                entryId={props.entry.id}
+                proposals={proposals()}
+                canAsk={
+                  props.chat.account().registered && !props.chat.conversation.streaming()
+                }
+                heldAfter={props.chat.cards.heldAfter(props.entry.id)}
+              />
+              <Show when={props.chat.cards.skipped(props.entry.id)}>
+                {(count) => <p class="assistant-panel-note">{skippedLine(count())}</p>}
+              </Show>
+            </>
           )}
         </Show>
       </Match>
-      <Match when={props.entry.kind === "recommendation"}>
+      <Match
+        when={
+          props.entry.kind === "recommendation" && !props.chat.cards.held(props.entry.id)
+        }
+      >
         <Show
           when={props.chat.recommendations}
           fallback={
@@ -418,13 +432,16 @@ function Entry(props: {
           }
         >
           {(recommendations) => (
-            <RecommendationCard
-              entryId={props.entry.id}
-              recommendations={recommendations()}
-              canAsk={
-                props.chat.account().registered && !props.chat.conversation.streaming()
-              }
-            />
+            <>
+              <RecommendationCard
+                entryId={props.entry.id}
+                recommendations={recommendations()}
+                canAsk={
+                  props.chat.account().registered && !props.chat.conversation.streaming()
+                }
+                heldAfter={props.chat.cards.heldAfter(props.entry.id)}
+              />
+            </>
           )}
         </Show>
       </Match>

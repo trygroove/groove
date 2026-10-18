@@ -26,9 +26,9 @@ import { expectView } from "../support/views";
  * later PR that changes an assertion here has to say so in its body and
  * justify it.
  *
- * It is `test.fixme` because the panel shows every card of a turn at once and
- * aims a recommendation for a pad the proposal adds at the selected pad. The
- * PR that completes GRV-129 removes this marker.
+ * The marker it carried while the panel showed every card of a turn at once,
+ * and aimed a recommendation for a pad the proposal adds at the selected pad,
+ * was removed by the PR that completes GRV-129.
  *
  * **Locators.** The assistant's are `../support/assistant.ts`'s. Three are
  * this spec's own, written from the issue:
@@ -88,22 +88,29 @@ const recommendations = (page: Page): Locator =>
   panel(page).getByRole("region", { name: /^Recommended pack\b/ });
 
 /**
- * Try the newest card's sound on `pad` of `track`, keep it, and return its
- * name once the pad's slot names it.
+ * Try the sound of the turn's card at `index` on `pad` of `track`, keep it,
+ * and return its name once the pad's slot names it. The card is read by its
+ * place, not as the newest: keeping a sound brings the next card up below it.
  */
-async function tryAndKeep(page: Page, track: string, pad: string): Promise<string> {
+async function tryAndKeep(
+  page: Page,
+  index: number,
+  track: string,
+  pad: string,
+): Promise<string> {
+  const card = recommendations(page).nth(index);
   const sound = await recommendedSound(page, 0);
-  await recommendationButton(page, `Try on ${pad}`).click();
+  await card.getByRole("button", { name: `Try on ${pad}`, exact: true }).click();
   await expectView(page, "Instrument");
-  await recommendationButton(page, "Keep").click();
-  await expect(recommendation(page).locator("output")).toContainText(/kept/i);
+  await card.getByRole("button", { name: "Keep", exact: true }).click();
+  await expect(card.locator("output")).toContainText(/kept/i);
   await expect.poll(() => padSound(page, track, pad)).toBe(sound);
   return sound;
 }
 
 test.describe("CF-036", () => {
   // biome-ignore format: unparked by removing only test.fixme, so the frozen body keeps its lines
-  test.fixme(
+  test(
     "a producer builds a first beat with Cue, one card at a time",
     async ({ page, browserName, invitedProducer }) => {
       // The account met the assistant's disclosure in an earlier session (GRV-8).
@@ -152,7 +159,7 @@ test.describe("CF-036", () => {
       //    BD's sample slot names it. The next recommended pack appears: its
       //    header names the new track and its Snare pad (Snare & Hat · Snare),
       //    and it offers to try its sound on Snare.
-      const kick = await tryAndKeep(page, "BD", "BD");
+      const kick = await tryAndKeep(page, 0, "BD", "BD");
       await expect(recommendations(page)).toHaveCount(2);
       await expect(recommendation(page)).toContainText(`${KIT} · Snare`);
       await expect(recommendationButton(page, "Try on Snare")).toBeVisible();
@@ -161,7 +168,7 @@ test.describe("CF-036", () => {
       // 6. Press Try on Snare, then Keep. Snare's sample slot names the kept
       //    snare. The last recommended pack appears, naming Snare & Hat · Hat
       //    and offering to try its sound on Hat. Nothing more is held after it.
-      const snare = await tryAndKeep(page, KIT, "Snare");
+      const snare = await tryAndKeep(page, 1, KIT, "Snare");
       await expect(recommendations(page)).toHaveCount(3);
       await expect(recommendation(page)).toContainText(`${KIT} · Hat`);
       await expect(recommendationButton(page, "Try on Hat")).toBeVisible();
@@ -169,7 +176,7 @@ test.describe("CF-036", () => {
       await step("Snare kept: the hat's card, aimed at Hat");
 
       // 7. Press Try on Hat, then Keep. Hat's sample slot names the kept hat.
-      const hat = await tryAndKeep(page, KIT, "Hat");
+      const hat = await tryAndKeep(page, 2, KIT, "Hat");
       await step("Hat kept");
 
       // 8. Press Play. The song plays. Every pad that has notes has a sound:
