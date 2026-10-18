@@ -10,6 +10,7 @@ import {
   createReferenceProject,
 } from "../domain/fixtures";
 import { TRACK_VOLUME } from "../domain/parameters";
+import { previewCommands } from "../editor/assistant/askReferences";
 import { buildAssistantLibrary } from "../testing/assistantLibrary";
 import {
   type CallScript,
@@ -17,7 +18,7 @@ import {
   replyEvents,
   toolUseEvents,
 } from "../testing/scriptedAssistantProvider";
-import { ASK_PRODUCER_TOOL_NAME } from "./ask";
+import { ASK_PRODUCER_TOOL_NAME, type AskSound } from "./ask";
 import {
   ASSISTANT_CALL_LIMITS,
   ASSISTANT_MODELS,
@@ -48,6 +49,7 @@ import {
   AssistantGatewayError,
   type AssistantStreamChunk,
   type AssistantTurnRequest,
+  type AssistantTurnResult,
 } from "./protocol";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
 import { ADDED_RESULT } from "./steps";
@@ -1282,6 +1284,358 @@ describe("runAssistantTurn: a turn in steps", () => {
     const before = await run(harness([replyEvents(["ok"])]));
     const after = await run(h);
     expect(after.requestsRemaining).toBe((before.requestsRemaining ?? 0) - 1);
+  });
+});
+
+describe("runAssistantTurn: compact notes (GRV-131)", () => {
+  const project = createReferenceProject();
+  const noteClip = project.clips.find((clip) => clip.content.kind === "notes");
+  if (!noteClip) throw new Error("the reference project has a note clip");
+  const explainCall = {
+    name: EXPLAIN_TOOL_NAME,
+    input: { goal: "A fuller part", technique: "Fill the gaps" },
+  };
+
+  it("writes the turn's notes out as note events, numbered from its stem in call order", async () => {
+    const addCall = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[0, 40, 96, 0.8]] },
+    };
+    const clipCall = {
+      name: "clip_create",
+      input: {
+        id: "clp_Stem00000000000000001",
+        trackId: noteClip.trackId,
+        name: "Answer",
+        color: "#808080",
+        lengthTicks: 768,
+        content: {
+          kind: "notes",
+          events: [
+            [0, 43, 192, 0.7],
+            [384, 45, 192, 0.6, 0.5],
+          ],
+        },
+      },
+    };
+    const h = harness([toolUseEvents("First a note.", [addCall])], {}, [
+      toolUseEvents("Then an answer.", [clipCall, explainCall]),
+    ]);
+    const result = await runAssistantTurn(
+      { ...h.deps, idStem: () => "Stem0000000000000" },
+      SIGNED_IN,
+      request(),
+      { signal: new AbortController().signal, onChunk: () => {} },
+    );
+    const [added, created] = result.proposal?.calls ?? [];
+    expect(added.input).toEqual({
+      clipId: noteClip.id,
+      notes: [
+        {
+          id: "evt_Stem0000000000000n001",
+          trigger: { kind: "pitch", pitch: 40 },
+          startTicks: 0,
+          durationTicks: 96,
+          velocity: 0.8,
+          probability: null,
+        },
+      ],
+    });
+    expect(
+      (created.input as { content: { events: { id: string; probability: unknown }[] } })
+        .content.events,
+    ).toMatchObject([
+      { id: "evt_Stem0000000000000n002", probability: null },
+      { id: "evt_Stem0000000000000n003", probability: 0.5 },
+    ]);
+    // What the browser receives is ordinary payloads, and it applies.
+    const validation = validateProposal(project, result.proposal);
+    expect(validation.ok).toBe(true);
+    // The model was offered the compact notes, and saw its own call back as sent.
+    const offered = h.provider.requests[0].tools.find((tool) => tool.name === "note_add");
+    expect(JSON.stringify(offered?.input_schema)).toContain("prefixItems");
+    const [assistant] = h.provider.requests[1].messages.slice(-2);
+    expect(JSON.stringify(assistant)).toContain("[0,40,96,0.8]");
+  });
+
+  it("keeps the notes it numbers apart from the note IDs the model makes, so the turn applies", async () => {
+    // A turn that writes notes in two clips and then duplicates them: the
+    // gateway numbers the notes it writes out, and notes_duplicate's newIds
+    // are the model's own, from the same stem, in its counter of digits.
+    const stem = "Stem0000000000000";
+    const clipId = "clp_Stem00000000000000001";
+    const addCall = {
+      name: "note_add",
+      input: {
+        clipId: noteClip.id,
+        notes: [
+          [0, 40, 96, 0.8],
+          [96, 43, 96, 0.8],
+        ],
+      },
+    };
+    const clipCall = {
+      name: "clip_create",
+      input: {
+        id: clipId,
+        trackId: noteClip.trackId,
+        name: "Answer",
+        color: "#808080",
+        lengthTicks: 768,
+        content: { kind: "notes", events: [[0, 43, 192, 0.7]] },
+      },
+    };
+    const added = ["evt_Stem0000000000000n001", "evt_Stem0000000000000n002"];
+    const duplicateAdded = {
+      name: "notes_duplicate",
+      input: {
+        clipId: noteClip.id,
+        eventIds: added,
+        offsetTicks: 192,
+        newIds: ["evt_Stem00000000000000001", "evt_Stem00000000000000002"],
+      },
+    };
+    const duplicateClip = {
+      name: "notes_duplicate",
+      input: {
+        clipId,
+        eventIds: null,
+        offsetTicks: 384,
+        newIds: ["evt_Stem00000000000000003"],
+      },
+    };
+    const h = harness([toolUseEvents("Notes first.", [addCall, clipCall])], {}, [
+      toolUseEvents("Then twice.", [duplicateAdded, duplicateClip, explainCall]),
+    ]);
+    const result = await runAssistantTurn(
+      { ...h.deps, idStem: () => stem },
+      SIGNED_IN,
+      request(),
+      { signal: new AbortController().signal, onChunk: () => {} },
+    );
+    // The model was told the IDs its new notes were given.
+    const answers = JSON.stringify(h.provider.requests[1].messages.at(-1));
+    expect(answers).toContain(`count up from ${added[0]} to ${added[1]}`);
+    expect(answers).toContain("Its note's ID is evt_Stem0000000000000n003.");
+
+    const history = createCommandHistory(project);
+    const executor = createProposalExecutor({
+      target: historyProposalTarget(history),
+      analytics: { log() {} },
+    });
+    const proposed = executor.propose(result.proposal);
+    if (!proposed.ok) throw new Error(JSON.stringify(proposed.issues));
+    expect(proposed.handle.apply().ok).toBe(true);
+    const idsIn = (id: string) => {
+      const clip = history.project.clips.find((entry) => entry.id === id);
+      return clip?.content.kind === "notes" ? clip.content.events.map((e) => e.id) : [];
+    };
+    expect(idsIn(noteClip.id)).toEqual(
+      expect.arrayContaining([...added, ...duplicateAdded.input.newIds]),
+    );
+    expect(idsIn(clipId)).toEqual([
+      "evt_Stem0000000000000n003",
+      "evt_Stem00000000000000003",
+    ]);
+  });
+
+  describe("a note ID the model makes in the gateway's counter", () => {
+    const stem = "Stem0000000000000";
+    const firstAdd = {
+      name: "note_add",
+      input: {
+        clipId: noteClip.id,
+        notes: [
+          [0, 40, 96, 0.8],
+          [96, 43, 96, 0.8],
+        ],
+      },
+    };
+    const secondAdd = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[384, 45, 96, 0.8]] },
+    };
+    // The model kept counting from the IDs it was told: n001, n002, so n003.
+    const duplicateAt = (newIds: string[]) => ({
+      name: "notes_duplicate",
+      input: {
+        clipId: noteClip.id,
+        eventIds: [`evt_${stem}n001`],
+        offsetTicks: 192,
+        newIds,
+      },
+    });
+    const turn = (h: Harness) =>
+      runAssistantTurn({ ...h.deps, idStem: () => stem }, SIGNED_IN, request(), {
+        signal: new AbortController().signal,
+        onChunk: () => {},
+      });
+    const noteIdsOf = (result: { proposal: AssistantTurnResult["proposal"] }) =>
+      (result.proposal?.calls ?? []).flatMap((call) => {
+        const input = call.input as { notes?: { id: string }[]; newIds?: string[] };
+        return [...(input.notes ?? []).map((note) => note.id), ...(input.newIds ?? [])];
+      });
+
+    it("is refused back to the model in a step that is answered, and the gateway's counter goes on", async () => {
+      const h = harness([toolUseEvents("Notes.", [firstAdd])], {}, [
+        toolUseEvents("Again, and more.", [duplicateAt([`evt_${stem}n003`]), secondAdd]),
+        toolUseEvents("Fixed.", [duplicateAt([`evt_${stem}0001`]), explainCall]),
+      ]);
+      const result = await turn(h);
+      const answers = JSON.stringify(h.provider.requests[2].messages.at(-1));
+      expect(answers).toContain(
+        `evt_${stem}n003: a note ID with \\"n\\" before its number`,
+      );
+      expect(answers).toContain("4-digit number");
+      expect(answers).toContain(`Its note's ID is evt_${stem}n003.`);
+      expect(noteIdsOf(result)).toEqual([
+        `evt_${stem}n001`,
+        `evt_${stem}n002`,
+        `evt_${stem}n003`,
+        `evt_${stem}0001`,
+      ]);
+      expect(validateProposal(project, result.proposal).ok).toBe(true);
+    });
+
+    it("is skipped when the gateway numbers the last step's notes, which nothing answers", async () => {
+      const h = harness([toolUseEvents("Notes.", [firstAdd])], {}, [
+        toolUseEvents("Again, and more.", [
+          secondAdd,
+          duplicateAt([`evt_${stem}n003`]),
+          explainCall,
+        ]),
+      ]);
+      const result = await turn(h);
+      expect(noteIdsOf(result)).toEqual([
+        `evt_${stem}n001`,
+        `evt_${stem}n002`,
+        `evt_${stem}n004`,
+        `evt_${stem}n003`,
+      ]);
+      expect(validateProposal(project, result.proposal).ok).toBe(true);
+    });
+
+    it("refuses the proposal with why, when the last step reuses one already given", async () => {
+      const h = harness([toolUseEvents("Notes.", [firstAdd])], {}, [
+        toolUseEvents("Again.", [duplicateAt([`evt_${stem}n002`]), explainCall]),
+      ]);
+      const validation = validateProposal(project, (await turn(h)).proposal);
+      expect(validation).toMatchObject({
+        ok: false,
+        issues: [
+          {
+            code: "invalid_payload",
+            message: `evt_${stem}n002: Groove has already given that ID to a note you wrote`,
+          },
+        ],
+      });
+    });
+  });
+
+  it("refuses the proposal with why a note in the last step is not one", async () => {
+    const bad = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[0, 400, 96, 0.8]] },
+    };
+    const h = harness([toolUseEvents("A note.", [bad, explainCall])]);
+    const result = await run(h);
+    expect(validateProposal(project, result.proposal)).toMatchObject({
+      ok: false,
+      issues: [
+        { code: "invalid_payload", message: expect.stringMatching(/^notes\.0\.1:/) },
+      ],
+    });
+  });
+
+  it("refuses a malformed note back to the model, which sends it again", async () => {
+    const bad = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[0, 400, 96, 0.8]] },
+    };
+    const good = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[0, 40, 96, 0.8]] },
+    };
+    const h = harness([toolUseEvents("A note.", [bad])], {}, [
+      toolUseEvents("Fixed.", [good, explainCall]),
+    ]);
+    const result = await run(h);
+    const answers = h.provider.requests[1].messages.at(-1);
+    expect(JSON.stringify(answers)).toContain("notes.0.1:");
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([
+      "note_add",
+      EXPLAIN_TOOL_NAME,
+    ]);
+    expect(validateProposal(project, result.proposal).ok).toBe(true);
+  });
+
+  it("writes out the notes in an ask's previews too, in a counter of their own, so the producer can hear them", async () => {
+    const stem = "Stem0000000000000";
+    const proposed = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[0, 40, 96, 0.8]] },
+    };
+    const previewClip = {
+      name: "clip_create",
+      input: {
+        id: "clp_Stem00000000000000001",
+        trackId: noteClip.trackId,
+        name: "Answer",
+        color: "#808080",
+        lengthTicks: 768,
+        content: {
+          kind: "notes",
+          events: [
+            [0, 43, 192, 0.7],
+            [384, 45, 192, 0.6],
+          ],
+        },
+      },
+    };
+    const previewAdd = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[192, 47, 96, 0.8]] },
+    };
+    const notANote = {
+      name: "note_add",
+      input: { clipId: noteClip.id, notes: [[192, 47]] },
+    };
+    const ask = {
+      name: ASK_PRODUCER_TOOL_NAME,
+      input: {
+        question: "Which answer?",
+        options: [
+          {
+            label: "A call and response",
+            sound: { kind: "preview", calls: [previewClip, previewAdd] },
+          },
+          { label: "A half note", sound: { kind: "preview", calls: [notANote] } },
+        ],
+      },
+    };
+    const h = harness([toolUseEvents("A note and a question.", [proposed, ask])]);
+    const result = await runAssistantTurn(
+      { ...h.deps, idStem: () => stem },
+      SIGNED_IN,
+      request(),
+      { signal: new AbortController().signal, onChunk: () => {} },
+    );
+    const [heard, broken] = (result.ask?.options ?? []).map(
+      (option) => option.sound as Extract<AskSound, { kind: "preview" }>,
+    );
+    const commands = previewCommands(project, heard);
+    expect(commands?.map((command) => command.type)).toEqual(["clip.create", "note.add"]);
+    // Numbered apart from the proposal's notes, and unique within the preview.
+    expect(JSON.stringify(result.proposal?.calls)).toContain("evt_Stem0000000000000n001");
+    const previewIds = JSON.stringify(commands).match(/evt_Stem\w+/g);
+    expect(previewIds).toEqual([
+      "evt_Stem0000000000000p001",
+      "evt_Stem0000000000000p002",
+      "evt_Stem0000000000000p003",
+    ]);
+    // A preview whose notes are not notes is refused, as any bad call is.
+    expect(broken.calls).toEqual([notANote]);
+    expect(previewCommands(project, broken)).toBeNull();
   });
 });
 

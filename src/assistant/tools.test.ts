@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { COMMAND_TYPES, findCommand } from "../commands/registry";
+import { createNoteExpander } from "./compactNotes";
 import {
   APPENDIX_A_FAMILIES,
   ASSISTANT_CAPABILITIES,
@@ -10,6 +11,7 @@ import {
   EXPLAIN_TOOL,
   EXPLAIN_TOOL_NAME,
   NON_ASSISTANT_COMMANDS,
+  OFFERED_CLIP_EXAMPLE,
   PROPOSAL_CAPABILITIES,
   proposalCapability,
   proposalExplanationSchema,
@@ -20,7 +22,7 @@ import {
 
 describe("the assistant's tool set", () => {
   it("is versioned", () => {
-    expect(ASSISTANT_TOOLSET_VERSION).toBe(8);
+    expect(ASSISTANT_TOOLSET_VERSION).toBe(9);
   });
 
   it("maps every Appendix A family the PRD named", () => {
@@ -157,14 +159,20 @@ describe("the assistant's tool set", () => {
 describe("flat create tools (GRV-90)", () => {
   const CASES = [
     ["track_create", "track.create", CREATE_EXAMPLES.track],
-    ["clip_create", "clip.create", CREATE_EXAMPLES.clip],
+    ["clip_create", "clip.create", OFFERED_CLIP_EXAMPLE],
     ["placement_create", "placement.create", CREATE_EXAMPLES.placement],
   ] as const;
 
   it.each(CASES)(
-    "%s accepts the flat input its description shows",
+    "%s accepts the flat input its description shows, its notes written out",
     (name, type, example) => {
-      expect(resolveToolCall(name, example)).toMatchObject({
+      const expanded = createNoteExpander("BassNote000000000").expand({
+        id: "toolu_1",
+        name,
+        input: example,
+      });
+      if (!expanded.ok) throw new Error(expanded.message);
+      expect(resolveToolCall(name, expanded.call.input)).toMatchObject({
         ok: true,
         commandType: type,
       });
@@ -172,6 +180,11 @@ describe("flat create tools (GRV-90)", () => {
       expect(tool?.description).toContain(JSON.stringify(example));
     },
   );
+
+  it("never shows the model the written-out clip, whose note carries an ID", () => {
+    const shown = JSON.stringify(assistantTools());
+    expect(shown).not.toContain(CREATE_EXAMPLES.clip.content.events[0].id);
+  });
 
   it("offers the entity's own fields at the top level of each schema", () => {
     const keys = (name: string) =>

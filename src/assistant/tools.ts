@@ -79,6 +79,7 @@ import {
   TRACK_SEND_LEVEL,
   TRACK_VOLUME,
 } from "../domain/parameters";
+import { compactClipSchema, compactNoteAddSchema } from "./compactNotes";
 
 /**
  * Bumped whenever a tool is added, removed, renamed or changes its rules,
@@ -95,8 +96,11 @@ import {
  * 8: `track_create`, `clip_create` and `placement_create` take the entity
  *    itself, flat, and create only it: a track's clips and their placements
  *    are calls of their own (GRV-90).
+ * 9: `clip_create` and `note_add` take each note as a short array with no ID,
+ *    which the gateway writes out as a note event (`compactNotes.ts`,
+ *    GRV-131).
  */
-export const ASSISTANT_TOOLSET_VERSION = 8;
+export const ASSISTANT_TOOLSET_VERSION = 9;
 
 /** The song's own parameters the assistant may set: its tempo and its swing. */
 const SONG_PARAMETER_IDS: readonly string[] = [SONG_TEMPO.id, SONG_SWING.id];
@@ -234,6 +238,12 @@ interface ToolRule {
   readonly refuseValue?: (payload: unknown, project: Project) => string | null;
   /** What the tool takes, when that is not the command's payload. */
   readonly input?: ToolInput;
+  /**
+   * What the model is offered, when the gateway rewrites it into the tool's
+   * input before the call joins a proposal: notes as short arrays
+   * (`compactNotes.ts`, GRV-131). The browser only ever resolves the input.
+   */
+  readonly offered?: ZodType<unknown>;
 }
 
 function rule(
@@ -368,7 +378,13 @@ export interface AssistantToolInvocation {
 const placementCalls = (placements: readonly unknown[]): AssistantToolInvocation[] =>
   placements.map((input) => ({ name: "placement_create", input }));
 
-/** The flat inputs the create tools' descriptions show, each accepted as it stands. */
+/**
+ * The flat inputs the create tools take, each accepted as it stands. The
+ * track's and the placement's are shown to the model in their tools'
+ * descriptions; the clip's is not, since its notes are written out: it is
+ * what the gateway makes of {@link OFFERED_CLIP_EXAMPLE}, which is shown, in a
+ * turn whose stem is `BassNote000000000` (`compactNotes.ts`).
+ */
 export const CREATE_EXAMPLES = {
   track: {
     id: "trk_BassTrack000000000001",
@@ -391,7 +407,7 @@ export const CREATE_EXAMPLES = {
       kind: "notes",
       events: [
         {
-          id: "evt_BassNote0000000000001",
+          id: "evt_BassNote000000000n001",
           trigger: { kind: "pitch", pitch: 36 },
           startTicks: 0,
           durationTicks: 192,
@@ -410,6 +426,15 @@ export const CREATE_EXAMPLES = {
     clipOffsetTicks: 0,
     looped: true,
   },
+} as const;
+
+/**
+ * The clip `clip_create`'s description shows: its notes as the model writes
+ * them (GRV-131).
+ */
+export const OFFERED_CLIP_EXAMPLE = {
+  ...CREATE_EXAMPLES.clip,
+  content: { kind: "notes", events: [[0, 36, 192, 0.8]] },
 } as const;
 
 const TRACK_INPUT: ToolInput = {
@@ -452,8 +477,21 @@ const TRACK_CREATE_DESCRIPTION = [
 const CLIP_CREATE_DESCRIPTION = [
   "Add a clip to a track: one in the project, or one track_create made earlier in this reply. The input is the clip itself, its fields at the top level: id, trackId, name, color, lengthTicks, content.",
   "A clip plays only once placed: follow it with placement_create.",
-  "Duplicate a clip as an independent variation by creating a copy with new IDs.",
-  `Example input: ${JSON.stringify(CREATE_EXAMPLES.clip)}`,
+  "Duplicate a clip as an independent variation by creating a copy with a new clip ID (its notes, as always here, take no ID).",
+  `Each note in content.events is an array, [startTicks, pitch, durationTicks, velocity], with no ID; a drum hit has its pad's ID in place of the pitch, e.g. [0, "pad_...", 48, 0.9]; an optional fifth number is its probability.`,
+  `Example input: ${JSON.stringify(OFFERED_CLIP_EXAMPLE)}`,
+].join(" ");
+
+const NOTE_ADD_DESCRIPTION = [
+  "Add notes to a clip.",
+  `Each note is an array, [startTicks, pitch, durationTicks, velocity], with no ID; a drum hit has its pad's ID in place of the pitch, e.g. [0, "pad_...", 48, 0.9]; an optional fifth number is its probability.`,
+  `Example input: ${JSON.stringify({
+    clipId: CREATE_EXAMPLES.clip.id,
+    notes: [
+      [0, 36, 192, 0.8],
+      [384, 43, 192, 0.7],
+    ],
+  })}`,
 ].join(" ");
 
 const PLACEMENT_CREATE_DESCRIPTION = [
@@ -478,17 +516,24 @@ const TOOL_RULES: readonly ToolRule[] = [
   rule("track.update", "tracks", "Rename or recolour a track."),
   rule("track.reorder", "tracks", "Move a track to a new position in the track list."),
   rule("track.delete", "tracks", "Remove a track and its clips and placements."),
-  flatRule("clip.create", "clips", CLIP_CREATE_DESCRIPTION, CLIP_INPUT),
+  {
+    ...flatRule("clip.create", "clips", CLIP_CREATE_DESCRIPTION, CLIP_INPUT),
+    offered: compactClipSchema,
+  },
   rule("clip.update", "clips", "Rename, recolour or resize a clip."),
   rule("clip.delete", "clips", "Remove a clip and every placement of it."),
-  rule("note.add", "notes", "Add note events to a clip."),
+  { ...rule("note.add", "notes", NOTE_ADD_DESCRIPTION), offered: compactNoteAddSchema },
   rule("note.update", "notes", "Move, resize, re-pitch or re-velocity note events."),
   rule("note.remove", "notes", "Remove note events from a clip."),
   rule("notes.transpose", "notes", "Transpose a clip's notes, or some of them."),
   rule("notes.scaleVelocity", "notes", "Scale the velocity of a clip's notes."),
   rule("notes.quantize", "notes", "Quantize a clip's notes to a grid."),
   rule("notes.quantizeToScale", "notes", "Move a clip's notes onto a scale."),
-  rule("notes.duplicate", "notes", "Repeat a clip's notes later in the clip."),
+  rule(
+    "notes.duplicate",
+    "notes",
+    "Repeat a clip's notes later in the clip. newIds holds one new note ID per note copied (every note in the clip when eventIds is null), in order, made from this turn's stem.",
+  ),
   rule("notes.clear", "notes", "Remove every note from a clip."),
   rule("notes.vary", "notes", "Vary a clip's notes deterministically from a seed."),
   flatRule(
@@ -566,7 +611,7 @@ function toolDefinition(entry: ToolRule): AssistantToolDefinition {
   // `input` describes what the model may send: a field with a default is
   // optional to it, which is what the kernel's own parse accepts.
   const { $schema: _dialect, ...inputSchema } = z.toJSONSchema(
-    entry.input?.schema ?? command.schema,
+    entry.offered ?? entry.input?.schema ?? command.schema,
     {
       io: "input",
     },

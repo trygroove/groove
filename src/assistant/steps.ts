@@ -23,6 +23,7 @@
  * for a pad that does not exist.
  */
 import { isAskCall } from "./ask";
+import type { ExpandedCall, NoteExpander } from "./compactNotes";
 import { isRememberCall } from "./memory";
 import type { AssistantStopReason, AssistantToolCall } from "./protocol";
 import type { ProviderToolResultBlock } from "./providerRequest";
@@ -42,6 +43,23 @@ export const ADDED_RESULT =
   "Added to the proposal. Nothing changes until the producer applies the whole proposal. Go on to the next step; call explain_change once the proposal is complete.";
 
 const NOTED_RESULT = "Noted.";
+
+/**
+ * What a change call that joined the proposal is told: {@link ADDED_RESULT},
+ * and the IDs its new notes were given (GRV-131), so a later step can update,
+ * remove or duplicate them. They count up from the first, so the first and
+ * the last say them all.
+ */
+export function addedResult(noteIds: readonly string[]): string {
+  const [first] = noteIds;
+  const last = noteIds.at(-1);
+  if (first === undefined || last === undefined) return ADDED_RESULT;
+  const ids =
+    noteIds.length === 1
+      ? `Its note's ID is ${first}.`
+      : `Its ${noteIds.length} notes' IDs, in the order you gave them, count up from ${first} to ${last}.`;
+  return `${ADDED_RESULT} ${ids}`;
+}
 
 /**
  * Whether `call` changes the song, rather than explaining, asking,
@@ -93,8 +111,35 @@ export interface AnsweredStep {
 }
 
 /**
- * Answers a step: each change call that fits its tool joins the proposal and
- * is told so; one that does not is refused, with why, and left out. A
+ * The calls of a step the turn does not answer (its last), handed on with
+ * their compact notes written out. The note IDs the calls make themselves are
+ * held back first, so a note written out in one of them never takes one. A
+ * call that cannot be written out, or that makes a note ID already given to
+ * a note, goes on as it came with why as its `refusal`, which the browser
+ * reports as the reason it refuses the proposal (nothing is left to answer
+ * the model with).
+ */
+export function expandCalls(
+  calls: readonly AssistantToolCall[],
+  notes: NoteExpander,
+): AssistantToolCall[] {
+  const refusals = calls.map((call) =>
+    isChangeCall(call) ? notes.refuseMintedIds(call) : null,
+  );
+  notes.reserve(calls.filter((_, index) => refusals[index] === null));
+  return calls.map((call, index) => {
+    if (!isChangeCall(call)) return call;
+    const refused = refusals[index];
+    if (refused != null) return { ...call, refusal: refused };
+    const expanded = notes.expand(call);
+    return expanded.ok ? expanded.call : { ...call, refusal: expanded.message };
+  });
+}
+
+/**
+ * Answers a step the turn continues after: each change call that fits its
+ * tool, once its compact notes are written out, joins the proposal written
+ * out and is told so; one that does not is refused, with why, and left out. A
  * recommendation aimed at a track or pad that is neither in `targets` nor
  * made by an earlier call is refused the same way. Any other call is noted
  * and kept.
@@ -102,6 +147,7 @@ export interface AnsweredStep {
 export function answerStep(
   calls: readonly AssistantToolCall[],
   targets: RecommendationTargets,
+  notes: NoteExpander,
 ): AnsweredStep {
   const kept: AssistantToolCall[] = [];
   let known = targets;
@@ -124,13 +170,45 @@ export function answerStep(
       kept.push(call);
       return { type: "tool_result", tool_use_id: call.id, content: NOTED_RESULT };
     }
-    const resolution = resolveToolCall(call.name, call.input);
-    if (!resolution.ok) return refuse(call, resolution.message);
-    kept.push(call);
-    known = withCreatedTargets(known, call);
-    return { type: "tool_result", tool_use_id: call.id, content: ADDED_RESULT };
+    // A note ID of the model's in the gateway's counter is refused before
+    // any of the call's notes is numbered (`compactNotes.ts`).
+    const clash = notes.refuseGatewayIds(call);
+    const expanded: ExpandedCall =
+      clash !== null
+        ? { ok: false, message: clash }
+        : notes.expand(call, (written) => {
+            const resolution = resolveToolCall(written.name, written.input);
+            return resolution.ok ? null : resolution.message;
+          });
+    if (!expanded.ok) return refuse(call, expanded.message);
+    kept.push(expanded.call);
+    known = withCreatedTargets(known, expanded.call);
+    return {
+      type: "tool_result",
+      tool_use_id: call.id,
+      content: addedResult(expanded.noteIds),
+    };
   });
   return { kept, results, targets: known, misaimed };
+}
+
+/**
+ * How many of a step's recommendations name a track or pad that is neither
+ * in `targets` nor made by an earlier call of the step: what
+ * {@link answerStep} would count, without numbering any notes, so the turn
+ * can tell whether the step is its last before answering it.
+ */
+export function misaimedIn(
+  calls: readonly AssistantToolCall[],
+  targets: RecommendationTargets,
+): number {
+  let known = targets;
+  let misaimed = 0;
+  for (const call of calls) {
+    if (misaimedRecommendation(call, known)) misaimed += 1;
+    else if (isChangeCall(call)) known = withCreatedTargets(known, call);
+  }
+  return misaimed;
 }
 
 /**
@@ -141,7 +219,7 @@ export function answerStep(
 export function goesOnToReaim(
   stopReason: AssistantStopReason,
   calls: readonly AssistantToolCall[],
-  answered: AnsweredStep,
+  answered: Pick<AnsweredStep, "misaimed">,
 ): boolean {
   return stopReason === "tool_use" && answered.misaimed > 0 && !calls.some(isAskCall);
 }

@@ -327,6 +327,13 @@ export interface AssistantToolCall {
   readonly id: string;
   readonly name: string;
   readonly input: unknown;
+  /**
+   * Why the gateway could not make this call one the browser can apply, when
+   * it could not and had no step left to tell the model (GRV-131): a note
+   * that is not one, say. The browser refuses the proposal with it as the
+   * reason. Set only by the gateway, never by the model.
+   */
+  readonly refusal?: string;
 }
 
 /**

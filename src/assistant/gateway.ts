@@ -52,6 +52,7 @@
  * every search that finds nothing YouTube vouches for dropped.
  */
 import { type AssistantAsk, askProducerTool, isAskCall, parseAskCall } from "./ask";
+import { createNoteExpander, expandAskPreviews } from "./compactNotes";
 import {
   ASSISTANT_CALL_LIMITS,
   ASSISTANT_HEARTBEAT_INTERVAL_MS,
@@ -92,7 +93,13 @@ import { recommendationTool } from "./recommendation";
 import { contextTargets } from "./recommendationTargets";
 import { recordTurn, type TranscriptWrite } from "./retention";
 import { costMicroUsd, spendDay, usdToMicro } from "./spend";
-import { answerStep, continuesAfter, goesOnToReaim } from "./steps";
+import {
+  answerStep,
+  continuesAfter,
+  expandCalls,
+  goesOnToReaim,
+  misaimedIn,
+} from "./steps";
 import { NO_USAGE, type ProviderUsage, StreamReader } from "./streamEvents";
 import { type AssistantTurnLog, toTurnLog } from "./telemetry";
 import {
@@ -727,13 +734,17 @@ export async function runAssistantTurn(
     if (!(await deps.guards.isEnabled())) {
       throw new AssistantGatewayError("assistant_disabled", DISABLED_MESSAGE);
     }
+    const idStem = (deps.idStem ?? createIdStem)();
     const prepared = await prepare(
       model,
       uid,
       turn,
-      (deps.idStem ?? createIdStem)(),
+      idStem,
       deps.findVideo !== undefined,
     );
+    // Notes come as short arrays and join the proposal as note events, their
+    // IDs from the turn's stem (`compactNotes.ts`, GRV-131).
+    const notes = createNoteExpander(idStem);
     history = prepared.history;
 
     const cancelled = () =>
@@ -828,18 +839,22 @@ export async function runAssistantTurn(
         throw new AssistantGatewayError("reply_too_long", TOO_LONG_MESSAGE);
       }
       texts.push(outcome.text);
-      const answered = answerStep(outcome.toolCalls, targets);
+      // Whether the step is the last is settled before it is answered, so a
+      // last step's notes are numbered once, by `expandCalls`.
       const goesOn =
         continuesAfter(outcome.stopReason, outcome.toolCalls) ||
-        goesOnToReaim(outcome.stopReason, outcome.toolCalls, answered);
+        goesOnToReaim(outcome.stopReason, outcome.toolCalls, {
+          misaimed: misaimedIn(outcome.toolCalls, targets),
+        });
       // The last step allowed hands its calls on as they came, as a turn of
       // one call does: the browser refuses whatever does not fit.
       if (!goesOn || step >= maxSteps) {
-        calls.push(...outcome.toolCalls);
+        calls.push(...expandCalls(outcome.toolCalls, notes));
         // A turn whose steps made calls stopped for them, as one call's would.
         stopReason = calls.length > 0 ? "tool_use" : outcome.stopReason;
         break;
       }
+      const answered = answerStep(outcome.toolCalls, targets, notes);
       targets = answered.targets;
       calls.push(...answered.kept);
       messages = [
@@ -849,7 +864,10 @@ export async function runAssistantTurn(
       ];
     }
 
-    const ask = askOf(calls);
+    // An option's preview takes notes as the proposal does, written out in
+    // a counter of their own (`compactNotes.ts`, GRV-131).
+    const asked = askOf(calls);
+    const ask = asked && expandAskPreviews(asked, idStem);
     // Every search that turns up no video YouTube vouches for is dropped,
     // never shown unchecked (ADR 0009 decision 5).
     checked = await checkVideoCalls(calls, deps.findVideo, options.signal);
