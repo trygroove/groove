@@ -449,16 +449,18 @@ describe("the recommended pack card (GRV-23)", () => {
     expect(cardStatus()).toHaveTextContent("BD is trying Soft Rounded Kick.");
   });
 
-  it("says the slot is gone, not that it changed, when Try finds it deleted", async () => {
+  it("disables Try, and says the pad is gone, once its slot is deleted (GRV-129)", async () => {
     const { recommend, session, port, track, pad } = await setUp();
     await recommend();
     fireAndFlush(() => session.dispatch(removePad(track.id, pad.id)));
-    await press(cardButton("Try on BD"));
+    expect(within(card()).queryByRole("button", { name: "Try on BD" })).toBeNull();
+    expect(cardButton("Try")).toBeDisabled();
     expect(port.previewInSlot).not.toHaveBeenCalled();
-    expect(cardStatus()).toHaveTextContent(
-      "Out of date. BD is no longer in the song, so there's nothing to try these on.",
-    );
+    expect(cardStatus()).toHaveTextContent(MISSING_PAD);
     expect(cardStatus()).not.toHaveTextContent("while a sound was being tried");
+    // Undoing the delete brings the pad, and Try on it, back.
+    fireAndFlush(() => session.undo());
+    expect(cardButton("Try on BD")).toBeEnabled();
   });
 
   it("keeps focus on the card's buttons when Keep could not be done", async () => {

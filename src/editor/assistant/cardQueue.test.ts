@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { type CardQueue, moreAfterThis, skippedLine, useCardQueue } from "./cardQueue";
 
 /** A card whose decision and skip the test sets, and which records being shown. */
-function testCard(entryId: string, shown: string[]) {
+function testCard(entryId: string, shown: string[], holds: string[] = []) {
   const [decided, setDecided] = createSignal(false);
   const [skip, setSkip] = createSignal(false);
   return {
@@ -12,9 +12,14 @@ function testCard(entryId: string, shown: string[]) {
       show: () => shown.push(entryId),
       decided,
       skip,
+      hold: () => holds.push(entryId),
     },
     decide: () => {
       setDecided(true);
+      flush();
+    },
+    takeBack: () => {
+      setDecided(false);
       flush();
     },
     setSkip,
@@ -87,6 +92,31 @@ describe("a turn's cards, one at a time (GRV-129)", () => {
     expect(queue.held("snare")).toBe(false);
     expect(queue.skipped("p")).toBe(2);
     expect(queue.skipped("kick")).toBe(0);
+    dispose();
+  });
+
+  it("holds the shown cards after one taken back, until it is decided again", () => {
+    const { queue, dispose } = setUp();
+    const shown: string[] = [];
+    const holds: string[] = [];
+    const turn = {};
+    const [a, b, c] = ["a", "b", "c"].map((id) => testCard(id, shown, holds));
+    if (!a || !b || !c) throw new Error("no cards");
+    for (const entry of [a, b, c]) queue.add(turn, entry.card);
+    flush();
+    a.decide();
+    expect(queue.held("b")).toBe(false);
+    a.takeBack();
+    expect(queue.held("b")).toBe(true);
+    expect(queue.held("c")).toBe(true);
+    expect(queue.heldAfter("a")).toBe(2);
+    expect(queue.heldAfter("b")).toBe(0);
+    expect(holds).toEqual(["b"]);
+    a.decide();
+    // b comes back as it was, not shown a second time.
+    expect(queue.held("b")).toBe(false);
+    expect(queue.heldAfter("b")).toBe(1);
+    expect(shown).toEqual(["a", "b"]);
     dispose();
   });
 

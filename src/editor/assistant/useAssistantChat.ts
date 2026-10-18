@@ -333,6 +333,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
             entryId,
             show: () => recommendations.receive(entryId, call, library, origin),
             decided: () => recommendations.decided(entryId),
+            hold: () => recommendations.hold(entryId),
             skip: () => forDeclinedProposal(origin, call),
           })
       : undefined,
