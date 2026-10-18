@@ -1,0 +1,18 @@
+{
+  "id": "GRV-129",
+  "title": "Undo and the card queue",
+  "steps": [
+    {
+      "file": "01-kick-s-keep-undone-its-card-is-current-a.png",
+      "caption": "Kick's keep undone: its card is current again, the snare's held"
+    },
+    {
+      "file": "02-proposal-undone-try-disabled-the-pad-isn.png",
+      "caption": "Proposal undone: Try disabled, the pad isn't in the song"
+    },
+    {
+      "file": "03-redone-try-on-snare-again.png",
+      "caption": "Redone: Try on Snare again"
+    }
+  ]
+}
