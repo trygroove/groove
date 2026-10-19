@@ -310,7 +310,7 @@ describe("renderProjectOffline cancellation and failure", () => {
     expect(Tone.getContext()).toBe(live);
   });
 
-  it("fails as an internal error mid-render, and still finishes the render", async () => {
+  it("fails as a render failure mid-render, and still finishes the render", async () => {
     const contexts = nativeContexts();
     const { outcome } = await render(createPianoRollFixtureProject(), {
       maxTailSeconds: 20,
@@ -318,7 +318,7 @@ describe("renderProjectOffline cancellation and failure", () => {
         if (fraction > 0.5) throw new Error("bug");
       },
     });
-    expect((await rejection(outcome)).code).toBe("internal");
+    expect((await rejection(outcome)).code).toBe("render_failed");
     expect(contexts.map((context) => context.state)).toEqual(["closed"]);
   });
 
@@ -358,7 +358,7 @@ describe("renderProjectOffline cancellation and failure", () => {
     expect(registry.isEmpty()).toBe(true);
   });
 
-  it("fails as an internal error when the graph cannot be built, and restores the live context", async () => {
+  it("fails as a render failure when the graph cannot be built, and restores the live context", async () => {
     const live = Tone.getContext();
     const { outcome, registry } = await render(createPianoRollFixtureProject(), {
       createInstrument: () => {
@@ -366,9 +366,21 @@ describe("renderProjectOffline cancellation and failure", () => {
       },
     });
     const error = await rejection(outcome);
-    expect(error.code).toBe("internal");
+    expect(error.code).toBe("render_failed");
     expect(registry.isEmpty()).toBe(true);
     expect(Tone.getContext()).toBe(live);
+  });
+});
+
+// GRV-55: a render the browser has no memory for says so, not "internal".
+describe("renderProjectOffline out of memory (GRV-55)", () => {
+  it("fails as out of memory when an allocation fails", async () => {
+    const { outcome } = await render(createPianoRollFixtureProject(), {
+      onProgress: () => {
+        throw new RangeError("Array buffer allocation failed");
+      },
+    });
+    expect((await rejection(outcome)).code).toBe("out_of_memory");
   });
 });
 

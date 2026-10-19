@@ -266,6 +266,17 @@ describe("exportStereoWav", () => {
     expect(transport.named("export_completed")).toHaveLength(0);
   });
 
+  it("classifies a failed allocation as out of memory (GRV-55)", async () => {
+    const { transport, analytics } = recordingAnalytics();
+    await expect(
+      exportStereoWav(createSliceFixtureProject(), {
+        analytics,
+        render: failingRender(new RangeError("Array buffer allocation failed")),
+      }),
+    ).rejects.toMatchObject({ code: "out_of_memory" });
+    expect(transport.named("export_failed")[0]?.params.error_code).toBe("out_of_memory");
+  });
+
   it("classifies an unexpected error as internal", async () => {
     const { transport, analytics } = recordingAnalytics();
     await expect(
