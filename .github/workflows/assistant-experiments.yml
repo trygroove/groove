@@ -1,9 +1,10 @@
 name: Assistant experiments
 
 # One assistant experiment (GRV-110), `bun run assistant:experiment`, against
-# the live model, offline on the eval fixtures. On demand only, from the
-# Actions tab ("Run workflow"): every run spends real API credit, so it never
-# runs per push or on a schedule.
+# the live model, offline on the eval fixtures. Started on demand only: by the
+# board when the PR that adds or changes an experiment and completes its card
+# merges (`board.mjs pr`, on main), or from the Actions tab ("Run workflow").
+# Every run spends real API credit, so it never runs per push or on a schedule.
 #
 # Pick the branch the experiment's tactic is on under "Use workflow from":
 # every variant runs in this one job against that commit, interleaved case by
@@ -14,7 +15,8 @@ name: Assistant experiments
 # given here wins over the file's.
 #
 # The verdict and the report are posted as a comment on the experiment's card
-# (`LINEAR_API_KEY`). On a win it opens one PR labelled `hold`, from a new
+# (`LINEAR_API_KEY`), which then moves: Ready For Review on a win, Done on no
+# win, Blocked when inconclusive or when this job fails. On a win it opens one PR labelled `hold`, from a new
 # branch off this commit, that makes the winning tactic values (and every cut
 # that kept) the defaults and commits the report as `docs/experiments/<id>.md`. It pushes and opens that PR
 # with `RESTACK_TOKEN` when it is set, because GitHub starts no workflows (CI,
@@ -78,6 +80,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           bun run assistant:experiment -- --out tmp/assistant-experiments/run
+      - name: Block the card on a failed run
+        if: ${{ failure() }}
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          EXPERIMENT_ID: ${{ inputs.experiment }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          file="evals/experiments/${EXPERIMENT_ID}.ts"
+          card=$(grep -oE 'card: *"[A-Z]+-[0-9]+"' "$file" 2>/dev/null | grep -oE '[A-Z]+-[0-9]+' | head -1)
+          [ -n "$card" ] && [ -n "$LINEAR_API_KEY" ] || exit 0
+          node .github/scripts/linear.mjs comment "$card" --body "**Experiment run failed.** See $RUN_URL; re-run it from the Actions tab once the cause is fixed."
+          node .github/scripts/linear.mjs state "$card" Blocked
       - name: Add the report to the run summary
         if: ${{ !cancelled() && hashFiles('tmp/assistant-experiments/run/experiment.md') != '' }}
         run: cat tmp/assistant-experiments/run/experiment.md >> "$GITHUB_STEP_SUMMARY"

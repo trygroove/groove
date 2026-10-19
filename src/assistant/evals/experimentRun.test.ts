@@ -186,6 +186,7 @@ const cut = (tactics: Readonly<Record<string, string>>) => ({ kind: "cut", tacti
 function recorder(options: { failPullRequest?: string } = {}) {
   const comments: { card: string; body: string }[] = [];
   const pulls: WinPullRequest[] = [];
+  const moves: { card: string; state: string }[] = [];
   const publisher: ExperimentPublisher = {
     postComment: async (card, body) => {
       comments.push({ card, body });
@@ -196,8 +197,11 @@ function recorder(options: { failPullRequest?: string } = {}) {
       pulls.push(plan);
       return "https://github.com/trygroove/groove/pull/1";
     },
+    moveCard: async (card, state) => {
+      moves.push({ card, state });
+    },
   };
-  return { comments, pulls, publisher };
+  return { comments, moves, pulls, publisher };
 }
 
 const LINKS = {
@@ -268,7 +272,7 @@ describe("an experiment's dry run (GRV-110)", () => {
     expect(result.spentUsd).toBeGreaterThan(0);
     expect(experimentExitCode(result)).toBe(0);
 
-    const { comments, pulls, publisher } = recorder();
+    const { comments, moves, pulls, publisher } = recorder();
     const concluded = await concludeExperiment(result, publisher, planOptions(SOURCES));
     expect(pulls).toHaveLength(1);
     const [pull] = pulls;
@@ -278,7 +282,10 @@ describe("an experiment's dry run (GRV-110)", () => {
     expect(pull.title).toBe(
       "Implement GRV-110: Default to terseNotes=on (experiment planted)",
     );
-    expect(pull.body).toContain("Refs GRV-110");
+    // Its merge puts the card in QA, so production is tested on the new defaults.
+    expect(pull.body).toContain("Completes GRV-110");
+    // The card waits on the held PR.
+    expect(moves).toEqual([{ card: "GRV-110", state: "Ready For Review" }]);
     expect(pull.files.map((file) => file.path)).toEqual([
       TACTICS_PATH,
       PROMPT_PATH,
@@ -325,9 +332,11 @@ describe("an experiment's dry run (GRV-110)", () => {
     expect(result.trainAnalyses[0].goal.change).toBe(0);
     expect(result.gates).toEqual([]);
     expect(result.winner).toBeNull();
-    const { comments, pulls, publisher } = recorder();
-    await concludeExperiment(result, publisher, planOptions({}));
+    const { comments, moves, pulls, publisher } = recorder();
+    const concluded = await concludeExperiment(result, publisher, planOptions({}));
     expect(pulls).toEqual([]);
+    expect(moves).toEqual([{ card: "GRV-110", state: concluded.cardState }]);
+    expect(concluded.cardState).toBe(result.verdict === "no win" ? "Done" : "Blocked");
     expect(comments).toHaveLength(1);
     expect(comments[0].body).toContain("Not run: no variant won on train.");
   });
@@ -356,11 +365,13 @@ describe("an experiment's dry run (GRV-110)", () => {
     const result = await runExperiment(planted({ terse: { terseNotes: "on" } }), {
       runTurn: plantedTurns(),
     });
-    const { comments, publisher } = recorder({
+    const { comments, moves, publisher } = recorder({
       failPullRequest: "Command failed: gh pr create\nHTTP 403",
     });
     const concluded = await concludeExperiment(result, publisher, planOptions(SOURCES));
     expect(concluded.pullRequestUrl).toBeNull();
+    // A win with no PR to wait on needs the product owner.
+    expect(moves).toEqual([{ card: "GRV-110", state: "Blocked" }]);
     expect(concluded.pullRequestError).toBe("Command failed: gh pr create HTTP 403");
     expect(comments).toHaveLength(1);
     expect(comments[0].body).toContain(

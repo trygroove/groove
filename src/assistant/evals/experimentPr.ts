@@ -4,7 +4,10 @@
  * improve's tactic values, and every cut's that kept together, production's
  * defaults, and commits the report as `docs/experiments/<id>.md`. On no win
  * or an inconclusive one there is no PR, just the comment. A PR that fails to
- * open is said so in the comment, which is posted regardless.
+ * open is said so in the comment, which is posted regardless. Then the card
+ * moves on the board: Ready For Review on a win, Done on no win, Blocked
+ * otherwise. The board started the run when the PR that built the experiment
+ * merged, and left the card In Progress until now (`board.mjs pr`).
  *
  * The PR's changes are worked out here, as plain file contents, so they are
  * tested without git: each winning tactic's `default:` line in
@@ -187,9 +190,9 @@ export function planWinPullRequest(
       : []),
     `It changes the defaults in \`${TACTICS_PATH}\`${bumps.length > 0 ? `, bumps ${bumps.join(" and ")} because the tactic alters them,` : ""} and commits the report as \`${experimentDocPath(experiment.id)}\`.`,
     "",
-    `Refs ${experiment.card}`,
+    `Completes ${experiment.card}`,
     "",
-    `Labelled \`${HOLD_LABEL}\`: production takes the new defaults only when the product owner decides.`,
+    `Labelled \`${HOLD_LABEL}\`: production takes the new defaults only when the product owner decides. Merging it puts the card in QA, which tests the new defaults on production.`,
     "",
     "## Screenshots",
     "",
@@ -223,6 +226,25 @@ export interface ExperimentPublisher {
   readonly postComment: (card: string, body: string) => Promise<string | null>;
   /** Opens the PR. Resolves with its URL. */
   readonly openPullRequest: (plan: WinPullRequest) => Promise<string>;
+  /** Moves the card to the board column the verdict leaves it in. */
+  readonly moveCard: (card: string, state: CardState) => Promise<void>;
+}
+
+/** The board columns an experiment's verdict moves its card to. */
+export type CardState = "Ready For Review" | "Done" | "Blocked";
+
+/**
+ * Where the card goes once the report is up. A win waits in Ready For Review
+ * on its held PR; no win is the card's answer, so it is Done; an inconclusive
+ * run, or a win whose PR did not open, needs the product owner, so Blocked.
+ */
+export function cardStateAfter(
+  verdict: ExperimentResult["verdict"],
+  pullRequestUrl: string | null,
+): CardState {
+  if (verdict === "no win") return "Done";
+  if (verdict === "win" && pullRequestUrl) return "Ready For Review";
+  return "Blocked";
 }
 
 export interface Concluded {
@@ -231,11 +253,13 @@ export interface Concluded {
   /** Why the win's PR did not open, or null when it did or there was none. */
   readonly pullRequestError: string | null;
   readonly commentUrl: string | null;
+  readonly cardState: CardState;
 }
 
 /**
  * Opens the win's PR, if there is one, then posts the report (linking it, or
- * saying why it did not open) on the card. Returns the report as posted and
+ * saying why it did not open) on the card and moves the card
+ * ({@link cardStateAfter}). Returns the report as posted and
  * what was opened; a PR that failed to open is in `pullRequestError`, so the
  * caller can fail the run after the comment is up.
  */
@@ -259,5 +283,7 @@ export async function concludeExperiment(
     pullRequestError,
   });
   const commentUrl = await publisher.postComment(result.experiment.card, markdown);
-  return { markdown, pullRequestUrl, pullRequestError, commentUrl };
+  const cardState = cardStateAfter(result.verdict, pullRequestUrl);
+  await publisher.moveCard(result.experiment.card, cardState);
+  return { markdown, pullRequestUrl, pullRequestError, commentUrl, cardState };
 }
