@@ -328,6 +328,23 @@ Always start the reply with a sentence saying what you are proposing or asking, 
 /** The fixed prompt production sends: every tactic at its default. */
 export const ASSISTANT_SYSTEM_PROMPT = assistantSystemPrompt();
 
+/**
+ * The rules many tool descriptions repeat, said once (GRV-146). Part of the
+ * `toolText` tactic: the first system block carries them only when the tools'
+ * text is trimmed (`moderate` or `aggressive`), so the default leaves the
+ * prompt exactly as it was.
+ */
+export const SHARED_TOOL_RULES = `## Shared tool rules
+
+These hold for every tool, and the tools' own descriptions do not repeat them.
+
+- IDs: copy an existing ID exactly. Every entity you create gets an explicit ID of its own, made from this turn's stem; never reuse one.
+- Time is in whole ticks: ${TICKS_PER_QUARTER} to a quarter note, ${TICKS_PER_SIXTEENTH} to a sixteenth, ${TICKS_PER_BAR} to a 4/4 bar. startTicks, durationTicks and lengthTicks are ticks.
+- A value outside a parameter's range is refused, never clamped.
+- track_create, clip_create and placement_create each take one entity, its fields at the top level. A track's clips and their placements are separate calls after it, in the same reply, and a clip plays only once placed.
+- A new note is an array with no ID: [startTicks, pitch, durationTicks, velocity], with an optional fifth number for its probability; a drum hit has its pad's ID in place of the pitch. Only notes_duplicate's newIds takes note IDs you make.
+- A duplicate is a create with new IDs: a copy of the track, clip or notes under fresh IDs, then copies of what it holds.`;
+
 /** How to make this turn's new IDs from `stem`, worked through with examples. */
 export function newIdInstructions(stem: string): string {
   const examples = [
@@ -360,10 +377,14 @@ export function buildSystemBlocks(
   library?: AssistantLibraryContext,
   idStem: string = createIdStem(),
   memory?: AssistantMemoryContext,
-  tactics: Pick<TacticValues, "oneResponseProposal"> = TACTIC_DEFAULTS,
+  tactics: Pick<TacticValues, "oneResponseProposal" | "toolText"> = TACTIC_DEFAULTS,
 ): ProviderTextBlock[] {
+  const prompt = assistantSystemPrompt(tactics);
   const blocks: ProviderTextBlock[] = [
-    { type: "text", text: assistantSystemPrompt(tactics) },
+    {
+      type: "text",
+      text: tactics.toolText === "full" ? prompt : `${prompt}\n\n${SHARED_TOOL_RULES}`,
+    },
     { type: "text", text: `${PROJECT_BLOCK_HEADING}${JSON.stringify(context)}` },
   ];
   if (library) {

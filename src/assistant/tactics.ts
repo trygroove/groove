@@ -49,6 +49,13 @@ export const TACTICS = {
     default: "low",
     alters: ["request"],
   },
+  toolText: {
+    description:
+      "How much text the tool definitions carry (GRV-146): `full` is every description as written; `moderate` and `aggressive` trim each tool's text and move the rules many tools repeat into one shared block in the system prompt.",
+    values: ["full", "moderate", "aggressive"],
+    default: "full",
+    alters: ["prompt", "tools"],
+  },
   oneResponseProposal: {
     description:
       "Whether the model writes a whole proposal's change calls in one response (on), at most two steps of change calls a turn, rather than a part a step (off).",

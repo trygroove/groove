@@ -276,6 +276,16 @@ describe("the experiment files (GRV-110)", () => {
     }
   });
 
+  it("include GRV-146's: toolText moderate and aggressive, for time to the first word", async () => {
+    const experiment = await loadExperiment("tool-text");
+    expect(experiment.goal).toBe("firstTextP50");
+    expect(experiment.cases).toBe("all");
+    expect([
+      ...experiment.variants.slice(1).map((v) => v.name),
+      ...experiment.atDefaults,
+    ]).toEqual(["moderate", "aggressive"]);
+  });
+
   it("include GRV-110's own: thinkingEffort=low on the heavy set, for output tokens", async () => {
     const written = (await import("../../../evals/experiments/thinking-effort-low"))
       .default;

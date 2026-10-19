@@ -112,6 +112,8 @@ import {
   assistantTools,
   EXPLAIN_TOOL,
   makesChanges,
+  withProviderToolText,
+  withToolText,
 } from "./tools";
 import {
   type AssistantTraceSink,
@@ -298,10 +300,20 @@ async function prepare(
   // that can search YouTube may recommend a tutorial (GRV-16), and one that
   // carries the producer's memory may propose adding to it (GRV-25).
   const tools = [
-    ...providerTools([...assistantTools(), EXPLAIN_TOOL, askProducerTool()]),
-    ...(turn.library ? [recommendationTool()] : []),
-    ...(videos ? [videoRecommendationTool()] : []),
-    ...(turn.memory ? providerTools([rememberTool()]) : []),
+    ...providerTools([
+      ...assistantTools(tactics.toolText),
+      withToolText(EXPLAIN_TOOL, tactics.toolText),
+      withToolText(askProducerTool(), tactics.toolText),
+    ]),
+    ...(turn.library
+      ? [withProviderToolText(recommendationTool(), tactics.toolText)]
+      : []),
+    ...(videos
+      ? [withProviderToolText(videoRecommendationTool(), tactics.toolText)]
+      : []),
+    ...(turn.memory
+      ? providerTools([withToolText(rememberTool(), tactics.toolText)])
+      : []),
   ];
   // The tool definitions take room in the window just as the prompt does.
   const systemTokens =

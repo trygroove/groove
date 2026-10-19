@@ -79,7 +79,12 @@ import {
   TRACK_SEND_LEVEL,
   TRACK_VOLUME,
 } from "../domain/parameters";
-import { compactClipSchema, compactNoteAddSchema } from "./compactNotes";
+import {
+  COMPACT_NOTE_DESCRIPTION,
+  compactClipSchema,
+  compactNoteAddSchema,
+} from "./compactNotes";
+import type { TacticValues } from "./tactics";
 
 /**
  * Bumped whenever a tool is added, removed, renamed or changes its rules,
@@ -574,6 +579,342 @@ const TOOL_RULES: readonly ToolRule[] = [
   rule("track.setFlag", "mixer", "Mute, unmute, solo or unsolo a track."),
 ];
 
+/**
+ * The tool definitions' text at each level of the `toolText` tactic (GRV-146).
+ *
+ * `full` is every description as written above, in {@link TOOL_RULES} and in
+ * the schemas' `.describe()` calls. The two trimmed levels sit here beside
+ * them, so one diff shows what each cut, and {@link withToolText} swaps them
+ * in. Only words change: the tools, their names and their schemas do not. A
+ * rule many tools repeated (IDs, tick units, a create's flat shape, a note's
+ * array, a duplicate's new IDs) is said once in the prompt's shared tool rules
+ * (`prompt.ts`), which is sent whenever a trimmed level is, and a range that
+ * comes from `parameters.ts` is still generated from there.
+ *
+ * - `moderate` cuts repetition and examples the schema already makes plain
+ *   and keeps every constraint in plain words.
+ * - `aggressive` is one line a tool, constraints only, and no example.
+ *
+ * A tool with no entry keeps its full description at every level: its text is
+ * a line already.
+ */
+export type ToolTextLevel = TacticValues["toolText"];
+
+interface TrimmedText {
+  readonly moderate: string;
+  readonly aggressive: string;
+}
+
+/** A description in the form each trimmed level is written, keyed by tool name. */
+export const TOOL_TEXT: Readonly<Record<string, TrimmedText>> = {
+  parameter_set: {
+    moderate: [
+      "Set one numeric parameter. The parameterId is exactly one of these, by the target's scope:",
+      `song: ${describeParameters([SONG_TEMPO, SONG_SWING])}, where swing 50 is straight;`,
+      `track: ${describeParameters([TRACK_VOLUME, TRACK_PAN])};`,
+      `send: ${describeParameters([TRACK_SEND_LEVEL])};`,
+      `return: ${describeParameters([RETURN_VOLUME, RETURN_PAN])};`,
+      `master: ${describeParameters([MASTER_VOLUME])};`,
+      `instrument, synth track: ${describeParameters(SYNTH_PARAMETERS, true)};`,
+      `instrument, sampler track: ${describeParameters(SAMPLER_PARAMETERS, true)};`,
+      "trackDevice, returnDevice, masterDevice: the device's parameter name.",
+    ].join(" "),
+    aggressive: [
+      "parameterId, by scope:",
+      `song: ${describeParameters([SONG_TEMPO, SONG_SWING])};`,
+      `track: ${describeParameters([TRACK_VOLUME, TRACK_PAN])};`,
+      `send: ${describeParameters([TRACK_SEND_LEVEL])};`,
+      `return: ${describeParameters([RETURN_VOLUME, RETURN_PAN])};`,
+      `master: ${describeParameters([MASTER_VOLUME])};`,
+      `instrument, synth track: ${describeParameters(SYNTH_PARAMETERS, true)};`,
+      `instrument, sampler track: ${describeParameters(SAMPLER_PARAMETERS, true)};`,
+      "devices: the parameter name.",
+    ].join(" "),
+  },
+  track_create: {
+    moderate:
+      "Add a track with its instrument and no clips. Fields at the top level: id, name, color, order, type, instrument, devices, sendConfig, mixer. Give it clips with clip_create and place them with placement_create, as later calls in this reply.",
+    aggressive:
+      "Add a track with its instrument and no clips; its clips and placements are later calls.",
+  },
+  clip_create: {
+    moderate:
+      "Add a clip to a track in the project or one track_create made earlier in this reply. Fields at the top level: id, trackId, name, color, lengthTicks, content. A clip plays only once placed: follow it with placement_create.",
+    aggressive:
+      "Add a clip to a track in the project or one made earlier in this reply; place it with placement_create.",
+  },
+  note_add: {
+    moderate:
+      "Add notes to a clip. Each note is an array, [startTicks, pitch, durationTicks, velocity], with no ID; a drum hit has its pad's ID in place of the pitch.",
+    aggressive: "Add notes to a clip.",
+  },
+  placement_create: {
+    moderate:
+      "Place a clip on its track's timeline: one in the project or made earlier in this reply. Fields at the top level: id, clipId, trackId, startTicks, durationTicks, clipOffsetTicks, looped.",
+    aggressive:
+      "Place a clip on its track's timeline: one in the project or made earlier in this reply.",
+  },
+  notes_duplicate: {
+    moderate:
+      "Repeat a clip's notes later in the clip. newIds holds one new note ID per note copied (every note in the clip when eventIds is null), in order.",
+    aggressive:
+      "Repeat a clip's notes later in the clip; newIds is one new ID per note copied.",
+  },
+  drum_setPadParameter: {
+    moderate:
+      "Set a drum pad's volume, pan, pitch, attack or decay. A value outside the range is refused.",
+    aggressive: "Set a drum pad's volume, pan, pitch, attack or decay.",
+  },
+  explain_change: {
+    moderate:
+      "Explain the change you are proposing: call it exactly once with every proposal, alongside the calls that make it. It changes nothing.",
+    aggressive: "Call exactly once per proposal, with its calls, to explain it.",
+  },
+  ask_producer: {
+    moderate:
+      "Ask the producer a question with 2 to 8 options when you need their choice to go on. One question at a time, only when the answer changes what you do next, and say nothing after it. An option can point at a track, clip or bars (ref), let them hear it (sound), or be answered by their making the change (doneWhen). Changes nothing in the song.",
+    aggressive:
+      "Ask the producer a question with 2 to 8 options when you need their choice. One at a time; say nothing after it.",
+  },
+  // The conditional tools, offered only on a turn that carries the library, can
+  // search YouTube or carries memory. The one-line tools with no entry here (the
+  // track, clip, note, placement, instrument, device, return and send edits)
+  // keep their text at every level: each is a single short sentence with no
+  // schema description, so nothing is left to cut without dropping what it does.
+  recommend_sounds: {
+    moderate:
+      "Recommend one library pack and up to three of its sounds to try in the beat, when the producer asks for a sound, sample or pack. Use only the library's IDs; anything else is refused. Nothing changes until they keep one.",
+    aggressive:
+      "Recommend one library pack and up to three of its sounds, by library IDs only. Nothing changes until kept.",
+  },
+  recommend_video: {
+    moderate:
+      "Recommend a YouTube tutorial for a technique the producer asked to learn. Give a short search for the technique, not a video ID; Groove shows the best embeddable result. The search names only the technique, never anything from the project. At most two per reply.",
+    aggressive:
+      "Recommend a YouTube tutorial: a short technique search, nothing from the project. At most two per reply.",
+  },
+  remember_producer: {
+    moderate:
+      'Propose remembering one lasting thing about the producer: a short note in their words (kind "note"), or a new value for one of their memory\'s fields (kind "field"). Only for what will matter in another session (what they make, their setup, how they like to work), never about the song or what memory already holds. Nothing is saved unless they confirm; say in your reply what you propose.',
+    aggressive:
+      "Propose remembering a lasting thing about the producer: a note or a memory field. Never about the song or what memory holds. Saved only on confirmation; say what you propose.",
+  },
+};
+
+/**
+ * Every `description` a tool's input schema carries, keyed by its full text.
+ * A schema's description is found by its words, so the same sentence on two
+ * fields (a note, wherever one is taken) is trimmed once.
+ */
+export const SCHEMA_TEXT: Readonly<Record<string, TrimmedText>> = {
+  [COMPACT_NOTE_DESCRIPTION]: {
+    moderate:
+      "A note: [startTicks, pitch, durationTicks, velocity]; a drum hit's pad ID replaces the MIDI pitch; an optional fifth number is its probability. No ID.",
+    aggressive:
+      "[startTicks, pitch, durationTicks, velocity, probability?]; a pad ID for a drum hit.",
+  },
+  "What the producer will hear once it is applied, in one sentence, e.g. 'The beat feels played rather than programmed.' Not the request repeated.":
+    {
+      moderate:
+        "What the producer will hear once it is applied, in one sentence. Not the request repeated.",
+      aggressive: "What the producer will hear, in one sentence.",
+    },
+  "The production technique behind the change and why it gets to the goal, in one or two sentences a producer could reuse, e.g. 'Swing delays every second 16th note, so the hits lean back like a drummer's.' Not the values restated.":
+    {
+      moderate:
+        "The production technique behind the change and why it gets to the goal, in one or two sentences a producer could reuse. Not the values restated.",
+      aggressive: "The technique behind the change, in one or two reusable sentences.",
+    },
+  "The question, short and in the producer's terms.": {
+    moderate: "The question, short, in the producer's terms.",
+    aggressive: "The question, short.",
+  },
+  'What the question is about, as a header line, such as "The build, bars 13-16".': {
+    moderate:
+      'What the question is about, as a header line, e.g. "The build, bars 13-16".',
+    aggressive: "A header line: what the question is about.",
+  },
+  "What the producer picks, in a few words.": {
+    moderate: "What the producer picks.",
+    aggressive: "What is picked, in a few words.",
+  },
+  "One line on what picking it means, when the label is not enough.": {
+    moderate: "One line on what picking it means.",
+    aggressive: "One line on what picking it means.",
+  },
+  "The first bar, counting from 1.": {
+    moderate: "The first bar, from 1.",
+    aggressive: "First bar, from 1.",
+  },
+  "The last bar, inclusive.": {
+    moderate: "The last bar, inclusive.",
+    aggressive: "Last bar, inclusive.",
+  },
+  "The track, clip or bars the option is about: highlighted in the editor while the producer hovers it, and selected when they pick it.":
+    {
+      moderate:
+        "The track, clip or bars the option is about, highlighted on hover and selected on pick.",
+      aggressive: "The track, clip or bars the option is about.",
+    },
+  "One of your change tools, such as parameter_set.": {
+    moderate: "One of your change tools, such as parameter_set.",
+    aggressive: "A change tool's name.",
+  },
+  "Its input, as you would call it.": {
+    moderate: "Its input, as you would call it.",
+    aggressive: "Its input.",
+  },
+  'What the producer hears while hovering the option: a track\'s instrument ("track"), or the song with changes you could make ("preview", the same calls as a proposal; nothing is applied).':
+    {
+      moderate:
+        'What the producer hears on hover: a track\'s instrument ("track"), or the song with changes ("preview", the same calls as a proposal; nothing is applied).',
+      aggressive:
+        'A track\'s instrument ("track") or a "preview" of calls, nothing applied.',
+    },
+  "The song's swing, in percent: 50 is straight, 75 the most.": {
+    moderate: "The song's swing, in percent: 50 is straight, 75 the most.",
+    aggressive: "Swing in percent: 50 straight, 75 most.",
+  },
+  "Set true when the option says the new track has a part (a pattern, a line, a groove): it then counts only once the track holds a clip with notes. An empty new track never answers such an option.":
+    {
+      moderate:
+        "Set true when the new track has a part (a pattern, a line, a groove): it counts only once the track holds a clip with notes.",
+      aggressive: "True when the new track has a part: counts once it holds notes.",
+    },
+  "A change the producer can make in the editor instead of picking: when it happens, the question is answered as this option.":
+    {
+      moderate:
+        "A change the producer can make in the editor instead of picking; it answers the question as this option.",
+      aggressive: "An editor change that answers the question as this option.",
+    },
+  "2 to 8 answers to pick from. The producer can always type their own.": {
+    moderate: "2 to 8 answers to pick from.",
+    aggressive: "2 to 8 answers.",
+  },
+  "The index of the option you would pick, if you have a view.": {
+    moderate: "The index of the option you would pick.",
+    aggressive: "Index of the option you would pick.",
+  },
+  "Whether the producer may pick more than one option.": {
+    moderate: "Whether more than one may be picked.",
+    aggressive: "Whether more than one may be picked.",
+  },
+  "The ID of one pack in the library.": {
+    moderate: "The ID of one pack in the library.",
+    aggressive: "A library pack's ID.",
+  },
+  "The IDs of up to three of that pack's sounds, best first. The first is the one the producer tries.":
+    {
+      moderate:
+        "The IDs of up to three of that pack's sounds, best first; the first is tried.",
+      aggressive: "Up to three of its sounds' IDs, best first.",
+    },
+  "One short line on why these sounds fit what the producer asked for.": {
+    moderate: "One short line on why these sounds fit.",
+    aggressive: "One line on why they fit.",
+  },
+  "The ID of the track to try the sounds on; its sample slot plays the first one. Omit it to use the selected track.":
+    {
+      moderate:
+        "The ID of the track to try the sounds on (its sample slot plays the first). Omit it for the selected track.",
+      aggressive: "Track ID to try them on; omit for the selected track.",
+    },
+  "On a drum machine, the ID of the pad to try the sounds on, from that track's pads: the pad whose part the sounds are for (a kick goes on the kick's pad). Omit it on any other track.":
+    {
+      moderate:
+        "On a drum machine, the ID of the pad whose part the sounds are for (a kick goes on the kick's pad). Omit it on any other track.",
+      aggressive: "Drum machine only: the pad ID the sounds are for.",
+    },
+  "What to search YouTube for: the technique in a few words, e.g. 'sidechain compression tutorial'.":
+    {
+      moderate: "What to search YouTube for: the technique in a few words.",
+      aggressive: "The technique, in a few words.",
+    },
+  "One short line on what the producer will learn from it.": {
+    moderate: "One short line on what the producer will learn.",
+    aggressive: "One line on what they will learn.",
+  },
+  '"note" to remember a note, "field" to set one of memory\'s fields.': {
+    moderate: '"note" to remember a note, "field" to set a memory field.',
+    aggressive: '"note" or "field".',
+  },
+  'For a note: one lasting thing about the producer, short and in their words, such as "Making more trap lately".':
+    {
+      moderate:
+        "For a note: one lasting thing about the producer, short, in their words.",
+      aggressive: "A note: one lasting thing, in their words.",
+    },
+  "For a field: which one.": {
+    moderate: "For a field: which one.",
+    aggressive: "Which field.",
+  },
+  "For a field: its new value. taste, learn and gear: a comma-separated list. experience: one of none, played_around, finished_a_few, releases. goal: one of first_track, video_or_game, sound_design, curious.":
+    {
+      moderate:
+        "For a field: its new value. taste, learn, gear: a comma-separated list. experience: none, played_around, finished_a_few or releases. goal: first_track, video_or_game, sound_design or curious.",
+      aggressive:
+        "New value. taste, learn, gear: comma-separated. experience: none|played_around|finished_a_few|releases. goal: first_track|video_or_game|sound_design|curious.",
+    },
+  'When this is the question memory names in "askLater", its name, so it is not asked again.':
+    {
+      moderate: 'The "askLater" question this is, so it is not asked again.',
+      aggressive: 'The "askLater" question this asks.',
+    },
+};
+
+type TextCarrier = {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: JsonSchema;
+};
+
+/** `value` with every schema `description` at `level`; the same object when `level` is full. */
+function trimSchemaText(value: unknown, level: "moderate" | "aggressive"): unknown {
+  if (Array.isArray(value)) return value.map((item) => trimSchemaText(item, level));
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      key === "description" && typeof item === "string"
+        ? (SCHEMA_TEXT[item]?.[level] ?? item)
+        : trimSchemaText(item, level),
+    ]),
+  );
+}
+
+/**
+ * `tool` with its description and its schema's descriptions at `level`
+ * (GRV-146). `full` returns the tool itself, byte for byte.
+ */
+export function withToolText<T extends TextCarrier>(tool: T, level: ToolTextLevel): T {
+  if (level === "full") return tool;
+  return {
+    ...tool,
+    description: TOOL_TEXT[tool.name]?.[level] ?? tool.description,
+    inputSchema: trimSchemaText(tool.inputSchema, level) as JsonSchema,
+  };
+}
+
+/**
+ * A provider-shaped tool (`input_schema`, as the conditional tools are built)
+ * with its description and its schema's descriptions at `level`. `full`
+ * returns the tool itself.
+ */
+export function withProviderToolText<
+  T extends {
+    readonly name: string;
+    readonly description: string;
+    readonly input_schema: object;
+  },
+>(tool: T, level: ToolTextLevel): T {
+  if (level === "full") return tool;
+  return {
+    ...tool,
+    description: TOOL_TEXT[tool.name]?.[level] ?? tool.description,
+    input_schema: trimSchemaText(tool.input_schema, level) as T["input_schema"],
+  };
+}
+
 /** The tool name for a command type: `note.add` is offered as `note_add`. */
 export function toolNameFor(commandType: string): string {
   return commandType.replaceAll(".", "_");
@@ -626,12 +967,21 @@ function toolDefinition(entry: ToolRule): AssistantToolDefinition {
   };
 }
 
-let toolCache: readonly AssistantToolDefinition[] | null = null;
+const toolCache = new Map<ToolTextLevel, readonly AssistantToolDefinition[]>();
 
-/** Every tool the assistant may call, generated once from the registry. */
-export function assistantTools(): readonly AssistantToolDefinition[] {
-  toolCache ??= TOOL_RULES.map(toolDefinition);
-  return toolCache;
+/**
+ * Every tool the assistant may call, generated once per level of text from the
+ * registry. The default, `full`, is the text as written in this module.
+ */
+export function assistantTools(
+  level: ToolTextLevel = "full",
+): readonly AssistantToolDefinition[] {
+  let tools = toolCache.get(level);
+  if (!tools) {
+    tools = TOOL_RULES.map((entry) => withToolText(toolDefinition(entry), level));
+    toolCache.set(level, tools);
+  }
+  return tools;
 }
 
 /** The longest goal or technique an explanation may carry. */
