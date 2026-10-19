@@ -409,4 +409,52 @@ test.describe("Export complete screen", () => {
     // The sleeve stays in the left panel, clear of the right one.
     expect.soft(sleeve.right, "sleeve right").toBeLessThanOrEqual(out.left);
   });
+
+  // GRV-158 QA: the name clips sideways for its ellipsis, and that clip must not
+  // also slice the top off an accented capital (the dots of Ü) or the bottom off
+  // a descender, which stand outside the heading's tight 0.98 line.
+  test("shows an accented capital's accent and a descender whole in the heading", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/");
+    await harness(page, "mountExportDialog", "few", "Ünïcødé gypsy");
+    const dialog = page.getByRole("dialog", { name: "Export" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Export", exact: true }).click();
+    await harness(page, "finish");
+    await expect(page.locator(".export-done")).toBeVisible();
+    await page.evaluate(() =>
+      Promise.all(document.getAnimations().map((animation) => animation.finished)),
+    );
+    const { clip, glyphs, heading } = await page.evaluate(() => {
+      const name = document.querySelector(".export-out h3 .export-name") as HTMLElement;
+      // The clip edge is the padding box; the text's own box spans the font's
+      // full ascent and descent, which is where accents and descenders reach.
+      const box = name.getBoundingClientRect();
+      const style = getComputedStyle(name);
+      const range = document.createRange();
+      range.selectNodeContents(name);
+      const text = range.getBoundingClientRect();
+      const heading = (
+        document.querySelector(".export-out h3") as HTMLElement
+      ).getBoundingClientRect();
+      return {
+        clip: {
+          top: box.top + Number.parseFloat(style.borderTopWidth),
+          bottom: box.bottom - Number.parseFloat(style.borderBottomWidth),
+        },
+        glyphs: { top: text.top, bottom: text.bottom },
+        heading: { height: heading.height },
+      };
+    });
+    expect
+      .soft(glyphs.top, "accent inside the clip")
+      .toBeGreaterThanOrEqual(clip.top - 0.5);
+    expect
+      .soft(glyphs.bottom, "descender inside the clip")
+      .toBeLessThanOrEqual(clip.bottom + 0.5);
+    // The room is made without growing the heading past its one 52px x 0.98 line.
+    expect.soft(Math.round(heading.height), "heading height").toBe(Math.round(52 * 0.98));
+  });
 });
