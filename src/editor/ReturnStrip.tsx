@@ -15,6 +15,7 @@ import { RETURN_PAN, RETURN_VOLUME } from "../domain/parameters";
 import FillSlider from "../instrument/FillSlider";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 import { ariaBool } from "../shared/aria";
+import { MAX_DISPLAY_NAME_LENGTH } from "./displayNameLimit";
 import { chainSummary } from "./MasterStrip";
 import { DbFader } from "./TrackFaders";
 
@@ -152,6 +153,7 @@ function ReturnNameInput(props: {
       id={`return-name-${props.returnBus.id}`}
       class={`mixer-strip-name ${MASK_CONTENT}`}
       type="text"
+      maxlength={MAX_DISPLAY_NAME_LENGTH}
       aria-label="Return name"
       value={props.returnBus.name}
       onChange={(event) => {
