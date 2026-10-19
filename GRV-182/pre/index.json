@@ -1,0 +1,14 @@
+{
+  "id": "pre",
+  "title": "Before the fix: Privacy panel and shortcuts dialog",
+  "steps": [
+    {
+      "file": "01-privacy-panel-open-in-the-footer.png",
+      "caption": "Privacy panel open in the footer"
+    },
+    {
+      "file": "02-keyboard-shortcuts-dialog-over-the-priva.png",
+      "caption": "Keyboard shortcuts dialog over the Privacy panel"
+    }
+  ]
+}
