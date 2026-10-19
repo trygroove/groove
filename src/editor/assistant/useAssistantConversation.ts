@@ -48,6 +48,7 @@ import type {
   AssistantTurnHandle,
 } from "../../assistant/assistantClient";
 import {
+  type HistoryProposal,
   historyOf as historyOfEntries,
   MAX_MESSAGE_CHARS,
 } from "../../assistant/history";
@@ -68,7 +69,7 @@ import {
 } from "../../assistant/protocol";
 import { splitRecommendations } from "../../assistant/recommendation";
 import type { SessionHealth, SessionTurn } from "../../assistant/sessionHealth";
-import type { ReplyRating } from "../../assistant/transcripts";
+import type { ProposalOutcome, ReplyRating } from "../../assistant/transcripts";
 import type { AssistantVideo } from "../../assistant/video";
 import type { Project } from "../../domain/entities";
 import type { SuggestionId } from "../../projection/projectAnalysisProjection";
@@ -137,6 +138,11 @@ export type ConversationEntry =
       readonly sessionTurn?: SessionTurn;
       /** The producer's thumbs up or down on it (GRV-103). */
       readonly rating?: ReplyRating;
+      /**
+       * What became of the proposal it made, when it made one (GRV-150), so
+       * the next turn tells the model whether the change is in the song.
+       */
+      readonly proposal?: HistoryProposal;
     }
   /**
    * A change the reply proposes, as the gateway returned it, and the turn
@@ -147,6 +153,8 @@ export type ConversationEntry =
       readonly id: string;
       readonly proposal: AssistantProposal;
       readonly origin: TurnOrigin;
+      /** The reply that made it, which carries its outcome (GRV-150). */
+      readonly replyId: string;
     }
   /**
    * A pack and sounds the reply recommends (GRV-23), as the model named them,
@@ -306,6 +314,11 @@ export interface AssistantConversation {
   /** The question waiting for an answer, if there is one (GRV-42). */
   readonly pendingAsk: Accessor<PendingAsk | null>;
   /**
+   * Records what became of the proposal in entry `entryId` on the reply that
+   * made it (GRV-150), so every later turn resends it beside the reply.
+   */
+  recordProposalOutcome(entryId: string, outcome: ProposalOutcome): void;
+  /**
    * Answers the pending question: the options picked and/or the typed text,
    * sent as the next turn. Returns whether it went: not while a reply
    * streams, with nothing said, or with no account.
@@ -458,7 +471,16 @@ export function useAssistantConversation(
           const split = splitRecommendations(remembered.proposal);
           if (split.proposal) {
             const entryId = id();
-            append({ kind: "proposal", id: entryId, proposal: split.proposal, origin });
+            append({
+              kind: "proposal",
+              id: entryId,
+              proposal: split.proposal,
+              origin,
+              replyId,
+            });
+            update(replyId, (entry) =>
+              entry.kind === "reply" ? { ...entry, proposal: "pending" } : entry,
+            );
             options.onProposal?.(entryId, split.proposal, origin);
           }
           for (const call of split.recommendations) {
@@ -673,6 +695,14 @@ export function useAssistantConversation(
     return before;
   }
 
+  function recordProposalOutcome(entryId: string, outcome: ProposalOutcome): void {
+    const card = entries().find((entry) => entry.id === entryId);
+    if (card?.kind !== "proposal") return;
+    update(card.replyId, (entry) =>
+      entry.kind === "reply" ? { ...entry, proposal: outcome } : entry,
+    );
+  }
+
   function canRetry(entry: ConversationEntry): boolean {
     return (
       entry.kind === "error" &&
@@ -757,6 +787,7 @@ export function useAssistantConversation(
     retry,
     canRetry,
     refresh,
+    recordProposalOutcome,
     pendingAsk,
     answerAsk,
     dismissAsk,

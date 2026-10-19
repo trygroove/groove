@@ -234,6 +234,8 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         // The conversation is made just below; Refresh is only ever pressed later.
         refresh: (entryId) => conversation.refresh(entryId),
         onOutcome: (entryId, outcome, issues) => {
+          // The conversation is made just below; an outcome only comes later.
+          conversation.recordProposalOutcome(entryId, outcome);
           const turnId = turnOfEntry.get(entryId);
           if (turnId) retention?.reportOutcome(turnId, outcome, issues);
           const sessionTurn = sessionTurnOfEntry.get(entryId);

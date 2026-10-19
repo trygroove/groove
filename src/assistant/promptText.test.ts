@@ -78,11 +78,11 @@ describe("the promptText and promptDrop tactics (GRV-147)", () => {
 
   // Pinned from origin/main before GRV-147 restructured the prompt into
   // passages: the 16 prompts the older prompt tactics make, at full with every
-  // group kept. Re-pin only when the full text itself is meant to change (GRV-168: the assistant's name).
+  // group kept. Re-pin only when the full text itself is meant to change (GRV-168: the assistant's name; GRV-150: how to read a proposal's outcome).
   it("leaves full with nothing dropped byte-identical to the prompt before GRV-147", () => {
     const texts = olderCombinations().map((tactics) => prompt(tactics));
     expect(createHash("sha256").update(texts.join("\u0000")).digest("hex")).toBe(
-      "c8696c6c278972686958e9eaeaa9c2ea81caddc8df2075cc5103991fc2d70c16",
+      "c5ffa6913e04d44ec3bf78805139e8bbde835ca2dfadce875e9c82147e08ef32",
     );
   });
 

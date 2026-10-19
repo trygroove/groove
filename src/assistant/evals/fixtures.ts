@@ -23,6 +23,8 @@
  *   GRV-6's QA used it, at a chosen volume.
  * - {@link createBdSketchProject} (GRV-107): that track after an applied
  *   sketch: BD plus bass, chords, melody and texture tracks, each with a clip.
+ * - {@link createBdSdProject} (GRV-150): BD with the "SD" drum-machine track an
+ *   applied proposal added beside it, a snare on beats 2 and 4.
  * - {@link createEmptySongProject} (GRV-145): a song with no tracks at all,
  *   at 120 BPM: where "make me a full track" starts from nothing.
  */
@@ -579,6 +581,47 @@ export function createBdSketchProject(): Project {
     assets: [bd.asset],
   };
   return project(context, "House sketch", song, clips);
+}
+
+/**
+ * A new project after an applied "add a snare on beats 2 and 4" (GRV-150):
+ * the BD track, and an "SD" drum machine with one SD pad on the factory snare
+ * at `sdVolumeDb`, a bar of backbeat placed for four bars beside BD's kicks.
+ */
+export function createBdSdProject(sdVolumeDb = 0): Project {
+  const context = evalContext("eval-bd-sd");
+  const bd = bdTrack(context, 0);
+  const snare = createFactoryAsset(context, "starterSnare");
+  const pad = createDrumPad(context, { name: "SD", assetId: snare.id });
+  const sd = createTrack(context, {
+    name: "SD",
+    order: 1,
+    volume: sdVolumeDb,
+    instrument: createDrumMachineInstrument([pad]),
+  });
+  const sdClip = createNoteClip(context, {
+    trackId: sd.id,
+    name: "SD backbeat",
+    lengthTicks: TICKS_PER_BAR,
+    events: hits(context, pad.id, [4, 12], 0.85),
+  });
+  const clips = [bd.clip, sdClip];
+  const song: Song = {
+    ...createEmptySong(120),
+    master: createNewProjectMaster(context),
+    tracks: [bd.track, sd],
+    placements: clips.map((clip) =>
+      createPlacement(context, {
+        clipId: clip.id,
+        trackId: clip.trackId,
+        startTicks: 0,
+        durationTicks: 4 * TICKS_PER_BAR,
+        looped: true,
+      }),
+    ),
+    assets: [bd.asset, snare],
+  };
+  return project(context, "Mood Energy", song, clips);
 }
 
 // The helpers the basic production actions fixtures (GRV-119) build with too.

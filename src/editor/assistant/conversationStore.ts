@@ -10,11 +10,13 @@
  * it survives a reload but not the tab, and one account or project never
  * reads another's. Only messages and finished replies are kept: proposal and
  * recommendation cards, errors and a reply still streaming are not (a reply
- * cut off by the reload is kept as stopped). Whatever cannot be read back, a
+ * cut off by the reload is kept as stopped). A reply keeps what became of its
+ * proposal (GRV-150), which the next turn resends. Whatever cannot be read back, a
  * corrupt entry or one written by an older shape, is dropped, never repaired.
  */
 import { z } from "zod";
 import { type AssistantAsk, assistantAskSchema } from "../../assistant/ask";
+import { HISTORY_PROPOSALS } from "../../assistant/history";
 import { REPLY_RATINGS, sessionIdSchema } from "../../assistant/transcripts";
 import type { ConversationEntry } from "./useAssistantConversation";
 
@@ -49,6 +51,7 @@ const storedEntrySchema = z.discriminatedUnion("kind", [
     ask: assistantAskSchema.optional(),
     turnId: sessionIdSchema.optional(),
     rating: z.enum(REPLY_RATINGS).optional(),
+    proposal: z.enum(HISTORY_PROPOSALS).optional(),
   }),
 ]);
 
@@ -110,6 +113,7 @@ export function serializeConversation(
             ...(entry.ask ? { ask: entry.ask } : {}),
             ...(entry.turnId ? { turnId: entry.turnId } : {}),
             ...(entry.rating ? { rating: entry.rating } : {}),
+            ...(entry.proposal ? { proposal: entry.proposal } : {}),
           },
     ),
     pendingAskReplyId: pending,

@@ -422,6 +422,9 @@ describe("runCaseCheck", () => {
       clipsPlaced: "pass",
       // GRV-129's: the turn recommended no sounds.
       recommendationTargets: "fail",
+      // GRV-150's: no facts named, so nothing to contradict.
+      noDeniedTrack: "pass",
+      noAbsentTrack: "pass",
     });
   });
 });

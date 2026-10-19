@@ -227,6 +227,19 @@ describe("the conversation across a reload (GRV-42)", () => {
     ]);
   });
 
+  it("keeps what became of a reply's proposal, so the next turn still says it (GRV-150)", () => {
+    const reply = {
+      kind: "reply",
+      id: "entry-2",
+      text: "I'll add a Closed Hat.",
+      streaming: false,
+      stopped: false,
+      proposal: "cancelled",
+    } as const;
+    const stored = parseConversation(serializeConversation([reply], null));
+    expect(stored?.entries).toEqual([reply]);
+  });
+
   it("carries on in memory when storage throws", async () => {
     const mounted = mount(createConversationStore(hostileStorage()));
     mounted.conversation.send("Hi");
