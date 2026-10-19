@@ -108,6 +108,7 @@ import {
   assistantTools,
   EXPLAIN_TOOL,
   makesChanges,
+  withToolText,
 } from "./tools";
 import {
   type AssistantTraceSink,
@@ -283,12 +284,22 @@ async function prepare(
   idStem: string,
   videos: boolean,
 ): Promise<PreparedTurn> {
-  const system = buildSystemBlocks(turn.context, turn.library, idStem, turn.memory);
+  const system = buildSystemBlocks(
+    turn.context,
+    turn.library,
+    idStem,
+    turn.memory,
+    tactics.toolText,
+  );
   // A turn that carries the library may also recommend from it (GRV-23), one
   // that can search YouTube may recommend a tutorial (GRV-16), and one that
   // carries the producer's memory may propose adding to it (GRV-25).
   const tools = [
-    ...providerTools([...assistantTools(), EXPLAIN_TOOL, askProducerTool()]),
+    ...providerTools([
+      ...assistantTools(tactics.toolText),
+      withToolText(EXPLAIN_TOOL, tactics.toolText),
+      withToolText(askProducerTool(), tactics.toolText),
+    ]),
     ...(turn.library ? [recommendationTool()] : []),
     ...(videos ? [videoRecommendationTool()] : []),
     ...(turn.memory ? providerTools([rememberTool()]) : []),

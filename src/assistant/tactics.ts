@@ -49,6 +49,13 @@ export const TACTICS = {
     default: "low",
     alters: ["request"],
   },
+  toolText: {
+    description:
+      "How much text the tool definitions carry (GRV-146): `full` is every description as written; `moderate` and `aggressive` trim each tool's text and move the rules many tools repeat into one shared block in the system prompt.",
+    values: ["full", "moderate", "aggressive"],
+    default: "full",
+    alters: ["prompt", "tools"],
+  },
 } as const satisfies Readonly<Record<string, TacticDefinition>>;
 
 export type TacticId = keyof typeof TACTICS;

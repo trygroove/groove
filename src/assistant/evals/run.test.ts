@@ -15,7 +15,7 @@ import {
   newId,
 } from "../prompt";
 import { continuesTurn } from "../providerRequest";
-import { describeTactics, TACTIC_DEFAULTS } from "../tactics";
+import { describeTactics, resolveTactics, TACTIC_DEFAULTS } from "../tactics";
 import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { createHouseLoopProject } from "./fixtures";
@@ -375,12 +375,11 @@ describe("runEvals", () => {
     expect(provider.requests.every((sent) => sent.output_config?.effort === "low")).toBe(
       true,
     );
-    expect(report.tactics).toEqual({ thinkingEffort: "low" });
-    expect(renderMarkdown(report)).toContain(
-      `- Tactics: ${describeTactics({ thinkingEffort: "low" })}`,
-    );
+    const resolved = resolveTactics({ thinkingEffort: "low" });
+    expect(report.tactics).toEqual(resolved);
+    expect(renderMarkdown(report)).toContain(`- Tactics: ${describeTactics(resolved)}`);
     expect(renderSummaryMarkdown(summaryOf(report))).toContain(
-      "- Tactics: thinkingEffort=low",
+      `- Tactics: ${describeTactics(resolved)}`,
     );
 
     const production = await runEvals({
