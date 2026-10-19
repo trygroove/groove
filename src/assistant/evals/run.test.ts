@@ -26,9 +26,7 @@ import {
   validFailureLine,
 } from "./markdown";
 import {
-  AUTH_ABORT_REASON,
   buildReport,
-  CREDIT_ABORT_REASON,
   evalExitCode,
   evaluateRecords,
   evaluateTurn,
@@ -37,6 +35,12 @@ import {
   summaryOf,
   whyNoProposal,
 } from "./run";
+import {
+  AUTH_ABORT_REASON,
+  CREDIT_ABORT_REASON,
+  REFUSAL_STREAK,
+  refusalAbortReason,
+} from "./runGuard";
 
 const glue = EVAL_CASES.find((entry) => entry.id === "process-glue") as EvalCase;
 const crushed = EVAL_CASES.find((entry) => entry.id === "process-crushed") as EvalCase;
@@ -269,6 +273,23 @@ describe("runEvals", () => {
     expect(report.records[1].turnError?.outOfCredit).toBe(true);
     expect(report.records[1].error).toContain("The account is out of API credit.");
     expect(report.aborted).toBe(CREDIT_ABORT_REASON);
+    expect(evalExitCode(report)).toBe(1);
+  });
+
+  it("stops starting turns once the provider refuses every call, whatever it said", async () => {
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("A Compressor on the master.", [compressorCall("a", -18)]),
+      [{ fail: "rejected", status: 400 }],
+    ]);
+    const report = await runEvals({
+      provider,
+      cases: [glue, crushed],
+      runs: 20,
+      now: fixedNow,
+    });
+    // The first turn replied; the next REFUSAL_STREAK were refused, and none came after.
+    expect(report.records).toHaveLength(1 + REFUSAL_STREAK);
+    expect(report.aborted).toBe(refusalAbortReason(400));
     expect(evalExitCode(report)).toBe(1);
   });
 
