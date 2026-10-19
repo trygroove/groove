@@ -49,6 +49,13 @@ export const TACTICS = {
     default: "low",
     alters: ["request"],
   },
+  drumStepStrings: {
+    description:
+      "Whether clip_create on a drum machine may write a pad's part as one repeating step string (x hit, X accent, o ghost, . rest) the gateway writes out as notes (GRV-140).",
+    values: ["off", "on"],
+    default: "off",
+    alters: ["prompt", "tools", "expansion"],
+  },
 } as const satisfies Readonly<Record<string, TacticDefinition>>;
 
 export type TacticId = keyof typeof TACTICS;

@@ -127,9 +127,11 @@ import {
   TRACK_VOLUME,
 } from "../domain/parameters";
 import { TICKS_PER_BAR, TICKS_PER_QUARTER, TICKS_PER_SIXTEENTH } from "../domain/time";
+import { DEFAULT_STEP_TICKS, DEFAULT_STEP_VELOCITIES } from "./drumSteps";
 import type { AssistantMemoryContext } from "./memory";
 import type { AssistantContextPayload, AssistantLibraryContext } from "./protocol";
 import type { ProviderTextBlock } from "./providerRequest";
+import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
 export const ASSISTANT_PROMPT_VERSION = "2026-10-17.2";
 
@@ -272,6 +274,27 @@ When memory names a question in "askLater", it is one they skipped when you firs
 
 Always start the reply with a sentence saying what you are proposing or asking, before any tool call, so the producer sees it while the rest is written, and leave the why to explain_change. When you name a control, use the name the producer sees, the track's or device's name and the control ("Bass volume", "Compressor threshold"), and name only controls your proposal changes. Name a feature the way the producer sees it ("the Library", "quantize"), never by a tool's name: your tool names are not part of Groove. Answer a question about the app itself in a few sentences, not a long list.`;
 
+/**
+ * What the prompt says of drum step strings, only with the `drumStepStrings`
+ * tactic on (GRV-140): a bullet under "How the tools address things", after
+ * the one on compact notes.
+ */
+export const DRUM_STEP_STRINGS_LINE = `- A drum pad's part in clip_create may instead be one step string in content.events, {padId, steps, stepTicks, velocity}: one character per step, x a hit, X an accent, o a ghost, . a rest, e.g. {"padId": "pad_...", "steps": "x...x...x...x..."} for four on the floor. stepTicks is the step (default ${DEFAULT_STEP_TICKS}, a sixteenth; ${TICKS_PER_SIXTEENTH * 2} an eighth, ${TICKS_PER_SIXTEENTH / 2} a 32nd, ${TICKS_PER_QUARTER / 6} a sixteenth triplet), and velocity sets x, X and o once, 1 to 127 (default ${DEFAULT_STEP_VELOCITIES.x}, ${DEFAULT_STEP_VELOCITIES.X}, ${DEFAULT_STEP_VELOCITIES.o}). The string repeats from the clip's start to its end, so write one bar, never more than the clip; prefer it to arrays for a drum pattern on a grid, one string per pad.`;
+
+/** Where {@link DRUM_STEP_STRINGS_LINE} goes: before the bullet on parameter_set. */
+const STEP_STRINGS_BEFORE = "\n- parameter_set takes the full parameter ID";
+
+/** The fixed prompt with the tactics' lines in it: production's is {@link ASSISTANT_SYSTEM_PROMPT}. */
+export function assistantSystemPrompt(
+  tactics: Pick<TacticValues, "drumStepStrings"> = TACTIC_DEFAULTS,
+): string {
+  if (tactics.drumStepStrings !== "on") return ASSISTANT_SYSTEM_PROMPT;
+  return ASSISTANT_SYSTEM_PROMPT.replace(
+    STEP_STRINGS_BEFORE,
+    `\n${DRUM_STEP_STRINGS_LINE}${STEP_STRINGS_BEFORE}`,
+  );
+}
+
 /** How to make this turn's new IDs from `stem`, worked through with examples. */
 export function newIdInstructions(stem: string): string {
   const examples = [
@@ -304,9 +327,10 @@ export function buildSystemBlocks(
   library?: AssistantLibraryContext,
   idStem: string = createIdStem(),
   memory?: AssistantMemoryContext,
+  tactics: Pick<TacticValues, "drumStepStrings"> = TACTIC_DEFAULTS,
 ): ProviderTextBlock[] {
   const blocks: ProviderTextBlock[] = [
-    { type: "text", text: ASSISTANT_SYSTEM_PROMPT },
+    { type: "text", text: assistantSystemPrompt(tactics) },
     { type: "text", text: `${PROJECT_BLOCK_HEADING}${JSON.stringify(context)}` },
   ];
   if (library) {

@@ -79,7 +79,13 @@ import {
   TRACK_SEND_LEVEL,
   TRACK_VOLUME,
 } from "../domain/parameters";
-import { compactClipSchema, compactNoteAddSchema } from "./compactNotes";
+import {
+  compactClipSchema,
+  compactClipWithStepsSchema,
+  compactNoteAddSchema,
+} from "./compactNotes";
+import { DEFAULT_STEP_TICKS } from "./drumSteps";
+import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
 /**
  * Bumped whenever a tool is added, removed, renamed or changes its rules,
@@ -482,6 +488,16 @@ const CLIP_CREATE_DESCRIPTION = [
   `Example input: ${JSON.stringify(OFFERED_CLIP_EXAMPLE)}`,
 ].join(" ");
 
+/**
+ * `clip_create`'s description with the `drumStepStrings` tactic on (GRV-140):
+ * the same, and a drum pad's part may be a step string.
+ */
+const CLIP_CREATE_WITH_STEPS_DESCRIPTION = [
+  CLIP_CREATE_DESCRIPTION,
+  `On a drum machine, an entry in content.events may instead be one pad's whole part as a step string, {padId, steps, stepTicks, velocity}: x a hit, X an accent, o a ghost, . a rest, one character per step of stepTicks (default ${DEFAULT_STEP_TICKS}, a 16th; 32 a 16th triplet, 24 a 32nd); velocity sets x, X and o once, 1 to 127 (default 100, 120, 50). The string repeats from the clip's start to its end, so one bar fills a clip of any length; it may not be longer than the clip.`,
+  `Example entry: ${JSON.stringify({ padId: "pad_...", steps: "x...x...x...x..." })}`,
+].join(" ");
+
 const NOTE_ADD_DESCRIPTION = [
   "Add notes to a clip.",
   `Each note is an array, [startTicks, pitch, durationTicks, velocity], with no ID; a drum hit has its pad's ID in place of the pitch, e.g. [0, "pad_...", 48, 0.9]; an optional fifth number is its probability.`,
@@ -626,12 +642,33 @@ function toolDefinition(entry: ToolRule): AssistantToolDefinition {
   };
 }
 
-let toolCache: readonly AssistantToolDefinition[] | null = null;
+/** `clip_create` as the `drumStepStrings` tactic offers it (GRV-140). */
+function withStepStrings(entry: ToolRule): ToolRule {
+  if (entry.commandType !== "clip.create") return entry;
+  return {
+    ...entry,
+    description: CLIP_CREATE_WITH_STEPS_DESCRIPTION,
+    offered: compactClipWithStepsSchema,
+  };
+}
 
-/** Every tool the assistant may call, generated once from the registry. */
-export function assistantTools(): readonly AssistantToolDefinition[] {
-  toolCache ??= TOOL_RULES.map(toolDefinition);
-  return toolCache;
+const toolCache = new Map<string, readonly AssistantToolDefinition[]>();
+
+/**
+ * Every tool the assistant may call, generated once per tactic value from
+ * the registry. Only `drumStepStrings` changes the tools (GRV-140).
+ */
+export function assistantTools(
+  tactics: Pick<TacticValues, "drumStepStrings"> = TACTIC_DEFAULTS,
+): readonly AssistantToolDefinition[] {
+  const key = tactics.drumStepStrings;
+  let tools = toolCache.get(key);
+  if (!tools) {
+    const rules = key === "on" ? TOOL_RULES.map(withStepStrings) : TOOL_RULES;
+    tools = rules.map(toolDefinition);
+    toolCache.set(key, tools);
+  }
+  return tools;
 }
 
 /** The longest goal or technique an explanation may carry. */
