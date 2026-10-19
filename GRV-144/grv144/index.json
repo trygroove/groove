@@ -13,6 +13,10 @@
     {
       "file": "03-complete-every-part-in-apply-all-takes-t.png",
       "caption": "Complete: every part in, Apply all takes the rest as one undo step"
+    },
+    {
+      "file": "04-applied-the-track-on-its-own-the-rest-wi.png",
+      "caption": "Applied: the track on its own, the rest with Apply all"
     }
   ]
 }
