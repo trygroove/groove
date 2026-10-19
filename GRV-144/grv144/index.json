@@ -1,0 +1,18 @@
+{
+  "id": "grv144",
+  "title": "Proposal parts as they arrive",
+  "steps": [
+    {
+      "file": "01-mid-turn-two-parts-in-the-line-waits-for.png",
+      "caption": "Mid-turn: two parts in, the line waits for its track"
+    },
+    {
+      "file": "02-mid-turn-the-track-applied-on-its-own-wh.png",
+      "caption": "Mid-turn: the track applied on its own while the rest are on their way"
+    },
+    {
+      "file": "03-complete-every-part-in-apply-all-takes-t.png",
+      "caption": "Complete: every part in, Apply all takes the rest as one undo step"
+    }
+  ]
+}
