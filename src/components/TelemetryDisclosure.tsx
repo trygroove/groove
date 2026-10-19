@@ -1,6 +1,8 @@
+import { type JSX, Show } from "@solidjs/web";
 import { type Component, createEffect, createSignal, onCleanup } from "solid-js";
 import { ASSISTANT_NAME } from "../../site.config.mjs";
 import { type ConsentState, type ConsentStore, consentStore } from "../analytics/consent";
+import { type ShortcutHandlers, useShortcuts } from "../shortcuts";
 import "./TelemetryDisclosure.css";
 
 /**
@@ -43,6 +45,17 @@ const [inlineCount, setInlineCount] = createSignal(0);
  */
 export const inlineDisclosureMounted = () => inlineCount() > 0;
 
+/** `view.close_surface` (Escape) for the open panel, mounted only while it is open. */
+function CloseOnEscape(props: { onClose(): void }): JSX.Element {
+  useShortcuts({
+    handlers: (): ShortcutHandlers => ({
+      "view.close_surface": { run: () => props.onClose() },
+    }),
+    contexts: () => [],
+  });
+  return null;
+}
+
 const TelemetryDisclosure: Component<{
   store?: ConsentStore;
   placement?: "floating" | "inline";
@@ -72,6 +85,14 @@ const TelemetryDisclosure: Component<{
   const enabled = () =>
     state().productAnalytics || state().errorMonitoring || state().sessionReplay;
 
+  let details: HTMLDetailsElement | undefined;
+  let summary: HTMLElement | undefined;
+  const [open, setOpen] = createSignal(false);
+  const close = () => {
+    if (details) details.open = false;
+    summary?.focus();
+  };
+
   const toggle = () => {
     if (enabled()) {
       store.optOut();
@@ -82,6 +103,8 @@ const TelemetryDisclosure: Component<{
 
   return (
     <details
+      ref={details}
+      onToggle={() => setOpen(details?.open ?? false)}
       class={[
         "telemetry-disclosure",
         {
@@ -89,7 +112,12 @@ const TelemetryDisclosure: Component<{
         },
       ]}
     >
-      <summary class="telemetry-disclosure-summary">Privacy</summary>
+      <Show when={open()}>
+        <CloseOnEscape onClose={close} />
+      </Show>
+      <summary ref={summary} class="telemetry-disclosure-summary">
+        Privacy
+      </summary>
       <div class="telemetry-disclosure-body">
         <p>
           Groove records which features are used and reports errors, so we can tell what
