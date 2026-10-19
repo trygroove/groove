@@ -285,7 +285,13 @@ describe("the welcome (GRV-25)", () => {
     const stored = parseConversation(
       sessionStorage.getItem(conversationStorageKey("user-1", projectId)),
     );
-    expect(stored?.entries.some((entry) => entry.text.includes("Four Tet"))).toBe(true);
+    expect(
+      stored?.entries.some(
+        (entry) =>
+          (entry.kind === "message" || entry.kind === "reply") &&
+          entry.text.includes("Four Tet"),
+      ),
+    ).toBe(true);
     expect(stored?.pendingAsk?.ask.question).toMatch(/first lesson/);
     expect(loadLayout().mode).not.toBe("closed");
     expect(transport.named("project_created")).toHaveLength(1);
