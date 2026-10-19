@@ -41,7 +41,7 @@ export default function ExportDone(props: ExportDoneProps): JSX.Element {
   return (
     <div
       class="export-done"
-      style={props.heightPx ? { height: `${props.heightPx}px` } : undefined}
+      style={props.heightPx ? { "--done-height": `${props.heightPx}px` } : undefined}
     >
       <Sleeve
         stripes={props.finished.stripes}

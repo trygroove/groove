@@ -165,3 +165,38 @@
 .export-cards:disabled .export-card-radio {
   cursor: default;
 }
+
+/* A phone-width window (GRV-156): the dialog is the window's width, scrolls
+   when it is taller than the window, and the rows below stack instead of
+   running off the right edge. */
+@media (max-width: 640px) {
+  .dialog.export-shell {
+    overflow-y: auto;
+  }
+
+  .export-head {
+    flex-wrap: wrap;
+    gap: 12px 24px;
+    padding: 20px 42px 14px 16px;
+  }
+
+  .export-title {
+    flex: 1 1 100%;
+  }
+
+  .export-title h2 {
+    font-size: 28px;
+  }
+
+  .export-head-fill {
+    display: none;
+  }
+
+  .export-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .export-card {
+    padding: 12px 16px;
+  }
+}

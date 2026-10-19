@@ -225,4 +225,93 @@ test.describe("Export dialog layout", () => {
     );
     expect(await rects(page)).toEqual(stereo);
   });
+
+  test.describe("on a phone-width window (GRV-156)", () => {
+    test.use({ viewport: { width: 375, height: 667 } });
+
+    /** Every visible edge of the elements matching `selector`, as [left, right]. */
+    const edges = (page: Page, selector: string) =>
+      page.evaluate((sel) => {
+        const box = (el: Element) => el.getBoundingClientRect();
+        return [...document.querySelectorAll(sel)].map((el) => [
+          Math.round(box(el).left),
+          Math.round(box(el).right),
+        ]);
+      }, selector);
+
+    const insideViewport = async (page: Page, selector: string, label: string) => {
+      const found = await edges(page, selector);
+      expect(found.length, `${label} is on the page`).toBeGreaterThan(0);
+      for (const [left, right] of found) {
+        expect(left, `${label} left edge`).toBeGreaterThanOrEqual(0);
+        expect(right, `${label} right edge`).toBeLessThanOrEqual(375);
+      }
+    };
+
+    test("fits the form: title, every figure, Export and Close, the Downloads row", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await harness(page, "mountExportDialog", "fits", "Night Bus");
+      const dialog = page.getByRole("dialog", { name: "Export" });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole("heading", { name: "Night Bus" })).toBeVisible();
+      await insideViewport(page, ".export-shell", "dialog");
+      await insideViewport(page, ".export-title h2", "title");
+      await insideViewport(page, ".export-head .export-readout", "figures");
+      await insideViewport(page, ".export-primary", "Export button");
+      await insideViewport(page, ".export-secondary", "Close button");
+      await insideViewport(page, ".export-actions", "actions");
+      await insideViewport(page, ".download", "download cards");
+      // Nothing is cut off: the dialog scrolls when it is taller than the window.
+      const reach = await page.evaluate(() => {
+        const shell = document.querySelector(".export-shell") as HTMLElement;
+        const primary = document.querySelector(".export-primary") as HTMLElement;
+        primary.scrollIntoView();
+        return {
+          fits: shell.getBoundingClientRect().height <= window.innerHeight,
+          bottom: primary.getBoundingClientRect().bottom,
+        };
+      });
+      expect(reach.fits).toBe(true);
+      expect(reach.bottom).toBeLessThanOrEqual(667);
+      await expect(
+        dialog.getByRole("button", { name: "Export", exact: true }),
+      ).toBeInViewport({
+        ratio: 1,
+      });
+    });
+
+    test("fits the done screen: the headline is reachable in a single column", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await harness(page, "mountExportDialog", "fits", "Night Bus");
+      const dialog = page.getByRole("dialog", { name: "Export" });
+      await dialog.getByRole("button", { name: "Export", exact: true }).click();
+      await harness(page, "progress", 0.5);
+      await harness(page, "finish");
+      const headline = dialog.getByRole("heading", { name: "Night Bus is out." });
+      await expect(headline).toBeVisible();
+      await insideViewport(page, ".export-shell", "dialog");
+      await insideViewport(page, ".export-out", "message column");
+      const top = await page.evaluate(() => {
+        const shell = document.querySelector(".export-shell") as HTMLElement;
+        const out = document.querySelector(".export-out") as HTMLElement;
+        const h3 = document.querySelector(".export-out h3") as HTMLElement;
+        return {
+          shell: shell.getBoundingClientRect().top,
+          h3: h3.getBoundingClientRect().top,
+          column: out.getBoundingClientRect().width,
+        };
+      });
+      expect(top.shell).toBeGreaterThanOrEqual(0);
+      expect(top.h3).toBeGreaterThanOrEqual(0);
+      // A single column: the message takes the dialog's width, not half of it.
+      expect(top.column).toBeGreaterThan(300);
+      await expect(
+        dialog.getByRole("button", { name: "Back to the song" }),
+      ).toBeInViewport();
+    });
+  });
 });
