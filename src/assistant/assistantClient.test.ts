@@ -93,6 +93,44 @@ const RESULT = {
 };
 
 describe("the assistant client", () => {
+  const part = (index: number) => ({
+    index,
+    toolsetVersion: 9,
+    call: { id: `toolu_${index}`, name: "parameter_set", input: { value: index } },
+  });
+
+  it("passes each proposal part on as it arrives, in call order (GRV-144)", async () => {
+    const wire = manualTransport();
+    const { events } = record(wire.transport);
+    wire.chunk({ type: "text", text: "Kick first." });
+    wire.chunk({ type: "text", text: "", part: part(0) });
+    await flush();
+    expect(events).toEqual([
+      { type: "text", text: "Kick first." },
+      { type: "part", part: part(0) },
+    ]);
+    wire.chunk({ type: "text", text: "", part: part(1) });
+    wire.finish(RESULT);
+    await flush();
+    expect(events.map((event) => event.type)).toEqual(["text", "part", "part", "done"]);
+  });
+
+  it("fails a part out of order, or one carrying text, as malformed", async () => {
+    for (const chunk of [
+      { type: "text", text: "", part: part(1) },
+      { type: "text", text: "Hi", part: part(0) },
+      { type: "text", text: "", part: { index: 0 } },
+    ]) {
+      const wire = manualTransport();
+      const { events } = record(wire.transport);
+      wire.chunk(chunk);
+      await flush();
+      expect(events).toEqual([
+        { type: "error", error: { code: "malformed_response", retryable: true } },
+      ]);
+    }
+  });
+
   it("streams the reply's text, then one done", async () => {
     const wire = manualTransport();
     const { events } = record(wire.transport);

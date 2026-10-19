@@ -1290,6 +1290,85 @@ describe("runAssistantTurn: a turn in steps", () => {
   });
 });
 
+describe("runAssistantTurn: streaming proposal parts (GRV-144)", () => {
+  const project = createReferenceProject();
+  const [track] = project.song.tracks;
+  const muteCall = call(setTrackFlag(track.id, "muted", !track.mixer.muted));
+  const volumeCall = call(
+    setParameter({ scope: "track", trackId: track.id, parameterId: TRACK_VOLUME.id }, -9),
+  );
+  const explainCall = {
+    name: EXPLAIN_TOOL_NAME,
+    input: { goal: "A quieter track", technique: "Pull the fader down" },
+  };
+  /** What reached the browser, in order: text as itself, a part by its index and tool. */
+  const stream = (h: Harness) =>
+    h.chunks.flatMap((chunk) =>
+      chunk.part
+        ? [`part ${chunk.part.index}: ${chunk.part.call.name}`]
+        : chunk.text
+          ? [chunk.text]
+          : [],
+    );
+
+  it("streams each accepted change call, in call order, as its step is answered", async () => {
+    const h = harness([toolUseEvents("First I'll mute the track.", [muteCall])], {}, [
+      toolUseEvents("Next, its volume.", [volumeCall, explainCall]),
+    ]);
+    const result = await run(h);
+    expect(stream(h)).toEqual([
+      "First I'll mute the track.",
+      `part 0: ${muteCall.name}`,
+      "\n\nNext, its volume.",
+      `part 1: ${volumeCall.name}`,
+    ]);
+    const parts = h.chunks.flatMap((chunk) => (chunk.part ? [chunk] : []));
+    expect(parts.every((chunk) => chunk.text === "")).toBe(true);
+    expect(parts[0]?.part).toEqual({
+      index: 0,
+      toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+      call: { id: "toolu_1", ...muteCall },
+    });
+    // The whole proposal still comes back, explanation and all.
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([
+      muteCall.name,
+      volumeCall.name,
+      EXPLAIN_TOOL_NAME,
+    ]);
+  });
+
+  it("never streams a call it refuses back to the model, only the corrected one", async () => {
+    const h = harness(
+      [toolUseEvents("Muting it.", [{ name: muteCall.name, input: { flag: "muted" } }])],
+      {},
+      [toolUseEvents("Fixed.", [muteCall, explainCall])],
+    );
+    await run(h);
+    const parts = h.chunks.flatMap((chunk) => (chunk.part ? [chunk.part] : []));
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toMatchObject({ index: 0, call: { input: muteCall.input } });
+  });
+
+  it("never streams a last step's call that does not fit its tool, though the proposal carries it", async () => {
+    const h = harness([
+      toolUseEvents("Muting it.", [
+        { name: muteCall.name, input: { flag: "muted" } },
+        volumeCall,
+        explainCall,
+      ]),
+    ]);
+    const result = await run(h);
+    expect(stream(h)).toEqual(["Muting it.", `part 0: ${volumeCall.name}`]);
+    expect(result.proposal?.calls).toHaveLength(3);
+  });
+
+  it("streams nothing for a reply that proposes nothing", async () => {
+    const h = harness([replyEvents(["Nothing to change."])]);
+    await run(h);
+    expect(h.chunks.some((chunk) => chunk.part)).toBe(false);
+  });
+});
+
 describe("runAssistantTurn: compact notes (GRV-131)", () => {
   const project = createReferenceProject();
   const noteClip = project.clips.find((clip) => clip.content.kind === "notes");

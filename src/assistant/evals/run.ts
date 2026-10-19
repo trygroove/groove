@@ -168,6 +168,12 @@ export interface EvalTurn {
    */
   readonly firstTextMs?: number | null;
   /**
+   * Milliseconds from the start of the turn to its first accepted change
+   * call, the first proposal part the browser would show (GRV-144); null when
+   * it streamed none. Absent from reports saved before it existed.
+   */
+  readonly firstPartMs?: number | null;
+  /**
    * The tool bundle the turn opened with under `toolBundles=bundled`
    * (GRV-143), and why it went on with every tool if it did; null when it
    * was offered every tool or ended before the gateway logged it. Absent
@@ -419,10 +425,12 @@ async function runOneTurn(
   });
   const startedAt = now();
   let firstTextAt: number | null = null;
+  let firstPartAt: number | null = null;
   const measured = measureProvider(options.provider);
   const timing = () => ({
     usage: turnLog ? usageOfLog(turnLog) : null,
     firstTextMs: firstTextAt === null ? null : firstTextAt - startedAt,
+    firstPartMs: firstPartAt === null ? null : firstPartAt - startedAt,
     toolBundle: turnLog ? toolBundleOfLog(turnLog) : null,
   });
   try {
@@ -456,6 +464,7 @@ async function runOneTurn(
             if (firstTextAt === null && chunk.type === "text" && chunk.text !== "") {
               firstTextAt = now();
             }
+            if (firstPartAt === null && chunk.part) firstPartAt = now();
           },
         },
       ),

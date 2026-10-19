@@ -441,6 +441,10 @@ export function useAssistantConversation(
             entry.kind === "reply" ? { ...entry, text: entry.text + event.text } : entry,
           );
           return;
+        case "part":
+          // The card shows parts as they arrive from GRV-144's next piece; until
+          // then the whole proposal below is what it shows.
+          return;
         case "proposal": {
           // Memory proposals (GRV-25) and recommendations (GRV-23) come back
           // among the proposal's calls: each is a card of its own, and the
