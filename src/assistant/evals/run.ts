@@ -21,6 +21,9 @@
  * with no proposal is the model's answer, and fails check 1.
  */
 
+import type { ControlAddress } from "../../commands/controlAddress";
+import type { RawCommandInput } from "../../commands/types";
+import type { Project } from "../../domain/entities";
 import type { AssistantAsk } from "../ask";
 import {
   ASSISTANT_CALL_LIMITS,
@@ -69,6 +72,13 @@ import {
 import { describeProposal, type ProposalStats } from "./describe";
 import { evalLibrary } from "./evalLibrary";
 import { type Scorecard, scorecardOf } from "./scorecard";
+import {
+  type EvalSession,
+  runSession,
+  type SessionJudgement,
+  sessionJudgement,
+  sessionTurnChecks,
+} from "./session";
 import { caseSet, type EvalSetId } from "./sets";
 
 /** Why a turn errored, as far as the gateway and the provider said. */
@@ -151,6 +161,14 @@ export interface EvalTurn {
    * reports saved before it existed.
    */
   readonly firstTextMs?: number | null;
+  /**
+   * The session a session case ran (GRV-145, `session.ts`), every turn kept;
+   * absent for a case of one turn. The fields above are then the session's:
+   * its time, tokens and steps summed, its text every turn's, its proposal
+   * every turn's calls in one (the checks apply them turn by turn, as
+   * `sessionJudgement` does), and its question the last turn's.
+   */
+  readonly session?: EvalSession;
 }
 
 /** One run of one case: the request, everything the model returned, every check. */
@@ -168,6 +186,11 @@ export interface EvalRecord extends EvalTurn {
   readonly stats: ProposalStats | null;
   /** The proposal with its fresh IDs normalised; null when it did not apply. */
   readonly fingerprint: string | null;
+  /**
+   * A session's turns, each its own proposal judged against the song it was
+   * made on by check 1 and checks 16 and 20 (GRV-145); absent for one turn.
+   */
+  readonly turnChecks?: readonly Partial<Record<CheckId, CheckResult>>[];
 }
 
 export type Tally = Record<CheckResult["status"], number>;
@@ -344,8 +367,23 @@ function refusalsIn(request: ProviderMessagesRequest): EvalRefusedCall[] {
     }));
 }
 
-/** Runs one case once through the gateway's own turn. Never throws for a failed turn. */
+/**
+ * Runs one case once through the gateway's own turn, or, for a session case,
+ * through as many turns as its session takes (`session.ts`). Never throws for
+ * a failed turn.
+ */
 export async function runCaseTurn(
+  evalCase: EvalCase,
+  options: RunTurnOptions,
+): Promise<EvalTurn> {
+  if (evalCase.session) {
+    return runSession(evalCase, (turnCase) => runOneTurn(turnCase, options));
+  }
+  return runOneTurn(evalCase, options);
+}
+
+/** One turn of a case through the gateway. Never throws for a failed turn. */
+async function runOneTurn(
   evalCase: EvalCase,
   options: RunTurnOptions,
 ): Promise<EvalTurn> {
@@ -502,6 +540,7 @@ export function evaluateTurn(
     axis: evalCase.axis,
     request: evalCase.request,
     run,
+    ...(turn.session ? { turnChecks: sessionTurnChecks(evalCase, turn.session) } : {}),
   };
   if (turn.error) return { ...base, checks: {}, stats: null, fingerprint: null };
   const outcome = checkOutcome(evalCase.expect, turn);
@@ -511,17 +550,15 @@ export function evaluateTurn(
   }
   const caseChecks = caseChecksFor(evalCase.checks, evalCase.exempt);
   const project = evalCase.fixture();
-  // Sound recommendations come back among the proposal's calls; the panel
-  // takes them out before it validates the changes, and so do the checks.
-  const split = turn.proposal ? splitRecommendations(turn.proposal) : null;
-  const changes = turn.proposal ? (split?.proposal ?? null) : turn.proposal;
-  const valid = checkValid(project, changes, whyNoProposal(turn));
-  if (!valid.applied) {
+  const judged = turn.session
+    ? fromSession(sessionJudgement(project, turn.session, whyNoProposal(turn)))
+    : singleJudgement(project, turn);
+  if (!judged.applied) {
     const notJudged = skip("The proposal did not apply");
     return {
       ...base,
       checks: {
-        valid: valid.result,
+        valid: judged.valid,
         bundled: notJudged,
         inScope: notJudged,
         atomicUndo: notJudged,
@@ -534,32 +571,68 @@ export function evaluateTurn(
       fingerprint: null,
     };
   }
-  const { proposal, after } = valid.applied;
+  const { commands, controls, after } = judged.applied;
   return {
     ...base,
     checks: {
-      valid: valid.result,
-      bundled: checkBundled(proposal.commands, after),
+      valid: judged.valid,
+      bundled: checkBundled(commands, after),
       inScope: checkInScope(project, after, resolveScope(project, evalCase.scope)),
-      atomicUndo: checkAtomicUndo(project, changes),
-      grounded: checkGrounded(project, after, proposal.impact.controls, turn.text),
+      atomicUndo: judged.atomicUndo(),
+      grounded: checkGrounded(project, after, controls, turn.text),
       coverage: checkCoverage(project, after, evalCase.parts ?? []),
       outcome,
       ...Object.fromEntries(
         caseChecks.map((id) => [
           id,
           runCaseCheck(id, project, after, turn.text, {
-            commands: proposal.commands,
+            commands,
             expectedValue: evalCase.expectedValue,
             action: evalCase.action,
-            recommendations: split?.recommendations ?? [],
+            recommendations: judged.recommendations,
             library: evalCase.library ? evalLibrary() : null,
           }),
         ]),
       ),
     },
-    stats: describeProposal(project, after, proposal.commands.length),
-    fingerprint: proposalFingerprint(project, proposal.commands),
+    stats: describeProposal(project, after, commands.length),
+    fingerprint: proposalFingerprint(project, commands),
+  };
+}
+
+/** Check 1 on a turn and what it applied, ready for the checks that follow. */
+interface Judgement {
+  readonly valid: CheckResult;
+  readonly applied: {
+    readonly commands: readonly RawCommandInput[];
+    readonly controls: readonly ControlAddress[];
+    readonly after: Project;
+  } | null;
+  readonly atomicUndo: () => CheckResult;
+  readonly recommendations: AssistantProposal["calls"];
+}
+
+/** A session's proposals, applied turn by turn (`session.ts`). */
+function fromSession(judged: SessionJudgement): Judgement {
+  return { ...judged, atomicUndo: () => judged.atomicUndo };
+}
+
+/** One turn's proposal validated and applied to the case's fixture. */
+function singleJudgement(project: Project, turn: EvalTurn): Judgement {
+  // Sound recommendations come back among the proposal's calls; the panel
+  // takes them out before it validates the changes, and so do the checks.
+  const split = turn.proposal ? splitRecommendations(turn.proposal) : null;
+  const changes = turn.proposal ? (split?.proposal ?? null) : turn.proposal;
+  const valid = checkValid(project, changes, whyNoProposal(turn));
+  return {
+    valid: valid.result,
+    applied: valid.applied && {
+      commands: valid.applied.proposal.commands,
+      controls: valid.applied.proposal.impact.controls,
+      after: valid.applied.after,
+    },
+    atomicUndo: () => checkAtomicUndo(project, changes),
+    recommendations: split?.recommendations ?? [],
   };
 }
 

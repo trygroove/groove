@@ -33,7 +33,7 @@ import { ASSISTANT_MODELS, type AssistantModelProfile } from "../config";
 import { costMicroUsd } from "../spend";
 import type { ProviderUsage } from "../streamEvents";
 import { CHECK_IDS, type CheckId } from "./checks";
-import type { EvalRecord, Tally } from "./run";
+import type { EvalRecord, EvalTurn, Tally } from "./run";
 import { HEAVY_OUTPUT_CASE_IDS } from "./sets";
 
 /** A pass rate over the turns a check could judge. */
@@ -61,6 +61,26 @@ export interface Percentiles {
   readonly count: number;
   readonly p50: number | null;
   readonly p95: number | null;
+}
+
+/**
+ * Every turn counted on its own (GRV-145): a session's turns one by one, a
+ * run of one turn as one, so a session's cost reads per turn beside a single
+ * turn's.
+ */
+export interface ByTurn {
+  /** Turns over every run. */
+  readonly turns: number;
+  /** Mean turns per run; 1 when no run was a session. */
+  readonly perRun: number | null;
+  /** Mean output tokens over the turns that recorded them. */
+  readonly outputTokens: number | null;
+  /** Over the turns that came back with a reply. */
+  readonly latencyMs: Percentiles;
+  /** Mean estimated cost over the turns that recorded usage; null for an unknown model. */
+  readonly costUsd: number | null;
+  /** The model calls each turn made, retries included. */
+  readonly modelCalls: ModelCalls;
 }
 
 /** The model calls a turn made, retries included (GRV-142). */
@@ -104,6 +124,11 @@ export interface Secondary {
    * before it existed.
    */
   readonly modelCalls?: ModelCalls;
+  /**
+   * Every turn on its own, a session's apart (GRV-145). Absent from
+   * scorecards saved before sessions existed.
+   */
+  readonly byTurn?: ByTurn;
 }
 
 /** One set's score: how many of its cases ran, its headline, and what it cost. */
@@ -199,7 +224,7 @@ export function turnCostUsd(model: AssistantModelProfile, usage: ProviderUsage):
   return costMicroUsd(model, usage) / 1_000_000;
 }
 
-function modelCallsOf(records: readonly EvalRecord[]): ModelCalls {
+function modelCallsOf(records: readonly EvalTurn[]): ModelCalls {
   const calls = records
     .map((record) => record.steps?.calls)
     .filter((value): value is number => typeof value === "number");
@@ -207,6 +232,37 @@ function modelCallsOf(records: readonly EvalRecord[]): ModelCalls {
     count: calls.length,
     mean: calls.length === 0 ? null : calls.reduce((a, b) => a + b, 0) / calls.length,
     p95: percentile(calls, 95),
+  };
+}
+
+/** A run's turns: a session's, or the run itself. */
+export function turnsOf(record: EvalRecord): readonly EvalTurn[] {
+  return record.session?.turns ?? [record];
+}
+
+function byTurnOf(
+  records: readonly EvalRecord[],
+  model: AssistantModelProfile | null,
+): ByTurn {
+  const turns = records.flatMap(turnsOf);
+  const usages = turns
+    .map((turn) => turn.usage)
+    .filter((usage): usage is ProviderUsage => !!usage);
+  const outputs = usages.map((usage) => usage.outputTokens);
+  return {
+    turns: turns.length,
+    perRun: records.length === 0 ? null : turns.length / records.length,
+    outputTokens:
+      outputs.length === 0 ? null : outputs.reduce((a, b) => a + b, 0) / outputs.length,
+    latencyMs: percentiles(
+      turns.filter((turn) => !turn.error).map((turn) => turn.durationMs),
+    ),
+    costUsd:
+      model && usages.length > 0
+        ? usages.reduce((sum, usage) => sum + turnCostUsd(model, usage), 0) /
+          usages.length
+        : null,
+    modelCalls: modelCallsOf(turns),
   };
 }
 
@@ -256,6 +312,7 @@ export function secondaryOf(
     maxTokensRate: share("max_tokens"),
     refusalRate: share("refusal"),
     modelCalls: modelCallsOf(records),
+    byTurn: byTurnOf(records, model),
   };
 }
 
@@ -499,7 +556,8 @@ function compareMetrics<View>(
 /**
  * The heavy set's numbers (GRV-131, GRV-142), each the plain mean of the
  * per-case figure over the heavy cases scored, so every case weighs the same
- * however many of its turns errored.
+ * however many of its turns errored. A case's figure is per turn: a session
+ * case's turns count one by one (GRV-145), not summed into one run.
  */
 export interface HeavySet {
   /** The heavy cases these numbers are over, in the group's order. */
@@ -530,14 +588,39 @@ export function heavySetOf(
     (id) => caseIds.includes(id) && card.cases[id] !== undefined,
   );
   if (ids.length === 0) return null;
-  const cases = ids.map((id) => card.cases[id]);
+  const cases = ids.map((id) => perTurnOf(card.cases[id]));
   return {
     caseIds: ids,
-    outputTokens: meanOf(cases.map((s) => s.meanTokens.output)),
-    latencyP50Ms: meanOf(cases.map((s) => s.latencyMs.p50)),
-    costPerTurnUsd: meanOf(cases.map((s) => s.costUsd.perTurn)),
-    modelCallsMean: meanOf(cases.map((s) => s.modelCalls?.mean ?? null)),
-    modelCallsP95: meanOf(cases.map((s) => s.modelCalls?.p95 ?? null)),
+    outputTokens: meanOf(cases.map((s) => s.outputTokens)),
+    latencyP50Ms: meanOf(cases.map((s) => s.latencyP50Ms)),
+    costPerTurnUsd: meanOf(cases.map((s) => s.costPerTurnUsd)),
+    modelCallsMean: meanOf(cases.map((s) => s.modelCallsMean)),
+    modelCallsP95: meanOf(cases.map((s) => s.modelCallsP95)),
+  };
+}
+
+/**
+ * One case's per-turn figures: from its turns one by one where the scorecard
+ * kept them (GRV-145), else, for one saved before sessions, from its runs,
+ * which were all single turns then.
+ */
+function perTurnOf(card: Secondary): Omit<HeavySet, "caseIds"> {
+  const { byTurn } = card;
+  if (byTurn) {
+    return {
+      outputTokens: byTurn.outputTokens,
+      latencyP50Ms: byTurn.latencyMs.p50,
+      costPerTurnUsd: byTurn.costUsd,
+      modelCallsMean: byTurn.modelCalls.mean,
+      modelCallsP95: byTurn.modelCalls.p95,
+    };
+  }
+  return {
+    outputTokens: card.meanTokens.output,
+    latencyP50Ms: card.latencyMs.p50,
+    costPerTurnUsd: card.costUsd.perTurn,
+    modelCallsMean: card.modelCalls?.mean ?? null,
+    modelCallsP95: card.modelCalls?.p95 ?? null,
   };
 }
 

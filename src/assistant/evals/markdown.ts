@@ -8,7 +8,7 @@
  */
 import { CHECK_IDS, CHECK_LABELS, type CheckId, type ValidFailureKind } from "./checks";
 import type { EvalRecord, EvalReport, EvalSummary, Tally } from "./run";
-import type { Comparison } from "./scorecard";
+import { type Comparison, formatMetric } from "./scorecard";
 import {
   type BaselineLabel,
   caseSecondaryLines,
@@ -19,6 +19,53 @@ import {
   setLines,
   tacticsText,
 } from "./scorecardMarkdown";
+
+/** A check's number, as the tables name it: "16". */
+function checkNumber(id: CheckId): string {
+  return CHECK_LABELS[id].split(".")[0];
+}
+
+/** The checks that failed, by number, or "none". */
+function failedChecks(checks: EvalRecord["checks"]): string {
+  const failed = CHECK_IDS.filter((id) => checks[id]?.status === "fail").map(checkNumber);
+  return failed.length === 0 ? "none" : failed.join(", ");
+}
+
+/**
+ * Every session run (GRV-145): its turns and how it ended, each turn's output
+ * tokens and latency, the checks the final song failed, and the checks any
+ * turn's own proposal failed. Nothing when no run was a session.
+ */
+export function sessionLines(
+  records: readonly EvalRecord[],
+  heading = "## Sessions",
+): string[] {
+  const sessions = records.filter((record) => record.session);
+  if (sessions.length === 0) return [];
+  return [
+    heading,
+    "",
+    "Each session case's runs, turn by turn: the case's checks judge the final song, and each turn's own proposal is judged by checks 1, 16 and 20.",
+    "",
+    "| Case | Run | Turns | Ended | Output tokens per turn | Latency per turn | Final song failed | Turns failed |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ...sessions.map((record) => {
+      const session = record.session as NonNullable<EvalRecord["session"]>;
+      const tokens = session.turns
+        .map((turn) => formatMetric("tokens", turn.usage?.outputTokens ?? null))
+        .join(" / ");
+      const latency = session.turns
+        .map((turn) => formatMetric("ms", turn.durationMs))
+        .join(" / ");
+      const turnsFailed = (record.turnChecks ?? [])
+        .map((checks, index) => [index + 1, failedChecks(checks)] as const)
+        .filter(([, failed]) => failed !== "none")
+        .map(([turn, failed]) => `turn ${turn}: ${failed}`);
+      return `| \`${record.caseId}\` | ${record.run} | ${session.turns.length} of ${session.maxTurns} | ${session.ended} | ${tokens} | ${latency} | ${record.error ? "errored, not judged" : failedChecks(record.checks)} | ${turnsFailed.length === 0 ? "none" : turnsFailed.join("; ")} |`;
+    }),
+    "",
+  ];
+}
 
 /** A baseline to print the scorecard against. */
 export interface MarkdownBaseline {
@@ -209,6 +256,7 @@ export function renderMarkdown(report: EvalReport, baseline?: MarkdownBaseline):
   const lines: string[] = [
     ...numberLines(report, "Assistant musical capability evals", baseline),
     ...validFailureLines(report),
+    ...sessionLines(report.records),
     "## Runs",
   ];
   for (const caseId of report.caseIds) {

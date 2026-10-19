@@ -6,7 +6,8 @@
  * phase, each variant against the control (cuts with their keep or restore,
  * their held-out run and every combined run, then a line per cut): the goal's change with its paired interval,
  * every guardrail, and every scorecard number beside the control's in
- * GRV-102's diff format (the control standing where the baseline does). The
+ * GRV-102's diff format (the control standing where the baseline does), and
+ * each session run turn by turn (GRV-145). The
  * JSON keeps every number and no reply, so it stays small; each variant's
  * full `report.json` is written beside it.
  */
@@ -18,6 +19,7 @@ import type {
   ExperimentPhase,
   ExperimentResult,
 } from "./experimentRun";
+import { sessionLines } from "./markdown";
 import { type EvalReport, type EvalSummary, summaryOf } from "./run";
 import {
   compareHeavySets,
@@ -101,6 +103,8 @@ function analysisLines(
     ...(heavy
       ? ["##### Heavy set", "", ...comparisonTables(heavy, "#####", COLUMNS)]
       : []),
+    ...sessionLines(control.records, "#### Sessions: the control"),
+    ...sessionLines(variant.records, `#### Sessions: \`${analysis.variant}\``),
     "",
   ];
 }
