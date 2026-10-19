@@ -18,9 +18,10 @@
  *    ({@link DEFAULT_SESSION_TURNS} unless the case says otherwise).
  *
  * The session comes back as one {@link EvalTurn}: the case's checks judge the
- * final song, through every turn's proposal applied in order
- * ({@link sessionProposal}), so a saved report replays like any other; its
- * time, tokens and steps are the session's sums; and each turn is kept in
+ * final song, reached by applying every turn's proposal in order to the song
+ * the turn before left ({@link sessionJudgement}), so no one proposal has to
+ * hold the whole session's calls and a saved report replays from its turns;
+ * its time, tokens and steps are the session's sums; and each turn is kept in
  * {@link EvalSession.turns} with its own tokens and latency. A session one of
  * whose turns errored is an errored run, judged by no check, as a single
  * errored turn is. Every turn's own proposal is judged against the song it was
@@ -29,6 +30,9 @@
  *
  * Nothing here calls the model: the caller hands in how one turn runs.
  */
+
+import { type ControlAddress, uniqueControls } from "../../commands/controlAddress";
+import type { RawCommandInput } from "../../commands/types";
 import type { Project } from "../../domain/entities";
 import { type AskAnswer, type AssistantAsk, answerMessage, pickedLabels } from "../ask";
 import { type HistoryEntry, historyOf } from "../history";
@@ -37,7 +41,13 @@ import { splitRecommendations } from "../recommendation";
 import type { ProviderUsage } from "../streamEvents";
 import { caseChecksFor, EVERY_CASE_CHECKS, runCaseCheck } from "./caseChecks";
 import type { EvalCase } from "./cases";
-import { type CheckId, type CheckResult, checkValid, skip } from "./checks";
+import {
+  type CheckId,
+  type CheckResult,
+  checkAtomicUndo,
+  checkValid,
+  skip,
+} from "./checks";
 import type { EvalTokens, EvalTurn } from "./run";
 
 /** The most turns a session runs when its case does not say. */
@@ -185,8 +195,10 @@ export async function runSession(
 
 /**
  * Every turn's proposal as one, against the case's fixture: their calls in
- * order, which apply as the turns' proposals did one after another, since
- * each names every ID it creates. Null when no turn proposed anything.
+ * order, kept on the session's record to show what it proposed. Judging goes
+ * through {@link sessionJudgement}, turn by turn, never through this one
+ * proposal, which may hold more calls than any one proposal may. Null when no
+ * turn proposed anything.
  */
 export function sessionProposal(
   fixture: Project,
@@ -201,6 +213,89 @@ export function sessionProposal(
     baseRevision: fixture.metadata.revision,
     toolsetVersion: first.toolsetVersion,
     calls: proposals.flatMap((proposal) => proposal.calls),
+  };
+}
+
+/** What a session's proposals, applied turn by turn, came to (GRV-145). */
+export interface SessionJudgement {
+  /**
+   * Check 1 on the session: passes when every turn's changes applied to the
+   * song the turn before left; fails on the first turn whose changes did not,
+   * or when no turn proposed a change.
+   */
+  readonly valid: CheckResult;
+  /** What the turns applied, and the song they left; null when one did not apply. */
+  readonly applied: {
+    /** Every applied turn's commands, in order. */
+    readonly commands: readonly RawCommandInput[];
+    /** Every control a turn changed, without repeats. */
+    readonly controls: readonly ControlAddress[];
+    readonly after: Project;
+  } | null;
+  /** Check 4 on each turn's own proposal: the first that fails, or a pass. */
+  readonly atomicUndo: CheckResult;
+  /** Every turn's sound recommendations, in order. */
+  readonly recommendations: AssistantProposal["calls"];
+}
+
+/**
+ * Applies each turn's proposal to the song the turn before left, from the
+ * case's fixture, as the scripted producer did. `noProposal` says why there
+ * was no change when no turn proposed one.
+ */
+export function sessionJudgement(
+  fixture: Project,
+  session: EvalSession,
+  noProposal: string,
+): SessionJudgement {
+  let project = fixture;
+  const commands: RawCommandInput[] = [];
+  const controls: ControlAddress[] = [];
+  const recommendations: AssistantProposal["calls"][number][] = [];
+  let undo: CheckResult | null = null;
+  let applied = 0;
+  for (const turn of session.turns) {
+    if (turn.error || !turn.proposal) continue;
+    const split = splitRecommendations(turn.proposal);
+    recommendations.push(...split.recommendations);
+    if (!split.proposal) continue;
+    const valid = checkValid(project, split.proposal);
+    if (!valid.applied) {
+      return {
+        valid: { ...valid.result, detail: `Turn ${turn.turn}: ${valid.result.detail}` },
+        applied: null,
+        atomicUndo: skip("The proposal did not apply"),
+        recommendations,
+      };
+    }
+    const turnUndo = checkAtomicUndo(project, split.proposal);
+    if (turnUndo.status === "fail" && !undo) {
+      undo = { ...turnUndo, detail: `Turn ${turn.turn}: ${turnUndo.detail}` };
+    }
+    commands.push(...valid.applied.proposal.commands);
+    controls.push(...valid.applied.proposal.impact.controls);
+    project = valid.applied.after;
+    applied += 1;
+  }
+  if (applied === 0) {
+    return {
+      valid: checkValid(fixture, null, noProposal).result,
+      applied: null,
+      atomicUndo: skip("The proposal did not apply"),
+      recommendations,
+    };
+  }
+  return {
+    valid: {
+      status: "pass",
+      detail: `${commands.length} commands applied over ${applied} ${applied === 1 ? "turn" : "turns"}`,
+    },
+    applied: { commands, controls: uniqueControls(controls), after: project },
+    atomicUndo: undo ?? {
+      status: "pass",
+      detail: "Each turn: one entry; one undo restores its song exactly",
+    },
+    recommendations,
   };
 }
 
