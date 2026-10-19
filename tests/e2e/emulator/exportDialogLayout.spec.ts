@@ -302,4 +302,52 @@ test.describe("Export dialog layout", () => {
       }),
     ).toBe(true);
   });
+
+  test("keeps Close and Export reachable in a short or a narrow window (GRV-153)", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await harness(page, "mountExportDialog", "over");
+    const dialog = page.getByRole("dialog", { name: "Export" });
+    await expect(dialog).toBeVisible();
+    for (const size of [
+      { width: 1280, height: 420 },
+      { width: 375, height: 700 },
+      { width: 375, height: 420 },
+    ]) {
+      await page.setViewportSize(size);
+      for (const name of ["Close", "Export"]) {
+        const button = dialog.getByRole("button", { name, exact: true });
+        // The dialog may scroll, but only the way a producer can scroll it: the wheel.
+        const shell = (await dialog.boundingBox()) ?? { x: 0, y: 0, width: 1, height: 1 };
+        await page.mouse.move(shell.x + shell.width / 2, shell.y + 8);
+        await page.mouse.wheel(4000, 4000);
+        await page.evaluate(
+          () =>
+            new Promise((done) =>
+              requestAnimationFrame(() => requestAnimationFrame(done)),
+            ),
+        );
+        const hit = await button.evaluate((el) => {
+          const box = el.getBoundingClientRect();
+          const top = document.elementFromPoint(
+            box.left + box.width / 2,
+            box.top + box.height / 2,
+          );
+          return {
+            inside:
+              box.left >= 0 &&
+              box.top >= 0 &&
+              box.right <= window.innerWidth &&
+              box.bottom <= window.innerHeight,
+            hit: top === el || el.contains(top),
+          };
+        });
+        expect(hit, `${name} at ${size.width}x${size.height}`).toEqual({
+          inside: true,
+          hit: true,
+        });
+      }
+    }
+  });
 });

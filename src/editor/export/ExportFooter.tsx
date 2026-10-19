@@ -72,9 +72,11 @@ export default function ExportFooter(props: ExportFooterProps): JSX.Element {
               fallback={<span class="export-level">Project level, not normalized</span>}
             >
               <b class="export-value">
-                {props.zipCount === 1
-                  ? "1 ZIP"
-                  : `${props.zipCount} ZIPs, each under 2 GiB`}
+                {props.zipCount === 0
+                  ? "None"
+                  : props.zipCount === 1
+                    ? "1 ZIP"
+                    : `${props.zipCount} ZIPs, each under 2 GiB`}
               </b>
             </Show>
           }

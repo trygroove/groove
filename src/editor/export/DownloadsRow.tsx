@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 import "./DownloadsRow.css";
 
 export type DownloadState = "waiting" | "now" | "done" | "bad";
@@ -41,6 +41,9 @@ export default function DownloadsRow(props: {
   return (
     <section class="downloads" aria-label="Downloads">
       <span class="export-label">Downloads</span>
+      <Show when={props.cards.length === 0}>
+        <span class="download-empty">Nothing to export</span>
+      </Show>
       <For each={props.cards} keyed={(card) => card.name}>
         {(card) => (
           <div class={["download", card().state]}>
