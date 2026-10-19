@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { CommandHistory } from "../commands";
 import { createSliceFixtureProject } from "../domain/fixtures";
 import { fireAndFlush } from "../testing/events";
-import TrackNameInput, { MAX_TRACK_NAME_LENGTH } from "./TrackNameInput";
+import { MAX_DISPLAY_NAME_LENGTH } from "./displayNameLimit";
+import TrackNameInput from "./TrackNameInput";
 
 afterEach(cleanup);
 
@@ -34,12 +35,12 @@ describe("TrackNameInput", () => {
   it("caps the field at the longest name a track may have", () => {
     const { input } = renderInput();
     // The domain's `displayName` is `z.string().min(1).max(120)`.
-    expect(input.maxLength).toBe(MAX_TRACK_NAME_LENGTH);
+    expect(input.maxLength).toBe(MAX_DISPLAY_NAME_LENGTH);
   });
 
   it("commits a name of exactly the longest allowed length", () => {
     const { history, input } = renderInput();
-    const longest = "k".repeat(MAX_TRACK_NAME_LENGTH);
+    const longest = "k".repeat(MAX_DISPLAY_NAME_LENGTH);
     input.value = longest;
     fireAndFlush(() => fireEvent.change(input));
     expect(history.project.song.tracks[0].name).toBe(longest);

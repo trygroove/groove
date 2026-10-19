@@ -4,13 +4,7 @@ import { updateTrack } from "../commands";
 import type { Track } from "../domain/entities";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 import { useShortcuts } from "../shortcuts";
-
-/**
- * The longest name a track may have: the `displayName` limit in
- * `src/domain/entities.ts`. The field stops there, so a longer name cannot be
- * typed and then silently dropped on commit.
- */
-export const MAX_TRACK_NAME_LENGTH = 120;
+import { MAX_DISPLAY_NAME_LENGTH } from "./displayNameLimit";
 
 export interface TrackNameInputProps {
   readonly track: Track;
@@ -67,7 +61,7 @@ export default function TrackNameInput(props: TrackNameInputProps): JSX.Element 
       id={`track-name-${props.track.id}`}
       class={`${props.class} ${MASK_CONTENT}`}
       type="text"
-      maxlength={MAX_TRACK_NAME_LENGTH}
+      maxlength={MAX_DISPLAY_NAME_LENGTH}
       aria-label={props.label}
       value={props.track.name}
       onBlur={() => {
