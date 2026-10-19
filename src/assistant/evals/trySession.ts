@@ -43,7 +43,7 @@ import {
   pickedLabels,
 } from "../ask";
 import { ASSISTANT_MODELS, type AssistantModelId } from "../config";
-import { type HistoryProposal, historyOf, MAX_MESSAGE_CHARS } from "../history";
+import { historyOf, MAX_MESSAGE_CHARS } from "../history";
 import { historyProposalTarget } from "../historyProposalTarget";
 import type { ProposalIssue } from "../proposal";
 import { createProposalExecutor, type ProposalHandle } from "../proposalExecutor";
@@ -83,13 +83,7 @@ export const TRY_SESSION_KIND = "groove-assistant-try-session";
 /** One thing in the session's conversation, as {@link historyOf} reads it. */
 export type TryEntry =
   | { readonly kind: "message"; readonly text: string; readonly wire?: string }
-  | {
-      readonly kind: "reply";
-      readonly text: string;
-      readonly ask?: AssistantAsk;
-      /** What became of the proposal it made, resent after it (GRV-150). */
-      readonly proposal?: HistoryProposal;
-    };
+  | { readonly kind: "reply"; readonly text: string; readonly ask?: AssistantAsk };
 
 /** A proposal that was applied, and the project it was applied to. */
 export interface AppliedProposal {
@@ -449,16 +443,15 @@ export async function ask(
   ];
   // The panel drops a reply that wrote nothing and asked nothing, and with it
   // the message from what the next turn resends; a failed turn likewise.
-  const split = turn.proposal ? splitRecommendations(turn.proposal) : null;
-  const card = split?.proposal ? cardOf(session.project, split.proposal) : null;
   if (!turn.error && (turn.text.length > 0 || turn.ask)) {
     entries.push({
       kind: "reply",
       text: turn.text,
       ...(turn.ask ? { ask: turn.ask } : {}),
-      ...(card ? { proposal: card.ok ? "pending" : "rejected" } : {}),
     });
   }
+  const split = turn.proposal ? splitRecommendations(turn.proposal) : null;
+  const card = split?.proposal ? cardOf(session.project, split.proposal) : null;
   const judged = turn.proposal && !turn.error ? evaluateTurn(evalCase, 1, turn) : null;
   const checks = judged
     ? FIRST_FIVE_CHECKS.map((id) => {
@@ -605,23 +598,6 @@ function handleFor(
   return proposed.ok ? { ok: true, handle: proposed.handle, history } : proposed;
 }
 
-/**
- * The entries with the newest reply whose proposal is `from` marked `to`, as
- * the panel marks the reply behind a card it applies, cancels or undoes.
- */
-function markProposal(
-  entries: readonly TryEntry[],
-  from: HistoryProposal,
-  to: HistoryProposal,
-): TryEntry[] {
-  const index = entries.findLastIndex(
-    (entry) => entry.kind === "reply" && entry.proposal === from,
-  );
-  return entries.map((entry, at) =>
-    at === index && entry.kind === "reply" ? { ...entry, proposal: to } : entry,
-  );
-}
-
 const STALE =
   "The song moved since the proposal was made, so it can only be cancelled (ask again to refresh it)";
 
@@ -654,7 +630,6 @@ export function apply(session: TrySession): Transition {
     project: proposed.history.project,
     pending: null,
     applied: [...session.applied, { before: session.project, proposal: pending }],
-    entries: markProposal(session.entries, "pending", "applied"),
   };
   return outcome(
     "apply",
@@ -672,11 +647,7 @@ export function cancel(session: TrySession): Transition {
   if (proposed.ok) proposed.handle.cancel();
   return outcome(
     "cancel",
-    {
-      ...session,
-      pending: null,
-      entries: markProposal(session.entries, "pending", "cancelled"),
-    },
+    { ...session, pending: null },
     true,
     "Cancelled; the song is unchanged",
   );
@@ -710,7 +681,6 @@ export function undo(session: TrySession): Transition {
     ...session,
     project: proposed.history.project,
     applied: session.applied.slice(0, -1),
-    entries: markProposal(session.entries, "applied", "undone"),
   };
   return outcome("undo", next, true, `Undid: ${proposed.handle.proposal.impact.summary}`);
 }

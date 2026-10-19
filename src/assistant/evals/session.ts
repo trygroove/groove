@@ -166,7 +166,6 @@ export async function runSession(
       ended = "errored";
       break;
     }
-    let appliedChanges = false;
     if (turn.proposal) {
       const applied = applyProposal(project, turn.proposal);
       if (!applied.after) {
@@ -174,7 +173,6 @@ export async function runSession(
         break;
       }
       project = applied.after;
-      appliedChanges = applied.valid !== null;
     }
     const ask = turn.ask ?? null;
     if (!ask) break;
@@ -184,13 +182,7 @@ export async function runSession(
     }
     const answer = scriptedAnswer(ask);
     entries.push(
-      // The scripted producer applied its proposal, as the next turn says (GRV-150).
-      {
-        kind: "reply",
-        text: turn.text,
-        ask,
-        ...(appliedChanges ? { proposal: "applied" } : {}),
-      },
+      { kind: "reply", text: turn.text, ask },
       {
         kind: "message",
         text: pickedLabels(ask, answer).join(", "),
