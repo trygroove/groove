@@ -79,11 +79,12 @@ describe("TelemetryDisclosure (PRD OPS-02, section 10 Security and privacy)", ()
     // ADR 0003 decision 2, as amended by GRV-126: a kept conversation also
     // goes to PostHog while product analytics is allowed, never to Sentry, and
     // PostHog's copies expire rather than being deleted. It must agree with
-    // the Cue settings disclosure (`retentionCopy.ts`), never contradict it.
+    // the Coproducer settings disclosure (`retentionCopy.ts`), never contradict it.
     it("discloses that kept assistant conversations also go to PostHog", () => {
       setup();
       const body =
-        screen.getByText(/Groove keeps your\s+conversations with Cue/).textContent ?? "";
+        screen.getByText(/Groove keeps your\s+conversations with Coproducer/)
+          .textContent ?? "";
       expect(body).toContain("also goes to PostHog");
       expect(body).toContain("only if you allow product analytics");
       expect(body).toContain("never sent to Sentry");

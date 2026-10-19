@@ -13,7 +13,7 @@ export interface MemoryProposalCardProps {
 export const MEMORY_CARD_LABEL = "Remember this?";
 
 /**
- * Something Cue proposes remembering about the producer (GRV-25): what it
+ * Something Coproducer proposes remembering about the producer (GRV-25): what it
  * would remember, with Remember and Not now. Once remembered it shrinks to a
  * receipt line, "Saved to memory", with Undo; nothing is ever saved without
  * the press.

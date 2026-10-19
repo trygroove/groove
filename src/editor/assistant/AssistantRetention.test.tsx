@@ -71,18 +71,18 @@ async function renderPanel(retention: AssistantRetentionClient) {
   };
   render(() => <Harness />);
   clickAndFlush(screen.getByRole("button", { name: "Open it" }));
-  const panel = screen.getByRole("region", { name: "Cue" });
+  const panel = screen.getByRole("region", { name: "Coproducer" });
   return { client, transport, panel };
 }
 
 const composer = (panel: HTMLElement) =>
-  within(panel).queryByRole("textbox", { name: "Message Cue" });
+  within(panel).queryByRole("textbox", { name: "Message Coproducer" });
 
 describe("the assistant's disclosure (GRV-8)", () => {
   async function openNotice(retention: AssistantRetentionClient) {
     const rendered = await renderPanel(retention);
     const disclosure = await within(rendered.panel).findByRole("region", {
-      name: "About Cue",
+      name: "About Coproducer",
     });
     const notice = within(disclosure).getByRole("group", { name: NOTICE_HEADING });
     return { ...rendered, disclosure, notice };
@@ -150,7 +150,7 @@ describe("the assistant's disclosure (GRV-8)", () => {
   it("is not shown again to an account that has answered", async () => {
     const { panel } = await renderPanel(createFakeRetentionClient({ answered: true }));
     await waitFor(() => expect(composer(panel)).not.toBeNull());
-    expect(within(panel).queryByRole("region", { name: "About Cue" })).toBeNull();
+    expect(within(panel).queryByRole("region", { name: "About Coproducer" })).toBeNull();
   });
 
   it("shows neither the disclosure nor the composer until the answer is known", async () => {
@@ -168,12 +168,12 @@ describe("the assistant's disclosure (GRV-8)", () => {
     };
     const { panel } = await renderPanel(retention);
     await within(panel).findByText(RETENTION_LOADING);
-    expect(within(panel).queryByRole("region", { name: "About Cue" })).toBeNull();
+    expect(within(panel).queryByRole("region", { name: "About Coproducer" })).toBeNull();
     expect(composer(panel)).toBeNull();
 
     release();
     await waitFor(() => expect(composer(panel)).not.toBeNull());
-    expect(within(panel).queryByRole("region", { name: "About Cue" })).toBeNull();
+    expect(within(panel).queryByRole("region", { name: "About Coproducer" })).toBeNull();
   });
 });
 
@@ -182,7 +182,7 @@ describe("the assistant's settings (GRV-8)", () => {
     const retention = createFakeRetentionClient({ answered: true });
     const { panel } = await renderPanel(retention);
     await waitFor(() => expect(composer(panel)).not.toBeNull());
-    clickAndFlush(within(panel).getByRole("button", { name: "Cue settings" }));
+    clickAndFlush(within(panel).getByRole("button", { name: "Coproducer settings" }));
 
     const box = within(panel).getByRole("checkbox", { name: RETENTION_LABEL });
     expect(box).toBeChecked();
@@ -206,7 +206,7 @@ describe("the assistant's settings (GRV-8)", () => {
     const retention = createFakeRetentionClient({ answered: false });
     const { panel } = await renderPanel(retention);
     await waitFor(() => expect(composer(panel)).not.toBeNull());
-    clickAndFlush(within(panel).getByRole("button", { name: "Cue settings" }));
+    clickAndFlush(within(panel).getByRole("button", { name: "Coproducer settings" }));
     fireEvent.click(within(panel).getByRole("checkbox", { name: RETENTION_LABEL }));
     const confirmation = await within(panel).findByText(OPTED_IN_CONFIRMATION);
     expect(confirmation).toHaveTextContent(RETENTION_SCOPE);
@@ -217,7 +217,7 @@ describe("the assistant's settings (GRV-8)", () => {
     const retention = createFakeRetentionClient({ answered: true });
     const { panel } = await renderPanel(retention);
     await waitFor(() => expect(composer(panel)).not.toBeNull());
-    clickAndFlush(within(panel).getByRole("button", { name: "Cue settings" }));
+    clickAndFlush(within(panel).getByRole("button", { name: "Coproducer settings" }));
     const box = within(panel).getByRole("checkbox", { name: RETENTION_LABEL });
     box.focus();
     fireEvent.click(box);
@@ -234,7 +234,7 @@ describe("the assistant's settings (GRV-8)", () => {
     const retention = createFakeRetentionClient({ answered: false });
     const { panel } = await renderPanel(retention);
     await waitFor(() => expect(composer(panel)).not.toBeNull());
-    clickAndFlush(within(panel).getByRole("button", { name: "Cue settings" }));
+    clickAndFlush(within(panel).getByRole("button", { name: "Coproducer settings" }));
     retention.failCalls(true);
     const box = within(panel).getByRole("checkbox", { name: RETENTION_LABEL });
     fireEvent.click(box);

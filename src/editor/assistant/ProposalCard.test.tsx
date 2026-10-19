@@ -210,8 +210,9 @@ async function setUp(options: { retention?: FakeRetentionClient } = {}) {
   };
 }
 
-const panel = () => screen.getByRole("region", { name: "Cue" });
-const composer = () => within(panel()).getByRole("textbox", { name: "Message Cue" });
+const panel = () => screen.getByRole("region", { name: "Coproducer" });
+const composer = () =>
+  within(panel()).getByRole("textbox", { name: "Message Coproducer" });
 const button = (name: string | RegExp) => within(panel()).getByRole("button", { name });
 const card = () => within(panel()).getByRole("region", { name: /^Proposal\b/ });
 const cardButton = (name: string) => within(card()).getByRole("button", { name });

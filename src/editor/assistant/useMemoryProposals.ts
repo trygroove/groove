@@ -1,6 +1,6 @@
 /**
- * The memory cards in Cue's conversation (GRV-25): what happens to each
- * thing Cue proposes remembering about the producer. Nothing is saved until
+ * The memory cards in Coproducer's conversation (GRV-25): what happens to each
+ * thing Coproducer proposes remembering about the producer. Nothing is saved until
  * they press Remember; a saved one shows a receipt line with Undo, which
  * takes exactly that change back out.
  *
@@ -48,7 +48,7 @@ export interface AssistantMemoryProposals {
   dismiss(entryId: string): void;
   /** Undo on a receipt: takes the change back out. */
   undo(entryId: string): Promise<boolean>;
-  /** Cue asked a question skipped in onboarding: it is not asked again. */
+  /** Coproducer asked a question skipped in onboarding: it is not asked again. */
   asked(question: OnboardingQuestionId): void;
 }
 

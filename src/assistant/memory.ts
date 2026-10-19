@@ -1,5 +1,5 @@
 /**
- * What Cue remembers about the producer, as a turn carries it, and the one
+ * What Coproducer remembers about the producer, as a turn carries it, and the one
  * tool that proposes adding to it (GRV-25).
  *
  * **Reading.** A turn may carry the producer's memory (their onboarding

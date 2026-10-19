@@ -208,7 +208,7 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
             />
           )}
         </Show>
-        {/* Cue's one nudge a day (GRV-25), above the suggestions. */}
+        {/* Coproducer's one nudge a day (GRV-25), above the suggestions. */}
         <Show
           when={
             !streaming() && !conversation().pendingAsk() && props.chat.nudge?.lesson()

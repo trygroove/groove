@@ -1,5 +1,5 @@
 /**
- * Changes to what Cue remembers (GRV-25), as pure functions of a profile: a
+ * Changes to what Coproducer remembers (GRV-25), as pure functions of a profile: a
  * proposal confirmed, its undo, a question asked, and the memory a turn
  * carries. The editor's memory cards and the Memory page both go through
  * these, so memory is changed one way wherever it is changed.
@@ -179,7 +179,7 @@ export function forgetNote(profile: ProducerProfile, noteId: string): ProducerPr
 }
 
 /**
- * `profile` with everything Cue remembers forgotten: every field, every note,
+ * `profile` with everything Coproducer remembers forgotten: every field, every note,
  * and every question it meant to ask later. Whether onboarding was done, and
  * the share box, are settings rather than memory, and stay.
  */

@@ -17,7 +17,7 @@ const model = Object.values(ASSISTANT_MODELS)[0];
 if (!model) throw new Error("a model is configured");
 
 const request = buildProviderRequest(model, {
-  system: [{ type: "text", text: "You are Cue." }],
+  system: [{ type: "text", text: "You are Coproducer." }],
   messages: [
     { role: "user", content: "Hello" },
     {
@@ -124,7 +124,7 @@ describe("traceInput", () => {
     const input = traceInput(request);
     expect(input[0]).toEqual({
       role: "system",
-      content: [{ type: "text", text: "You are Cue." }],
+      content: [{ type: "text", text: "You are Coproducer." }],
     });
     const text = JSON.stringify(input);
     expect(text).toContain('"thinking":"hmm"');
