@@ -69,6 +69,7 @@ import {
 import { describeProposal, type ProposalStats } from "./describe";
 import { evalLibrary } from "./evalLibrary";
 import { type Scorecard, scorecardOf } from "./scorecard";
+import { type EvalSession, runSession, sessionTurnChecks } from "./session";
 import { caseSet, type EvalSetId } from "./sets";
 
 /** Why a turn errored, as far as the gateway and the provider said. */
@@ -151,6 +152,13 @@ export interface EvalTurn {
    * reports saved before it existed.
    */
   readonly firstTextMs?: number | null;
+  /**
+   * The session a session case ran (GRV-145, `session.ts`), every turn kept;
+   * absent for a case of one turn. The fields above are then the session's:
+   * its time, tokens and steps summed, its text every turn's, its proposal
+   * every turn's applied in order, and its question the last turn's.
+   */
+  readonly session?: EvalSession;
 }
 
 /** One run of one case: the request, everything the model returned, every check. */
@@ -168,6 +176,11 @@ export interface EvalRecord extends EvalTurn {
   readonly stats: ProposalStats | null;
   /** The proposal with its fresh IDs normalised; null when it did not apply. */
   readonly fingerprint: string | null;
+  /**
+   * A session's turns, each its own proposal judged against the song it was
+   * made on by check 1 and checks 16 and 20 (GRV-145); absent for one turn.
+   */
+  readonly turnChecks?: readonly Partial<Record<CheckId, CheckResult>>[];
 }
 
 export type Tally = Record<CheckResult["status"], number>;
@@ -344,8 +357,23 @@ function refusalsIn(request: ProviderMessagesRequest): EvalRefusedCall[] {
     }));
 }
 
-/** Runs one case once through the gateway's own turn. Never throws for a failed turn. */
+/**
+ * Runs one case once through the gateway's own turn, or, for a session case,
+ * through as many turns as its session takes (`session.ts`). Never throws for
+ * a failed turn.
+ */
 export async function runCaseTurn(
+  evalCase: EvalCase,
+  options: RunTurnOptions,
+): Promise<EvalTurn> {
+  if (evalCase.session) {
+    return runSession(evalCase, (turnCase) => runOneTurn(turnCase, options));
+  }
+  return runOneTurn(evalCase, options);
+}
+
+/** One turn of a case through the gateway. Never throws for a failed turn. */
+async function runOneTurn(
   evalCase: EvalCase,
   options: RunTurnOptions,
 ): Promise<EvalTurn> {
@@ -502,6 +530,7 @@ export function evaluateTurn(
     axis: evalCase.axis,
     request: evalCase.request,
     run,
+    ...(turn.session ? { turnChecks: sessionTurnChecks(evalCase, turn.session) } : {}),
   };
   if (turn.error) return { ...base, checks: {}, stats: null, fingerprint: null };
   const outcome = checkOutcome(evalCase.expect, turn);

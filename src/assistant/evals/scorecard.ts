@@ -33,7 +33,7 @@ import { ASSISTANT_MODELS, type AssistantModelProfile } from "../config";
 import { costMicroUsd } from "../spend";
 import type { ProviderUsage } from "../streamEvents";
 import { CHECK_IDS, type CheckId } from "./checks";
-import type { EvalRecord, Tally } from "./run";
+import type { EvalRecord, EvalTurn, Tally } from "./run";
 import { HEAVY_OUTPUT_CASE_IDS } from "./sets";
 
 /** A pass rate over the turns a check could judge. */
@@ -61,6 +61,22 @@ export interface Percentiles {
   readonly count: number;
   readonly p50: number | null;
   readonly p95: number | null;
+}
+
+/**
+ * Every turn counted on its own (GRV-145): a session's turns one by one, a
+ * run of one turn as one, so a session's cost reads per turn beside a single
+ * turn's.
+ */
+export interface ByTurn {
+  /** Turns over every run. */
+  readonly turns: number;
+  /** Mean turns per run; 1 when no run was a session. */
+  readonly perRun: number | null;
+  /** Mean output tokens over the turns that recorded them. */
+  readonly outputTokens: number | null;
+  /** Over the turns that came back with a reply. */
+  readonly latencyMs: Percentiles;
 }
 
 /** The model calls a turn made, retries included (GRV-142). */
@@ -104,6 +120,11 @@ export interface Secondary {
    * before it existed.
    */
   readonly modelCalls?: ModelCalls;
+  /**
+   * Every turn on its own, a session's apart (GRV-145). Absent from
+   * scorecards saved before sessions existed.
+   */
+  readonly byTurn?: ByTurn;
 }
 
 /** One set's score: how many of its cases ran, its headline, and what it cost. */
@@ -210,6 +231,27 @@ function modelCallsOf(records: readonly EvalRecord[]): ModelCalls {
   };
 }
 
+/** A run's turns: a session's, or the run itself. */
+export function turnsOf(record: EvalRecord): readonly EvalTurn[] {
+  return record.session?.turns ?? [record];
+}
+
+function byTurnOf(records: readonly EvalRecord[]): ByTurn {
+  const turns = records.flatMap(turnsOf);
+  const outputs = turns
+    .map((turn) => turn.usage?.outputTokens)
+    .filter((value): value is number => typeof value === "number");
+  return {
+    turns: turns.length,
+    perRun: records.length === 0 ? null : turns.length / records.length,
+    outputTokens:
+      outputs.length === 0 ? null : outputs.reduce((a, b) => a + b, 0) / outputs.length,
+    latencyMs: percentiles(
+      turns.filter((turn) => !turn.error).map((turn) => turn.durationMs),
+    ),
+  };
+}
+
 export function secondaryOf(
   records: readonly EvalRecord[],
   model: AssistantModelProfile | null,
@@ -256,6 +298,7 @@ export function secondaryOf(
     maxTokensRate: share("max_tokens"),
     refusalRate: share("refusal"),
     modelCalls: modelCallsOf(records),
+    byTurn: byTurnOf(records),
   };
 }
 

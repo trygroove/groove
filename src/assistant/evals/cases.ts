@@ -153,6 +153,20 @@ export interface EvalCase {
    * do, so the model is offered `recommend_sounds` (GRV-129).
    */
   readonly library?: boolean;
+  /**
+   * Runs the case as a session (GRV-145, `session.ts`): a scripted producer
+   * applies each proposal and answers each question with the suggested
+   * option, for up to `maxTurns` turns (`DEFAULT_SESSION_TURNS` when not
+   * said), and the case's checks judge the final song. Absent, the case is
+   * one turn.
+   */
+  readonly session?: EvalSessionOptions;
+}
+
+/** How a session case runs (GRV-145). */
+export interface EvalSessionOptions {
+  /** The most turns it runs; the session's default when absent. */
+  readonly maxTurns?: number;
 }
 
 const NOTHING_ELSE = { song: false, master: false, returns: false, sections: false };
@@ -597,6 +611,9 @@ export const jsonEvalCaseSchema = z.strictObject({
   selection: evalSelectionSchema,
   scope: evalScopeSchema,
   parts: z.array(z.enum(EVAL_PARTS)).optional(),
+  session: z
+    .strictObject({ maxTurns: z.number().int().min(1).max(10).optional() })
+    .optional(),
 });
 export type JsonEvalCase = z.infer<typeof jsonEvalCaseSchema>;
 
