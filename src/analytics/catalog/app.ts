@@ -55,6 +55,14 @@ export const APP_FEATURE_KEYS = [
  */
 export const LANDING_CTA_PLACEMENTS = ["header", "hero", "close"] as const;
 
+/**
+ * What happened to unsaved edits when the crash screen reloaded (GRV-55), as
+ * `crash_reloaded`'s `save_outcome`: there were none, they were written, or
+ * they could not be written and the producer chose to reload anyway.
+ */
+export const CRASH_SAVE_OUTCOMES = ["nothing_queued", "saved", "unsaved"] as const;
+export type CrashSaveOutcome = (typeof CRASH_SAVE_OUTCOMES)[number];
+
 export const APP_EVENTS = {
   app_opened: {
     phase: 0,
@@ -143,6 +151,17 @@ export const APP_EVENTS = {
       capability: enumParam(BROWSER_CAPABILITY_IDS),
       is_required: boolParam(),
     },
+  },
+
+  /**
+   * The producer pressed Reload on the crash screen (GRV-55), which writes
+   * any edit still waiting to save before it reloads. `save_outcome` says
+   * whether there was one and whether it landed.
+   */
+  crash_reloaded: {
+    phase: 3,
+    owners: ["GRV-55"],
+    params: { save_outcome: enumParam(CRASH_SAVE_OUTCOMES) },
   },
 
   exception: {

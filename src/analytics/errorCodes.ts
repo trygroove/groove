@@ -88,6 +88,20 @@ export const ERROR_CODES = [
   "unsupported_format",
   /** A personal pack already holds as many sounds as one pack can (#282). */
   "pack_full",
+
+  // --- Export (GRV-55) ---------------------------------------------------
+  /** The offline render itself failed: the graph threw, or rendered nothing. */
+  "render_failed",
+  /** The browser could not allocate the memory a render or a file needed. */
+  "out_of_memory",
+  /** One ZIP of a batched stems export could not be built. */
+  "zip_batch_failed",
+  /** A finished file could not be handed to the browser as a download. */
+  "download_blocked",
+
+  // --- Engine health (GRV-55) --------------------------------------------
+  /** Audio resources were still registered after their project closed. */
+  "resource_leak",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
