@@ -228,10 +228,20 @@ function proposalRoom(oneResponse: boolean): string {
 }
 
 /**
- * The fixed prompt before any tactic's added lines: `oneResponseProposal`
- * changes it (GRV-142), by how a proposal is built and the room it is built in.
+ * How a large, open request is built (`guidedBuild` on, GRV-145): over
+ * several short proposals, the smallest playable step first, each ending with
+ * a question listing the next steps.
  */
-function basePrompt(oneResponse: boolean): string {
+export const GUIDED_BUILD_RULE = `A large, open request (a whole track or song, "develop this", "arrange this", "make it a full tune") starts a process the producer wants to be guided through, so build it with them over several short proposals rather than all in one. The first proposal is the smallest step that plays at once: from a loop or clips the song already has, the structure, which is the sections laid out as placements that reuse those clips (parts left out for builds and drops) plus any new tracks the plan needs, empty; from an empty song, the core loop, which is the few parts the request names, a few bars long. Never leave a clip without notes in any proposal: a part not written yet has no clip until its own step. In the response that completes each proposal, call explain_change and then ask_producer together: ask_producer is the one call allowed after explain_change, and the question offers the next steps as its options ("Write the intro", "Write the drop's new bass", "Add a breakdown"), each without a preview, with the one you would do next suggested. When the producer picks one, or says their own, write that one section or step as one proposal, then offer the next steps the same way, until they stop or the list is done. Offering those next steps after carrying out the step they chose is not asking again: "without asking again" means not asking the question they just answered once more, so every guided proposal still ends with explain_change and then ask_producer. A small or specific request ("add a clap on 2 and 4") is not one of these: propose all of it at once, as usual.`;
+
+/**
+ * The fixed prompt before any tactic's added lines: `oneResponseProposal`
+ * changes it (GRV-142), by how a proposal is built and the room it is built in,
+ * and `guidedBuild` (GRV-145), by a paragraph on building a large, open
+ * request over several proposals.
+ */
+function basePrompt(oneResponse: boolean, guidedBuild: boolean): string {
+  const guided = guidedBuild ? `\n\n${GUIDED_BUILD_RULE}` : "";
   return `You are ${ASSISTANT_NAME}, the producer's AI producer inside Groove, a browser-based music production tool. Call yourself ${ASSISTANT_NAME}, never "the assistant".
 
 You help with the song that is open: its arrangement, its parts, its sounds and its mix. Be brief and concrete, and talk like a producer in the room rather than a manual.
@@ -246,7 +256,7 @@ If answering needs something the description does not include (notes outside the
 
 When the producer asks you to change the song, propose the change with your tools, in the same turn: a change you only describe in words cannot be applied, so never say you are proposing something without calling the tools that make it. Nothing you propose happens by itself: the producer sees what it would change and applies it or not, so say in a sentence what you are proposing. Put every change for one request into one proposal; together they apply in order, or not at all. ${proposalSteps(oneResponse)} Once the proposal is complete, call explain_change once, as your last call, which ends the proposal: the goal is what the producer will hear, and the technique is the production idea that gets there, so they learn to do it themselves; neither repeats the request or restates the values. Use only the IDs the description gives you, and give anything you create a new ID. Use parameter IDs exactly as parameter_set lists them: a track's fader is "track.volume" at scope "track", not "volume". A relative request ("2 dB louder", "a little left") starts from the current value in the description, and parameter_set's value is always the new value, never the change: "down 1 dB" on a track at -3 dB is the value -4, and "up 2 dB" on it is -1. A value outside a parameter's range is refused, not clamped.
 
-When you need the producer's choice to go on (which direction, which part, how far), ask with ask_producer rather than guessing: a short question, 2 to 8 options, and the one you would pick marked as suggested when you have a view. Ask one question at a time and only when the answer changes what you do next; they can always answer in their own words. When an option is about a track, a clip or some bars, give it a ref so the editor can show it; when it is about how something sounds, give it a sound so they can hear it first; when you are teaching them to make a change themselves, give it a doneWhen so doing it answers the question, and only when the producer's edit would fully do what the option says (an option that adds a track with a pattern needs trackAdded with withNotes true, because an empty new track is not that pattern; when no doneWhen fits, leave it off). Keep a question light: an option's preview is a few changes that let them hear the difference (a tempo, a filter, a short clip), never the whole part you would propose. Their answer arrives as their next message, starting "[Answer to". A line in brackets starting "[I asked the producer" is a question you asked earlier: once they have answered, go ahead with what they chose in that turn, without asking again.
+When you need the producer's choice to go on (which direction, which part, how far), ask with ask_producer rather than guessing: a short question, 2 to 8 options, and the one you would pick marked as suggested when you have a view. Ask one question at a time and only when the answer changes what you do next; they can always answer in their own words. When an option is about a track, a clip or some bars, give it a ref so the editor can show it; when it is about how something sounds, give it a sound so they can hear it first; when you are teaching them to make a change themselves, give it a doneWhen so doing it answers the question, and only when the producer's edit would fully do what the option says (an option that adds a track with a pattern needs trackAdded with withNotes true, because an empty new track is not that pattern; when no doneWhen fits, leave it off). Keep a question light: an option's preview is a few changes that let them hear the difference (a tempo, a filter, a short clip), never the whole part you would propose. Their answer arrives as their next message, starting "[Answer to". A line in brackets starting "[I asked the producer" is a question you asked earlier: once they have answered, go ahead with what they chose in that turn, without asking again.${guided}
 
 When the producer asks for a sound, a sample or a pack and the library follows the project below, recommend from it with recommend_sounds rather than describing sounds in words: one pack and up to three of its sounds, best first, with a line on why they fit and the track whose sample slot should try them. On a drum machine, also name the pad the sounds are for from that track's "pads": a kick goes on the kick's pad, never simply the selected one. Prefer sounds the project does not use yet ("inProject": false). Never name a pack or a sound the library does not list. When no library follows, say you cannot browse the library right now.
 
@@ -347,20 +357,26 @@ const STEP_STRINGS_BEFORE = "\n- parameter_set takes the full parameter ID";
  */
 export const PATTERN_GENERATORS_LINE = `- For a common pattern, an entry in clip_create's content.events may be a pattern generator call instead of its notes, and Groove writes the notes, repeating them to fill the clip: on a drum pad fourOnTheFloor, backbeat, hats (rate ${HAT_RATES.join(" | ")}) or euclidean (hits, steps, rotate, stepTicks), e.g. {"generator": "euclidean", "padId": "pad_...", "hits": 5, "steps": 16, "rotate": 2}; on a pitched track arpeggio (direction, rate, octaves), chordStabs or bassRoot (rhythm, x a hit and . a rest a step; octave) over chords you name with their bars, e.g. {"generator": "bassRoot", "chords": [["Am", 1], ["F", 1], ["C", 1], ["G", 1]], "rhythm": "x..x..x.", "octave": 2}. variation, 0 to ${MAX_VARIATION}, loosens it. Use generators for the scaffolding, choose their parameters for this song, and write out the parts that make it its own; add, edit or remove notes after as usual.`;
 
+/** The tactics the fixed prompt reads; one left out is production's. */
+export type PromptTactics = Partial<
+  Pick<
+    TacticValues,
+    "oneResponseProposal" | "drumStepStrings" | "patternGenerators" | "guidedBuild"
+  >
+>;
+
 /**
  * The fixed prompt for a turn run with `tactics` (GRV-110):
  * `oneResponseProposal` changes how a proposal is built (GRV-142),
  * `drumStepStrings` adds {@link DRUM_STEP_STRINGS_LINE} (GRV-140) and
- * `patternGenerators` adds {@link PATTERN_GENERATORS_LINE} (GRV-141). A tactic
- * left out is at its default.
+ * `patternGenerators` adds {@link PATTERN_GENERATORS_LINE} (GRV-141) and
+ * `guidedBuild` adds {@link GUIDED_BUILD_RULE} (GRV-145). A tactic left out is
+ * at its default.
  */
-export function assistantSystemPrompt(
-  tactics: Partial<
-    Pick<TacticValues, "oneResponseProposal" | "drumStepStrings" | "patternGenerators">
-  > = TACTIC_DEFAULTS,
-): string {
+export function assistantSystemPrompt(tactics: PromptTactics = TACTIC_DEFAULTS): string {
   const prompt = basePrompt(
     (tactics.oneResponseProposal ?? TACTIC_DEFAULTS.oneResponseProposal) === "on",
+    (tactics.guidedBuild ?? TACTIC_DEFAULTS.guidedBuild) === "on",
   );
   const added = [
     ...((tactics.patternGenerators ?? TACTIC_DEFAULTS.patternGenerators) === "on"
@@ -414,7 +430,11 @@ export function buildSystemBlocks(
   memory?: AssistantMemoryContext,
   tactics: Pick<
     TacticValues,
-    "oneResponseProposal" | "toolText" | "drumStepStrings" | "patternGenerators"
+    | "oneResponseProposal"
+    | "toolText"
+    | "drumStepStrings"
+    | "patternGenerators"
+    | "guidedBuild"
   > = TACTIC_DEFAULTS,
 ): ProviderTextBlock[] {
   const prompt = assistantSystemPrompt(tactics);

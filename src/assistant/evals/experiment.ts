@@ -26,13 +26,20 @@
  *   points per set, the overall pass rate within 2, no case passing in most
  *   runs going to failing in most, no rise in `max_tokens` stops or errored
  *   turns). An experiment may tighten the two point limits, and a cut's
- *   2% margin, never loosen them. It may also hold check 6 (extreme is not
- *   flattened), which no experiment is held to unless it says so (GRV-141).
+ *   2% margin, never loosen them, and may add three stricter ones (GRV-145):
+ *   no `max_tokens` stop at all, output tokens per turn no higher than the
+ *   control's, and named checks holding on every turn's own proposal. It may
+ *   also hold check 6 (extreme is not flattened), which no experiment is held
+ *   to unless it says so (GRV-141).
  *   Check 6 is only judged with an extreme case and its conventional
  *   partner side by side, and the split holds out one of every pair, so a
  *   phase's own cases never hold a pair: such an experiment also runs its
  *   **check-6 block** in every phase, the extreme cases of that phase's
  *   split, each beside its conventional partner, which only check 6 reads.
+ * - An optional **focus** (GRV-145) names the cases, within the pool, the
+ *   goal is read from and the stricter guardrails judge; the rest of the pool
+ *   is held to the default bar. When no focus case is held out, the held-out
+ *   gate judges the guardrails alone (`experimentRun.ts`).
  * - An optional **budget** in dollars overrides the $25 default; the
  *   command's `--budget` (the workflow's input) still wins over it.
  */
@@ -40,6 +47,12 @@ import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { TACTICS, type TacticDefinition, type TacticOverrides } from "../tactics";
+import {
+  CASE_CHECK_IDS,
+  EVERY_CASE_CHECKS,
+  type EveryCaseCheckId,
+  isEveryCaseCheck,
+} from "./caseChecks";
 import { casePairs, EVAL_CASES, type EvalCase } from "./cases";
 import { EVAL_SELECTIONS, type EvalSelection, inSelection } from "./sets";
 import { caseSplit, casesInSplit, EVAL_SPLITS, type EvalSplit } from "./splits";
@@ -93,6 +106,21 @@ export interface ExperimentGuardrails {
   readonly maxOverallDropPoints: number;
   readonly cutMarginPercent: number;
   readonly holdNotFlattened: boolean;
+  /**
+   * The stricter guardrails an experiment may add (GRV-145), each judged on
+   * its focus cases (every case without a focus), absent when not added.
+   * `noMaxTokens`: no run of the variant's stops at `max_tokens`.
+   */
+  readonly noMaxTokens?: boolean;
+  /** The variant's mean output tokens per turn (`byTurn`) is no higher than the control's. */
+  readonly outputTokensPerTurn?: boolean;
+  /**
+   * These checks pass on every turn's own proposal (a session's `turnChecks`).
+   * Only the checks a session judges on each turn may be named: those every
+   * case is judged by (`EVERY_CASE_CHECKS`, 16 and 20); any other would be
+   * missing from every session turn and pass without judging anything.
+   */
+  readonly everyTurnChecks?: readonly EveryCaseCheckId[];
 }
 
 /** Which cases an experiment draws its train and held-out cases from. */
@@ -118,6 +146,11 @@ export interface ExperimentDefinition {
   readonly cases: ExperimentCases;
   /** Tighter limits than {@link DEFAULT_GUARDRAILS}; never looser. */
   readonly guardrails?: Partial<ExperimentGuardrails>;
+  /**
+   * The cases the goal is read from and the stricter guardrails judge, all
+   * in the pool (GRV-145); the whole pool when absent.
+   */
+  readonly focus?: readonly string[];
   /** Runs per case on train; {@link DEFAULT_RUNS_PER_CASE} when absent. */
   readonly runs?: number;
   /** Dollars it may spend; the $25 default when absent, and `--budget` beats it. */
@@ -167,6 +200,8 @@ export interface Experiment {
     readonly heldout: readonly EvalCase[];
   };
   readonly guardrails: ExperimentGuardrails;
+  /** The focus cases' IDs (GRV-145), or null when the goal reads the whole pool. */
+  readonly focus: readonly string[] | null;
   readonly runs: number;
   /** The file's own budget in dollars, or null for the default. */
   readonly budgetUsd: number | null;
@@ -233,8 +268,22 @@ const definitionSchema = z.strictObject({
         .max(DEFAULT_GUARDRAILS.cutMarginPercent, "may tighten the bar, never loosen it")
         .optional(),
       holdNotFlattened: z.boolean().optional(),
+      noMaxTokens: z.boolean().optional(),
+      outputTokensPerTurn: z.boolean().optional(),
+      everyTurnChecks: z
+        .array(
+          z
+            .enum(CASE_CHECK_IDS)
+            .refine(
+              isEveryCaseCheck,
+              `only a check judged on every turn: ${EVERY_CASE_CHECKS.join(", ")}`,
+            ),
+        )
+        .min(1)
+        .optional(),
     })
     .optional(),
+  focus: z.array(z.string().min(1)).min(1).optional(),
   runs: z.number().int().min(1).max(20).optional(),
   budget: z.number().positive().finite().optional(),
 });
@@ -431,6 +480,17 @@ export function validateExperiment(
       }
     }
   }
+  const focus = definition.focus ?? null;
+  if (focus) {
+    const inPool = new Set(pool.map((entry) => entry.id));
+    for (const id of new Set(focus)) {
+      if (!inPool.has(id)) issues.push(`focus: "${id}" is not one of the cases`);
+    }
+    if (new Set(focus).size !== focus.length) issues.push("focus: a case is named twice");
+    if (!train.some((entry) => focus.includes(entry.id))) {
+      issues.push("focus: none of them is a train case, so the goal has nothing to read");
+    }
+  }
   if (issues.length > 0) {
     throw new ExperimentError(
       `Experiment "${definition.id}" is not valid: ${issues.join("; ")}`,
@@ -447,6 +507,7 @@ export function validateExperiment(
     heldout,
     flattening,
     guardrails: { ...DEFAULT_GUARDRAILS, ...definition.guardrails },
+    focus,
     runs: definition.runs ?? DEFAULT_RUNS_PER_CASE,
     budgetUsd: definition.budget ?? null,
     atDefaults,

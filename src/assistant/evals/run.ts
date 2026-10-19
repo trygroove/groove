@@ -165,8 +165,9 @@ export interface EvalTurn {
    * The session a session case ran (GRV-145, `session.ts`), every turn kept;
    * absent for a case of one turn. The fields above are then the session's:
    * its time, tokens and steps summed, its text every turn's, its proposal
-   * every turn's calls in one (the checks apply them turn by turn, as
-   * `sessionJudgement` does), and its question the last turn's.
+   * every turn's calls in one, for display only (no check reads it: the
+   * checks apply each turn's own proposal in turn, as `sessionJudgement`
+   * does), and its question the last turn's.
    */
   readonly session?: EvalSession;
 }

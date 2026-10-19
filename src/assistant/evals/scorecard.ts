@@ -240,9 +240,10 @@ export function turnsOf(record: EvalRecord): readonly EvalTurn[] {
   return record.session?.turns ?? [record];
 }
 
-function byTurnOf(
+/** Every turn of `records` on its own, a session's apart (GRV-145). */
+export function byTurnOf(
   records: readonly EvalRecord[],
-  model: AssistantModelProfile | null,
+  model: AssistantModelProfile | null = null,
 ): ByTurn {
   const turns = records.flatMap(turnsOf);
   const usages = turns

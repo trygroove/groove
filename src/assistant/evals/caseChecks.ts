@@ -88,7 +88,18 @@ export type CaseCheckId = (typeof CASE_CHECK_IDS)[number];
  * stops partway applies cleanly and passes checks 1 to 5, so only these see
  * it (notes cleared and never written, a clip made and never placed).
  */
-export const EVERY_CASE_CHECKS: readonly CaseCheckId[] = ["noEmptyClips", "clipsPlaced"];
+export const EVERY_CASE_CHECKS = [
+  "noEmptyClips",
+  "clipsPlaced",
+] as const satisfies readonly CaseCheckId[];
+
+/** A check every case is judged by: one of {@link EVERY_CASE_CHECKS}. */
+export type EveryCaseCheckId = (typeof EVERY_CASE_CHECKS)[number];
+
+/** Whether `id` is one of {@link EVERY_CASE_CHECKS}. */
+export function isEveryCaseCheck(id: CaseCheckId): id is EveryCaseCheckId {
+  return (EVERY_CASE_CHECKS as readonly CaseCheckId[]).includes(id);
+}
 
 /**
  * The case checks `named` adds to {@link EVERY_CASE_CHECKS}, less those the

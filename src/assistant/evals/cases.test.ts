@@ -153,6 +153,31 @@ describe("the eval cases", () => {
     expect(byId("pad-genre-known")?.checks).toEqual(["padSound", "dissonant"]);
   });
 
+  // GRV-145: the large, open requests run as sessions, judged on the song
+  // they end with.
+  it("run the large, open requests as sessions, and nothing else", () => {
+    const sessions = TYPESCRIPT_CASES.filter((entry) => entry.session).map(
+      (entry) => entry.id,
+    );
+    expect(sessions).toEqual([
+      "develop-track-arrange",
+      "full-track-empty",
+      "full-tune-loop",
+    ]);
+    const byId = (id: string) => TYPESCRIPT_CASES.find((entry) => entry.id === id);
+    expect(byId("full-track-empty")?.request).toBe("Make me a full track.");
+    expect(byId("full-track-empty")?.fixture().song.tracks).toEqual([]);
+    expect(byId("full-track-empty")?.checks).toEqual(["developsTrack", "addsTracks"]);
+    expect(byId("full-tune-loop")?.request).toBe("Make this a full tune.");
+    expect(byId("full-tune-loop")?.checks).toEqual(["developsTrack"]);
+    const loop = byId("full-tune-loop")?.fixture();
+    expect(loop?.song.tracks.length).toBeGreaterThan(1);
+    for (const id of sessions) {
+      expect(byId(id)?.expect).toBe("proposal");
+      expect(byId(id)?.session).toEqual({});
+    }
+  });
+
   it("pick the develop-track conversation up after the question and the answers", () => {
     const arrange = EVAL_CASES.find((entry) => entry.id === "develop-track-arrange");
     const ask = EVAL_CASES.find((entry) => entry.id === "develop-track-ask");

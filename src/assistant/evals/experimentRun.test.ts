@@ -45,6 +45,7 @@ import {
   type ExperimentTurnRunner,
   experimentExitCode,
   gatewayTurnRunner,
+  judgedOnGuardrailsAlone,
   runExperiment,
 } from "./experimentRun";
 import { AUTH_ABORT_REASON, runCaseTurn } from "./run";
@@ -869,5 +870,59 @@ describe("check 6 as a guardrail in a dry run (GRV-141)", () => {
     }
     expect(result.gates).toEqual([]);
     expect(result.verdict).toBe("no win");
+  });
+});
+
+// GRV-145: an experiment whose goal reads only its focus cases, all of them
+// train, so the held-out gate judges the guardrails alone.
+describe("an experiment with a focus (GRV-145)", () => {
+  const FOCUS = ["process-crushed", "balance-clean", "density-hats"];
+
+  function focused(guardrails: Readonly<Record<string, unknown>> = {}) {
+    return validateExperiment(
+      {
+        id: "planted-focus",
+        card: "GRV-145",
+        hypothesis: "A planted tactic does what it was planted to do, on its focus.",
+        variants: { terse: { terseNotes: "on" } },
+        goal: "outputTokens",
+        cases: { caseIds: POOL },
+        focus: FOCUS,
+        guardrails,
+      },
+      { tactics: PLANTED },
+    );
+  }
+
+  it("reads the goal from the focus on train, and gates on the guardrails alone", async () => {
+    const experiment = focused({ noMaxTokens: true, everyTurnChecks: ["noEmptyClips"] });
+    expect(judgedOnGuardrailsAlone(experiment, "train")).toBe(false);
+    expect(judgedOnGuardrailsAlone(experiment, "gate")).toBe(true);
+    expect(judgedOnGuardrailsAlone(experiment, "cut-gate")).toBe(true);
+    expect(
+      judgedOnGuardrailsAlone(planted({ terse: { terseNotes: "on" } }), "gate"),
+    ).toBe(false);
+
+    const result = await runExperiment(experiment, {
+      runTurn: plantedTurns(),
+      now: fixedNow,
+    });
+    const [train] = result.trainAnalyses;
+    expect(train.goal.pairedCases).toBe(3);
+    expect(train.goal.label).toBe("Output tokens per turn on the focus cases");
+    expect(train.verdict).toBe("win");
+    expect(train.guardrails.map((guardrail) => guardrail.id)).toContain("noMaxTokens");
+    expect(result.gates).toHaveLength(1);
+    expect(result.gates[0].analysis.goal.pairedCases).toBe(0);
+    expect(result.gates[0].analysis.verdict).toBe("win");
+    expect(result.verdict).toBe("win");
+
+    const markdown = renderExperimentMarkdown(result, LINKS);
+    expect(markdown).toContain(
+      "- Focus: `process-crushed`, `balance-clean`, `density-hats`: the goal is read from these alone, and none is held out, so the held-out gate judges the guardrails alone",
+    );
+    expect(markdown).toContain(
+      "; and on the focus cases no max_tokens stop at all, check 16 holding on every turn's proposal",
+    );
   });
 });

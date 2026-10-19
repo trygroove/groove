@@ -12,6 +12,7 @@
  * full `report.json` is written beside it.
  */
 
+import { CHECK_LABELS } from "./checks";
 import { CONTROL, describeCases, type ExperimentVariant } from "./experiment";
 import type {
   CombinedCutRun,
@@ -111,6 +112,22 @@ function analysisLines(
 
 /** The diff tables' columns: the variant where the run is, the control where the baseline is. */
 const COLUMNS = { current: "Variant", baseline: "Control" } as const;
+
+/** The stricter guardrails an experiment added (GRV-145), as the report lists them. */
+function strictText(experiment: ExperimentResult["experiment"]): string {
+  const { guardrails } = experiment;
+  const strict = [
+    guardrails.noMaxTokens ? "no max_tokens stop at all" : null,
+    guardrails.outputTokensPerTurn
+      ? "output tokens per turn no higher than the control's"
+      : null,
+    guardrails.everyTurnChecks?.length
+      ? `${guardrails.everyTurnChecks.length === 1 ? "check" : "checks"} ${guardrails.everyTurnChecks.map((id) => CHECK_LABELS[id].split(".")[0]).join(" and ")} holding on every turn's proposal`
+      : null,
+  ].filter((part): part is string => part !== null);
+  if (strict.length === 0) return "";
+  return `; and ${experiment.focus ? "on the focus cases " : ""}${strict.join(", ")}`;
+}
 
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -219,7 +236,12 @@ export function renderExperimentMarkdown(
         ]
       : []),
     `- Cases: ${describeCases(experiment.cases)}: ${experiment.train.length} train, ${experiment.heldout.length} held out`,
-    `- Guardrails: checks 1 and 8 within ${experiment.guardrails.maxCheckDropPoints} points per set, ${experiment.guardrails.holdNotFlattened ? "no extreme case flattened in most runs (check 6, on its own block of paired cases), " : ""}the overall pass rate within ${experiment.guardrails.maxOverallDropPoints}, no case passing to failing in most runs, no rise in max_tokens stops or errored turns${result.cuts.length > 0 ? `; a cut's goal no worse than ${experiment.guardrails.cutMarginPercent}% of the control's` : ""}`,
+    ...(experiment.focus
+      ? [
+          `- Focus: ${experiment.focus.map((id) => `\`${id}\``).join(", ")}: the goal is read from these alone${experiment.heldout.some((entry) => experiment.focus?.includes(entry.id)) ? "" : ", and none is held out, so the held-out gate judges the guardrails alone"}`,
+        ]
+      : []),
+    `- Guardrails: checks 1 and 8 within ${experiment.guardrails.maxCheckDropPoints} points per set, ${experiment.guardrails.holdNotFlattened ? "no extreme case flattened in most runs (check 6, on its own block of paired cases), " : ""}the overall pass rate within ${experiment.guardrails.maxOverallDropPoints}, no case passing to failing in most runs, no rise in max_tokens stops or errored turns${result.cuts.length > 0 ? `; a cut's goal no worse than ${experiment.guardrails.cutMarginPercent}% of the control's` : ""}${strictText(experiment)}`,
     `- Model: \`${result.model}\`; prompt \`${control.promptVersion}\`; tool set ${control.toolsetVersion}`,
     `- Commit: ${links.commit ? `\`${links.commit}\`` : "unknown"}; run: ${links.runUrl ?? "local"}`,
     `- Spend: $${result.spentUsd.toFixed(2)} of a $${result.budgetUsd.toFixed(2)} budget`,
@@ -300,6 +322,7 @@ export function experimentJson(result: ExperimentResult, links: ExperimentLinks)
         heldout: experiment.flattening.heldout.map((entry) => entry.id),
       },
       guardrails: experiment.guardrails,
+      focus: experiment.focus,
       runs: experiment.runs,
       budgetUsd: experiment.budgetUsd,
       atDefaults: experiment.atDefaults,

@@ -17,6 +17,11 @@
  * interval stays within `cutMarginPercent`, 2% by default, of the control's
  * value), and **restore** otherwise. Never inconclusive, since neutral passes.
  *
+ * An experiment with a **focus** (GRV-145) reads its goal from the focus
+ * cases alone, and its stricter guardrails judge only them; the default ones
+ * judge every case. A gate with no focus case in it is judged on the
+ * guardrails alone ({@link AnalyzeOptions.guardrailsOnly}).
+ *
  * Both reports must come from the same cases run the same way: an experiment
  * phase runs every variant in one interleaved pass (`experimentRun.ts`).
  */
@@ -27,10 +32,17 @@ import {
   mean,
   pairedBootstrap,
 } from "./bootstrap";
-import { CHECK_IDS } from "./checks";
+import { CHECK_IDS, CHECK_LABELS } from "./checks";
 import type { ExperimentGoal, ExperimentGuardrails, VariantKind } from "./experiment";
 import type { EvalRecord, EvalReport } from "./run";
-import { type MetricKind, type Rate, type ScoreView, stopReasonOf } from "./scorecard";
+import {
+  byTurnOf,
+  formatMetric,
+  type MetricKind,
+  type Rate,
+  type ScoreView,
+  stopReasonOf,
+} from "./scorecard";
 import { setLabel } from "./sets";
 
 export type ExperimentVerdict = "win" | "no win" | "inconclusive";
@@ -121,15 +133,34 @@ export interface GoalResult {
   readonly outcome: "better" | "worse" | "inconclusive";
 }
 
-/** The goal's change, paired case by case, with its bootstrap interval. */
+/** The mean of each focus case's value, over the cases that have one. */
+function focusMean(
+  metric: GoalMetric,
+  report: EvalReport,
+  focus: readonly string[],
+): number | null {
+  const values = report.caseIds
+    .filter((caseId) => focus.includes(caseId))
+    .map((caseId) => metric.perCase(report, caseId))
+    .filter((value): value is number => value !== null);
+  return values.length === 0 ? null : mean(values);
+}
+
+/**
+ * The goal's change, paired case by case, with its bootstrap interval. With a
+ * `focus`, only the focus cases are paired, and each side's value is the mean
+ * of its focus cases' values.
+ */
 export function judgeGoal(
   goal: ExperimentGoal,
   control: EvalReport,
   variant: EvalReport,
+  focus: readonly string[] | null = null,
 ): GoalResult {
   const metric = GOAL_METRICS[goal];
   const differences: number[] = [];
   for (const caseId of control.caseIds) {
+    if (focus && !focus.includes(caseId)) continue;
     const before = metric.perCase(control, caseId);
     const after = metric.perCase(variant, caseId);
     if (before !== null && after !== null) differences.push(after - before);
@@ -137,11 +168,11 @@ export function judgeGoal(
   const interval = pairedBootstrap(differences);
   return {
     goal,
-    label: metric.label,
+    label: focus ? `${metric.label} on the focus cases` : metric.label,
     kind: metric.kind,
     higherIsBetter: metric.higherIsBetter,
-    control: metric.overall(control),
-    variant: metric.overall(variant),
+    control: focus ? focusMean(metric, control, focus) : metric.overall(control),
+    variant: focus ? focusMean(metric, variant, focus) : metric.overall(variant),
     change: differences.length === 0 ? null : mean(differences),
     interval,
     pairedCases: differences.length,
@@ -159,7 +190,10 @@ export type GuardrailId =
   | "overall"
   | "caseRegressions"
   | "maxTokens"
-  | "errored";
+  | "errored"
+  | "noMaxTokens"
+  | "outputTokensPerTurn"
+  | "everyTurnChecks";
 
 export interface GuardrailResult {
   readonly id: GuardrailId;
@@ -356,11 +390,78 @@ function noRise(
   };
 }
 
+/** The records of the focus cases, or every record without a focus. */
+function focusRecords(
+  report: EvalReport,
+  focus: readonly string[] | null,
+): readonly EvalRecord[] {
+  return focus
+    ? report.records.filter((record) => focus.includes(record.caseId))
+    : report.records;
+}
+
+/** Where the stricter guardrails look, as their labels say it. */
+function focusText(focus: readonly string[] | null): string {
+  return focus ? " on the focus cases" : "";
+}
+
+/** The stricter guardrails the experiment added (GRV-145), on its focus cases. */
+function strictGuardrails(
+  control: EvalReport,
+  variant: EvalReport,
+  limits: ExperimentGuardrails,
+  focus: readonly string[] | null,
+): GuardrailResult[] {
+  const before = focusRecords(control, focus);
+  const after = focusRecords(variant, focus);
+  const where = focusText(focus);
+  const results: GuardrailResult[] = [];
+  if (limits.noMaxTokens) {
+    const stopped = after.filter((record) => stopReasonOf(record) === "max_tokens");
+    results.push({
+      id: "noMaxTokens",
+      label: `No max_tokens stop${where}`,
+      pass: stopped.length === 0,
+      detail: `${stopped.length} of ${after.length} runs`,
+    });
+  }
+  if (limits.outputTokensPerTurn) {
+    const was = byTurnOf(before);
+    const now = byTurnOf(after);
+    const pass =
+      was.outputTokens === null ||
+      now.outputTokens === null ||
+      now.outputTokens <= was.outputTokens + EPSILON;
+    results.push({
+      id: "outputTokensPerTurn",
+      label: `Output tokens per turn no higher than the control's${where}`,
+      pass,
+      detail: `${formatMetric("tokens", was.outputTokens)} over ${was.turns} turns to ${formatMetric("tokens", now.outputTokens)} over ${now.turns}`,
+    });
+  }
+  const checks = limits.everyTurnChecks ?? [];
+  if (checks.length > 0) {
+    const turns = after.flatMap((record) => record.turnChecks ?? [record.checks]);
+    const failed = turns.filter((turn) =>
+      checks.some((id) => turn[id]?.status === "fail"),
+    );
+    const numbers = checks.map((id) => CHECK_LABELS[id].split(".")[0]).join(" and ");
+    results.push({
+      id: "everyTurnChecks",
+      label: `${checks.length === 1 ? `Check ${numbers} holds` : `Checks ${numbers} hold`} on every turn's proposal${where}`,
+      pass: failed.length === 0,
+      detail: `${failed.length} of ${turns.length} turns failed`,
+    });
+  }
+  return results;
+}
+
 /** Every guardrail, the experiment's limits applied. */
 export function checkGuardrails(
   control: EvalReport,
   variant: EvalReport,
   limits: ExperimentGuardrails,
+  focus: readonly string[] | null = null,
   flattening?: FlatteningReports | null,
 ): GuardrailResult[] {
   const overallPass = withinPoints(
@@ -412,6 +513,7 @@ export function checkGuardrails(
     noRise("errored", "No rise in errored turns", control, variant, (record) =>
       Boolean(record.error),
     ),
+    ...strictGuardrails(control, variant, limits, focus),
   ];
 }
 
@@ -436,6 +538,34 @@ export interface AnalyzedVariant {
   readonly kind?: VariantKind;
 }
 
+/** How a variant is judged beyond its own goal and guardrails. */
+export interface AnalyzeOptions {
+  /** The experiment's focus cases (GRV-145), or null for the whole pool. */
+  readonly focus?: readonly string[] | null;
+  /**
+   * Judge the guardrails alone: a phase with none of the focus cases in it,
+   * so no goal to read, as the held-out gate when no focus case is held
+   * out. An improve wins, and a cut keeps, when every guardrail holds.
+   */
+  readonly guardrailsOnly?: boolean;
+  /** The phase's check-6 block (GRV-141), for an experiment that holds check 6. */
+  readonly flattening?: FlatteningReports | null;
+}
+
+/** The verdict when only the guardrails can say anything. */
+function guardrailsVerdict(
+  kind: VariantKind,
+  failed: readonly GuardrailResult[],
+): { verdict: VariantVerdict; why: string } {
+  if (failed.length > 0) {
+    return { verdict: kind === "cut" ? "restore" : "no win", why: refusedWhy(failed) };
+  }
+  return {
+    verdict: kind === "cut" ? "keep" : "win",
+    why: "No focus case ran here, so only the guardrails judge it, and every one held.",
+  };
+}
+
 function refusedWhy(failed: readonly GuardrailResult[]): string {
   return `Refused by ${failed.length === 1 ? "a guardrail" : `${failed.length} guardrails`}: ${failed.map((guardrail) => guardrail.label).join("; ")}.`;
 }
@@ -447,13 +577,14 @@ export function analyzeVariant(
   control: EvalReport,
   report: EvalReport,
   limits: ExperimentGuardrails,
-  flattening?: FlatteningReports | null,
+  options: AnalyzeOptions = {},
 ): VariantAnalysis {
   if (variant.kind === "cut") {
-    return analyzeCut(variant, goal, control, report, limits, flattening);
+    return analyzeCut(variant, goal, control, report, limits, options);
   }
-  const goalResult = judgeGoal(goal, control, report);
-  const guardrails = checkGuardrails(control, report, limits, flattening);
+  const focus = options.focus ?? null;
+  const goalResult = judgeGoal(goal, control, report, focus);
+  const guardrails = checkGuardrails(control, report, limits, focus, options.flattening);
   const failed = guardrails.filter((guardrail) => !guardrail.pass);
   const base = {
     variant: variant.name,
@@ -462,6 +593,7 @@ export function analyzeVariant(
     goal: goalResult,
     guardrails,
   };
+  if (options.guardrailsOnly) return { ...base, ...guardrailsVerdict("improve", failed) };
   if (failed.length > 0) {
     return { ...base, verdict: "no win", why: refusedWhy(failed) };
   }
@@ -509,10 +641,11 @@ export function analyzeCut(
   control: EvalReport,
   report: EvalReport,
   limits: ExperimentGuardrails,
-  flattening?: FlatteningReports | null,
+  options: AnalyzeOptions = {},
 ): VariantAnalysis {
-  const goalResult = judgeGoal(goal, control, report);
-  const guardrails = checkGuardrails(control, report, limits, flattening);
+  const focus = options.focus ?? null;
+  const goalResult = judgeGoal(goal, control, report, focus);
+  const guardrails = checkGuardrails(control, report, limits, focus, options.flattening);
   const failed = guardrails.filter((guardrail) => !guardrail.pass);
   const margin =
     goalResult.control === null
@@ -526,6 +659,7 @@ export function analyzeCut(
     guardrails,
     cutMargin: margin,
   };
+  if (options.guardrailsOnly) return { ...base, ...guardrailsVerdict("cut", failed) };
   if (failed.length > 0) return { ...base, verdict: "restore", why: refusedWhy(failed) };
   const bound = worseBound(goalResult);
   if (bound === null || margin === null || goalResult.pairedCases < MIN_PAIRED_CASES) {

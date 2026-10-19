@@ -10,6 +10,7 @@ import {
   buildSystemBlocks,
   createIdStem,
   describeParameter,
+  GUIDED_BUILD_RULE,
   newId,
 } from "./prompt";
 import { TACTIC_DEFAULTS } from "./tactics";
@@ -246,6 +247,65 @@ describe("the assistant's system prompt", () => {
         .replace(/## Keeping each step[\s\S]*?(?=## The producer)/, "")
         .replace(/## Keeping a response[\s\S]*?(?=## The producer)/, "");
     expect(strip(ONE_RESPONSE_PROMPT)).toBe(strip(STEPS_PROMPT));
+  });
+
+  // GRV-145: the guidedBuild tactic builds a large, open request over several
+  // short proposals, each ending with a question offering the next steps.
+  it("guides a large, open request through short proposals under guidedBuild, and only then", () => {
+    const off = assistantSystemPrompt({ oneResponseProposal: "off", guidedBuild: "off" });
+    const on = assistantSystemPrompt({ oneResponseProposal: "off", guidedBuild: "on" });
+    expect(off).not.toContain(GUIDED_BUILD_RULE);
+    expect(on).toContain(GUIDED_BUILD_RULE);
+    // The ask_producer paragraph's "without asking again" must not read as
+    // "ask nothing this turn": offering the next steps is not asking again.
+    expect(GUIDED_BUILD_RULE).toContain(
+      "Offering those next steps after carrying out the step they chose is not asking again",
+    );
+    // One paragraph more, straight after the one on asking, and nothing else.
+    expect(on.replace(`\n\n${GUIDED_BUILD_RULE}`, "")).toBe(off);
+    expect(on).toContain(
+      `without asking again.\n\n${GUIDED_BUILD_RULE}\n\nWhen the producer asks for a sound`,
+    );
+    // Under either way of writing a proposal.
+    expect(
+      assistantSystemPrompt({ oneResponseProposal: "on", guidedBuild: "on" }).replace(
+        `\n\n${GUIDED_BUILD_RULE}`,
+        "",
+      ),
+    ).toBe(assistantSystemPrompt({ oneResponseProposal: "on", guidedBuild: "off" }));
+    // Left out, it is production's.
+    expect(assistantSystemPrompt({ oneResponseProposal: "off" })).toBe(
+      assistantSystemPrompt({
+        oneResponseProposal: "off",
+        guidedBuild: TACTIC_DEFAULTS.guidedBuild,
+      }),
+    );
+  });
+
+  it("sends the guided-build rule in the turn's system blocks when guidedBuild is on", () => {
+    const blocks = (guidedBuild: "on" | "off") =>
+      buildSystemBlocks(MINIMAL_ASSISTANT_CONTEXT, undefined, "S".repeat(17), undefined, {
+        ...TACTIC_DEFAULTS,
+        guidedBuild,
+      })[0].text;
+    expect(blocks("on")).toContain(GUIDED_BUILD_RULE);
+    expect(blocks("off")).not.toContain(GUIDED_BUILD_RULE);
+  });
+
+  it("says what a guided build's stages are", () => {
+    for (const phrase of [
+      '"develop this", "arrange this", "make it a full tune"',
+      "the smallest step that plays at once",
+      "the sections laid out as placements that reuse those clips (parts left out for builds and drops) plus any new tracks the plan needs, empty",
+      "from an empty song, the core loop",
+      "Never leave a clip without notes",
+      "call explain_change and then ask_producer together: ask_producer is the one call allowed after explain_change",
+      "with the one you would do next suggested",
+      "write that one section or step as one proposal",
+      '("add a clap on 2 and 4") is not one of these',
+    ]) {
+      expect(GUIDED_BUILD_RULE).toContain(phrase);
+    }
   });
 
   // GRV-6 QA: drum pads are in every drum track's "pads" (GRV-23), not only

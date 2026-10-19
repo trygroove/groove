@@ -8,6 +8,7 @@ import {
 } from "../../domain/factories";
 import type { TrackId } from "../../domain/ids";
 import { createSeededIdFactory } from "../../domain/ids";
+import { buildTestReport } from "../../testing/evalRecords";
 import {
   createScriptedAssistantProvider,
   toolUseEvents,
@@ -18,6 +19,7 @@ import type { AssistantProposal } from "../protocol";
 import { continuesTurn } from "../providerRequest";
 import { ASSISTANT_TOOLSET_VERSION, toolCallsFor, toolNameFor } from "../tools";
 import { type EvalCase, parseJsonEvalCase } from "./cases";
+import { DEFAULT_GUARDRAILS, type ExperimentGuardrails } from "./experiment";
 import { createHouseLoopProject } from "./fixtures";
 import { renderMarkdown, sessionLines } from "./markdown";
 import { type EvalTurn, evaluateRecords, evaluateTurn, runEvals } from "./run";
@@ -29,6 +31,7 @@ import {
   sessionProposal,
   sessionTurnCap,
 } from "./session";
+import { checkGuardrails } from "./verdict";
 
 const fixedNow = () => Date.parse("2026-10-19T12:00:00Z");
 
@@ -338,6 +341,23 @@ describe("the scripted producer (GRV-145)", () => {
     ]);
     // The final song is judged too, by every check as a single turn is.
     expect(record.checks.noEmptyClips?.status).toBe("fail");
+
+    // An experiment's guardrail on check 16 reads these turns and fails on
+    // the first; one on check 20 alone holds.
+    const sessions = buildTestReport([record]);
+    const guardrail = (everyTurnChecks: ExperimentGuardrails["everyTurnChecks"]) =>
+      checkGuardrails(sessions, sessions, {
+        ...DEFAULT_GUARDRAILS,
+        everyTurnChecks,
+      }).find((entry) => entry.id === "everyTurnChecks");
+    expect(guardrail(["noEmptyClips"])).toMatchObject({
+      pass: false,
+      detail: "1 of 2 turns failed",
+    });
+    expect(guardrail(["clipsPlaced"])).toMatchObject({
+      pass: true,
+      detail: "0 of 2 turns failed",
+    });
   });
 
   it("leaves no proposal for a session that proposed nothing", () => {

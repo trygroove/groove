@@ -39,7 +39,7 @@ import { type HistoryEntry, historyOf } from "../history";
 import type { AssistantProposal } from "../protocol";
 import { splitRecommendations } from "../recommendation";
 import type { ProviderUsage } from "../streamEvents";
-import { caseChecksFor, EVERY_CASE_CHECKS, runCaseCheck } from "./caseChecks";
+import { caseChecksFor, isEveryCaseCheck, runCaseCheck } from "./caseChecks";
 import type { EvalCase } from "./cases";
 import {
   type CheckId,
@@ -195,10 +195,11 @@ export async function runSession(
 
 /**
  * Every turn's proposal as one, against the case's fixture: their calls in
- * order, kept on the session's record to show what it proposed. Judging goes
- * through {@link sessionJudgement}, turn by turn, never through this one
- * proposal, which may hold more calls than any one proposal may. Null when no
- * turn proposed anything.
+ * order, kept on the session's record to show what it proposed. It is
+ * display-only: no check reads it. Judging goes through
+ * {@link sessionJudgement}, turn by turn, never through this one proposal,
+ * which may hold more calls than any one proposal may. Null when no turn
+ * proposed anything.
  */
 export function sessionProposal(
   fixture: Project,
@@ -333,7 +334,10 @@ function sessionUsage(turns: readonly EvalTurn[]): ProviderUsage | null {
   };
 }
 
-/** The session as one run: the final song's proposal, the sums, every turn kept. */
+/**
+ * The session as one run: every turn's proposal joined (display-only, see
+ * {@link sessionProposal}), the sums, every turn kept.
+ */
 function sessionTurn(fixture: Project, session: EvalSession): EvalTurn {
   const { turns } = session;
   const failed = turns.find((turn) => turn.error);
@@ -376,9 +380,7 @@ export function sessionTurnChecks(
   evalCase: EvalCase,
   session: EvalSession,
 ): Partial<Record<CheckId, CheckResult>>[] {
-  const everyTurn = caseChecksFor([], evalCase.exempt).filter((id) =>
-    EVERY_CASE_CHECKS.includes(id),
-  );
+  const everyTurn = caseChecksFor([], evalCase.exempt).filter(isEveryCaseCheck);
   let project: Project | null = evalCase.fixture();
   return session.turns.map((turn) => {
     if (!project || turn.error || !turn.proposal) return {};

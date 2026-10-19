@@ -7,7 +7,7 @@
  * The split is stratified by capability: within each, about a third of the
  * cases are held out (a third of its count, rounded; so one of each
  * conventional/extreme pair, and none of a capability with one case), which
- * holds out 23 of the 59 cases. Within a capability the held-out cases are
+ * holds out 23 of the 61 cases. Within a capability the held-out cases are
  * picked to spread across its kinds of request: the extreme of one pair and
  * the conventional of the next, and three of the eight heavy-output cases
  * (`sets.ts`), so an output-token experiment on that group has a gate.
@@ -62,6 +62,8 @@ export const TRAIN_CASE_IDS = [
   "process-crushed",
   "density-hats",
   "develop-track-arrange",
+  "full-track-empty",
+  "full-tune-loop",
   "pad-genre-known",
   "sketch-whole-song",
   "resketch-extreme",

@@ -18,6 +18,9 @@
  *   held-out, since cuts fine alone can hurt together. If the combination
  *   fails, the cut with the worst goal number is dropped and the rest retried,
  *   at most twice; a combination that never holds keeps none of them.
+ * - **A focus** (GRV-145). The goal is read from the experiment's focus cases
+ *   alone; when none of them is held out, every held-out phase is judged on
+ *   the guardrails alone ({@link judgedOnGuardrailsAlone}).
  * - **The verdict.** `win` when there is something to land: an improve that
  *   won on train and on held-out, or cuts that kept together (the held PR
  *   applies both). Otherwise the improves' `no win` or `inconclusive`.
@@ -368,6 +371,28 @@ export interface RunExperimentOptions {
   readonly onRecord?: (phase: string, variant: string, record: EvalRecord) => void;
 }
 
+/** The phases run on the held-out cases. */
+const HELDOUT_PHASES: ReadonlySet<ExperimentPhaseName> = new Set([
+  "gate",
+  "cut-gate",
+  "combined-gate",
+]);
+
+/**
+ * Whether a phase is judged on the guardrails alone (GRV-145): a held-out
+ * phase of an experiment whose focus cases are all train cases, so there is
+ * no goal to read there; the held-out cases then only show the variant costs
+ * nothing elsewhere.
+ */
+export function judgedOnGuardrailsAlone(
+  experiment: Experiment,
+  phase: ExperimentPhaseName,
+): boolean {
+  const { focus } = experiment;
+  if (!focus || !HELDOUT_PHASES.has(phase)) return false;
+  return !experiment.heldout.some((entry) => focus.includes(entry.id));
+}
+
 function analyses(
   experiment: Experiment,
   phase: ExperimentPhase,
@@ -375,6 +400,10 @@ function analyses(
 ): VariantAnalysis[] {
   const control = phase.reports[CONTROL];
   const block = phase.flattening?.reports;
+  const options = {
+    focus: experiment.focus,
+    guardrailsOnly: judgedOnGuardrailsAlone(experiment, phase.phase),
+  };
   return variants
     .filter((variant) => variant.name !== CONTROL)
     .map((variant) =>
@@ -384,7 +413,12 @@ function analyses(
         control,
         phase.reports[variant.name],
         experiment.guardrails,
-        block ? { control: block[CONTROL], variant: block[variant.name] } : null,
+        {
+          ...options,
+          flattening: block
+            ? { control: block[CONTROL], variant: block[variant.name] }
+            : null,
+        },
       ),
     );
 }

@@ -20,6 +20,9 @@
  * actions (`basicActionCases.ts`), simple exact edits each judged by checks 18
  * and 19. A case names its set (`set`, the musical one when it does not), and
  * the scorecard scores each set on its own as well as the run as a whole.
+ *
+ * GRV-145 runs a case as a session when it names `session` (`session.ts`):
+ * the large, open requests, judged on the song a scripted producer ends with.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -37,6 +40,7 @@ import {
   createArrangementProject,
   createBdOnlyProject,
   createBdSketchProject,
+  createEmptySongProject,
   createHouseLoopProject,
   createKitSketchProject,
   createStarterFixtureProject,
@@ -430,6 +434,34 @@ export const TYPESCRIPT_CASES: readonly EvalCase[] = [
     selection: null,
     scope: { tracks: "all", createTracks: true, ...NOTHING_ELSE, song: true },
     checks: ["developsTrack"],
+    // GRV-145: a whole track may be built over several proposals, so the
+    // case runs as a session and check 11 judges the song it ends with.
+    session: {},
+  },
+  // GRV-145: large, open requests, each run as a session.
+  {
+    id: "full-track-empty",
+    capability: "development",
+    axis: "conventional",
+    request: "Make me a full track.",
+    expect: "proposal",
+    fixture: createEmptySongProject,
+    selection: null,
+    scope: { tracks: "all", createTracks: true, ...NOTHING_ELSE, song: true },
+    checks: ["developsTrack", "addsTracks"],
+    session: {},
+  },
+  {
+    id: "full-tune-loop",
+    capability: "development",
+    axis: "conventional",
+    request: "Make this a full tune.",
+    expect: "proposal",
+    fixture: createHouseLoopProject,
+    selection: null,
+    scope: { tracks: "all", createTracks: true, ...NOTHING_ELSE, song: true },
+    checks: ["developsTrack"],
+    session: {},
   },
   {
     id: "pad-genre-known",
