@@ -47,6 +47,8 @@ export const APP_FEATURE_KEYS = [
   // The home page's second version (#1135): a visitor's first call to action
   // on it, of any kind.
   "landing_v2",
+  // The crash screen's Reload (GRV-55), which saves queued edits first.
+  "crash_reload",
 ] as const;
 
 /**
