@@ -2,6 +2,7 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
 import { walkthrough } from "../../support/walkthrough";
 import { seedRegisteredSession } from "../support/authSession";
 import { library } from "../support/library";
+import { reloadPage } from "../support/reload";
 import { expectView, pressView } from "../support/views";
 
 /**
@@ -246,7 +247,7 @@ test.describe("CF-006", { tag: "@sanity" }, () => {
     await step("Find it by searching the library");
 
     // 7. Reload the page. The pack and all three sounds are still there.
-    await page.reload();
+    await reloadPage(page);
     await expect(page).toHaveURL(libraryUrl);
     await expectView(page, "Library");
     await expect(personalPack(page)).toBeVisible();

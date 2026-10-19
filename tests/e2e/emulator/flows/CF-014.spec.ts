@@ -1,4 +1,5 @@
 import { walkthrough } from "../../support/walkthrough";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 
 /**
@@ -282,7 +283,7 @@ test.describe("CF-014", () => {
       await expect(page.getByRole("button", { name: "Start playback" })).toBeVisible();
     }
     await expect(page.locator(".save-status")).toHaveText("Saved", { timeout: 10_000 });
-    await page.reload();
+    await reloadPage(page);
     await expect(trackRail(page)).toHaveText(["Synth", "BD", "Sampler"]);
     await viewLink(page, "Arrangement").click();
     await page.getByTestId("arrangement-view-ready").waitFor();
