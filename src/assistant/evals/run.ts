@@ -45,8 +45,8 @@ import { continuesTurn, type ProviderMessagesRequest } from "../providerRequest"
 import { splitRecommendations } from "../recommendation";
 import type { ProviderUsage } from "../streamEvents";
 import { resolveTactics, type TacticOverrides, type TacticValues } from "../tactics";
-import type { AssistantTurnLog } from "../telemetry";
-import { ASSISTANT_TOOLSET_VERSION } from "../tools";
+import type { AssistantTurnLog, ToolBundleFallback } from "../telemetry";
+import { ASSISTANT_TOOLSET_VERSION, type ToolBundleId } from "../tools";
 import { caseChecksFor, checkOutcome, runCaseCheck } from "./caseChecks";
 import {
   caseMessages,
@@ -115,6 +115,12 @@ export interface EvalTokens {
   readonly textChars: number;
 }
 
+/** The tool bundle a turn opened with, and its fallback (GRV-143). */
+export interface EvalToolBundle {
+  readonly bundle: ToolBundleId;
+  readonly fallback: ToolBundleFallback | null;
+}
+
 /** A call the gateway refused back to the model mid-turn (`steps.ts`). */
 export interface EvalRefusedCall {
   readonly name: string;
@@ -161,6 +167,13 @@ export interface EvalTurn {
    * reports saved before it existed.
    */
   readonly firstTextMs?: number | null;
+  /**
+   * The tool bundle the turn opened with under `toolBundles=bundled`
+   * (GRV-143), and why it went on with every tool if it did; null when it
+   * was offered every tool or ended before the gateway logged it. Absent
+   * from reports saved before it existed.
+   */
+  readonly toolBundle?: EvalToolBundle | null;
   /**
    * The session a session case ran (GRV-145, `session.ts`), every turn kept;
    * absent for a case of one turn. The fields above are then the session's:
@@ -410,6 +423,7 @@ async function runOneTurn(
   const timing = () => ({
     usage: turnLog ? usageOfLog(turnLog) : null,
     firstTextMs: firstTextAt === null ? null : firstTextAt - startedAt,
+    toolBundle: turnLog ? toolBundleOfLog(turnLog) : null,
   });
   try {
     const result = await Promise.race([
@@ -489,6 +503,12 @@ async function runOneTurn(
   } finally {
     clearTimeout(timer);
   }
+}
+
+function toolBundleOfLog(log: AssistantTurnLog): EvalToolBundle | null {
+  return log.toolBundle === null
+    ? null
+    : { bundle: log.toolBundle, fallback: log.toolBundleFallback };
 }
 
 function usageOfLog(log: AssistantTurnLog): ProviderUsage {

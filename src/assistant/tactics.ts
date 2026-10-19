@@ -84,6 +84,13 @@ export const TACTICS = {
     default: "off",
     alters: ["prompt"],
   },
+  toolBundles: {
+    description:
+      "Which tools each turn is offered (GRV-143): `all` is every tool; `bundled` is one of a few fixed bundles (mix, notes, arrange, everything) a gateway rule picks from the scope, the selected track and the message, each but everything with need_more_tools, which re-runs the step with every tool.",
+    values: ["all", "bundled"],
+    default: "all",
+    alters: ["tools", "request"],
+  },
 } as const satisfies Readonly<Record<string, TacticDefinition>>;
 
 export type TacticId = keyof typeof TACTICS;

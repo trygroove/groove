@@ -98,7 +98,12 @@ describe("the secondary numbers", () => {
       cacheRead: 500,
       cacheWrite: 50,
     });
-    expect(secondary.meanTokens).toEqual({ input: 2_000, output: 300, cacheRead: 250 });
+    expect(secondary.meanTokens).toEqual({
+      input: 2_000,
+      output: 300,
+      cacheRead: 250,
+      cacheWrite: 25,
+    });
   });
 
   it("estimates cost from the model's price per million tokens", () => {

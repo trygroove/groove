@@ -334,6 +334,15 @@ describe("the experiment files (GRV-110)", () => {
     ]).toEqual(["moderate", "aggressive"]);
   });
 
+  it("include GRV-143's: toolBundles=bundled over the suite, for time to the first word", async () => {
+    const written = (await import("../../../evals/experiments/tool-bundles")).default;
+    expect(written.variants).toEqual({ bundled: { toolBundles: "bundled" } });
+    const experiment = await loadExperiment("tool-bundles");
+    expect(experiment.card).toBe("GRV-143");
+    expect(experiment.goal).toBe("firstTextP50");
+    expect(experiment.cases).toBe("all");
+  });
+
   it("include GRV-110's own: thinkingEffort=low on the heavy set, for output tokens", async () => {
     const written = (await import("../../../evals/experiments/thinking-effort-low"))
       .default;

@@ -159,6 +159,15 @@ describe("a tactic's default", () => {
     expect(withRule.replace(paragraph, "")).toBe(without);
   });
 
+  // GRV-143: a turn the rule gives every tool is sent as all sends it, so
+  // the everything bundle and production share one cache entry.
+  it("toolBundles leaves a turn given every tool byte for byte as production's", async () => {
+    const production = await openingRequest();
+    for (const value of TACTICS.toolBundles.values) {
+      expect(await openingRequest({ toolBundles: value })).toBe(production);
+    }
+  });
+
   it("is not an effort a budget-thinking model is sent", () => {
     const body = buildProviderRequest(
       ASSISTANT_MODELS["claude-haiku-4-5"],
