@@ -1,0 +1,14 @@
+{
+  "id": "g165",
+  "title": "G focuses the genre menu",
+  "steps": [
+    {
+      "file": "01-g-opens-the-genre-menu-with-focus-on-its.png",
+      "caption": "G opens the genre menu with focus on its first genre"
+    },
+    {
+      "file": "02-down-and-space-tick-the-second-genre.png",
+      "caption": "Down and Space tick the second genre"
+    }
+  ]
+}
