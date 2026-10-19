@@ -1,0 +1,14 @@
+{
+  "id": "g135",
+  "title": "After the fix",
+  "steps": [
+    {
+      "file": "01-after-the-reload-the-proposal-is-back-ou.png",
+      "caption": "After the reload: the proposal is back, out of date, Apply off and Refresh offered"
+    },
+    {
+      "file": "02-refresh-a-new-proposal-for-the-song-as-i.png",
+      "caption": "Refresh: a new proposal for the song as it is now, ready to apply"
+    }
+  ]
+}

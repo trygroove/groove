@@ -1,0 +1,10 @@
+{
+  "id": "g135-pre",
+  "title": "Before the fix (main)",
+  "steps": [
+    {
+      "file": "02-after-the-reload-on-main-the-reply-is-ba.png",
+      "caption": "After the reload on main: the reply is back, the proposal card is gone"
+    }
+  ]
+}
