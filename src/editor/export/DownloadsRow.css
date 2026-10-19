@@ -86,6 +86,11 @@
   background: var(--color-accent);
 }
 
+.download-empty {
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+}
+
 /* A phone-width window (GRV-156): the cards wrap under their label rather than
    running past the edge. */
 @media (max-width: 640px) {

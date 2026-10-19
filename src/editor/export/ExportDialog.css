@@ -10,12 +10,26 @@
 
 .dialog.export-shell {
   width: min(1040px, 100%);
+  /* Never taller than the window (GRV-153): the body scrolls instead. */
+  max-height: 100%;
   /* The prototype's 85% black 30/80 shadow, as three of the theme's one 45%. */
   box-shadow:
     0 30px 80px var(--shade-medium),
     0 30px 80px var(--shade-medium),
     0 30px 80px var(--shade-medium),
     0 0 0 1px var(--color-border);
+}
+
+/* In a window too short or too narrow for the dialog, its body scrolls rather
+   than clipping the footer. The rows keep their designed height, and share a
+   minimum width so a narrow window scrolls sideways as one piece. */
+.export-shell .dialog-body {
+  overflow: auto;
+}
+
+.export-shell .dialog-body > * {
+  flex: none;
+  min-width: 640px;
 }
 
 /* The shell's floating close sits where the prototype's does: 8px down. */
@@ -166,12 +180,12 @@
   cursor: default;
 }
 
-/* A phone-width window (GRV-156): the dialog is the window's width, scrolls
-   when it is taller than the window, and the rows below stack instead of
-   running off the right edge. */
+/* A phone-width window (GRV-156): the dialog is the window's width and the
+   rows below stack instead of running off the right edge, so they drop the
+   shared minimum width and the body only scrolls down (GRV-153). */
 @media (max-width: 640px) {
-  .dialog.export-shell {
-    overflow-y: auto;
+  .export-shell .dialog-body > * {
+    min-width: 0;
   }
 
   .export-head {

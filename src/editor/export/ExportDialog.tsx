@@ -113,7 +113,11 @@ export default function ExportDialog(props: ExportDialogProps): JSX.Element {
     return current.kind === "rendering" ? current : null;
   };
   const stamp = new Date(systemClock.now());
-  const plan = createMemo(() => planStemsFiles(props.project(), list.trackIds()));
+  // With no track chosen there is nothing to export: the reference mix alone
+  // is not a ZIP anyone can make, so the plan is empty rather than one file.
+  const plan = createMemo(() =>
+    list.trackIds().length === 0 ? [] : planStemsFiles(props.project(), list.trackIds()),
+  );
   const stereoBytes = createMemo(() => estimateStereoBytes(props.project()));
   /** How many files this export makes: the ZIPs, or the one WAV. */
   const fileCount = () => (format() === "stems" ? plan().length : 1);
@@ -298,6 +302,7 @@ export default function ExportDialog(props: ExportDialogProps): JSX.Element {
   const stemsBytes = () => plan().reduce((sum, batch) => sum + batch.expectedBytes, 0);
   const sizeText = () => {
     if (format() === "stereo") return `${formatBytes(stereoBytes())} · 1 file`;
+    if (plan().length === 0) return "Nothing to export";
     const files = plan().reduce((sum, batch) => sum + batch.paths.length, 0);
     return `${formatBytes(stemsBytes())} · ${files} ${files === 1 ? "file" : "files"}`;
   };
