@@ -94,6 +94,23 @@ describe("asset.add", () => {
     ).toBe(false);
   });
 
+  it("names a transaction for what the sound was carried in for (GRV-160)", () => {
+    const asset = libraryAsset();
+    const carried = executeTransaction(fixture.project, [
+      addAsset(asset),
+      setSample(fixture.trackAId, asset.id),
+    ]);
+    if (!carried.ok) throw new Error(carried.issues[0].message);
+    // The label is the sampler change alone: the asset is left out of the
+    // count as well as the name.
+    expect(carried.summary).not.toContain("to the project");
+    expect(carried.summary).not.toContain("more change");
+
+    // On its own it still names the transaction.
+    const only = executeCommand(fixture.project, addAsset(asset));
+    expect(only.ok && only.summary).toBe("Add Closed Hat to the project");
+  });
+
   it("undoes the pack shelving the add caused, and redo shelves it again (GRV-50)", () => {
     const asset = libraryAsset();
     const shelved = { packId: asset.packId, version: asset.packVersion };
