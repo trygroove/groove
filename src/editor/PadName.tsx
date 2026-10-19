@@ -6,6 +6,7 @@ import { renamePad } from "../commands";
 import type { DrumPad, Track } from "../domain/entities";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 import { useShortcuts } from "../shortcuts";
+import { MAX_DISPLAY_NAME_LENGTH } from "./displayNameLimit";
 import "./PadName.css";
 
 export interface PadNameProps {
@@ -106,6 +107,7 @@ export default function PadName(props: PadNameProps): JSX.Element {
           }}
           class={`pad-name-input ${MASK_CONTENT}`}
           type="text"
+          maxlength={MAX_DISPLAY_NAME_LENGTH}
           aria-label={`Name of ${props.pad.name}`}
           value={props.pad.name}
           onClick={(event) => event.stopPropagation()}
