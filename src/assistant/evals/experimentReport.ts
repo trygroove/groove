@@ -212,7 +212,7 @@ export function renderExperimentMarkdown(
         ]
       : []),
     `- Cases: ${describeCases(experiment.cases)}: ${experiment.train.length} train, ${experiment.heldout.length} held out`,
-    `- Guardrails: checks 1 and 8 within ${experiment.guardrails.maxCheckDropPoints} points per set, the overall pass rate within ${experiment.guardrails.maxOverallDropPoints}, no case passing to failing in most runs, no rise in max_tokens stops or errored turns${result.cuts.length > 0 ? `; a cut's goal no worse than ${experiment.guardrails.cutMarginPercent}% of the control's` : ""}`,
+    `- Guardrails: checks 1 and 8 within ${experiment.guardrails.maxCheckDropPoints} points per set, ${experiment.guardrails.maxNotFlattenedDropPoints === null ? "" : `check 6 within ${experiment.guardrails.maxNotFlattenedDropPoints} per set, `}the overall pass rate within ${experiment.guardrails.maxOverallDropPoints}, no case passing to failing in most runs, no rise in max_tokens stops or errored turns${result.cuts.length > 0 ? `; a cut's goal no worse than ${experiment.guardrails.cutMarginPercent}% of the control's` : ""}`,
     `- Model: \`${result.model}\`; prompt \`${control.promptVersion}\`; tool set ${control.toolsetVersion}`,
     `- Commit: ${links.commit ? `\`${links.commit}\`` : "unknown"}; run: ${links.runUrl ?? "local"}`,
     `- Spend: $${result.spentUsd.toFixed(2)} of a $${result.budgetUsd.toFixed(2)} budget`,

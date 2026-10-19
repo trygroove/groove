@@ -93,6 +93,47 @@ describe("judgeGoal (GRV-110)", () => {
 });
 
 describe("checkGuardrails (GRV-110)", () => {
+  it("holds check 6 per set only when the experiment asks, within its limit (GRV-141)", () => {
+    const flattens = (fails: number) =>
+      report(CASES, (caseId, index) => ({
+        notFlattened: caseId === "case-a" && index < fails ? "fail" : "pass",
+      }));
+    const steady = flattens(0);
+    const strict = { ...DEFAULT_GUARDRAILS, maxNotFlattenedDropPoints: 0 };
+    // Not a guardrail by default: nothing is reported for it.
+    expect(
+      checkGuardrails(steady, flattens(1), DEFAULT_GUARDRAILS).map((row) => row.id),
+    ).not.toContain("notFlattened");
+    const held = checkGuardrails(steady, steady, strict).find(
+      (row) => row.id === "notFlattened",
+    );
+    expect(held).toMatchObject({
+      pass: true,
+      label: "Extreme is not flattened (check 6) within 0 points in every set",
+      detail: "Musical capability 100.0% to 100.0%",
+    });
+    const fell = checkGuardrails(steady, flattens(1), strict).find(
+      (row) => row.id === "notFlattened",
+    );
+    expect(fell).toMatchObject({
+      pass: false,
+      detail: "Musical capability 100.0% to 88.9% (too far)",
+    });
+    // Even the loosest limit, 3 points, refuses an 11-point drop.
+    expect(
+      checkGuardrails(steady, flattens(1), {
+        ...DEFAULT_GUARDRAILS,
+        maxNotFlattenedDropPoints: 3,
+      }).find((row) => row.id === "notFlattened")?.pass,
+    ).toBe(false);
+    // A set where check 6 judged nothing on either side passes.
+    expect(
+      checkGuardrails(control, report(CASES), strict).find(
+        (row) => row.id === "notFlattened",
+      )?.pass,
+    ).toBe(true);
+  });
+
   it("passes every guardrail for a variant that changes nothing", () => {
     expect(checkGuardrails(control, report(CASES), DEFAULT_GUARDRAILS)).toSatisfy(
       (rows: { pass: boolean }[]) => rows.every((row) => row.pass),

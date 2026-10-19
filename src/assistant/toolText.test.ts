@@ -25,14 +25,19 @@ import { videoRecommendationTool } from "./video";
 
 const LEVELS = TACTICS.toolText.values as readonly ToolTextLevel[];
 
-/** Every tool the model can be offered, the conditional ones included, at `level`. */
+/**
+ * Every tool the model can be offered, the conditional ones included, at
+ * `level`, with the tactics that add note forms to clip_create off
+ * (`drumStepStrings`, `patternGenerators`) whatever their defaults: their text
+ * follows clip_create's at whatever level this leaves it.
+ */
 function offered(level: ToolTextLevel) {
   const conditional = [recommendationTool(), videoRecommendationTool()].map((tool) => {
     const { input_schema: inputSchema, ...rest } = withProviderToolText(tool, level);
     return { name: rest.name, description: rest.description, inputSchema };
   });
   return [
-    ...assistantTools(level),
+    ...assistantTools(level, "off", "off"),
     withToolText(EXPLAIN_TOOL, level),
     withToolText(askProducerTool(), level),
     ...conditional,

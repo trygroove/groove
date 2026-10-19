@@ -26,7 +26,9 @@
  *   points per set, the overall pass rate within 2, no case passing in most
  *   runs going to failing in most, no rise in `max_tokens` stops or errored
  *   turns). An experiment may tighten the two point limits, and a cut's
- *   2% margin, never loosen them.
+ *   2% margin, never loosen them. It may also hold check 6 (extreme is not
+ *   flattened) per set within a limit no looser than checks 1 and 8's,
+ *   which no experiment is held to unless it says so (GRV-141).
  * - An optional **budget** in dollars overrides the $25 default; the
  *   command's `--budget` (the workflow's input) still wins over it.
  */
@@ -74,12 +76,19 @@ export const DEFAULT_GUARDRAILS = {
    * control's value, in percent, at the worse end of its interval.
    */
   cutMarginPercent: 2,
+  /**
+   * Check 6 (extreme is not flattened) may fall this far in any set, or null
+   * when it is not a guardrail: an experiment that might make every answer
+   * sound the same sets it (GRV-141).
+   */
+  maxNotFlattenedDropPoints: null,
 } as const;
 
 export interface ExperimentGuardrails {
   readonly maxCheckDropPoints: number;
   readonly maxOverallDropPoints: number;
   readonly cutMarginPercent: number;
+  readonly maxNotFlattenedDropPoints: number | null;
 }
 
 /** Which cases an experiment draws its train and held-out cases from. */
@@ -208,6 +217,14 @@ const definitionSchema = z.strictObject({
         .number()
         .min(0)
         .max(DEFAULT_GUARDRAILS.cutMarginPercent, "may tighten the bar, never loosen it")
+        .optional(),
+      maxNotFlattenedDropPoints: z
+        .number()
+        .min(0)
+        .max(
+          DEFAULT_GUARDRAILS.maxCheckDropPoints,
+          "may be no looser than checks 1 and 8's bar",
+        )
         .optional(),
     })
     .optional(),

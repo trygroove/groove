@@ -338,21 +338,26 @@ describe("the drumStepStrings tactic", () => {
 
   it("describes the form in the prompt only when on", () => {
     expect(assistantSystemPrompt()).toBe(
-      TACTIC_DEFAULTS.drumStepStrings === "on"
-        ? assistantSystemPrompt({ drumStepStrings: "on" })
-        : ASSISTANT_SYSTEM_PROMPT,
+      assistantSystemPrompt({ drumStepStrings: TACTIC_DEFAULTS.drumStepStrings }),
     );
-    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain(DRUM_STEP_STRINGS_LINE);
+    expect(ASSISTANT_SYSTEM_PROMPT).toBe(assistantSystemPrompt(TACTIC_DEFAULTS));
+    const off = assistantSystemPrompt({ drumStepStrings: "off" });
+    expect(off).not.toContain(DRUM_STEP_STRINGS_LINE);
     const on = assistantSystemPrompt({ drumStepStrings: "on" });
     expect(on).toContain(`${DRUM_STEP_STRINGS_LINE}\n- parameter_set takes`);
-    expect(on.replace(`${DRUM_STEP_STRINGS_LINE}\n`, "")).toBe(ASSISTANT_SYSTEM_PROMPT);
+    expect(on.replace(`${DRUM_STEP_STRINGS_LINE}\n`, "")).toBe(off);
   });
 
   it("offers step strings in clip_create only when on, and changes no other tool", () => {
-    const off = assistantTools("full", "off");
-    const on = assistantTools("full", "on");
+    // Pattern generators off (GRV-141), whatever their default, so only step strings differ.
+    const off = assistantTools("full", "off", "off");
+    const on = assistantTools("full", "on", "off");
     expect(assistantTools()).toBe(
-      assistantTools("full", TACTIC_DEFAULTS.drumStepStrings),
+      assistantTools(
+        "full",
+        TACTIC_DEFAULTS.drumStepStrings,
+        TACTIC_DEFAULTS.patternGenerators,
+      ),
     );
     expect(on.map((tool) => tool.name)).toEqual(off.map((tool) => tool.name));
     for (const [index, tool] of on.entries()) {
@@ -369,10 +374,10 @@ describe("the drumStepStrings tactic", () => {
 
   it("keeps the step-string text when toolText trims clip_create (GRV-146)", () => {
     for (const level of ["moderate", "aggressive"] as const) {
-      const trimmed = assistantTools(level, "off").find(
+      const trimmed = assistantTools(level, "off", "off").find(
         (tool) => tool.name === "clip_create",
       );
-      const onClip = assistantTools(level, "on").find(
+      const onClip = assistantTools(level, "on", "off").find(
         (tool) => tool.name === "clip_create",
       );
       expect(onClip?.description.startsWith(`${trimmed?.description} `)).toBe(true);

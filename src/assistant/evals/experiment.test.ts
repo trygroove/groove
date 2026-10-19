@@ -75,6 +75,7 @@ describe("validateExperiment (GRV-110)", () => {
       maxCheckDropPoints: 1,
       maxOverallDropPoints: 2,
       cutMarginPercent: 2,
+      maxNotFlattenedDropPoints: null,
     });
     expect(all.runs).toBe(2);
     const listed = validateExperiment({
@@ -158,6 +159,17 @@ describe("validateExperiment (GRV-110)", () => {
     );
     expect(issues({ ...VALID, guardrails: { maxOverallDropPoints: 2.5 } })).toMatch(
       /maxOverallDropPoints: may tighten the bar, never loosen it/,
+    );
+  });
+
+  it("holds check 6 only when an experiment asks, no looser than checks 1 and 8 (GRV-141)", () => {
+    expect(validateExperiment(VALID).guardrails.maxNotFlattenedDropPoints).toBeNull();
+    expect(
+      validateExperiment({ ...VALID, guardrails: { maxNotFlattenedDropPoints: 0 } })
+        .guardrails.maxNotFlattenedDropPoints,
+    ).toBe(0);
+    expect(issues({ ...VALID, guardrails: { maxNotFlattenedDropPoints: 4 } })).toMatch(
+      /maxNotFlattenedDropPoints: may be no looser than checks 1 and 8's bar/,
     );
   });
 

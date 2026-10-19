@@ -27,10 +27,16 @@ import {
   mean,
   pairedBootstrap,
 } from "./bootstrap";
-import { CHECK_IDS } from "./checks";
+import { CHECK_IDS, type CheckId } from "./checks";
 import type { ExperimentGoal, ExperimentGuardrails, VariantKind } from "./experiment";
 import type { EvalRecord, EvalReport } from "./run";
-import { type MetricKind, type Rate, type ScoreView, stopReasonOf } from "./scorecard";
+import {
+  type MetricKind,
+  type Rate,
+  recordSet,
+  type ScoreView,
+  stopReasonOf,
+} from "./scorecard";
 import { setLabel } from "./sets";
 
 export type ExperimentVerdict = "win" | "no win" | "inconclusive";
@@ -155,6 +161,7 @@ export function judgeGoal(
 export type GuardrailId =
   | "applies"
   | "expectMatch"
+  | "notFlattened"
   | "overall"
   | "caseRegressions"
   | "maxTokens"
@@ -189,12 +196,47 @@ function perSetRate(
   variant: EvalReport,
   limit: number,
 ): GuardrailResult {
-  const sets = Object.entries(control.scorecard.sets ?? {}).filter(
-    ([set]) => variant.scorecard.sets?.[set] !== undefined,
+  return perSet(
+    id,
+    label,
+    (report, set) => rate(report.scorecard.sets?.[set] as ScoreView),
+    control,
+    variant,
+    limit,
   );
-  const rows = sets.map(([set, score]) => {
-    const before = rate(score);
-    const after = rate(variant.scorecard.sets?.[set] as ScoreView);
+}
+
+/**
+ * One check's pass rate in one set, tallied from the records a report
+ * scored there: for a check the scorecard's headline does not carry.
+ */
+function checkRateInSet(report: EvalReport, set: string, check: CheckId): Rate {
+  let pass = 0;
+  let judged = 0;
+  for (const record of report.records) {
+    if (record.error || recordSet(record) !== set) continue;
+    const status = record.checks[check]?.status;
+    if (status === "pass") pass += 1;
+    if (status === "pass" || status === "fail") judged += 1;
+  }
+  return { pass, judged, rate: judged === 0 ? null : pass / judged };
+}
+
+/** A rate per set, read off each report by `rate`, held within `limit` points of the control's. */
+function perSet(
+  id: GuardrailId,
+  label: string,
+  rate: (report: EvalReport, set: string) => Rate,
+  control: EvalReport,
+  variant: EvalReport,
+  limit: number,
+): GuardrailResult {
+  const sets = Object.keys(control.scorecard.sets ?? {}).filter(
+    (set) => variant.scorecard.sets?.[set] !== undefined,
+  );
+  const rows = sets.map((set) => {
+    const before = rate(control, set);
+    const after = rate(variant, set);
     return { set, before, after, pass: withinPoints(before, after, limit) };
   });
   return {
@@ -295,6 +337,18 @@ export function checkGuardrails(
       variant,
       limits.maxCheckDropPoints,
     ),
+    ...(limits.maxNotFlattenedDropPoints === null
+      ? []
+      : [
+          perSet(
+            "notFlattened",
+            "Extreme is not flattened (check 6)",
+            (report, set) => checkRateInSet(report, set, "notFlattened"),
+            control,
+            variant,
+            limits.maxNotFlattenedDropPoints,
+          ),
+        ]),
     {
       id: "overall",
       label: `Overall pass rate within ${limits.maxOverallDropPoints} points`,

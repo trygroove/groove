@@ -305,7 +305,11 @@ async function prepare(
   // carries the producer's memory may propose adding to it (GRV-25).
   const tools = [
     ...providerTools([
-      ...assistantTools(tactics.toolText, tactics.drumStepStrings),
+      ...assistantTools(
+        tactics.toolText,
+        tactics.drumStepStrings,
+        tactics.patternGenerators,
+      ),
       withToolText(EXPLAIN_TOOL, tactics.toolText),
       withToolText(askProducerTool(), tactics.toolText),
     ]),
@@ -678,17 +682,25 @@ function askOf(calls: readonly AssistantToolCall[]): AssistantAsk | null {
 }
 
 /**
- * What the note expander needs to write out drum step strings, or undefined
- * when the `drumStepStrings` tactic is off and none is offered (GRV-140): a
- * string's pads are checked against the project's tracks and those the
- * turn's accepted calls make.
+ * What the note expander needs to write out drum step strings (GRV-140) and
+ * pattern generator calls (GRV-141), or undefined when the `drumStepStrings`
+ * and `patternGenerators` tactics are both off and neither is offered: a
+ * string's or a generator's pads are checked against the project's tracks
+ * and those the turn's accepted calls make.
  */
 function stepStringOptions(
   tactics: TacticValues,
   context: AssistantTurnRequest["context"],
 ): StepStringOptions | undefined {
-  if (tactics.drumStepStrings !== "on") return undefined;
-  return { targets: contextTargets(context), track: withCreatedTargets };
+  const stepStrings = tactics.drumStepStrings === "on";
+  const generators = tactics.patternGenerators === "on";
+  if (!stepStrings && !generators) return undefined;
+  return {
+    targets: contextTargets(context),
+    track: withCreatedTargets,
+    stepStrings,
+    generators,
+  };
 }
 
 /**
@@ -800,7 +812,8 @@ export async function runAssistantTurn(
     // Notes come as short arrays and join the proposal as note events, their
     // IDs from the turn's stem (`compactNotes.ts`, GRV-131).
     // With the drumStepStrings tactic on, a drum pad's step string is written
-    // out the same way (`drumSteps.ts`, GRV-140).
+    // out the same way (`drumSteps.ts`, GRV-140), and with patternGenerators
+    // on, a generator call (`generators/`, GRV-141).
     const stepStrings = stepStringOptions(tactics, turn.context);
     const notes = createNoteExpander(idStem, undefined, stepStrings);
     history = prepared.history;
