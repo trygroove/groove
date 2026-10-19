@@ -27,16 +27,10 @@ import {
   mean,
   pairedBootstrap,
 } from "./bootstrap";
-import { CHECK_IDS, type CheckId } from "./checks";
+import { CHECK_IDS } from "./checks";
 import type { ExperimentGoal, ExperimentGuardrails, VariantKind } from "./experiment";
 import type { EvalRecord, EvalReport } from "./run";
-import {
-  type MetricKind,
-  type Rate,
-  recordSet,
-  type ScoreView,
-  stopReasonOf,
-} from "./scorecard";
+import { type MetricKind, type Rate, type ScoreView, stopReasonOf } from "./scorecard";
 import { setLabel } from "./sets";
 
 export type ExperimentVerdict = "win" | "no win" | "inconclusive";
@@ -196,47 +190,12 @@ function perSetRate(
   variant: EvalReport,
   limit: number,
 ): GuardrailResult {
-  return perSet(
-    id,
-    label,
-    (report, set) => rate(report.scorecard.sets?.[set] as ScoreView),
-    control,
-    variant,
-    limit,
+  const sets = Object.entries(control.scorecard.sets ?? {}).filter(
+    ([set]) => variant.scorecard.sets?.[set] !== undefined,
   );
-}
-
-/**
- * One check's pass rate in one set, tallied from the records a report
- * scored there: for a check the scorecard's headline does not carry.
- */
-function checkRateInSet(report: EvalReport, set: string, check: CheckId): Rate {
-  let pass = 0;
-  let judged = 0;
-  for (const record of report.records) {
-    if (record.error || recordSet(record) !== set) continue;
-    const status = record.checks[check]?.status;
-    if (status === "pass") pass += 1;
-    if (status === "pass" || status === "fail") judged += 1;
-  }
-  return { pass, judged, rate: judged === 0 ? null : pass / judged };
-}
-
-/** A rate per set, read off each report by `rate`, held within `limit` points of the control's. */
-function perSet(
-  id: GuardrailId,
-  label: string,
-  rate: (report: EvalReport, set: string) => Rate,
-  control: EvalReport,
-  variant: EvalReport,
-  limit: number,
-): GuardrailResult {
-  const sets = Object.keys(control.scorecard.sets ?? {}).filter(
-    (set) => variant.scorecard.sets?.[set] !== undefined,
-  );
-  const rows = sets.map((set) => {
-    const before = rate(control, set);
-    const after = rate(variant, set);
+  const rows = sets.map(([set, score]) => {
+    const before = rate(score);
+    const after = rate(variant.scorecard.sets?.[set] as ScoreView);
     return { set, before, after, pass: withinPoints(before, after, limit) };
   });
   return {
@@ -279,6 +238,95 @@ export function caseRegressions(control: EvalReport, variant: EvalReport): strin
   });
 }
 
+/**
+ * The runs check 6 is judged from: the control's and the variant's reports
+ * on a phase's check-6 block (`Experiment.flattening`), which only this
+ * guardrail reads.
+ */
+export interface FlatteningReports {
+  readonly control: EvalReport;
+  readonly variant: EvalReport;
+}
+
+/** A case's check-6 runs: how many passed of how many judged. */
+function notFlattenedTally(
+  report: EvalReport,
+  caseId: string,
+): { pass: number; judged: number } {
+  let pass = 0;
+  let judged = 0;
+  for (const record of report.records) {
+    if (record.caseId !== caseId || record.error) continue;
+    const status = record.checks.notFlattened?.status;
+    if (status === "pass") pass += 1;
+    if (status === "pass" || status === "fail") judged += 1;
+  }
+  return { pass, judged };
+}
+
+/**
+ * Check 6 as a guardrail (GRV-141): no extreme case the control kept
+ * unflattened in most of its runs is flattened in most of the variant's.
+ *
+ * It is a case-level rule, like {@link caseRegressions}, rather than a point
+ * limit: the block holds two or three extreme cases at three to five runs
+ * each, so one run is 7 to 17 points of the rate, and any limit tighter than
+ * checks 1 and 8's 3 points would refuse a variant over a single noisy run.
+ * A majority absorbs one such run and still refuses an extreme request the
+ * variant answers conventionally most of the time.
+ *
+ * A guardrail with nothing to judge does not hold: with no extreme case
+ * judged on both sides (no block ran, or every such turn errored or made no
+ * proposal) it reports not measured and fails.
+ */
+export function notFlattenedGuardrail(
+  flattening: FlatteningReports | null | undefined,
+): GuardrailResult {
+  const label =
+    "Extreme is not flattened (check 6): no extreme case flattened in most runs";
+  if (!flattening) {
+    return {
+      id: "notFlattened",
+      label,
+      pass: false,
+      detail: "not measured: the check-6 block did not run",
+    };
+  }
+  const caseIds = [
+    ...new Set(
+      [...flattening.control.records, ...flattening.variant.records]
+        .filter((record) => record.checks.notFlattened !== undefined)
+        .map((record) => record.caseId),
+    ),
+  ];
+  const rows = caseIds.map((caseId) => {
+    const before = notFlattenedTally(flattening.control, caseId);
+    const after = notFlattenedTally(flattening.variant, caseId);
+    const measured = before.judged > 0 && after.judged > 0;
+    const flattened =
+      measured &&
+      before.pass * 2 > before.judged &&
+      (after.judged - after.pass) * 2 > after.judged;
+    return { caseId, before, after, measured, flattened };
+  });
+  const measured = rows.filter((row) => row.measured);
+  const flattened = rows.filter((row) => row.flattened);
+  return {
+    id: "notFlattened",
+    label,
+    pass: measured.length > 0 && flattened.length === 0,
+    detail:
+      measured.length === 0
+        ? "not measured: no extreme case was judged on both sides"
+        : rows
+            .map(
+              (row) =>
+                `\`${row.caseId}\` ${row.before.pass}/${row.before.judged} to ${row.after.pass}/${row.after.judged} unflattened${row.flattened ? " (flattened)" : row.measured ? "" : " (not measured)"}`,
+            )
+            .join("; "),
+  };
+}
+
 function share(count: number, of: number): number {
   return of === 0 ? 0 : count / of;
 }
@@ -313,6 +361,7 @@ export function checkGuardrails(
   control: EvalReport,
   variant: EvalReport,
   limits: ExperimentGuardrails,
+  flattening?: FlatteningReports | null,
 ): GuardrailResult[] {
   const overallPass = withinPoints(
     control.scorecard.headline.overall,
@@ -337,18 +386,7 @@ export function checkGuardrails(
       variant,
       limits.maxCheckDropPoints,
     ),
-    ...(limits.maxNotFlattenedDropPoints === null
-      ? []
-      : [
-          perSet(
-            "notFlattened",
-            "Extreme is not flattened (check 6)",
-            (report, set) => checkRateInSet(report, set, "notFlattened"),
-            control,
-            variant,
-            limits.maxNotFlattenedDropPoints,
-          ),
-        ]),
+    ...(limits.holdNotFlattened ? [notFlattenedGuardrail(flattening)] : []),
     {
       id: "overall",
       label: `Overall pass rate within ${limits.maxOverallDropPoints} points`,
@@ -409,10 +447,13 @@ export function analyzeVariant(
   control: EvalReport,
   report: EvalReport,
   limits: ExperimentGuardrails,
+  flattening?: FlatteningReports | null,
 ): VariantAnalysis {
-  if (variant.kind === "cut") return analyzeCut(variant, goal, control, report, limits);
+  if (variant.kind === "cut") {
+    return analyzeCut(variant, goal, control, report, limits, flattening);
+  }
   const goalResult = judgeGoal(goal, control, report);
-  const guardrails = checkGuardrails(control, report, limits);
+  const guardrails = checkGuardrails(control, report, limits, flattening);
   const failed = guardrails.filter((guardrail) => !guardrail.pass);
   const base = {
     variant: variant.name,
@@ -468,9 +509,10 @@ export function analyzeCut(
   control: EvalReport,
   report: EvalReport,
   limits: ExperimentGuardrails,
+  flattening?: FlatteningReports | null,
 ): VariantAnalysis {
   const goalResult = judgeGoal(goal, control, report);
-  const guardrails = checkGuardrails(control, report, limits);
+  const guardrails = checkGuardrails(control, report, limits, flattening);
   const failed = guardrails.filter((guardrail) => !guardrail.pass);
   const margin =
     goalResult.control === null

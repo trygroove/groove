@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { TACTIC_DEFAULTS, TACTICS, type TacticOverrides } from "../tactics";
+import { EVAL_CASES } from "./cases";
 import {
   assertRunnable,
   CONTROL,
@@ -75,7 +76,7 @@ describe("validateExperiment (GRV-110)", () => {
       maxCheckDropPoints: 1,
       maxOverallDropPoints: 2,
       cutMarginPercent: 2,
-      maxNotFlattenedDropPoints: null,
+      holdNotFlattened: false,
     });
     expect(all.runs).toBe(2);
     const listed = validateExperiment({
@@ -162,15 +163,41 @@ describe("validateExperiment (GRV-110)", () => {
     );
   });
 
-  it("holds check 6 only when an experiment asks, no looser than checks 1 and 8 (GRV-141)", () => {
-    expect(validateExperiment(VALID).guardrails.maxNotFlattenedDropPoints).toBeNull();
-    expect(
-      validateExperiment({ ...VALID, guardrails: { maxNotFlattenedDropPoints: 0 } })
-        .guardrails.maxNotFlattenedDropPoints,
-    ).toBe(0);
-    expect(issues({ ...VALID, guardrails: { maxNotFlattenedDropPoints: 4 } })).toMatch(
-      /maxNotFlattenedDropPoints: may be no looser than checks 1 and 8's bar/,
-    );
+  it("runs a check-6 block per split only when an experiment holds check 6 (GRV-141)", () => {
+    const plain = validateExperiment(VALID);
+    expect(plain.guardrails.holdNotFlattened).toBe(false);
+    expect(plain.flattening).toEqual({ train: [], heldout: [] });
+    const held = validateExperiment({ ...VALID, guardrails: { holdNotFlattened: true } });
+    const ids = (cases: readonly { id: string }[]) => cases.map((entry) => entry.id);
+    // Each split's extreme cases, each beside its conventional partner from the other split.
+    expect(ids(held.flattening.train)).toEqual([
+      "variation-mangled",
+      "variation-fill",
+      "process-crushed",
+      "process-glue",
+    ]);
+    expect(ids(held.flattening.heldout)).toEqual([
+      "sketch-broken",
+      "sketch-house",
+      "arrange-no-build",
+      "arrange-build-drop",
+      "balance-lopsided",
+      "balance-clean",
+    ]);
+    // The pool itself is unchanged.
+    expect(ids(held.train)).toEqual(ids(plain.train));
+    expect(ids(held.heldout)).toEqual(ids(plain.heldout));
+    // A suite with no pair in a split cannot judge it, so is refused.
+    expect(() =>
+      validateExperiment(
+        { ...VALID, guardrails: { holdNotFlattened: true } },
+        {
+          cases: EVAL_CASES.filter(
+            (entry) => !(entry.axis === "extreme" && caseSplit(entry) === "train"),
+          ),
+        },
+      ),
+    ).toThrow(/no extreme train case has a conventional partner/);
   });
 
   it("refuses a tactic or value the registry does not know", () => {

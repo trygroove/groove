@@ -27,8 +27,12 @@
  *   runs going to failing in most, no rise in `max_tokens` stops or errored
  *   turns). An experiment may tighten the two point limits, and a cut's
  *   2% margin, never loosen them. It may also hold check 6 (extreme is not
- *   flattened) per set within a limit no looser than checks 1 and 8's,
- *   which no experiment is held to unless it says so (GRV-141).
+ *   flattened), which no experiment is held to unless it says so (GRV-141).
+ *   Check 6 is only judged with an extreme case and its conventional
+ *   partner side by side, and the split holds out one of every pair, so a
+ *   phase's own cases never hold a pair: such an experiment also runs its
+ *   **check-6 block** in every phase, the extreme cases of that phase's
+ *   split, each beside its conventional partner, which only check 6 reads.
  * - An optional **budget** in dollars overrides the $25 default; the
  *   command's `--budget` (the workflow's input) still wins over it.
  */
@@ -36,9 +40,9 @@ import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { TACTICS, type TacticDefinition, type TacticOverrides } from "../tactics";
-import { EVAL_CASES, type EvalCase } from "./cases";
+import { casePairs, EVAL_CASES, type EvalCase } from "./cases";
 import { EVAL_SELECTIONS, type EvalSelection, inSelection } from "./sets";
-import { casesInSplit } from "./splits";
+import { caseSplit, casesInSplit, EVAL_SPLITS, type EvalSplit } from "./splits";
 
 export const EXPERIMENT_GOALS = [
   "quality",
@@ -77,18 +81,18 @@ export const DEFAULT_GUARDRAILS = {
    */
   cutMarginPercent: 2,
   /**
-   * Check 6 (extreme is not flattened) may fall this far in any set, or null
-   * when it is not a guardrail: an experiment that might make every answer
-   * sound the same sets it (GRV-141).
+   * Whether check 6 (extreme is not flattened) is a guardrail, judged on the
+   * check-6 block: an experiment that might make every answer sound the same
+   * sets it (GRV-141).
    */
-  maxNotFlattenedDropPoints: null,
+  holdNotFlattened: false,
 } as const;
 
 export interface ExperimentGuardrails {
   readonly maxCheckDropPoints: number;
   readonly maxOverallDropPoints: number;
   readonly cutMarginPercent: number;
-  readonly maxNotFlattenedDropPoints: number | null;
+  readonly holdNotFlattened: boolean;
 }
 
 /** Which cases an experiment draws its train and held-out cases from. */
@@ -152,6 +156,16 @@ export interface Experiment {
   readonly cases: ExperimentCases;
   readonly train: readonly EvalCase[];
   readonly heldout: readonly EvalCase[];
+  /**
+   * The check-6 block per split: each extreme case of the split beside its
+   * conventional partner (whatever the partner's own split, since it is only
+   * the reference the extreme is compared with). Empty unless the
+   * experiment holds check 6.
+   */
+  readonly flattening: {
+    readonly train: readonly EvalCase[];
+    readonly heldout: readonly EvalCase[];
+  };
   readonly guardrails: ExperimentGuardrails;
   readonly runs: number;
   /** The file's own budget in dollars, or null for the default. */
@@ -218,14 +232,7 @@ const definitionSchema = z.strictObject({
         .min(0)
         .max(DEFAULT_GUARDRAILS.cutMarginPercent, "may tighten the bar, never loosen it")
         .optional(),
-      maxNotFlattenedDropPoints: z
-        .number()
-        .min(0)
-        .max(
-          DEFAULT_GUARDRAILS.maxCheckDropPoints,
-          "may be no looser than checks 1 and 8's bar",
-        )
-        .optional(),
+      holdNotFlattened: z.boolean().optional(),
     })
     .optional(),
   runs: z.number().int().min(1).max(20).optional(),
@@ -288,6 +295,19 @@ function overridesOf(
       .filter((id) => values[id] !== undefined && values[id] !== registry[id].default)
       .map((id) => [id, values[id]]),
   );
+}
+
+/**
+ * One split's check-6 block: every extreme case in `split` with its
+ * conventional partner, the extreme first.
+ */
+export function flatteningBlock(
+  cases: readonly EvalCase[],
+  split: EvalSplit,
+): EvalCase[] {
+  return casePairs(cases)
+    .filter((pair) => caseSplit(pair.extreme) === split)
+    .flatMap((pair) => [pair.extreme, pair.conventional]);
 }
 
 /** The cases an experiment's pool names. */
@@ -394,6 +414,23 @@ export function validateExperiment(
   if (pool.length > 0 && heldout.length === 0) {
     issues.push("cases: none of them is held out, so a winner has no gate");
   }
+  const flattening = {
+    train: definition.guardrails?.holdNotFlattened
+      ? flatteningBlock(options.cases ?? EVAL_CASES, "train")
+      : [],
+    heldout: definition.guardrails?.holdNotFlattened
+      ? flatteningBlock(options.cases ?? EVAL_CASES, "heldout")
+      : [],
+  };
+  if (definition.guardrails?.holdNotFlattened) {
+    for (const split of EVAL_SPLITS) {
+      if (flattening[split].length === 0) {
+        issues.push(
+          `guardrails.holdNotFlattened: no extreme ${split === "train" ? "train" : "held-out"} case has a conventional partner, so check 6 cannot be judged there`,
+        );
+      }
+    }
+  }
   if (issues.length > 0) {
     throw new ExperimentError(
       `Experiment "${definition.id}" is not valid: ${issues.join("; ")}`,
@@ -408,6 +445,7 @@ export function validateExperiment(
     cases: definition.cases,
     train,
     heldout,
+    flattening,
     guardrails: { ...DEFAULT_GUARDRAILS, ...definition.guardrails },
     runs: definition.runs ?? DEFAULT_RUNS_PER_CASE,
     budgetUsd: definition.budget ?? null,

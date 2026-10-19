@@ -21,6 +21,10 @@
  * arpeggio's note doubled an octave up) and swaps the occasional pair of an
  * arpeggio's notes, all drawn from the call's seeded randomness.
  *
+ * At `variation: 0` the output is exact: the same call makes the same notes in
+ * any turn. A `random` arpeggio's order is then shuffled from the call's own
+ * parameters, not the turn's seed, which only enters above 0.
+ *
  * Pure, with no Tone, Firebase or Solid.
  */
 import { NOTE_VELOCITY } from "../../domain/parameters";
@@ -44,7 +48,7 @@ import {
   parseChord,
   voiceChord,
 } from "./chords";
-import type { SeededRandom } from "./random";
+import { type SeededRandom, seededRandom } from "./random";
 
 /**
  * One note a melodic generator makes, as a compact note's first four numbers:
@@ -276,6 +280,14 @@ export function arpeggio(input: ArpeggioInput, context: MelodicContext): Melodic
     const octaves = input.octaves ?? 1;
     const octave = input.octave ?? DEFAULT_CHORD_OCTAVE;
     const velocity = input.velocity ?? NOTE_VELOCITY.defaultValue;
+    const direction = input.direction ?? "up";
+    // Exact at 0: a random order fixed by the call itself, not by the turn.
+    const orderRandom =
+      variation > 0
+        ? random
+        : seededRandom(
+            `arpeggio ${JSON.stringify([input.chords, direction, input.rate ?? "16th", octaves, octave, velocity])}`,
+          );
     const out = collector(context);
     for (const span of chordsInClip(
       progressionOf(input.chords, context.lengthTicks),
@@ -287,7 +299,7 @@ export function arpeggio(input: ArpeggioInput, context: MelodicContext): Melodic
       ).flat();
       checkPitches(tones, "octave");
       const order = swapSome(
-        arpeggioOrder(tones, input.direction ?? "up", random),
+        arpeggioOrder(tones, direction, orderRandom),
         variation,
         random,
       );

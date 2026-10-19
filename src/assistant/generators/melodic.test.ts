@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NOTE_VELOCITY } from "../../domain/parameters";
 import {
   ARPEGGIO_RATES,
+  type ArpeggioInput,
   arpeggio,
   bassRoot,
   chordStabs,
@@ -113,19 +114,42 @@ describe("arpeggio at variation 0 (GRV-141)", () => {
     expect(notes[4]).toEqual([768, 60, 192, V]);
   });
 
-  it("shuffles a random arpeggio by the seed: the same seed, the same order", () => {
-    const of = (seed: string) =>
+  it("shuffles a random arpeggio by the call at variation 0, and by the turn's seed above it", () => {
+    const of = (seed: string, call: Partial<ArpeggioInput> = {}) =>
       pitches(
         notesOf(
           arpeggio(
-            { chords: [["Cmaj7", 1]], rate: "16th", direction: "random", octaves: 2 },
+            {
+              chords: [["Cmaj7", 1]],
+              rate: "16th",
+              direction: "random",
+              octaves: 2,
+              ...call,
+            },
             context({ random: seededRandom(seed) }),
           ),
         ),
       );
-    expect(of("a")).toEqual(of("a"));
     expect(new Set(of("a"))).toEqual(new Set([60, 64, 67, 71, 72, 76, 79, 83]));
-    const orders = new Set(["a", "b", "c", "d"].map((seed) => of(seed).join(",")));
+    // At 0 the output is exact: the same call, the same notes, whatever the turn.
+    expect(of("b")).toEqual(of("a"));
+    expect(of("b", { variation: 0 })).toEqual(of("a"));
+    expect(of("a")).not.toEqual([
+      60, 64, 67, 71, 72, 76, 79, 83, 60, 64, 67, 71, 72, 76, 79, 83,
+    ]);
+    // A different call is a different shuffle.
+    const calls = new Set(
+      ["Cmaj7", "Dm7", "Em7", "Fmaj7"].map((chord) =>
+        of("a", { chords: [[chord, 1]] })
+          .map((pitch, _, all) => [...new Set(all)].sort((x, y) => x - y).indexOf(pitch))
+          .join(","),
+      ),
+    );
+    expect(calls.size).toBeGreaterThan(1);
+    // Above 0 the turn's seed shuffles it: the same seed, the same order.
+    const varied = (seed: string) => of(seed, { variation: 0.01 });
+    expect(varied("a")).toEqual(varied("a"));
+    const orders = new Set(["a", "b", "c", "d"].map((seed) => varied(seed).join(",")));
     expect(orders.size).toBeGreaterThan(1);
   });
 });

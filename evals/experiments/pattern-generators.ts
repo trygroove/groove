@@ -6,8 +6,11 @@
  * variant, since the drum generators are step strings underneath.
  * `bun run assistant:experiment -- pattern-generators`.
  *
- * Check 6 (extreme is not flattened) is a guardrail here, held to no drop at
- * all: generators must not make every sketch sound the same.
+ * Check 6 (extreme is not flattened) is a guardrail here: generators must
+ * not make every sketch sound the same. No heavy case has its pair beside it
+ * in one split, so each phase also runs its check-6 block (the split's
+ * extreme cases beside their conventional partners), which only that
+ * guardrail reads; the goal stays the heavy cases' output tokens.
  */
 import { defineExperiment } from "../../src/assistant/evals/experiment";
 
@@ -24,5 +27,5 @@ export default defineExperiment({
   },
   goal: "outputTokens",
   cases: { set: "heavyOutput" },
-  guardrails: { maxNotFlattenedDropPoints: 0 },
+  guardrails: { holdNotFlattened: true },
 });

@@ -55,6 +55,11 @@ function clip(overrides: Partial<GeneratorClip> = {}): GeneratorClip {
   };
 }
 
+/** {@link clip} on the synth, which has no pads. */
+function synthClip(overrides: Partial<GeneratorClip> = {}): GeneratorClip {
+  return clip({ trackId: SYNTH, pads: new Set(), ...overrides });
+}
+
 function reasonFor(raw: unknown, on: GeneratorClip = clip()): string {
   const expansion = expandGenerator(raw, on);
   if (expansion.ok) throw new Error("expected a refusal");
@@ -144,6 +149,25 @@ describe("expandGenerator (GRV-141)", () => {
     );
   });
 
+  it("makes the same random arpeggio in any turn at variation 0, and varies it by the turn above", () => {
+    const call = {
+      generator: "arpeggio",
+      chords: [["Am7", 1]],
+      direction: "random",
+      octaves: 2,
+    };
+    expect(expandGenerator(call, synthClip())).toEqual(
+      expandGenerator(call, synthClip({ seed: "other" })),
+    );
+    const varied = { ...call, variation: 0.5 };
+    expect(expandGenerator(varied, synthClip())).toEqual(
+      expandGenerator(varied, synthClip()),
+    );
+    expect(expandGenerator(varied, synthClip())).not.toEqual(
+      expandGenerator(varied, synthClip({ seed: "other" })),
+    );
+  });
+
   it("refuses more Euclidean hits than steps", () => {
     expect(reasonFor({ generator: "euclidean", padId: KICK, hits: 9, steps: 8 })).toBe(
       "hits: 9 hits do not fit in 8 steps; a Euclidean rhythm has at most one hit a step",
@@ -156,6 +180,15 @@ describe("expandGenerator (GRV-141)", () => {
         steps: MAX_EUCLIDEAN_STEPS + 1,
       }),
     ).toMatch(/^steps: Too big/);
+    expect(
+      reasonFor({
+        generator: "euclidean",
+        padId: KICK,
+        hits: 3,
+        steps: 8,
+        rotate: MAX_EUCLIDEAN_STEPS + 1,
+      }),
+    ).toMatch(/^rotate: Too big/);
   });
 
   it("refuses a pattern longer than the clip", () => {

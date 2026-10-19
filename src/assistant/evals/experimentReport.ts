@@ -18,7 +18,7 @@ import type {
   ExperimentPhase,
   ExperimentResult,
 } from "./experimentRun";
-import { type EvalSummary, summaryOf } from "./run";
+import { type EvalReport, type EvalSummary, summaryOf } from "./run";
 import {
   compareHeavySets,
   compareScorecards,
@@ -117,8 +117,11 @@ function phaseIntro(phase: ExperimentPhase, cases: string): string[] {
     (sum, report) => sum + report.records.length,
     0,
   );
+  const block = phase.flattening
+    ? ` Check 6 judged on its own block: ${phase.flattening.caseIds.map((id) => `\`${id}\``).join(", ")}.`
+    : "";
   return [
-    `${plural(phase.caseIds.length, cases)} (${phase.caseIds.map((id) => `\`${id}\``).join(", ")}), ${plural(phase.runsPerCase, "run")} a case, ${plural(turns, "turn")}.${phase.stopped ? ` **Stopped early:** ${phase.stopped}` : ""}`,
+    `${plural(phase.caseIds.length, cases)} (${phase.caseIds.map((id) => `\`${id}\``).join(", ")}), ${plural(phase.runsPerCase, "run")} a case, ${plural(turns, "turn")}.${block}${phase.stopped ? ` **Stopped early:** ${phase.stopped}` : ""}`,
     "",
   ];
 }
@@ -212,7 +215,7 @@ export function renderExperimentMarkdown(
         ]
       : []),
     `- Cases: ${describeCases(experiment.cases)}: ${experiment.train.length} train, ${experiment.heldout.length} held out`,
-    `- Guardrails: checks 1 and 8 within ${experiment.guardrails.maxCheckDropPoints} points per set, ${experiment.guardrails.maxNotFlattenedDropPoints === null ? "" : `check 6 within ${experiment.guardrails.maxNotFlattenedDropPoints} per set, `}the overall pass rate within ${experiment.guardrails.maxOverallDropPoints}, no case passing to failing in most runs, no rise in max_tokens stops or errored turns${result.cuts.length > 0 ? `; a cut's goal no worse than ${experiment.guardrails.cutMarginPercent}% of the control's` : ""}`,
+    `- Guardrails: checks 1 and 8 within ${experiment.guardrails.maxCheckDropPoints} points per set, ${experiment.guardrails.holdNotFlattened ? "no extreme case flattened in most runs (check 6, on its own block of paired cases), " : ""}the overall pass rate within ${experiment.guardrails.maxOverallDropPoints}, no case passing to failing in most runs, no rise in max_tokens stops or errored turns${result.cuts.length > 0 ? `; a cut's goal no worse than ${experiment.guardrails.cutMarginPercent}% of the control's` : ""}`,
     `- Model: \`${result.model}\`; prompt \`${control.promptVersion}\`; tool set ${control.toolsetVersion}`,
     `- Commit: ${links.commit ? `\`${links.commit}\`` : "unknown"}; run: ${links.runUrl ?? "local"}`,
     `- Spend: $${result.spentUsd.toFixed(2)} of a $${result.budgetUsd.toFixed(2)} budget`,
@@ -245,16 +248,33 @@ export function renderExperimentMarkdown(
 }
 
 /** A phase with every report's numbers and no reply. */
-export interface ExperimentPhaseSummary extends Omit<ExperimentPhase, "reports"> {
+export interface ExperimentPhaseSummary
+  extends Omit<ExperimentPhase, "reports" | "flattening"> {
   readonly reports: Readonly<Record<string, EvalSummary>>;
+  readonly flattening: {
+    readonly caseIds: readonly string[];
+    readonly reports: Readonly<Record<string, EvalSummary>>;
+  } | null;
+}
+
+function summaries(
+  reports: Readonly<Record<string, EvalReport>>,
+): Record<string, EvalSummary> {
+  return Object.fromEntries(
+    Object.entries(reports).map(([name, report]) => [name, summaryOf(report)]),
+  );
 }
 
 function phaseSummary(phase: ExperimentPhase): ExperimentPhaseSummary {
   return {
     ...phase,
-    reports: Object.fromEntries(
-      Object.entries(phase.reports).map(([name, report]) => [name, summaryOf(report)]),
-    ),
+    reports: summaries(phase.reports),
+    flattening: phase.flattening
+      ? {
+          caseIds: phase.flattening.caseIds,
+          reports: summaries(phase.flattening.reports),
+        }
+      : null,
   };
 }
 
@@ -271,6 +291,10 @@ export function experimentJson(result: ExperimentResult, links: ExperimentLinks)
       cases: experiment.cases,
       train: experiment.train.map((entry) => entry.id),
       heldout: experiment.heldout.map((entry) => entry.id),
+      flattening: {
+        train: experiment.flattening.train.map((entry) => entry.id),
+        heldout: experiment.flattening.heldout.map((entry) => entry.id),
+      },
       guardrails: experiment.guardrails,
       runs: experiment.runs,
       budgetUsd: experiment.budgetUsd,

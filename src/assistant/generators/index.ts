@@ -113,7 +113,7 @@ export const GENERATOR_SCHEMAS = {
     padId: padIdSchema,
     hits: z.int().min(0).max(MAX_EUCLIDEAN_STEPS),
     steps: z.int().min(1).max(MAX_EUCLIDEAN_STEPS),
-    rotate: z.int().min(0).optional(),
+    rotate: z.int().min(0).max(MAX_EUCLIDEAN_STEPS).optional(),
     stepTicks: stepTicksSchema,
     velocity: stepVelocitySchema,
     variation: variationSchema,
