@@ -77,6 +77,18 @@ describe("ExportDialog: the Downloads row", () => {
     expect(cards()[0]).toHaveTextContent(/[23] files · \d+ MiB/);
   });
 
+  it("lists nothing to export when every stem is turned off", () => {
+    renderDialog();
+    clickAndFlush(screen.getByRole("radio", { name: "Stems (ZIP)" }));
+    clickAndFlush(screen.getAllByRole("option")[0]);
+    expect(cards()).toHaveLength(0);
+    expect(row()).toHaveTextContent("Nothing to export");
+    expect(row()).not.toHaveTextContent(/\.zip|1 file/);
+    const footer = document.querySelector(".export-footer") as HTMLElement;
+    expect(footer).toHaveTextContent("Nothing to export");
+    expect(footer).not.toHaveTextContent(/\d+ MiB|1 ZIP/);
+  });
+
   it("follows the export: printing, then downloaded, or failed", async () => {
     const view = renderDialog();
     clickAndFlush(screen.getByRole("button", { name: "Export" }));

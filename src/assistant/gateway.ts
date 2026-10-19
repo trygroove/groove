@@ -50,6 +50,14 @@
  * `recommend_video` too (GRV-16, ADR 0009): its calls are taken out of the
  * proposal, searched for here, and returned as the turn's `videos`, with
  * every search that finds nothing YouTube vouches for dropped.
+ *
+ * Under the `toolBundles` tactic at `bundled` (GRV-143), a turn is offered
+ * one fixed bundle of the command tools instead of all of them, picked by a
+ * pure rule over the request (`toolBundleRule.ts`). A bundle short of every
+ * tool carries `need_more_tools`: a step that calls it runs again, the same
+ * messages with every tool. A call to a tool the bundle did not offer is
+ * taken as any call is, and every later step offers every tool. The turn log
+ * names the bundle and any fallback.
  */
 import { type AssistantAsk, askProducerTool, isAskCall, parseAskCall } from "./ask";
 import {
@@ -90,6 +98,7 @@ import {
   continuesTurn,
   type ProviderAssistantBlock,
   type ProviderMessagesRequest,
+  type ProviderTool,
   providerTools,
 } from "./providerRequest";
 import { admitCall, type QuotaLimits, quotaExceededMessage } from "./quota";
@@ -110,12 +119,17 @@ import {
 } from "./steps";
 import { NO_USAGE, type ProviderUsage, StreamReader } from "./streamEvents";
 import { resolveTactics, type TacticOverrides, type TacticValues } from "./tactics";
-import { type AssistantTurnLog, toTurnLog } from "./telemetry";
+import { type AssistantTurnLog, type ToolBundleFallback, toTurnLog } from "./telemetry";
+import { toolBundleFor } from "./toolBundleRule";
 import {
   ASSISTANT_TOOLSET_VERSION,
-  assistantTools,
+  bundleTools,
+  EVERYTHING_BUNDLE,
   EXPLAIN_TOOL,
+  isNeedMoreToolsCall,
   makesChanges,
+  NEED_MORE_TOOLS_TOOL,
+  type ToolBundleId,
   withProviderToolText,
   withToolText,
 } from "./tools";
@@ -283,6 +297,53 @@ export function historyBudgetFor(
 interface PreparedTurn {
   readonly request: ProviderMessagesRequest;
   readonly history: BoundedHistory;
+  /**
+   * The bundle the turn opens with under `toolBundles=bundled` (GRV-143), or
+   * null under `all`, which offers every tool as it always has.
+   */
+  readonly bundle: ToolBundleId | null;
+  /** Every tool, for a step re-run after `need_more_tools`. */
+  readonly everything: ProviderTool[];
+}
+
+/**
+ * The tools a turn offers with `bundle`'s command tools: those, then
+ * `explain_change` and `ask_producer`, then `need_more_tools` in a bundle that
+ * is not every tool (GRV-143), then the conditional tools. The command tools
+ * and the two after them come first and never vary with the request, so the
+ * prompt cache keeps one prefix per bundle.
+ */
+function offeredTools(
+  bundle: ToolBundleId,
+  tactics: TacticValues,
+  turn: AssistantTurnRequest,
+  videos: boolean,
+): ProviderTool[] {
+  // A turn that carries the library may also recommend from it (GRV-23), one
+  // that can search YouTube may recommend a tutorial (GRV-16), and one that
+  // carries the producer's memory may propose adding to it (GRV-25).
+  return [
+    ...providerTools([
+      ...bundleTools(
+        bundle,
+        tactics.toolText,
+        tactics.drumStepStrings,
+        tactics.patternGenerators,
+      ),
+      withToolText(EXPLAIN_TOOL, tactics.toolText),
+      withToolText(askProducerTool(), tactics.toolText),
+      ...(bundle === EVERYTHING_BUNDLE ? [] : [NEED_MORE_TOOLS_TOOL]),
+    ]),
+    ...(turn.library
+      ? [withProviderToolText(recommendationTool(), tactics.toolText)]
+      : []),
+    ...(videos
+      ? [withProviderToolText(videoRecommendationTool(), tactics.toolText)]
+      : []),
+    ...(turn.memory
+      ? providerTools([withToolText(rememberTool(), tactics.toolText)])
+      : []),
+  ];
 }
 
 async function prepare(
@@ -300,33 +361,17 @@ async function prepare(
     turn.memory,
     tactics,
   );
-  // A turn that carries the library may also recommend from it (GRV-23), one
-  // that can search YouTube may recommend a tutorial (GRV-16), and one that
-  // carries the producer's memory may propose adding to it (GRV-25).
-  const tools = [
-    ...providerTools([
-      ...assistantTools(
-        tactics.toolText,
-        tactics.drumStepStrings,
-        tactics.patternGenerators,
-      ),
-      withToolText(EXPLAIN_TOOL, tactics.toolText),
-      withToolText(askProducerTool(), tactics.toolText),
-    ]),
-    ...(turn.library
-      ? [withProviderToolText(recommendationTool(), tactics.toolText)]
-      : []),
-    ...(videos
-      ? [withProviderToolText(videoRecommendationTool(), tactics.toolText)]
-      : []),
-    ...(turn.memory
-      ? providerTools([withToolText(rememberTool(), tactics.toolText)])
-      : []),
-  ];
+  const everything = offeredTools(EVERYTHING_BUNDLE, tactics, turn, videos);
+  const bundle = tactics.toolBundles === "bundled" ? toolBundleFor(turn) : null;
+  const tools =
+    bundle === null || bundle === EVERYTHING_BUNDLE
+      ? everything
+      : offeredTools(bundle, tactics, turn, videos);
   // The tool definitions take room in the window just as the prompt does.
+  // Every tool's, whatever the bundle, so a step re-run with them all fits.
   const systemTokens =
     system.reduce((sum, block) => sum + estimateTokens(block.text), 0) +
-    estimateTokens(JSON.stringify(tools));
+    estimateTokens(JSON.stringify(everything));
   const history = boundHistory(turn.messages, historyBudgetFor(systemTokens));
   if (history.messages.length === 0) {
     throw new AssistantGatewayError(
@@ -347,7 +392,7 @@ async function prepare(
     },
     tactics,
   );
-  return { request, history };
+  return { request, history, bundle, everything };
 }
 
 /** The outcome of one provider call. */
@@ -681,6 +726,10 @@ function askOf(calls: readonly AssistantToolCall[]): AssistantAsk | null {
   return ask;
 }
 
+function offers(tools: readonly ProviderTool[], name: string): boolean {
+  return tools.some((tool) => tool.name === name);
+}
+
 /**
  * What the note expander needs to write out drum step strings (GRV-140) and
  * pattern generator calls (GRV-141), or undefined when the `drumStepStrings`
@@ -728,6 +777,10 @@ export async function runAssistantTurn(
   let checked: CheckedVideos = NO_VIDEOS;
   const generations: GenerationCall[] = [];
   let tracing: Tracing | null = null;
+  // The bundle the turn opened with, and why it went on with every tool, if
+  // it did (GRV-143).
+  let toolBundle: ToolBundleId | null = null;
+  let bundleFallback: ToolBundleFallback | null = null;
 
   /**
    * Hands the turn's events to the sink, once it has ended. Never throws, and
@@ -778,6 +831,8 @@ export async function runAssistantTurn(
         videosShown: checked.videos.length,
         videosDropped: checked.dropped,
         videosUnchecked: checked.unchecked,
+        toolBundle,
+        toolBundleFallback: bundleFallback,
       }),
     );
 
@@ -817,6 +872,11 @@ export async function runAssistantTurn(
     const stepStrings = stepStringOptions(tactics, turn.context);
     const notes = createNoteExpander(idStem, undefined, stepStrings);
     history = prepared.history;
+    toolBundle = prepared.bundle;
+    // The tools each step offers: the turn's bundle until the model asks for
+    // more or reaches past it, every tool from then on (GRV-143).
+    let tools = prepared.request.tools;
+    let narrowed = toolBundle !== null && toolBundle !== EVERYTHING_BUNDLE;
 
     const cancelled = () =>
       new AssistantGatewayError("cancelled", "The assistant request was cancelled.");
@@ -906,7 +966,7 @@ export async function runAssistantTurn(
     for (let step = 1; ; step += 1) {
       const said = texts.some((text) => text.trim().length > 0);
       const { outcome, remaining } = await callProvider(
-        { ...prepared.request, messages },
+        { ...prepared.request, tools, messages },
         said ? paragraphAfter(options) : options,
       );
       requestsRemaining = remaining;
@@ -917,6 +977,24 @@ export async function runAssistantTurn(
         throw new AssistantGatewayError("reply_too_long", TOO_LONG_MESSAGE);
       }
       texts.push(outcome.text);
+      // The bundle was not enough (GRV-143): the step runs again, the same
+      // messages with every tool, and does not count as a step. Its calls
+      // are dropped; any text it streamed has been said.
+      if (narrowed && outcome.toolCalls.some(isNeedMoreToolsCall)) {
+        tools = prepared.everything;
+        narrowed = false;
+        bundleFallback = "need_more_tools";
+        step -= 1;
+        continue;
+      }
+      // A call to a tool the bundle did not offer is taken as any call is,
+      // and every later step offers every tool, so the conversation it sends
+      // back names only tools the request carries.
+      if (narrowed && outcome.toolCalls.some((call) => !offers(tools, call.name))) {
+        tools = prepared.everything;
+        narrowed = false;
+        bundleFallback = "unoffered_tool";
+      }
       const changes: boolean = outcome.toolCalls.some(isChangeCall);
       const overLimit: boolean =
         oneResponse && changes && !fixing && changeSteps >= MAX_CHANGE_STEPS;

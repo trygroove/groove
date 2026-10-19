@@ -10,6 +10,13 @@
 import type { AssistantErrorCode, AssistantStopReason } from "./protocol";
 import type { ProviderFailureKind } from "./provider";
 import type { ProviderUsage } from "./streamEvents";
+import type { ToolBundleId } from "./tools";
+
+/**
+ * Why a bundled turn went on with every tool (GRV-143): the model asked for
+ * them, or called a tool its bundle did not offer.
+ */
+export type ToolBundleFallback = "need_more_tools" | "unoffered_tool";
 
 export interface AssistantTurnLog {
   /** `internal_error`: the turn failed for a reason the gateway does not know. */
@@ -41,6 +48,17 @@ export interface AssistantTurnLog {
   readonly videosShown: number;
   readonly videosDropped: number;
   readonly videosUnchecked: number;
+  /**
+   * The tool bundle the turn opened with under `toolBundles=bundled`
+   * (GRV-143), or null when it was offered every tool (`all`).
+   */
+  readonly toolBundle: ToolBundleId | null;
+  /**
+   * Why a bundled turn went on with every tool: the model called
+   * `need_more_tools` and the step ran again, or it called a tool its bundle
+   * did not offer. Null when it did neither.
+   */
+  readonly toolBundleFallback: ToolBundleFallback | null;
 }
 
 /** The keys a turn log may have. A test pins this list. */
@@ -62,6 +80,8 @@ export const TURN_LOG_KEYS = [
   "videosShown",
   "videosDropped",
   "videosUnchecked",
+  "toolBundle",
+  "toolBundleFallback",
 ] as const satisfies readonly (keyof AssistantTurnLog)[];
 
 export interface TurnLogInput {
@@ -78,6 +98,8 @@ export interface TurnLogInput {
   readonly videosShown?: number;
   readonly videosDropped?: number;
   readonly videosUnchecked?: number;
+  readonly toolBundle?: ToolBundleId | null;
+  readonly toolBundleFallback?: ToolBundleFallback | null;
 }
 
 export function toTurnLog(input: TurnLogInput): AssistantTurnLog {
@@ -100,5 +122,7 @@ export function toTurnLog(input: TurnLogInput): AssistantTurnLog {
     videosShown: input.videosShown ?? 0,
     videosDropped: input.videosDropped ?? 0,
     videosUnchecked: input.videosUnchecked ?? 0,
+    toolBundle: input.toolBundle ?? null,
+    toolBundleFallback: input.toolBundleFallback ?? null,
   };
 }
