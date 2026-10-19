@@ -14,7 +14,7 @@ import Sleeve from "./Sleeve";
 
 export interface ExportDoneProps {
   readonly finished: FinishedExport;
-  /** The dialog's height when the export finished, so the dialog does not resize. */
+  /** The dialog's height when the export finished: the least this screen takes, so the dialog does not shrink. */
   readonly heightPx?: number;
   onBack(): void;
   /** Export the other format of the same song. */
@@ -41,7 +41,7 @@ export default function ExportDone(props: ExportDoneProps): JSX.Element {
   return (
     <div
       class="export-done"
-      style={props.heightPx ? { height: `${props.heightPx}px` } : undefined}
+      style={props.heightPx ? { "min-height": `${props.heightPx}px` } : undefined}
     >
       <Sleeve
         stripes={props.finished.stripes}
