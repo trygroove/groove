@@ -233,6 +233,8 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         analytics: options.analytics,
         // The conversation is made just below; Refresh is only ever pressed later.
         refresh: (entryId) => conversation.refresh(entryId),
+        continueRest: (entryId) => conversation.continueProposal(entryId),
+        clock: options.clock,
         onOutcome: (entryId, outcome, issues) => {
           const turnId = turnOfEntry.get(entryId);
           if (turnId) retention?.reportOutcome(turnId, outcome, issues);
@@ -294,8 +296,41 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
       options.account().registered && (retention ? retention.answered() : true),
     analytics: options.analytics,
     committedProject: options.committedProject,
+    clock: options.clock,
+    onProposalPart: proposals
+      ? (entryId, part, origin, baseRevision) => {
+          // The first part shows the card, which fills in as the rest land
+          // (GRV-144). It is the turn's first card, so nothing holds it.
+          if (!proposalOfTurn.has(origin)) {
+            if (origin.turnId) turnOfEntry.set(entryId, origin.turnId);
+            if (origin.sessionTurn !== undefined) {
+              sessionTurnOfEntry.set(entryId, origin.sessionTurn);
+            }
+            proposalOfTurn.set(origin, { entryId, created: createdTargets([]) });
+            queue.add(origin, {
+              entryId,
+              show: () => {},
+              decided: () => proposals.decided(entryId),
+            });
+          }
+          proposals.receivePart(entryId, part, origin, baseRevision);
+        }
+      : undefined,
+    onProposalEnded: proposals
+      ? (entryId, ending) => proposals.endStream(entryId, ending)
+      : undefined,
     onProposal: proposals
       ? (entryId, proposal, origin) => {
+          if (proposalOfTurn.get(origin)?.entryId === entryId) {
+            // The turn's parts streamed: its card is up already, and the
+            // whole proposal says what the parts make and why.
+            proposalOfTurn.set(origin, {
+              entryId,
+              created: createdTargets(proposal.calls),
+            });
+            proposals.receive(entryId, proposal, origin);
+            return;
+          }
           if (origin.turnId) turnOfEntry.set(entryId, origin.turnId);
           if (origin.sessionTurn !== undefined) {
             sessionTurnOfEntry.set(entryId, origin.sessionTurn);

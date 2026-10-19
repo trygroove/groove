@@ -257,10 +257,10 @@ export default function ProposalCard(props: ProposalCardProps): JSX.Element {
  * It goes somewhere rather than doing something, so it is a link; the click
  * does the going, and its address is the control's own fragment.
  */
-function ControlLink(props: {
+export function ControlLink(props: {
   readonly address: ControlAddress;
   readonly label: string;
-  readonly proposals: AssistantProposals;
+  readonly proposals: Pick<AssistantProposals, "reveal">;
 }): JSX.Element {
   return (
     <a
@@ -289,7 +289,7 @@ function controlHref(address: ControlAddress): string {
 }
 
 /** "was → now", read the same way aloud: "was to now". */
-function Values(props: { readonly row: ProposalRow }): JSX.Element {
+export function Values(props: { readonly row: ProposalRow }): JSX.Element {
   const from = () => props.row.from ?? (props.row.change === "added" ? "none" : null);
   const to = () => props.row.to ?? (props.row.change === "removed" ? "removed" : null);
   return (

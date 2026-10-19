@@ -62,6 +62,7 @@ import {
   type AssistantLibraryContext,
   type AssistantMessage,
   type AssistantProposal,
+  type AssistantProposalPart,
   type AssistantToolCall,
   type AssistantTurnRequest,
   turnAnalytics,
@@ -72,6 +73,7 @@ import type { ReplyRating } from "../../assistant/transcripts";
 import type { AssistantVideo } from "../../assistant/video";
 import type { Project } from "../../domain/entities";
 import type { SuggestionId } from "../../projection/projectAnalysisProjection";
+import { type Clock, systemClock } from "../../shared/clock";
 import { type AssistantScope, scopedContext } from "./assistantScope";
 import { type ConversationStore, createConversationStore } from "./conversationStore";
 
@@ -92,6 +94,12 @@ export interface TurnOrigin {
   readonly remoteChanges: number;
   /** The ID the transcript files the turn under (GRV-8), when it has one. */
   readonly turnId?: string;
+  /**
+   * When the turn was sent, ms since the epoch, so the first part of a
+   * streamed proposal can say how long it took (GRV-144). A turn restored
+   * from before a reload has none.
+   */
+  readonly sentAt?: number;
   /**
    * Which turn of which session it was (GRV-103), when a session health
    * detector is counting. A turn restored from before a reload has none.
@@ -188,6 +196,11 @@ export type ConversationEntry =
       readonly origin: TurnOrigin;
       /** The failed turn's partial reply, which Try again replaces. */
       readonly replyId?: string;
+      /**
+       * The turn had streamed parts of a proposal before it failed (GRV-144):
+       * their card offers Try again for the rest, so this entry does not.
+       */
+      readonly partial?: boolean;
     };
 
 /**
@@ -220,12 +233,34 @@ export interface UseAssistantConversationOptions {
   /** Whether a signed-in account is here to talk (ADR 0006 decision 4). */
   readonly canSend: Accessor<boolean>;
   readonly analytics: () => Analytics;
-  /** Hears each proposal as it arrives, under its entry's ID (GRV-5). */
+  /**
+   * Hears each proposal as it arrives, under its entry's ID (GRV-5). For a
+   * turn that streamed its parts (GRV-144), the entry is the one the parts
+   * came under, and this is the whole proposal at the end of the turn.
+   */
   readonly onProposal?: (
     entryId: string,
     proposal: AssistantProposal,
     origin: TurnOrigin,
   ) => void;
+  /**
+   * Hears each part of a proposal as the gateway accepts it (GRV-144), under
+   * the entry the turn's parts share, which the first part appends, with the
+   * project revision the turn was sent against.
+   */
+  readonly onProposalPart?: (
+    entryId: string,
+    part: AssistantProposalPart,
+    origin: TurnOrigin,
+    baseRevision: number,
+  ) => void;
+  /** Hears how a turn that streamed parts ended (GRV-144). */
+  readonly onProposalEnded?: (
+    entryId: string,
+    ending: "ended" | "stopped" | "failed",
+  ) => void;
+  /** What stamps when each turn was sent (GRV-144); the real clock by default. */
+  readonly clock?: Clock;
   /** How many changes made elsewhere the editor has adopted so far; 0 without one. */
   readonly remoteChanges?: () => number;
   /**
@@ -298,6 +333,13 @@ export interface AssistantConversation {
   /** Whether {@link retry} would resend this entry's turn now. */
   canRetry(entry: ConversationEntry): boolean;
   /**
+   * Asks for the rest of the proposal in entry `entryId`, whose turn failed
+   * partway (GRV-144): its words and scope again, against the song as it is
+   * now, which has whatever parts the producer applied. Returns whether it
+   * went: not while a reply streams, nor with no account.
+   */
+  continueProposal(entryId: string): boolean;
+  /**
    * Asks again for the proposal or recommendation in entry `entryId`, with
    * its words and its scope, against the song as it is now (GRV-5's Refresh).
    * Returns whether it went: not while a reply streams, nor with no account.
@@ -323,6 +365,13 @@ export interface AssistantConversation {
   ): Extract<ConversationEntry, { kind: "reply" }> | null;
 }
 
+/**
+ * What Try again for the rest of a proposal adds to the producer's words
+ * (GRV-144): the song it is sent with already has the parts they applied.
+ */
+export const CONTINUE_NOTE =
+  "[Continue] Your last reply stopped partway. The song now has whatever parts of it I applied; propose only what is still missing.";
+
 // What a turn resends is built in `src/assistant/history.ts`, so that
 // code outside the editor (GRV-108) builds it the same way.
 export { MAX_MESSAGE_CHARS };
@@ -343,6 +392,7 @@ export function useAssistantConversation(
     return `entry-${nextId}`;
   };
   const newId = options.newId ?? (() => crypto.randomUUID());
+  const clock = options.clock ?? systemClock;
   /**
    * What the conversation's kept turns are filed under: one per panel
    * session, and a new one when another project's conversation takes this
@@ -403,6 +453,8 @@ export function useAssistantConversation(
     setStreaming(true);
     let ended = false;
     let handle: AssistantTurnHandle | null = null;
+    /** The entry the turn's streamed proposal parts share (GRV-144). */
+    let partsEntryId: string | null = null;
 
     /** Whether the reply is still in the log when the turn ends. */
     let replyKept = false;
@@ -434,6 +486,12 @@ export function useAssistantConversation(
             origin.sessionTurn,
           );
         }
+        if (partsEntryId) {
+          options.onProposalEnded?.(
+            partsEntryId,
+            event.type === "error" ? "failed" : event.stopped ? "stopped" : "ended",
+          );
+        }
       }
       switch (event.type) {
         case "text":
@@ -441,10 +499,38 @@ export function useAssistantConversation(
             entry.kind === "reply" ? { ...entry, text: entry.text + event.text } : entry,
           );
           return;
-        case "part":
-          // The card shows parts as they arrive from GRV-144's next piece; until
-          // then the whole proposal below is what it shows.
+        case "part": {
+          // The first part makes the turn's proposal entry; each one after
+          // joins it, so the card fills in part by part (GRV-144).
+          const entryId = partsEntryId ?? id();
+          if (partsEntryId === null) {
+            partsEntryId = entryId;
+            append({
+              kind: "proposal",
+              id: entryId,
+              proposal: {
+                baseRevision: request.projectRevision,
+                toolsetVersion: event.part.toolsetVersion,
+                calls: [event.part.call],
+              },
+              origin,
+            });
+          } else {
+            update(entryId, (entry) =>
+              entry.kind === "proposal"
+                ? {
+                    ...entry,
+                    proposal: {
+                      ...entry.proposal,
+                      calls: [...entry.proposal.calls, event.part.call],
+                    },
+                  }
+                : entry,
+            );
+          }
+          options.onProposalPart?.(entryId, event.part, origin, request.projectRevision);
           return;
+        }
         case "proposal": {
           // Memory proposals (GRV-25) and recommendations (GRV-23) come back
           // among the proposal's calls: each is a card of its own, and the
@@ -460,7 +546,14 @@ export function useAssistantConversation(
           }
           if (!remembered.proposal) return;
           const split = splitRecommendations(remembered.proposal);
-          if (split.proposal) {
+          if (split.proposal && partsEntryId) {
+            // The parts' entry takes the whole proposal in their place.
+            const whole = split.proposal;
+            update(partsEntryId, (entry) =>
+              entry.kind === "proposal" ? { ...entry, proposal: whole } : entry,
+            );
+            options.onProposal?.(partsEntryId, whole, origin);
+          } else if (split.proposal) {
             const entryId = id();
             append({ kind: "proposal", id: entryId, proposal: split.proposal, origin });
             options.onProposal?.(entryId, split.proposal, origin);
@@ -507,6 +600,7 @@ export function useAssistantConversation(
             request,
             origin,
             ...(replyKept ? { replyId } : {}),
+            ...(partsEntryId ? { partial: true } : {}),
           });
           setStreaming(false);
           return;
@@ -592,6 +686,7 @@ export function useAssistantConversation(
     startTurn(request, {
       ...message,
       scope,
+      sentAt: clock.now(),
       remoteChanges: options.remoteChanges?.() ?? 0,
       ...(turnId ? { turnId } : {}),
       ...(sessionTurn !== undefined ? { sessionTurn } : {}),
@@ -607,6 +702,14 @@ export function useAssistantConversation(
         .log("assistant_suggestion_clicked", { suggestion_id: suggestion });
     }
     sendMessage({ text: message }, options.scope());
+    return true;
+  }
+
+  function continueProposal(entryId: string): boolean {
+    const entry = entries().find((candidate) => candidate.id === entryId);
+    if (entry?.kind !== "proposal" || !canStart()) return false;
+    const { text, answers, wire, scope } = entry.origin;
+    sendMessage({ text, answers, wire: `${wire ?? text}\n\n${CONTINUE_NOTE}` }, scope);
     return true;
   }
 
@@ -681,6 +784,7 @@ export function useAssistantConversation(
     return (
       entry.kind === "error" &&
       entry.error.retryable &&
+      !entry.partial &&
       !streaming() &&
       entries().at(-1)?.id === entry.id
     );
@@ -760,6 +864,7 @@ export function useAssistantConversation(
     stop,
     retry,
     canRetry,
+    continueProposal,
     refresh,
     pendingAsk,
     answerAsk,
