@@ -9,6 +9,7 @@ const fakeContext = {
   fillRect: vi.fn(),
   strokeRect,
   fillText: vi.fn(),
+  measureText: (text: string) => ({ width: text.length * 7 }),
   setTransform: vi.fn(),
 } as unknown as CanvasRenderingContext2D;
 

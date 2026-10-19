@@ -53,7 +53,10 @@ export default function ExportDone(props: ExportDoneProps): JSX.Element {
         <output class="export-label" aria-live="polite">
           Export complete
         </output>
-        <h3>{props.finished.name} is out.</h3>
+        <h3>
+          <span class="export-name">{props.finished.name}</span>{" "}
+          <span class="export-verb">is out.</span>
+        </h3>
         <p>{whereText(props.finished)}</p>
         <div class="export-stats">
           <ExportReadout label="Length">{props.finished.length}</ExportReadout>

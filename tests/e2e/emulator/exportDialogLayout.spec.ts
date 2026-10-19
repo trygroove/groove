@@ -274,3 +274,62 @@ test.describe("Export dialog layout", () => {
     }
   });
 });
+
+test.describe("Export complete screen", () => {
+  // GRV-158: a one-word project name must not push the heading off the top of the
+  // dialog, run the file name past its right edge, or spill the sleeve's caption
+  // into the right-hand panel. Stems at 1280x720, as the report found it.
+  test("keeps the heading, file name and sleeve inside the dialog for a long one-word name", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/");
+    await harness(
+      page,
+      "mountExportDialog",
+      "few",
+      "summer_anthem_final_mix_v12_with_new_vocals_and_extra_bass_MASTER",
+    );
+    const dialog = page.getByRole("dialog", { name: "Export" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("radio", { name: "Stems (ZIP)" }).check();
+    await dialog.getByRole("button", { name: "Export", exact: true }).click();
+    await harness(page, "finish");
+    await expect(page.locator(".export-done")).toBeVisible();
+    // Let the staggered rise finish, so the boxes are where they settle.
+    await page.evaluate(() =>
+      Promise.all(document.getAnimations().map((animation) => animation.finished)),
+    );
+    const boxes = await page.evaluate(() => {
+      const box = (selector: string) => {
+        const el = document.querySelector(selector);
+        if (!el) throw new Error(`${selector} is not on the page`);
+        const r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+      };
+      // The text's own extent: a word wider than its box paints past the box's edge.
+      const textRight = (selector: string) => {
+        const range = document.createRange();
+        range.selectNodeContents(document.querySelector(selector) as Element);
+        return range.getBoundingClientRect().right;
+      };
+      return {
+        dialog: box(".export-shell"),
+        out: box(".export-out"),
+        heading: box(".export-out h3"),
+        caption: { ...box(".export-out p"), right: textRight(".export-out p") },
+        sleeve: box(".export-sleeve"),
+      };
+    });
+    const { dialog: frame, out, heading, caption, sleeve } = boxes;
+    // The heading is whole and in view: inside its column and under the dialog's top.
+    expect.soft(heading.top, "heading top").toBeGreaterThanOrEqual(out.top);
+    expect.soft(heading.bottom, "heading bottom").toBeLessThanOrEqual(out.bottom);
+    expect.soft(heading.top, "heading in dialog").toBeGreaterThanOrEqual(frame.top);
+    expect.soft(heading.right, "heading right").toBeLessThanOrEqual(out.right);
+    // The file name stays within the dialog's right edge.
+    expect.soft(caption.right, "file name right").toBeLessThanOrEqual(frame.right);
+    // The sleeve stays in the left panel, clear of the right one.
+    expect.soft(sleeve.right, "sleeve right").toBeLessThanOrEqual(out.left);
+  });
+});

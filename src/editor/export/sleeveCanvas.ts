@@ -103,6 +103,22 @@ export function pixelRuns(
   return out.map(([left, right]) => [left / scale, right / scale]);
 }
 
+/**
+ * `text`, shortened with an ellipsis until it paints within `maxWidth` canvas
+ * units. A canvas cannot wrap or clip to a box it was not given, so a long
+ * project name would otherwise run past the sleeve (GRV-158).
+ */
+export function fitLabel(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): string {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let end = text.length;
+  while (end > 0 && ctx.measureText(`${text.slice(0, end)}…`).width > maxWidth) end--;
+  return `${text.slice(0, end)}…`;
+}
+
 /** The sleeve at `progress`, 0 (lanes where the arrangement has them) to 1 (landed). */
 export function drawSleeve(
   ctx: CanvasRenderingContext2D,
@@ -140,7 +156,7 @@ export function drawSleeve(
   ctx.strokeRect(ox - 0.5, oy - 0.5, side + 1, side + 1);
   ctx.font = `600 12px ${palette.fontFamily}`;
   ctx.fillStyle = palette.playhead;
-  ctx.fillText(frame.name.toUpperCase(), ox, oy + side + 22);
+  ctx.fillText(fitLabel(ctx, frame.name.toUpperCase(), W - ox), ox, oy + side + 22);
   ctx.fillStyle = palette.textMuted;
   ctx.fillText(frame.meta, ox, oy + side + 40);
 }
