@@ -52,7 +52,11 @@
  * every search that finds nothing YouTube vouches for dropped.
  */
 import { type AssistantAsk, askProducerTool, isAskCall, parseAskCall } from "./ask";
-import { createNoteExpander, expandAskPreviews } from "./compactNotes";
+import {
+  createNoteExpander,
+  expandAskPreviews,
+  type StepStringOptions,
+} from "./compactNotes";
 import {
   ASSISTANT_CALL_LIMITS,
   ASSISTANT_HEARTBEAT_INTERVAL_MS,
@@ -90,7 +94,7 @@ import {
 } from "./providerRequest";
 import { admitCall, type QuotaLimits, quotaExceededMessage } from "./quota";
 import { recommendationTool } from "./recommendation";
-import { contextTargets } from "./recommendationTargets";
+import { contextTargets, withCreatedTargets } from "./recommendationTargets";
 import { recordTurn, type TranscriptWrite } from "./retention";
 import { costMicroUsd, spendDay, usdToMicro } from "./spend";
 import {
@@ -301,7 +305,7 @@ async function prepare(
   // carries the producer's memory may propose adding to it (GRV-25).
   const tools = [
     ...providerTools([
-      ...assistantTools(tactics.toolText),
+      ...assistantTools(tactics.toolText, tactics.drumStepStrings),
       withToolText(EXPLAIN_TOOL, tactics.toolText),
       withToolText(askProducerTool(), tactics.toolText),
     ]),
@@ -674,6 +678,20 @@ function askOf(calls: readonly AssistantToolCall[]): AssistantAsk | null {
 }
 
 /**
+ * What the note expander needs to write out drum step strings, or undefined
+ * when the `drumStepStrings` tactic is off and none is offered (GRV-140): a
+ * string's pads are checked against the project's tracks and those the
+ * turn's accepted calls make.
+ */
+function stepStringOptions(
+  tactics: TacticValues,
+  context: AssistantTurnRequest["context"],
+): StepStringOptions | undefined {
+  if (tactics.drumStepStrings !== "on") return undefined;
+  return { targets: contextTargets(context), track: withCreatedTargets };
+}
+
+/**
  * Runs one assistant turn. Resolves with the validated reply, or rejects with
  * an {@link AssistantGatewayError}; either way it logs exactly one
  * {@link AssistantTurnLog}.
@@ -781,7 +799,10 @@ export async function runAssistantTurn(
     );
     // Notes come as short arrays and join the proposal as note events, their
     // IDs from the turn's stem (`compactNotes.ts`, GRV-131).
-    const notes = createNoteExpander(idStem);
+    // With the drumStepStrings tactic on, a drum pad's step string is written
+    // out the same way (`drumSteps.ts`, GRV-140).
+    const stepStrings = stepStringOptions(tactics, turn.context);
+    const notes = createNoteExpander(idStem, undefined, stepStrings);
     history = prepared.history;
 
     const cancelled = () =>
@@ -929,7 +950,7 @@ export async function runAssistantTurn(
     // An option's preview takes notes as the proposal does, written out in
     // a counter of their own (`compactNotes.ts`, GRV-131).
     const asked = askOf(calls);
-    const ask = asked && expandAskPreviews(asked, idStem);
+    const ask = asked && expandAskPreviews(asked, idStem, stepStrings);
     // Every search that turns up no video YouTube vouches for is dropped,
     // never shown unchecked (ADR 0009 decision 5).
     checked = await checkVideoCalls(calls, deps.findVideo, options.signal);

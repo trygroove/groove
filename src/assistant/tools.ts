@@ -82,9 +82,11 @@ import {
 import {
   COMPACT_NOTE_DESCRIPTION,
   compactClipSchema,
+  compactClipWithStepsSchema,
   compactNoteAddSchema,
 } from "./compactNotes";
-import type { TacticValues } from "./tactics";
+import { DEFAULT_STEP_TICKS, STEP_VELOCITY_SCALE } from "./drumSteps";
+import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
 /**
  * Bumped whenever a tool is added, removed, renamed or changes its rules,
@@ -485,6 +487,15 @@ const CLIP_CREATE_DESCRIPTION = [
   "Duplicate a clip as an independent variation by creating a copy with a new clip ID (its notes, as always here, take no ID).",
   `Each note in content.events is an array, [startTicks, pitch, durationTicks, velocity], with no ID; a drum hit has its pad's ID in place of the pitch, e.g. [0, "pad_...", 48, 0.9]; an optional fifth number is its probability.`,
   `Example input: ${JSON.stringify(OFFERED_CLIP_EXAMPLE)}`,
+].join(" ");
+
+/**
+ * What `clip_create`'s description adds with the `drumStepStrings` tactic on
+ * (GRV-140): a drum pad's part may be a step string.
+ */
+const CLIP_CREATE_STEPS_TEXT = [
+  `On a drum machine, an entry in content.events may instead be one pad's whole part as a step string, {padId, steps, stepTicks, velocity}: x a hit, X an accent, o a ghost, . a rest, one character per step of stepTicks (default ${DEFAULT_STEP_TICKS}, a 16th; 32 a 16th triplet, 24 a 32nd); ${STEP_VELOCITY_SCALE}. The string repeats from the clip's start to its end, so one bar fills a clip of any length; it may not be longer than the clip.`,
+  `Example entry: ${JSON.stringify({ padId: "pad_...", steps: "x...x...x...x..." })}`,
 ].join(" ");
 
 const NOTE_ADD_DESCRIPTION = [
@@ -967,19 +978,39 @@ function toolDefinition(entry: ToolRule): AssistantToolDefinition {
   };
 }
 
-const toolCache = new Map<ToolTextLevel, readonly AssistantToolDefinition[]>();
+/**
+ * `clip_create` as the `drumStepStrings` tactic offers it (GRV-140): the
+ * schema takes step strings, and the step-string text follows the
+ * description at whatever level `toolText` leaves it.
+ */
+function withStepStrings(entry: ToolRule, level: ToolTextLevel): AssistantToolDefinition {
+  const tool = withToolText(
+    toolDefinition({ ...entry, offered: compactClipWithStepsSchema }),
+    level,
+  );
+  return { ...tool, description: `${tool.description} ${CLIP_CREATE_STEPS_TEXT}` };
+}
+
+const toolCache = new Map<string, readonly AssistantToolDefinition[]>();
 
 /**
- * Every tool the assistant may call, generated once per level of text from the
- * registry. The default, `full`, is the text as written in this module.
+ * Every tool the assistant may call, generated once per level of text and
+ * `drumStepStrings` value from the registry. The defaults, `full` and `off`,
+ * are the text and schemas as written in this module.
  */
 export function assistantTools(
   level: ToolTextLevel = "full",
+  drumStepStrings: TacticValues["drumStepStrings"] = TACTIC_DEFAULTS.drumStepStrings,
 ): readonly AssistantToolDefinition[] {
-  let tools = toolCache.get(level);
+  const key = `${level}:${drumStepStrings}`;
+  let tools = toolCache.get(key);
   if (!tools) {
-    tools = TOOL_RULES.map((entry) => withToolText(toolDefinition(entry), level));
-    toolCache.set(level, tools);
+    tools = TOOL_RULES.map((entry) =>
+      drumStepStrings === "on" && entry.commandType === "clip.create"
+        ? withStepStrings(entry, level)
+        : withToolText(toolDefinition(entry), level),
+    );
+    toolCache.set(key, tools);
   }
   return tools;
 }

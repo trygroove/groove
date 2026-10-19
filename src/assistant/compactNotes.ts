@@ -27,6 +27,11 @@
  * judge.
  */
 import { z } from "zod";
+import {
+  clipLengthTickSchema,
+  MAX_CLIP_LENGTH_BARS,
+  MAX_CLIP_LENGTH_TICKS,
+} from "../domain/clipLength";
 import { clipContentSchema, clipSchema, type NoteEvent } from "../domain/entities";
 import { ID_PREFIXES, padIdSchema } from "../domain/ids";
 import {
@@ -36,8 +41,16 @@ import {
 } from "../domain/parameters";
 import { durationTickSchema, tickSchema } from "../domain/time";
 import type { AskOption, AssistantAsk } from "./ask";
+import {
+  type DrumSteps,
+  drumStepsSchema,
+  expandDrumSteps,
+  isStepEntry,
+  stepNoteEvent,
+} from "./drumSteps";
 import { NEW_ID_COUNTER_DIGITS } from "./prompt";
 import type { AssistantToolCall } from "./protocol";
+import type { RecommendationTargets } from "./recommendationTargets";
 
 /** What the tools say a note is, wherever they take one. */
 export const COMPACT_NOTE_DESCRIPTION =
@@ -70,6 +83,21 @@ export const compactClipSchema = clipSchema.extend({
   ]),
 });
 
+/**
+ * `clip_create`'s input as the model is offered it with the `drumStepStrings`
+ * tactic on (GRV-140): a note is a compact note or a drum pad's step string.
+ */
+export const compactClipWithStepsSchema = clipSchema.extend({
+  content: z.discriminatedUnion("kind", [
+    z.strictObject({
+      kind: z.literal("notes"),
+      events: z.array(z.union([compactNoteSchema, drumStepsSchema])),
+    }),
+    ...clipContentSchema.options.filter((option) => option.shape.kind.value !== "notes"),
+  ]),
+});
+export type { DrumSteps };
+
 /** `note_add`'s input as the model is offered it. */
 export const compactNoteAddSchema = z.strictObject({
   clipId: clipSchema.shape.id,
@@ -99,6 +127,8 @@ const GATEWAY_NOTE_DIGITS = NEW_ID_COUNTER_DIGITS - GATEWAY_NOTE_MARK.length;
 
 /** The most notes one turn may write: what the gateway's counter can number. */
 export const MAX_TURN_NOTES = 10 ** GATEWAY_NOTE_DIGITS - 1;
+
+const TOO_MANY_NOTES = `One proposal may write at most ${MAX_TURN_NOTES} notes; loop a short clip instead`;
 
 /**
  * The `index`th note ID the gateway mints in a turn given `stem`, from 1, in
@@ -161,6 +191,7 @@ const NOTE_FIELDS: Readonly<Record<string, (input: Record<string, unknown>) => N
       return {
         notes: content.events,
         path: "content.events",
+        clip: { trackId: input.trackId, lengthTicks: input.lengthTicks },
         write: (events) => ({ ...input, content: { ...content, events } }),
       };
     },
@@ -174,6 +205,8 @@ const NOTE_FIELDS: Readonly<Record<string, (input: Record<string, unknown>) => N
 type NotesAt = {
   readonly notes: unknown;
   readonly path: string;
+  /** The clip the notes go in, when the call makes it: what a step string fills. */
+  readonly clip?: { readonly trackId: unknown; readonly lengthTicks: unknown };
   readonly write: (notes: unknown[]) => Record<string, unknown>;
 } | null;
 
@@ -229,6 +262,21 @@ export interface NoteExpander {
 }
 
 /**
+ * What the expander needs to write out drum step strings (GRV-140): the
+ * tracks and pads the turn starts with, and how a call it accepts changes
+ * them (`withCreatedTargets`, handed in so this module needs nothing of
+ * `tools.ts`). Without it, step strings are not expanded at all: the tactic
+ * is off, and the tool's own schema refuses one.
+ */
+export interface StepStringOptions {
+  readonly targets: RecommendationTargets;
+  readonly track: (
+    targets: RecommendationTargets,
+    call: AssistantToolCall,
+  ) => RecommendationTargets;
+}
+
+/**
  * The expander for one turn: note IDs come from `stem` as every other new ID
  * the turn makes does, in a counter of their own ({@link gatewayNoteId}),
  * counted up across the turn in the order the calls are accepted, so the same
@@ -237,9 +285,15 @@ export interface NoteExpander {
 export function createNoteExpander(
   stem: string,
   mark: string = GATEWAY_NOTE_MARK,
+  stepStrings?: StepStringOptions,
 ): NoteExpander {
   const pattern = gatewayNotePattern(stem, mark);
   let counter = 0;
+  /** The tracks and pads a step string may name, as the accepted calls leave them. */
+  let targets = stepStrings?.targets ?? new Map();
+  /** Whether `note` is one the gateway writes out. */
+  const isCompact = (note: unknown) =>
+    Array.isArray(note) || (stepStrings !== undefined && isStepEntry(note));
   /** Note IDs the turn's calls hold, minted or the model's own. */
   const taken = new Set<string>();
   /** The note IDs the gateway has given out. */
@@ -269,7 +323,7 @@ export function createNoteExpander(
     expand(call, check) {
       const field = isRecord(call.input) ? NOTE_FIELDS[call.name] : undefined;
       const at = field && isRecord(call.input) ? field(call.input) : null;
-      if (!at || !Array.isArray(at.notes) || !at.notes.some(Array.isArray)) {
+      if (!at || !Array.isArray(at.notes) || !at.notes.some(isCompact)) {
         const refused = check?.(call) ?? null;
         if (refused !== null) return refusedCall(refused);
         return accept(call, []);
@@ -278,6 +332,41 @@ export function createNoteExpander(
       const noteIds: string[] = [];
       let next = counter;
       for (const [index, note] of at.notes.entries()) {
+        if (stepStrings !== undefined && isStepEntry(note)) {
+          const where = `${at.path}.${index}`;
+          if (!at.clip) {
+            return refusedCall(
+              `${where}: a step string goes in clip_create's content.events; ${call.name} takes notes as arrays`,
+            );
+          }
+          const { trackId } = at.clip;
+          const length = clipLengthTickSchema.safeParse(at.clip.lengthTicks);
+          if (!length.success) {
+            return refusedCall(
+              `lengthTicks: a clip is a whole number of ticks from 1 to ${MAX_CLIP_LENGTH_TICKS} (${MAX_CLIP_LENGTH_BARS} bars); its step strings fill it`,
+            );
+          }
+          const lengthTicks: number = length.data;
+          const track = typeof trackId === "string" ? trackId : "";
+          const expansion = expandDrumSteps(note, {
+            trackId: track,
+            lengthTicks,
+            pads: targets.get(track),
+            maxHits: MAX_TURN_NOTES - next,
+          });
+          if (!expansion.ok) {
+            const field = expansion.field === null ? "" : `.${expansion.field}`;
+            return refusedCall(`${where}${field}: ${expansion.reason}`);
+          }
+          for (const hit of expansion.hits) {
+            const free = nextFree(next);
+            if (free === null) return refusedCall(TOO_MANY_NOTES);
+            next = free.at;
+            noteIds.push(free.id);
+            events.push(stepNoteEvent(hit, free.id));
+          }
+          continue;
+        }
         if (!Array.isArray(note)) {
           events.push(note);
           continue;
@@ -291,11 +380,7 @@ export function createNoteExpander(
           );
         }
         const free = nextFree(next);
-        if (free === null) {
-          return refusedCall(
-            `One proposal may write at most ${MAX_TURN_NOTES} notes; loop a short clip instead`,
-          );
-        }
+        if (free === null) return refusedCall(TOO_MANY_NOTES);
         next = free.at;
         noteIds.push(free.id);
         events.push(noteEventOf(parsed.data, free.id));
@@ -319,6 +404,7 @@ export function createNoteExpander(
   ): ExpandedCall {
     for (const id of noteIds) minted.add(id);
     for (const id of [...noteIds, ...modelNoteIds(sent)]) taken.add(id);
+    if (stepStrings) targets = stepStrings.track(targets, call);
     return { ok: true, call, noteIds };
   }
 }
@@ -335,15 +421,26 @@ export function createNoteExpander(
  * call whose notes are not notes goes on as it came, and the browser refuses
  * that preview as it refuses any call that does not fit its tool.
  */
-export function expandAskPreviews(ask: AssistantAsk, stem: string): AssistantAsk {
+export function expandAskPreviews(
+  ask: AssistantAsk,
+  stem: string,
+  stepStrings?: StepStringOptions,
+): AssistantAsk {
   if (!ask.options.some((option) => option.sound?.kind === "preview")) return ask;
-  return { ...ask, options: ask.options.map((option) => expandPreview(option, stem)) };
+  return {
+    ...ask,
+    options: ask.options.map((option) => expandPreview(option, stem, stepStrings)),
+  };
 }
 
-function expandPreview(option: AskOption, stem: string): AskOption {
+function expandPreview(
+  option: AskOption,
+  stem: string,
+  stepStrings: StepStringOptions | undefined,
+): AskOption {
   const sound = option.sound;
   if (sound?.kind !== "preview") return option;
-  const notes = createNoteExpander(stem, PREVIEW_NOTE_MARK);
+  const notes = createNoteExpander(stem, PREVIEW_NOTE_MARK, stepStrings);
   const asCall = (call: (typeof sound.calls)[number]): AssistantToolCall => ({
     id: "preview",
     ...call,

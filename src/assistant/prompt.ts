@@ -127,6 +127,7 @@ import {
   TRACK_VOLUME,
 } from "../domain/parameters";
 import { TICKS_PER_BAR, TICKS_PER_QUARTER, TICKS_PER_SIXTEENTH } from "../domain/time";
+import { DEFAULT_STEP_TICKS, STEP_VELOCITY_SCALE } from "./drumSteps";
 import type { AssistantMemoryContext } from "./memory";
 import type { AssistantContextPayload, AssistantLibraryContext } from "./protocol";
 import type { ProviderTextBlock } from "./providerRequest";
@@ -225,14 +226,10 @@ function proposalRoom(oneResponse: boolean): string {
 }
 
 /**
- * The fixed prompt for a turn run with `tactics` (GRV-110): only
- * `oneResponseProposal` changes it (GRV-142), by how a proposal is built and
- * the room it is built in.
+ * The fixed prompt before any tactic's added lines: `oneResponseProposal`
+ * changes it (GRV-142), by how a proposal is built and the room it is built in.
  */
-export function assistantSystemPrompt(
-  tactics: Pick<TacticValues, "oneResponseProposal"> = TACTIC_DEFAULTS,
-): string {
-  const oneResponse = tactics.oneResponseProposal === "on";
+function basePrompt(oneResponse: boolean): string {
   return `You are ${ASSISTANT_NAME}, the producer's AI producer inside Groove, a browser-based music production tool. Call yourself ${ASSISTANT_NAME}, never "the assistant".
 
 You help with the song that is open: its arrangement, its parts, its sounds and its mix. Be brief and concrete, and talk like a producer in the room rather than a manual.
@@ -311,9 +308,6 @@ When memory names a question in "askLater", it is one they skipped when you firs
 Always start the reply with a sentence saying what you are proposing or asking, before any tool call, so the producer sees it while the rest is written, and leave the why to explain_change. When you name a control, use the name the producer sees, the track's or device's name and the control ("Bass volume", "Compressor threshold"), and name only controls your proposal changes. Name a feature the way the producer sees it ("the Library", "quantize"), never by a tool's name: your tool names are not part of Groove. Answer a question about the app itself in a few sentences, not a long list.`;
 }
 
-/** The fixed prompt production sends: every tactic at its default. */
-export const ASSISTANT_SYSTEM_PROMPT = assistantSystemPrompt();
-
 /**
  * The rules many tool descriptions repeat, said once (GRV-146). Part of the
  * `toolText` tactic: the first system block carries them only when the tools'
@@ -330,6 +324,41 @@ These hold for every tool, and the tools' own descriptions do not repeat them.
 - track_create, clip_create and placement_create each take one entity, its fields at the top level. A track's clips and their placements are separate calls after it, in the same reply, and a clip plays only once placed.
 - A new note is an array with no ID: [startTicks, pitch, durationTicks, velocity], with an optional fifth number for its probability; a drum hit has its pad's ID in place of the pitch. Only notes_duplicate's newIds takes note IDs you make.
 - A duplicate is a create with new IDs: a copy of the track, clip or notes under fresh IDs, then copies of what it holds.`;
+
+/**
+ * What the prompt says of drum step strings, only with the `drumStepStrings`
+ * tactic on (GRV-140): a bullet under "How the tools address things", after
+ * the one on compact notes.
+ */
+export const DRUM_STEP_STRINGS_LINE = `- A drum pad's part in clip_create may instead be one step string in content.events, {padId, steps, stepTicks, velocity}: one character per step, x a hit, X an accent, o a ghost, . a rest, e.g. {"padId": "pad_...", "steps": "x...x...x...x..."} for four on the floor. stepTicks is the step (default ${DEFAULT_STEP_TICKS}, a sixteenth; ${TICKS_PER_SIXTEENTH * 2} an eighth, ${TICKS_PER_SIXTEENTH / 2} a 32nd, ${TICKS_PER_QUARTER / 6} a sixteenth triplet), and ${STEP_VELOCITY_SCALE}. The string repeats from the clip's start to its end, so write one bar, never more than the clip; prefer it to arrays for a drum pattern on a grid, one string per pad.`;
+
+/** Where {@link DRUM_STEP_STRINGS_LINE} goes: before the bullet on parameter_set. */
+const STEP_STRINGS_BEFORE = "\n- parameter_set takes the full parameter ID";
+
+/**
+ * The fixed prompt for a turn run with `tactics` (GRV-110):
+ * `oneResponseProposal` changes how a proposal is built (GRV-142) and
+ * `drumStepStrings` adds {@link DRUM_STEP_STRINGS_LINE} (GRV-140). A tactic
+ * left out is at its default.
+ */
+export function assistantSystemPrompt(
+  tactics: Partial<
+    Pick<TacticValues, "oneResponseProposal" | "drumStepStrings">
+  > = TACTIC_DEFAULTS,
+): string {
+  const prompt = basePrompt(
+    (tactics.oneResponseProposal ?? TACTIC_DEFAULTS.oneResponseProposal) === "on",
+  );
+  if ((tactics.drumStepStrings ?? TACTIC_DEFAULTS.drumStepStrings) !== "on")
+    return prompt;
+  return prompt.replace(
+    STEP_STRINGS_BEFORE,
+    `\n${DRUM_STEP_STRINGS_LINE}${STEP_STRINGS_BEFORE}`,
+  );
+}
+
+/** The fixed prompt production sends: every tactic at its default. */
+export const ASSISTANT_SYSTEM_PROMPT = assistantSystemPrompt();
 
 /** How to make this turn's new IDs from `stem`, worked through with examples. */
 export function newIdInstructions(stem: string): string {
@@ -363,7 +392,10 @@ export function buildSystemBlocks(
   library?: AssistantLibraryContext,
   idStem: string = createIdStem(),
   memory?: AssistantMemoryContext,
-  tactics: Pick<TacticValues, "oneResponseProposal" | "toolText"> = TACTIC_DEFAULTS,
+  tactics: Pick<
+    TacticValues,
+    "oneResponseProposal" | "toolText" | "drumStepStrings"
+  > = TACTIC_DEFAULTS,
 ): ProviderTextBlock[] {
   const prompt = assistantSystemPrompt(tactics);
   const blocks: ProviderTextBlock[] = [

@@ -22,7 +22,11 @@ import {
 
 describe("the assistant's tool set", () => {
   it("is versioned", () => {
-    expect(ASSISTANT_TOOLSET_VERSION).toBe(9);
+    // At least the version GRV-140 shipped with, not equal to it: a tactic
+    // that alters the tools bumps it when its experiment wins (experimentPr.ts),
+    // and that PR must pass without editing this test.
+    expect(Number.isInteger(ASSISTANT_TOOLSET_VERSION)).toBe(true);
+    expect(ASSISTANT_TOOLSET_VERSION).toBeGreaterThanOrEqual(9);
   });
 
   it("maps every Appendix A family the PRD named", () => {
