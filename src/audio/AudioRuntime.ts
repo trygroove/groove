@@ -98,6 +98,13 @@ export interface AudioHost {
   getSampleRate(): number;
   resume(): Promise<void>;
   openProjectScope(ownerId: string): AudioProjectScope;
+  /**
+   * The real-time context's state as the browser reports it (`running`,
+   * `suspended`, `closed`, `interrupted`), or `uninitialized` before there is
+   * one. Read only to describe a failure to error monitoring (GRV-55);
+   * optional so a fake host need not have one.
+   */
+  contextState?(): string;
 }
 
 /**
@@ -121,6 +128,11 @@ export class AudioRuntime implements AudioHost {
 
   getState(): AudioRuntimeState {
     return this.state;
+  }
+
+  contextState(): string {
+    if (this.context) return this.context.state;
+    return this.state === "closed" ? "closed" : "uninitialized";
   }
 
   /**

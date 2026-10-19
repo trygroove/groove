@@ -79,11 +79,39 @@ export function audioStartFailureMessage(code: string): CapabilityMessage {
     case "not_supported":
     case "context_unavailable":
       return CAPABILITY_MESSAGES.web_audio;
+    case "context_closed":
+      // The context closed under us: most often the output device went away
+      // (headphones unplugged, an interface switched off) (GRV-55).
+      return {
+        title: "Sound stopped",
+        detail:
+          "The browser's audio output went away, as it does when headphones or an audio interface are unplugged.",
+        action:
+          "Check your speakers or headphones are connected, then press Play. If it stays silent, reload the page; your edits are kept.",
+      };
     default:
       return {
         title: "Sound didn't start",
         detail: "The browser's audio engine failed to start.",
-        action: "Press Play to try again. If it still fails, reload the page.",
+        action:
+          "Press Play to try again, with your speakers or headphones connected. If it still fails, reload the page; your edits are kept.",
       };
   }
+}
+
+/**
+ * Why some of the project's sounds are silent (GRV-55): they could not be
+ * loaded or decoded to play. The project still names them; only this visit
+ * to the editor is without them.
+ */
+export function soundLoadFailureMessage(count: number): CapabilityMessage {
+  const one = count === 1;
+  return {
+    title: one ? "A sound didn't load" : `${count} sounds didn't load`,
+    detail: one
+      ? "One of this project's sounds couldn't be loaded, so it will stay silent."
+      : "Some of this project's sounds couldn't be loaded, so they will stay silent.",
+    action:
+      "Check your connection, then reload the page to try again; your edits are kept.",
+  };
 }

@@ -14,6 +14,7 @@ import { createReferenceProject, createSliceFixtureProject } from "../domain/fix
 import { type AssetId, createSeededIdFactory, type TrackId } from "../domain/ids";
 import { TICKS_PER_BAR } from "../domain/time";
 import type { LibraryAsset } from "../library/manifest";
+import { expectNoContent, recordErrorReports } from "../testing/errorReports";
 import { memoryStorage } from "../testing/storage";
 
 installWebAudioGlobals();
@@ -106,6 +107,60 @@ describe("useProjectAudio", () => {
     const events = transport.named("audio_start_failed");
     expect(events).toHaveLength(1);
     expect(events[0]?.params.error_code).toBeDefined();
+  });
+
+  it("reports a failed start to monitoring with the context's state, scrubbed (GRV-55)", async () => {
+    const { analytics, transport } = fakeAnalytics();
+    const recorded = recordErrorReports();
+    const blocked = new Error("The play() request on My Song was blocked");
+    blocked.name = "NotAllowedError";
+    const runtime: AudioHost = {
+      ...unreachableAudioHost(() => Promise.reject(blocked)),
+      contextState: () => "suspended",
+    };
+
+    const { result } = renderHook(
+      () =>
+        useProjectAudioModule.useProjectAudio(() => null, {
+          runtime,
+          analytics,
+          reportError: recorded.report,
+        }),
+      {},
+    );
+    await result.play();
+
+    expect(recorded.reports).toHaveLength(1);
+    const [payload] = recorded.payloads();
+    expect(payload.tags).toMatchObject({
+      area: "audio",
+      error_code: "autoplay_blocked",
+      fatal: false,
+      audio_context_state: "suspended",
+    });
+    expect(transport.named("audio_start_failed")).toHaveLength(1);
+    expect(result.startFailure()?.code).toBe("autoplay_blocked");
+  });
+
+  it("reports a browser with no Web Audio as unavailable (GRV-55)", async () => {
+    const { analytics } = fakeAnalytics();
+    const recorded = recordErrorReports();
+    const { result } = renderHook(
+      () =>
+        useProjectAudioModule.useProjectAudio(() => null, {
+          runtime: unreachableAudioHost(() => Promise.resolve()),
+          analytics,
+          webAudioAvailable: false,
+          reportError: recorded.report,
+        }),
+      {},
+    );
+    await result.play();
+
+    expect(recorded.payloads()[0]?.tags).toMatchObject({
+      error_code: "not_supported",
+      audio_context_state: "unavailable",
+    });
   });
 
   it("toggle() plays then stops without a runtime that ever rejects", async () => {
@@ -634,6 +689,52 @@ describe("useProjectAudio", () => {
       expect(events).toHaveLength(1);
       expect(events[0]?.params.asset_type).toBe("loop");
       expect(events[0]?.params.error_code).toBeDefined();
+
+      cleanupHook();
+    });
+
+    it("reports a sound that cannot load to monitoring, scrubbed, and says how many are silent (GRV-55)", async () => {
+      const { analytics, transport } = fakeAnalytics();
+      const recorded = recordErrorReports();
+      const runtime = AudioRuntimeModule.getAudioRuntime();
+      const base = loopProject();
+      const project: Project = {
+        ...base,
+        song: {
+          ...base.song,
+          assets: base.song.assets.map((asset) =>
+            asset.kind === "loop" ? { ...asset, url: null } : asset,
+          ),
+        },
+      };
+      const loop = project.song.assets.find((asset) => asset.kind === "loop");
+      if (!loop) throw new Error("expected a loop asset");
+
+      const { result, cleanup: cleanupHook } = renderHook(
+        () =>
+          useProjectAudioModule.useProjectAudio(() => project, {
+            runtime,
+            analytics,
+            reportError: recorded.report,
+          }),
+        {},
+      );
+      await vi.waitFor(() => expect(recorded.reports).toHaveLength(1));
+
+      const [payload] = recorded.payloads();
+      expect(payload.tags).toMatchObject({ area: "audio", fatal: false });
+      expect(payload.tags?.error_code).toBe(
+        transport.named("asset_load_failed")[0]?.params.error_code,
+      );
+      expect(payload.tags?.audio_context_state).toBeDefined();
+      expectNoContent(payload, [
+        project.metadata.name,
+        loop.name,
+        loop.storageRef ?? "storage-ref",
+        ...project.song.tracks.map((track) => track.name),
+        ...base.song.assets.flatMap((asset) => (asset.url ? [asset.url] : [])),
+      ]);
+      expect(result.loadFailure()).toEqual({ count: 1, attempt: 1 });
 
       cleanupHook();
     });
