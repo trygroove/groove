@@ -795,7 +795,7 @@ curl -s "https://trygroove.app/_build/assets/<chunk>.js.map" | head -c 60
 
 The first must return JavaScript. The second must return the SPA shell — `<!DOCTYPE html>...` — and **not** JSON beginning `{"version":3,...`.
 
-**Do not test this with `curl -sI` and a status code.** `firebase.json` rewrites `**` to `/index.html`, so *every* path that does not exist on Hosting returns `200 text/html`, including `/nope-does-not-exist.map`. A 200 here is therefore expected and proves nothing either way; only the body distinguishes a served map from the catch-all. An earlier version of this check compared status codes, and would have reported a leak on every correct deploy. If the body really is a source map, `hosting.ignore` (`**/*.map`) is not doing its job and the deploy should be treated as a leak.
+A missing file-like path returns `404` (GRV-137: `firebase.json` rewrites only extensionless paths to the app shell), so a `404` for the `.map` is the expected answer. Before that change every missing path returned `200 text/html`, and an earlier version of this check that compared status codes would have reported a leak on every correct deploy; the body is still the reliable signal. If the body really is a source map, `hosting.ignore` (`**/*.map`) is not doing its job and the deploy should be treated as a leak.
 
 ### Verifying assistant transcript retention against a deployed build
 

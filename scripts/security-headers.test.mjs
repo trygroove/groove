@@ -43,6 +43,17 @@ describe("firebase.json's security headers", () => {
     expect(destinations).toEqual(["/index.html", "/app.html"]);
   });
 
+  it("serve the app shell to extensionless paths only, so a missing asset is a 404 (GRV-137)", () => {
+    const [, deepLink] = firebaseJson.hosting.rewrites;
+    const matches = new RegExp(deepLink.regex);
+    for (const path of ["/projects", "/projects/prj_abc-123_x/arrangement", "/welcome"]) {
+      expect(matches.test(path), path).toBe(true);
+    }
+    for (const path of ["/assets/firestoreProjectRepository-CurEdI1i.js", "/x.map"]) {
+      expect(matches.test(path), path).toBe(false);
+    }
+  });
+
   it("enforce a policy with no 'unsafe-inline' or 'unsafe-eval' anywhere", () => {
     expect(csp()).not.toMatch(/unsafe-inline|unsafe-eval|unsafe-hashes/);
     expect(served[0].headers.map((entry) => entry.key)).not.toContain(
