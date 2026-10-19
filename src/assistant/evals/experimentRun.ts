@@ -24,6 +24,12 @@
  * - **The verdict.** `win` when there is something to land: an improve that
  *   won on train and on held-out, or cuts that kept together (the held PR
  *   applies both). Otherwise the improves' `no win` or `inconclusive`.
+ * - **Check 6.** An experiment that holds check 6 also runs its check-6
+ *   block (`Experiment.flattening`) in every phase, the extreme cases of the
+ *   phase's split beside their conventional partners, interleaved with the
+ *   rest. Those turns make a report of their own per variant, which only the
+ *   check-6 guardrail reads: the goal and every other guardrail see the
+ *   phase's own cases alone, as in an experiment without it.
  * - **The budget.** Spend is the sum of every finished turn's cost from its
  *   usage and the model's price (`budget.ts`). No turn starts that would be
  *   expected to take it past the budget, and an experiment stopped short
@@ -65,6 +71,7 @@ import {
   isAuthError,
   runCaseTurn,
 } from "./run";
+import type { EvalSplit } from "./splits";
 import {
   analyzeVariant,
   type CutVerdict,
@@ -128,6 +135,14 @@ export interface ExperimentPhase {
   readonly runsPerCase: number;
   /** Each variant's report, by name, the control's first. */
   readonly reports: Readonly<Record<string, EvalReport>>;
+  /**
+   * The check-6 block's cases and each variant's report on them, which only
+   * the check-6 guardrail reads; null when the experiment does not hold it.
+   */
+  readonly flattening: {
+    readonly caseIds: readonly string[];
+    readonly reports: Readonly<Record<string, EvalReport>>;
+  } | null;
   /** Why it stopped before every turn ran, or null when it did not. */
   readonly stopped: string | null;
 }
@@ -137,6 +152,11 @@ export interface PhaseOptions {
   /** Unique within the experiment; the phase's name when absent. */
   readonly label?: string;
   readonly cases: readonly EvalCase[];
+  /**
+   * The check-6 block run beside `cases` (a case in both runs once), judged
+   * on its own; none when absent or empty.
+   */
+  readonly flattening?: readonly EvalCase[];
   readonly runs: number;
   readonly variants: readonly ExperimentVariant[];
   readonly runTurn: ExperimentTurnRunner;
@@ -165,6 +185,15 @@ export function interleave(
     ).flat(),
   );
 }
+
+/** The split each phase runs on, which picks its check-6 block. */
+const PHASE_SPLITS: Readonly<Record<ExperimentPhaseName, EvalSplit>> = {
+  train: "train",
+  "combined-train": "train",
+  gate: "heldout",
+  "cut-gate": "heldout",
+  "combined-gate": "heldout",
+};
 
 /**
  * One turn, a throw included: a turn runner that throws gives an errored
@@ -199,7 +228,9 @@ async function safeTurn(
 /** Runs one phase, every variant in one interleaved pass, inside the budget. */
 export async function runPhase(options: PhaseOptions): Promise<ExperimentPhase> {
   const now = options.now ?? Date.now;
-  const jobs = interleave(options.cases, options.runs, options.variants);
+  const block = options.flattening ?? [];
+  const extra = block.filter((entry) => !options.cases.includes(entry));
+  const jobs = interleave([...options.cases, ...extra], options.runs, options.variants);
   const records: (EvalRecord | undefined)[] = new Array(jobs.length);
   let next = 0;
   let inFlight = 0;
@@ -232,31 +263,38 @@ export async function runPhase(options: PhaseOptions): Promise<ExperimentPhase> 
   );
   await Promise.all(Array.from({ length: lanes }, worker));
   const generatedAt = new Date(now()).toISOString();
-  const reports = Object.fromEntries(
-    options.variants.map((variant) => [
-      variant.name,
-      buildReport(
-        jobs.flatMap((job, index) => {
-          const record = records[index];
-          return job.variant === variant && record ? [record] : [];
-        }),
-        options.cases,
-        {
-          generatedAt,
-          model: options.model.id,
-          tactics: variant.overrides as TacticOverrides,
-          runsPerCase: options.runs,
-          aborted: stopped,
-        },
-      ),
-    ]),
-  );
+  const reportsOn = (cases: readonly EvalCase[]) =>
+    Object.fromEntries(
+      options.variants.map((variant) => [
+        variant.name,
+        buildReport(
+          jobs.flatMap((job, index) => {
+            const record = records[index];
+            return job.variant === variant && record && cases.includes(job.evalCase)
+              ? [record]
+              : [];
+          }),
+          cases,
+          {
+            generatedAt,
+            model: options.model.id,
+            tactics: variant.overrides as TacticOverrides,
+            runsPerCase: options.runs,
+            aborted: stopped,
+          },
+        ),
+      ]),
+    );
   return {
     phase: options.phase,
     label: options.label ?? options.phase,
     caseIds: options.cases.map((entry) => entry.id),
     runsPerCase: options.runs,
-    reports,
+    reports: reportsOn(options.cases),
+    flattening:
+      block.length === 0
+        ? null
+        : { caseIds: block.map((entry) => entry.id), reports: reportsOn(block) },
     stopped,
   };
 }
@@ -361,6 +399,7 @@ function analyses(
   variants: readonly ExperimentVariant[],
 ): VariantAnalysis[] {
   const control = phase.reports[CONTROL];
+  const block = phase.flattening?.reports;
   const options = {
     focus: experiment.focus,
     guardrailsOnly: judgedOnGuardrailsAlone(experiment, phase.phase),
@@ -374,7 +413,12 @@ function analyses(
         control,
         phase.reports[variant.name],
         experiment.guardrails,
-        options,
+        {
+          ...options,
+          flattening: block
+            ? { control: block[CONTROL], variant: block[variant.name] }
+            : null,
+        },
       ),
     );
 }
@@ -479,6 +523,7 @@ export async function runExperiment(
       phase: name,
       label,
       cases,
+      flattening: experiment.flattening[PHASE_SPLITS[name]],
       runs,
       variants,
       onRecord: (variant, record) => options.onRecord?.(label, variant, record),

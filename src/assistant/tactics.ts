@@ -49,6 +49,13 @@ export const TACTICS = {
     default: "low",
     alters: ["request"],
   },
+  drumStepStrings: {
+    description:
+      "Whether clip_create on a drum machine may write a pad's part as one repeating step string (x hit, X accent, o ghost, . rest) the gateway writes out as notes (GRV-140).",
+    values: ["off", "on"],
+    default: "off",
+    alters: ["prompt", "tools", "expansion"],
+  },
   toolText: {
     description:
       "How much text the tool definitions carry (GRV-146): `full` is every description as written; `moderate` and `aggressive` trim each tool's text and move the rules many tools repeat into one shared block in the system prompt.",
@@ -62,6 +69,13 @@ export const TACTICS = {
     values: ["off", "on"],
     default: "off",
     alters: ["prompt", "expansion"],
+  },
+  patternGenerators: {
+    description:
+      "Whether clip_create may take a named pattern generator call (fourOnTheFloor, backbeat, hats, euclidean, arpeggio, chordStabs, bassRoot) in place of notes written out, which the gateway expands into notes (GRV-141).",
+    values: ["off", "on"],
+    default: "off",
+    alters: ["prompt", "tools", "expansion"],
   },
   guidedBuild: {
     description:

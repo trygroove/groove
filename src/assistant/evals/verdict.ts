@@ -186,6 +186,7 @@ export function judgeGoal(
 export type GuardrailId =
   | "applies"
   | "expectMatch"
+  | "notFlattened"
   | "overall"
   | "caseRegressions"
   | "maxTokens"
@@ -269,6 +270,95 @@ export function caseRegressions(control: EvalReport, variant: EvalReport): strin
     const after = majority(variant.records.filter((record) => record.caseId === caseId));
     return before === "pass" && after === "fail";
   });
+}
+
+/**
+ * The runs check 6 is judged from: the control's and the variant's reports
+ * on a phase's check-6 block (`Experiment.flattening`), which only this
+ * guardrail reads.
+ */
+export interface FlatteningReports {
+  readonly control: EvalReport;
+  readonly variant: EvalReport;
+}
+
+/** A case's check-6 runs: how many passed of how many judged. */
+function notFlattenedTally(
+  report: EvalReport,
+  caseId: string,
+): { pass: number; judged: number } {
+  let pass = 0;
+  let judged = 0;
+  for (const record of report.records) {
+    if (record.caseId !== caseId || record.error) continue;
+    const status = record.checks.notFlattened?.status;
+    if (status === "pass") pass += 1;
+    if (status === "pass" || status === "fail") judged += 1;
+  }
+  return { pass, judged };
+}
+
+/**
+ * Check 6 as a guardrail (GRV-141): no extreme case the control kept
+ * unflattened in most of its runs is flattened in most of the variant's.
+ *
+ * It is a case-level rule, like {@link caseRegressions}, rather than a point
+ * limit: the block holds two or three extreme cases at three to five runs
+ * each, so one run is 7 to 17 points of the rate, and any limit tighter than
+ * checks 1 and 8's 3 points would refuse a variant over a single noisy run.
+ * A majority absorbs one such run and still refuses an extreme request the
+ * variant answers conventionally most of the time.
+ *
+ * A guardrail with nothing to judge does not hold: with no extreme case
+ * judged on both sides (no block ran, or every such turn errored or made no
+ * proposal) it reports not measured and fails.
+ */
+export function notFlattenedGuardrail(
+  flattening: FlatteningReports | null | undefined,
+): GuardrailResult {
+  const label =
+    "Extreme is not flattened (check 6): no extreme case flattened in most runs";
+  if (!flattening) {
+    return {
+      id: "notFlattened",
+      label,
+      pass: false,
+      detail: "not measured: the check-6 block did not run",
+    };
+  }
+  const caseIds = [
+    ...new Set(
+      [...flattening.control.records, ...flattening.variant.records]
+        .filter((record) => record.checks.notFlattened !== undefined)
+        .map((record) => record.caseId),
+    ),
+  ];
+  const rows = caseIds.map((caseId) => {
+    const before = notFlattenedTally(flattening.control, caseId);
+    const after = notFlattenedTally(flattening.variant, caseId);
+    const measured = before.judged > 0 && after.judged > 0;
+    const flattened =
+      measured &&
+      before.pass * 2 > before.judged &&
+      (after.judged - after.pass) * 2 > after.judged;
+    return { caseId, before, after, measured, flattened };
+  });
+  const measured = rows.filter((row) => row.measured);
+  const flattened = rows.filter((row) => row.flattened);
+  return {
+    id: "notFlattened",
+    label,
+    pass: measured.length > 0 && flattened.length === 0,
+    detail:
+      measured.length === 0
+        ? "not measured: no extreme case was judged on both sides"
+        : rows
+            .map(
+              (row) =>
+                `\`${row.caseId}\` ${row.before.pass}/${row.before.judged} to ${row.after.pass}/${row.after.judged} unflattened${row.flattened ? " (flattened)" : row.measured ? "" : " (not measured)"}`,
+            )
+            .join("; "),
+  };
 }
 
 function share(count: number, of: number): number {
@@ -372,6 +462,7 @@ export function checkGuardrails(
   variant: EvalReport,
   limits: ExperimentGuardrails,
   focus: readonly string[] | null = null,
+  flattening?: FlatteningReports | null,
 ): GuardrailResult[] {
   const overallPass = withinPoints(
     control.scorecard.headline.overall,
@@ -396,6 +487,7 @@ export function checkGuardrails(
       variant,
       limits.maxCheckDropPoints,
     ),
+    ...(limits.holdNotFlattened ? [notFlattenedGuardrail(flattening)] : []),
     {
       id: "overall",
       label: `Overall pass rate within ${limits.maxOverallDropPoints} points`,
@@ -456,6 +548,8 @@ export interface AnalyzeOptions {
    * out. An improve wins, and a cut keeps, when every guardrail holds.
    */
   readonly guardrailsOnly?: boolean;
+  /** The phase's check-6 block (GRV-141), for an experiment that holds check 6. */
+  readonly flattening?: FlatteningReports | null;
 }
 
 /** The verdict when only the guardrails can say anything. */
@@ -490,7 +584,7 @@ export function analyzeVariant(
   }
   const focus = options.focus ?? null;
   const goalResult = judgeGoal(goal, control, report, focus);
-  const guardrails = checkGuardrails(control, report, limits, focus);
+  const guardrails = checkGuardrails(control, report, limits, focus, options.flattening);
   const failed = guardrails.filter((guardrail) => !guardrail.pass);
   const base = {
     variant: variant.name,
@@ -551,7 +645,7 @@ export function analyzeCut(
 ): VariantAnalysis {
   const focus = options.focus ?? null;
   const goalResult = judgeGoal(goal, control, report, focus);
-  const guardrails = checkGuardrails(control, report, limits, focus);
+  const guardrails = checkGuardrails(control, report, limits, focus, options.flattening);
   const failed = guardrails.filter((guardrail) => !guardrail.pass);
   const margin =
     goalResult.control === null

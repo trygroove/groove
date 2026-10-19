@@ -127,6 +127,9 @@ import {
   TRACK_VOLUME,
 } from "../domain/parameters";
 import { TICKS_PER_BAR, TICKS_PER_QUARTER, TICKS_PER_SIXTEENTH } from "../domain/time";
+import { DEFAULT_STEP_TICKS, STEP_VELOCITY_SCALE } from "./drumSteps";
+import { MAX_VARIATION } from "./generators";
+import { HAT_RATES } from "./generators/drums";
 import type { AssistantMemoryContext } from "./memory";
 import type { AssistantContextPayload, AssistantLibraryContext } from "./protocol";
 import type { ProviderTextBlock } from "./providerRequest";
@@ -231,22 +234,14 @@ function proposalRoom(oneResponse: boolean): string {
  */
 export const GUIDED_BUILD_RULE = `A large, open request (a whole track or song, "develop this", "arrange this", "make it a full tune") starts a process the producer wants to be guided through, so build it with them over several short proposals rather than all in one. The first proposal is the smallest step that plays at once: from a loop or clips the song already has, the structure, which is the sections laid out as placements that reuse those clips (parts left out for builds and drops) plus any new tracks the plan needs, empty; from an empty song, the core loop, which is the few parts the request names, a few bars long. Never leave a clip without notes in any proposal: a part not written yet has no clip until its own step. In the response that completes each proposal, call explain_change and then ask_producer together: ask_producer is the one call allowed after explain_change, and the question offers the next steps as its options ("Write the intro", "Write the drop's new bass", "Add a breakdown"), each without a preview, with the one you would do next suggested. When the producer picks one, or says their own, write that one section or step as one proposal, then offer the next steps the same way, until they stop or the list is done. Offering those next steps after carrying out the step they chose is not asking again: "without asking again" means not asking the question they just answered once more, so every guided proposal still ends with explain_change and then ask_producer. A small or specific request ("add a clap on 2 and 4") is not one of these: propose all of it at once, as usual.`;
 
-/** The tactics the fixed prompt reads; `guidedBuild` left out is production's. */
-export type PromptTactics = Pick<TacticValues, "oneResponseProposal"> &
-  Partial<Pick<TacticValues, "guidedBuild">>;
-
 /**
- * The fixed prompt for a turn run with `tactics` (GRV-110): only
- * `oneResponseProposal` changes it (GRV-142), by how a proposal is built and
- * the room it is built in, and `guidedBuild` (GRV-145), by a paragraph on
- * building a large, open request over several proposals.
+ * The fixed prompt before any tactic's added lines: `oneResponseProposal`
+ * changes it (GRV-142), by how a proposal is built and the room it is built in,
+ * and `guidedBuild` (GRV-145), by a paragraph on building a large, open
+ * request over several proposals.
  */
-export function assistantSystemPrompt(tactics: PromptTactics = TACTIC_DEFAULTS): string {
-  const oneResponse = tactics.oneResponseProposal === "on";
-  const guided =
-    (tactics.guidedBuild ?? TACTIC_DEFAULTS.guidedBuild) === "on"
-      ? `\n\n${GUIDED_BUILD_RULE}`
-      : "";
+function basePrompt(oneResponse: boolean, guidedBuild: boolean): string {
+  const guided = guidedBuild ? `\n\n${GUIDED_BUILD_RULE}` : "";
   return `You are ${ASSISTANT_NAME}, the producer's AI producer inside Groove, a browser-based music production tool. Call yourself ${ASSISTANT_NAME}, never "the assistant".
 
 You help with the song that is open: its arrangement, its parts, its sounds and its mix. Be brief and concrete, and talk like a producer in the room rather than a manual.
@@ -325,9 +320,6 @@ When memory names a question in "askLater", it is one they skipped when you firs
 Always start the reply with a sentence saying what you are proposing or asking, before any tool call, so the producer sees it while the rest is written, and leave the why to explain_change. When you name a control, use the name the producer sees, the track's or device's name and the control ("Bass volume", "Compressor threshold"), and name only controls your proposal changes. Name a feature the way the producer sees it ("the Library", "quantize"), never by a tool's name: your tool names are not part of Groove. Answer a question about the app itself in a few sentences, not a long list.`;
 }
 
-/** The fixed prompt production sends: every tactic at its default. */
-export const ASSISTANT_SYSTEM_PROMPT = assistantSystemPrompt();
-
 /**
  * The rules many tool descriptions repeat, said once (GRV-146). Part of the
  * `toolText` tactic: the first system block carries them only when the tools'
@@ -344,6 +336,65 @@ These hold for every tool, and the tools' own descriptions do not repeat them.
 - track_create, clip_create and placement_create each take one entity, its fields at the top level. A track's clips and their placements are separate calls after it, in the same reply, and a clip plays only once placed.
 - A new note is an array with no ID: [startTicks, pitch, durationTicks, velocity], with an optional fifth number for its probability; a drum hit has its pad's ID in place of the pitch. Only notes_duplicate's newIds takes note IDs you make.
 - A duplicate is a create with new IDs: a copy of the track, clip or notes under fresh IDs, then copies of what it holds.`;
+
+/**
+ * What the prompt says of drum step strings, only with the `drumStepStrings`
+ * tactic on (GRV-140): a bullet under "How the tools address things", after
+ * the one on compact notes.
+ */
+export const DRUM_STEP_STRINGS_LINE = `- A drum pad's part in clip_create may instead be one step string in content.events, {padId, steps, stepTicks, velocity}: one character per step, x a hit, X an accent, o a ghost, . a rest, e.g. {"padId": "pad_...", "steps": "x...x...x...x..."} for four on the floor. stepTicks is the step (default ${DEFAULT_STEP_TICKS}, a sixteenth; ${TICKS_PER_SIXTEENTH * 2} an eighth, ${TICKS_PER_SIXTEENTH / 2} a 32nd, ${TICKS_PER_QUARTER / 6} a sixteenth triplet), and ${STEP_VELOCITY_SCALE}. The string repeats from the clip's start to its end, so write one bar, never more than the clip; prefer it to arrays for a drum pattern on a grid, one string per pad.`;
+
+/**
+ * Where {@link DRUM_STEP_STRINGS_LINE} and {@link PATTERN_GENERATORS_LINE}
+ * go: before the bullet on parameter_set.
+ */
+const STEP_STRINGS_BEFORE = "\n- parameter_set takes the full parameter ID";
+
+/**
+ * What the prompt says of pattern generators, only with the
+ * `patternGenerators` tactic on (GRV-141): a bullet under "How the tools
+ * address things", before the one on step strings when that is there too.
+ */
+export const PATTERN_GENERATORS_LINE = `- For a common pattern, an entry in clip_create's content.events may be a pattern generator call instead of its notes, and Groove writes the notes, repeating them to fill the clip: on a drum pad fourOnTheFloor, backbeat, hats (rate ${HAT_RATES.join(" | ")}) or euclidean (hits, steps, rotate, stepTicks), e.g. {"generator": "euclidean", "padId": "pad_...", "hits": 5, "steps": 16, "rotate": 2}; on a pitched track arpeggio (direction, rate, octaves), chordStabs or bassRoot (rhythm, x a hit and . a rest a step; octave) over chords you name with their bars, e.g. {"generator": "bassRoot", "chords": [["Am", 1], ["F", 1], ["C", 1], ["G", 1]], "rhythm": "x..x..x.", "octave": 2}. variation, 0 to ${MAX_VARIATION}, loosens it. Use generators for the scaffolding, choose their parameters for this song, and write out the parts that make it its own; add, edit or remove notes after as usual.`;
+
+/** The tactics the fixed prompt reads; one left out is production's. */
+export type PromptTactics = Partial<
+  Pick<
+    TacticValues,
+    "oneResponseProposal" | "drumStepStrings" | "patternGenerators" | "guidedBuild"
+  >
+>;
+
+/**
+ * The fixed prompt for a turn run with `tactics` (GRV-110):
+ * `oneResponseProposal` changes how a proposal is built (GRV-142),
+ * `drumStepStrings` adds {@link DRUM_STEP_STRINGS_LINE} (GRV-140) and
+ * `patternGenerators` adds {@link PATTERN_GENERATORS_LINE} (GRV-141) and
+ * `guidedBuild` adds {@link GUIDED_BUILD_RULE} (GRV-145). A tactic left out is
+ * at its default.
+ */
+export function assistantSystemPrompt(tactics: PromptTactics = TACTIC_DEFAULTS): string {
+  const prompt = basePrompt(
+    (tactics.oneResponseProposal ?? TACTIC_DEFAULTS.oneResponseProposal) === "on",
+    (tactics.guidedBuild ?? TACTIC_DEFAULTS.guidedBuild) === "on",
+  );
+  const added = [
+    ...((tactics.patternGenerators ?? TACTIC_DEFAULTS.patternGenerators) === "on"
+      ? [PATTERN_GENERATORS_LINE]
+      : []),
+    ...((tactics.drumStepStrings ?? TACTIC_DEFAULTS.drumStepStrings) === "on"
+      ? [DRUM_STEP_STRINGS_LINE]
+      : []),
+  ];
+  if (added.length === 0) return prompt;
+  return prompt.replace(
+    STEP_STRINGS_BEFORE,
+    `\n${added.join("\n")}${STEP_STRINGS_BEFORE}`,
+  );
+}
+
+/** The fixed prompt production sends: every tactic at its default. */
+export const ASSISTANT_SYSTEM_PROMPT = assistantSystemPrompt();
 
 /** How to make this turn's new IDs from `stem`, worked through with examples. */
 export function newIdInstructions(stem: string): string {
@@ -379,7 +430,11 @@ export function buildSystemBlocks(
   memory?: AssistantMemoryContext,
   tactics: Pick<
     TacticValues,
-    "oneResponseProposal" | "toolText" | "guidedBuild"
+    | "oneResponseProposal"
+    | "toolText"
+    | "drumStepStrings"
+    | "patternGenerators"
+    | "guidedBuild"
   > = TACTIC_DEFAULTS,
 ): ProviderTextBlock[] {
   const prompt = assistantSystemPrompt(tactics);

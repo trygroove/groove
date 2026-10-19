@@ -10,7 +10,7 @@ import {
 } from "../../testing/scriptedAssistantProvider";
 import {
   ASSISTANT_PROMPT_VERSION,
-  ASSISTANT_SYSTEM_PROMPT,
+  assistantSystemPrompt,
   createIdStem,
   newId,
 } from "../prompt";
@@ -89,7 +89,9 @@ describe("runEvals", () => {
 
     // One request opens each turn; each then ends in a step of its own.
     expect(provider.requests.filter((sent) => !continuesTurn(sent))).toHaveLength(4);
-    expect(provider.requests[0].system[0].text).toBe(ASSISTANT_SYSTEM_PROMPT);
+    expect(provider.requests[0].system[0].text).toBe(
+      assistantSystemPrompt(TACTIC_DEFAULTS),
+    );
     expect(provider.requests[0].tools.length).toBeGreaterThan(0);
     expect(provider.requests[0].messages).toEqual([
       { role: "user", content: glue.request },
