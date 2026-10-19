@@ -8,14 +8,16 @@
  * - The **secondary** numbers are the cost of that score, for the whole run
  *   and per case: turn latency (p50/p95), time to the first streamed text,
  *   input, output and cache-read tokens, the estimated cost per turn from the
- *   model's price in `ASSISTANT_MODELS`, and how often a turn was cut off at
- *   `max_tokens` or refused.
+ *   model's price in `ASSISTANT_MODELS`, how often a turn was cut off at
+ *   `max_tokens` or refused, and the model calls a turn made (GRV-142).
  * - The **sets** (GRV-119): the headline again for each set of cases (the
  *   musical capability evals, the basic production actions), so each set
  *   reads as its own score beside the run's.
  * - The **heavy set** (GRV-131): the mean, over the heavy-output cases the
  *   run has, of each case's output tokens per turn, latency p50 and cost per
- *   turn: the three numbers an output-token lever is judged by.
+ *   turn: the three numbers an output-token lever is judged by; and of its
+ *   model calls per turn, mean and p95 (GRV-142), which say how many round
+ *   trips that latency is made of.
  * - {@link compareScorecards} sets each number beside a baseline's, with its
  *   delta and whether that is better or worse, set by set: a run of both sets
  *   compared with a baseline of one compares like with like.
@@ -61,6 +63,14 @@ export interface Percentiles {
   readonly p95: number | null;
 }
 
+/** The model calls a turn made, retries included (GRV-142). */
+export interface ModelCalls {
+  /** How many turns recorded them. */
+  readonly count: number;
+  readonly mean: number | null;
+  readonly p95: number | null;
+}
+
 export interface TokenTotals {
   /** Turns whose token counts were recorded. */
   readonly turns: number;
@@ -89,6 +99,11 @@ export interface Secondary {
   readonly stopReasons: Readonly<Record<string, number>>;
   readonly maxTokensRate: number | null;
   readonly refusalRate: number | null;
+  /**
+   * Over the turns that recorded their steps. Absent from scorecards saved
+   * before it existed.
+   */
+  readonly modelCalls?: ModelCalls;
 }
 
 /** One set's score: how many of its cases ran, its headline, and what it cost. */
@@ -184,6 +199,17 @@ export function turnCostUsd(model: AssistantModelProfile, usage: ProviderUsage):
   return costMicroUsd(model, usage) / 1_000_000;
 }
 
+function modelCallsOf(records: readonly EvalRecord[]): ModelCalls {
+  const calls = records
+    .map((record) => record.steps?.calls)
+    .filter((value): value is number => typeof value === "number");
+  return {
+    count: calls.length,
+    mean: calls.length === 0 ? null : calls.reduce((a, b) => a + b, 0) / calls.length,
+    p95: percentile(calls, 95),
+  };
+}
+
 export function secondaryOf(
   records: readonly EvalRecord[],
   model: AssistantModelProfile | null,
@@ -229,6 +255,7 @@ export function secondaryOf(
     stopReasons,
     maxTokensRate: share("max_tokens"),
     refusalRate: share("refusal"),
+    modelCalls: modelCallsOf(records),
   };
 }
 
@@ -294,7 +321,7 @@ export function scorecardOf(source: ScorecardSource): Scorecard {
 }
 
 /** How a number is read, and which way is better. */
-export type MetricKind = "rate" | "ms" | "tokens" | "usd" | "count";
+export type MetricKind = "rate" | "ms" | "tokens" | "usd" | "count" | "calls";
 
 export interface Metric<View = ScoreView> {
   readonly label: string;
@@ -470,7 +497,7 @@ function compareMetrics<View>(
 }
 
 /**
- * The heavy set's three numbers (GRV-131), each the plain mean of the
+ * The heavy set's numbers (GRV-131, GRV-142), each the plain mean of the
  * per-case figure over the heavy cases scored, so every case weighs the same
  * however many of its turns errored.
  */
@@ -480,6 +507,10 @@ export interface HeavySet {
   readonly outputTokens: number | null;
   readonly latencyP50Ms: number | null;
   readonly costPerTurnUsd: number | null;
+  /** Each case's mean model calls per turn, averaged (GRV-142). */
+  readonly modelCallsMean: number | null;
+  /** Each case's p95 of model calls per turn, averaged (GRV-142). */
+  readonly modelCallsP95: number | null;
 }
 
 function meanOf(values: readonly (number | null)[]): number | null {
@@ -505,6 +536,8 @@ export function heavySetOf(
     outputTokens: meanOf(cases.map((s) => s.meanTokens.output)),
     latencyP50Ms: meanOf(cases.map((s) => s.latencyMs.p50)),
     costPerTurnUsd: meanOf(cases.map((s) => s.costUsd.perTurn)),
+    modelCallsMean: meanOf(cases.map((s) => s.modelCalls?.mean ?? null)),
+    modelCallsP95: meanOf(cases.map((s) => s.modelCalls?.p95 ?? null)),
   };
 }
 
@@ -526,6 +559,18 @@ export const HEAVY_SET_METRICS: readonly Metric<HeavySet>[] = [
     kind: "usd",
     higherIsBetter: false,
     value: (h) => h.costPerTurnUsd,
+  },
+  {
+    label: "Mean model calls per turn",
+    kind: "calls",
+    higherIsBetter: false,
+    value: (h) => h.modelCallsMean,
+  },
+  {
+    label: "Mean model calls p95",
+    kind: "calls",
+    higherIsBetter: false,
+    value: (h) => h.modelCallsP95,
   },
 ];
 
@@ -557,6 +602,8 @@ export function formatMetric(kind: MetricKind, value: number | null): string {
       return `$${value.toFixed(4)}`;
     case "count":
       return String(value);
+    case "calls":
+      return value.toFixed(1);
   }
 }
 
@@ -576,5 +623,7 @@ export function formatDelta(kind: MetricKind, delta: number | null): string {
       return `${sign}$${size.toFixed(4)}`;
     case "count":
       return `${sign}${size}`;
+    case "calls":
+      return `${sign}${size.toFixed(1)}`;
   }
 }

@@ -15,6 +15,7 @@ import {
   turnCostUsd,
 } from "./scorecard";
 import {
+  caseSecondaryLines,
   comparisonConsoleLines,
   comparisonLines,
   heavySetConsoleLines,
@@ -325,21 +326,25 @@ describe("compareScorecards", () => {
 describe("the heavy set (GRV-131)", () => {
   const heavyRun = buildTestReport([
     // sketch-house: 2,000 and 4,000 output tokens, so 3,000 a turn; p50 10 s.
+    // Its model calls: 2 and 6, so a mean of 4 and a p95 of 6.
     testRecord({
       caseId: "sketch-house",
       durationMs: 10_000,
       usage: { outputTokens: 2_000 },
+      modelCalls: 2,
     }),
     testRecord({
       caseId: "sketch-house",
       durationMs: 30_000,
       usage: { outputTokens: 4_000 },
+      modelCalls: 6,
     }),
-    // density-hats: one turn of 1,000 tokens in 50 s.
+    // density-hats: one turn of 1,000 tokens in 50 s, in 1 call.
     testRecord({
       caseId: "density-hats",
       durationMs: 50_000,
       usage: { outputTokens: 1_000 },
+      modelCalls: 1,
     }),
     // Not a heavy case: left out of the heavy set.
     testRecord({ caseId: "mute", durationMs: 1_000, usage: { outputTokens: 10 } }),
@@ -356,6 +361,25 @@ describe("the heavy set (GRV-131)", () => {
       (perTurn("sketch-house") + perTurn("density-hats")) / 2,
       12,
     );
+    // Model calls per turn (GRV-142): (4 + 1) / 2 and (6 + 1) / 2.
+    expect(heavyRun.cases["sketch-house"].modelCalls).toEqual({
+      count: 2,
+      mean: 4,
+      p95: 6,
+    });
+    expect(heavy?.modelCallsMean).toBe(2.5);
+    expect(heavy?.modelCallsP95).toBe(3.5);
+  });
+
+  it("leaves model calls n/a for turns that recorded none", () => {
+    const older = buildTestReport([testRecord({ caseId: "sketch-house" })]).scorecard;
+    expect(older.cases["sketch-house"].modelCalls).toEqual({
+      count: 0,
+      mean: null,
+      p95: null,
+    });
+    expect(heavySetOf(older)?.modelCallsMean).toBeNull();
+    expect(heavySetLines(older)).toContain("| Mean model calls per turn | n/a |");
   });
 
   it("is absent from a run with no heavy case", () => {
@@ -378,6 +402,8 @@ describe("the heavy set (GRV-131)", () => {
       "Mean output tokens per turn",
       "Mean latency p50",
       "Mean cost per turn",
+      "Mean model calls per turn",
+      "Mean model calls p95",
     ]);
     // Against the baseline's sketch-house alone, not its density-hats too.
     expect(rows[0]).toMatchObject({
@@ -398,6 +424,19 @@ describe("the heavy set (GRV-131)", () => {
   it("prints its numbers alone without a baseline", () => {
     expect(heavySetLines(heavyRun)).toContain("| Mean output tokens per turn | 2,000 |");
     expect(heavySetLines(heavyRun)).toContain("| Mean latency p50 | 30.0 s |");
+    expect(heavySetLines(heavyRun)).toContain("| Mean model calls per turn | 2.5 |");
+    expect(heavySetLines(heavyRun)).toContain("| Mean model calls p95 | 3.5 |");
+  });
+
+  it("reports each case's model calls per turn, mean and p95 (GRV-142)", () => {
+    const lines = caseSecondaryLines(heavyRun);
+    expect(lines[2]).toContain("| Model calls mean / p95 |");
+    expect(lines.find((line) => line.startsWith("| `sketch-house` |"))).toContain(
+      "| 4.0 / 6.0 |",
+    );
+    expect(lines.find((line) => line.startsWith("| `mute` |"))).toContain(
+      "| n/a / n/a |",
+    );
   });
 
   it("reads n/a for a baseline with none of this run's heavy cases", () => {
