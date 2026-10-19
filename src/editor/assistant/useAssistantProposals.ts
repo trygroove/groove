@@ -24,7 +24,6 @@
  */
 import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
-import { issueCall, type ProposalIssue } from "../../assistant/proposal";
 import {
   createProposalExecutor,
   type ProposalExecutor,
@@ -33,11 +32,7 @@ import {
 } from "../../assistant/proposalExecutor";
 import type { AssistantProposal, AssistantProposalPart } from "../../assistant/protocol";
 import type { ProposalCapability } from "../../assistant/tools";
-import {
-  MAX_TRANSCRIPT_ISSUES,
-  type ProposalOutcome,
-  type TranscriptIssue,
-} from "../../assistant/transcripts";
+import type { ProposalOutcome, TranscriptIssue } from "../../assistant/transcripts";
 import {
   type ControlAddress,
   controlKey,
@@ -60,7 +55,8 @@ import {
   proposalRows,
 } from "./proposalCardModel";
 import { rejectionReason } from "./rejectionReason";
-import type { TurnOrigin } from "./useAssistantConversation";
+import { transcriptIssues } from "./transcriptIssues";
+import type { ShownPart, TurnOrigin } from "./useAssistantConversation";
 import {
   type StreamedProposalCard,
   type StreamedTurn,
@@ -131,7 +127,7 @@ export interface UseAssistantProposalsOptions {
    * Asks for the rest of a streamed proposal whose turn failed partway
    * (GRV-144). Without it the card offers no Try again.
    */
-  continueRest?(entryId: string): boolean;
+  continueRest?(entryId: string, shown: readonly ShownPart[]): boolean;
   /** What times a streamed proposal's first part (GRV-144); the real clock by default. */
   readonly clock?: Clock;
   /**
@@ -233,9 +229,10 @@ export function useAssistantProposals(
     analytics: options.analytics,
     clock: options.clock,
     refresh: (entryId) => options.refresh(entryId),
-    continueRest: (entryId) => options.continueRest?.(entryId) ?? false,
+    continueRest: (entryId, shown) => options.continueRest?.(entryId, shown) ?? false,
     onPreviewOpen: () => endWholePreviews(),
-    onOutcome: (entryId, outcome) => options.onOutcome?.(entryId, outcome),
+    onOutcome: (entryId, outcome, issues) =>
+      options.onOutcome?.(entryId, outcome, issues),
   });
 
   /** Ends every whole proposal's open preview, as a streamed card's opens. */
@@ -618,27 +615,6 @@ export function useAssistantProposals(
     },
     remoteChanges: () => remoteChanges,
   };
-}
-
-/**
- * A refused proposal's issues as a kept transcript stores them (GRV-98): the
- * code, the call it blames by ID and tool name, and the validator's own path
- * and message, cut to what the transcript holds.
- */
-function transcriptIssues(
-  proposal: AssistantProposal,
-  issues: readonly ProposalIssue[],
-): TranscriptIssue[] {
-  return issues.slice(0, MAX_TRANSCRIPT_ISSUES).map((issue) => {
-    const call = issueCall(proposal, issue);
-    return {
-      code: issue.code,
-      callId: call?.id?.slice(0, 200) ?? null,
-      callName: call?.name.slice(0, 200) ?? null,
-      path: issue.path?.slice(0, 300) ?? null,
-      message: issue.message.slice(0, 500) || null,
-    };
-  });
 }
 
 function blankEntry(

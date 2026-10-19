@@ -81,9 +81,12 @@ describe("a streamed proposal's parts (GRV-144)", () => {
   it("refuses a part that does not fit the song, in plain words", () => {
     // A clip on a track nobody made.
     const refused = resolvePart(project, CLIP);
-    expect(refused).toEqual({
+    expect(refused).toMatchObject({
       ok: false,
       reason: "The assistant's change to a clip doesn't fit with the rest of your song.",
+      // As the one-call proposal it was checked as, with the validator's reasons.
+      input: { baseRevision: project.metadata.revision, calls: [CLIP.call] },
+      issues: [expect.objectContaining({ code: expect.any(String) })],
     });
     const tooFar = resolvePart(
       project,

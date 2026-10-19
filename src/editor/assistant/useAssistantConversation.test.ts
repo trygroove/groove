@@ -14,8 +14,8 @@ import { memoryStorage } from "../../testing/storage";
 import type { AssistantScope } from "./assistantScope";
 import {
   type AssistantConversation,
-  CONTINUE_NOTE,
   type ConversationEntry,
+  continueNote,
   historyOf,
   useAssistantConversation,
 } from "./useAssistantConversation";
@@ -354,10 +354,11 @@ describe("a proposal that streams its parts (GRV-144)", () => {
       .entries()
       .find((candidate) => candidate.kind === "proposal");
     expect(onProposalEnded).toHaveBeenCalledWith(entry?.id, "failed");
-    expect(conversation.continueProposal(entry?.id ?? "")).toBe(true);
+    const shown = [{ text: "Swing 50% to 58%", applied: true }];
+    expect(conversation.continueProposal(entry?.id ?? "", shown)).toBe(true);
     await vi.waitFor(() => expect(client.turns).toHaveLength(2));
     expect(client.last().request.messages.at(-1)?.text).toBe(
-      `Two changes\n\n${CONTINUE_NOTE}`,
+      `Two changes\n\n${continueNote(shown)}`,
     );
     // The log shows the producer's words, not the note.
     expect(conversation.entries().at(-2)).toMatchObject({
@@ -365,6 +366,31 @@ describe("a proposal that streams its parts (GRV-144)", () => {
       text: "Two changes",
     });
     dispose();
+  });
+});
+
+describe("the note Try again sends for the rest of a proposal (GRV-144)", () => {
+  it("names the parts shown, which were applied and which are withdrawn", () => {
+    const note = continueNote([
+      { text: "Bass · new track", applied: true },
+      { text: "Bass · 1 bar", applied: false },
+    ]);
+    expect(note).toBe(
+      [
+        "[Continue] Your last reply stopped partway, after these parts of its proposal.",
+        "Applied, so the song has them now; don't propose them again:",
+        "- Bass · new track",
+        "Not applied, and withdrawn; propose them again only if the song still needs them:",
+        "- Bass · 1 bar",
+        "Propose only what is still missing for my request.",
+      ].join("\n"),
+    );
+  });
+
+  it("leaves out a group with no parts in it", () => {
+    const note = continueNote([{ text: "Bass · 1 bar", applied: false }]);
+    expect(note).not.toContain("Applied, so");
+    expect(note).toContain("- Bass · 1 bar");
   });
 });
 

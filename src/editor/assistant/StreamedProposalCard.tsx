@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { For, Match, Show, Switch } from "solid-js";
+import { For, flush, Match, Show, Switch } from "solid-js";
 import { editorViewSpec } from "../editorViews";
 import { moreAfterThis } from "./cardQueue";
 import { ControlLink, Values } from "./ProposalCard";
@@ -25,6 +25,7 @@ export function streamedStatusText(card: Card): string {
   const parts = card.parts.filter((part) => part.status !== "invalid");
   const applied = parts.filter((part) => part.status === "applied").length;
   const stale = card.parts.some((part) => part.status === "stale");
+  const withdrawn = card.parts.some((part) => part.status === "withdrawn");
   const say = (() => {
     if (card.status === "cancelled") {
       return applied > 0
@@ -42,10 +43,12 @@ export function streamedStatusText(card: Card): string {
       applied === 0
         ? null
         : applied === parts.length && card.turn !== "running"
-          ? card.appliedAll
-            ? "Applied as one undo step."
-            : "Applied. Each part is its own undo step."
-          : `Applied ${applied} of ${count(parts.length, "part")}, each as its own undo step.`;
+          ? appliedText(card.appliedSteps)
+          : `Applied ${applied} of ${count(parts.length, "part")}${
+              card.appliedSteps.some((step) => step.all)
+                ? "."
+                : ", each as its own undo step."
+            }`;
     switch (card.turn) {
       case "running":
         return [
@@ -57,8 +60,12 @@ export function streamedStatusText(card: Card): string {
       case "failed":
         return [
           "The rest of this proposal didn't arrive.",
-          card.continued ? "Asked for the rest below." : null,
-          progress ?? "The parts above can still be applied.",
+          card.continued
+            ? withdrawn
+              ? "Asked for the rest below, so the parts not applied here are withdrawn."
+              : "Asked for the rest below."
+            : null,
+          progress ?? (card.continued ? null : "The parts above can still be applied."),
         ]
           .filter(Boolean)
           .join(" ");
@@ -74,14 +81,39 @@ export function streamedStatusText(card: Card): string {
   const notes = [
     say,
     stale && card.status !== "cancelled"
-      ? card.refreshed
-        ? "Some parts are out of date. A new proposal was asked for below."
-        : "Some parts are out of date: the song changed after they were written."
+      ? "Some parts are out of date: the song changed after they were written."
       : null,
+    card.refreshed && card.status !== "cancelled"
+      ? "A new proposal was asked for below, so the parts not applied here are withdrawn."
+      : null,
+    applyAllNote(card),
     card.outlined && applied > 0 ? "Changed controls are outlined." : null,
     card.notice,
   ];
   return notes.filter(Boolean).join(" ");
+}
+
+/** Every part applied, once the turn is over: how many undo steps it took. */
+function appliedText(steps: Card["appliedSteps"]): string {
+  if (steps.length === 1) return "Applied as one undo step.";
+  const alone = steps.filter((step) => !step.all).length;
+  if (alone === steps.length) return "Applied. Each part is its own undo step.";
+  return `Applied in ${steps.length} undo steps: ${count(alone, "part")} on ${alone === 1 ? "its" : "their"} own, the rest with Apply all.`;
+}
+
+/** Why Apply all is off, when it is and parts are left to apply. */
+function applyAllNote(card: Card): string | null {
+  if (card.status === "cancelled") return null;
+  switch (card.applyAllBlock) {
+    case "invalid":
+      return "Apply all is off because a part can't be applied; apply the others one at a time.";
+    case "stale":
+      return "Apply all is off while a part is out of date.";
+    case "conflict":
+      return "Apply all is off because the parts left no longer go in together; apply them one at a time.";
+    default:
+      return null;
+  }
 }
 
 /**
@@ -100,17 +132,20 @@ export default function StreamedProposalCard(
   let section: HTMLElement | undefined;
   const card = () => props.proposals.streamed(props.entryId) as Card;
 
-  /** After the card re-renders, focus `name`'s first enabled button, or the card. */
+  /**
+   * Focuses `name`'s first enabled button, or the card. The button pressed
+   * may be gone (a part's Apply becomes "Applied"), so the card's update is
+   * flushed first and the focus lands in the card as it now is.
+   */
   function focusAfter(name: string | null): void {
-    setTimeout(() => {
-      if (!section?.isConnected) return;
-      const button = name
-        ? [...section.querySelectorAll<HTMLButtonElement>("button")].find(
-            (candidate) => candidate.textContent?.trim() === name && !candidate.disabled,
-          )
-        : undefined;
-      (button ?? section).focus();
-    }, 0);
+    flush();
+    if (!section?.isConnected) return;
+    const button = name
+      ? [...section.querySelectorAll<HTMLButtonElement>("button")].find(
+          (candidate) => candidate.textContent?.trim() === name && !candidate.disabled,
+        )
+      : undefined;
+    (button ?? section).focus();
   }
 
   const act = (action: () => void, next: string | null) => () => {
@@ -142,15 +177,17 @@ export default function StreamedProposalCard(
         <b>{card().title}</b>
       </div>
       <ul class="assistant-proposal-parts" aria-label="Changes">
-        <For each={card().parts}>
-          {(part) => (
+        {/* Keyed by position: a part keeps its row as the card updates. */}
+        <For each={card().parts} keyed={false}>
+          {(part, index) => (
             <PartRow
               entryId={props.entryId}
-              part={part}
+              part={part()}
               proposals={props.proposals}
               open={open()}
+              withdrawnLabel={card().status === "cancelled" ? null : "Withdrawn"}
               onApply={act(
-                () => props.proposals.applyPart(props.entryId, part.index),
+                () => props.proposals.applyPart(props.entryId, index),
                 "Apply",
               )}
             />
@@ -263,6 +300,8 @@ function PartRow(props: {
   readonly part: StreamedPartLine;
   readonly proposals: Pick<AssistantProposals, "reveal">;
   readonly open: boolean;
+  /** What a withdrawn part says, or null to say nothing (a cancelled card). */
+  readonly withdrawnLabel: string | null;
   readonly onApply: () => void;
 }): JSX.Element {
   const needsId = () => `${props.entryId}-part-${props.part.index}-needs`;
@@ -296,6 +335,11 @@ function PartRow(props: {
         </Match>
         <Match when={props.part.status === "stale"}>
           <span class="assistant-proposal-part-state">Out of date</span>
+        </Match>
+        <Match when={props.part.status === "withdrawn"}>
+          <Show when={props.withdrawnLabel}>
+            {(label) => <span class="assistant-proposal-part-state">{label()}</span>}
+          </Show>
         </Match>
         <Match when={props.part.status === "invalid"}>
           <span class="assistant-proposal-part-state">Can't apply</span>

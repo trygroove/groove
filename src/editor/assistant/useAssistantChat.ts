@@ -233,7 +233,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         analytics: options.analytics,
         // The conversation is made just below; Refresh is only ever pressed later.
         refresh: (entryId) => conversation.refresh(entryId),
-        continueRest: (entryId) => conversation.continueProposal(entryId),
+        continueRest: (entryId, shown) => conversation.continueProposal(entryId, shown),
         clock: options.clock,
         onOutcome: (entryId, outcome, issues) => {
           const turnId = turnOfEntry.get(entryId);

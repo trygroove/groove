@@ -16,7 +16,27 @@
  * - **Preview** shows every part not yet applied, uncommitted, and takes in
  *   each new one as it lands.
  * - A turn that **fails** partway leaves the parts it sent applicable; the
- *   card says the rest didn't arrive and offers Try again for the remainder.
+ *   card says the rest didn't arrive and offers Try again for the remainder,
+ *   telling the model which parts it showed and which were applied.
+ * - **Try again** and **Refresh** withdraw every part not applied yet: the
+ *   new card proposes again what is still needed, so nothing can be applied
+ *   twice from two cards.
+ *
+ * Analytics, as a whole proposal's card logs them:
+ *
+ * - `assistant_proposal_applied` once per card, when every part that fits
+ *   has been applied and the turn is over, whether by Apply all or one part
+ *   at a time; `assistant_proposal_part_applied` for each part applied alone.
+ *   Each step applied (and redone) is an `applied` outcome for a kept
+ *   transcript, each undo of a step's an `undone` one.
+ * - `assistant_proposal_undone` for each of the card's steps undone, from
+ *   the card, the header or a shortcut.
+ * - `assistant_proposal_rejected`, and a `rejected` outcome, for each part
+ *   that does not fit, once the turn is over. A card none of whose parts fit
+ *   is handed back as a whole proposal (`releaseRefused`), which reports it
+ *   once instead.
+ * - `assistant_result_edited` once per card, when the producer edits by hand
+ *   a control one of its applied parts changed.
  *
  * Nothing here mutates a project itself: parts apply through the editor
  * session (`ProposalTarget`), and the preview is the session's.
@@ -24,7 +44,10 @@
 import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
 import { bucketOf } from "../../analytics/buckets";
-import type { ProposalTarget } from "../../assistant/proposalExecutor";
+import {
+  logProposalRejection,
+  type ProposalTarget,
+} from "../../assistant/proposalExecutor";
 import type { AssistantProposal, AssistantProposalPart } from "../../assistant/protocol";
 import {
   type AssistantCapability,
@@ -32,7 +55,7 @@ import {
   proposalCapability,
   proposalExplanationSchema,
 } from "../../assistant/tools";
-import type { ProposalOutcome } from "../../assistant/transcripts";
+import type { ProposalOutcome, TranscriptIssue } from "../../assistant/transcripts";
 import {
   type ControlAddress,
   controlKey,
@@ -61,7 +84,8 @@ import {
   type ResolvedPart,
   resolvePart,
 } from "./proposalParts";
-import type { TurnOrigin } from "./useAssistantConversation";
+import { transcriptIssues } from "./transcriptIssues";
+import type { ShownPart, TurnOrigin } from "./useAssistantConversation";
 import type { ProposalSessionPort } from "./useAssistantProposals";
 
 /**
@@ -70,8 +94,23 @@ import type { ProposalSessionPort } from "./useAssistantProposals";
  * - `applied`: committed, as its own undo step or in Apply all's.
  * - `stale`: the song changed under it; it cannot be applied as it is.
  * - `invalid`: it does not fit the song at all.
+ * - `withdrawn`: not applied, and no longer on offer: the card was cancelled,
+ *   or Refresh or Try again asked for a new proposal in its place.
  */
-export type StreamedPartStatus = "ready" | "blocked" | "applied" | "stale" | "invalid";
+export type StreamedPartStatus =
+  | "ready"
+  | "blocked"
+  | "applied"
+  | "stale"
+  | "invalid"
+  | "withdrawn";
+
+/**
+ * Why Apply all is off once the turn is over, with parts left to apply:
+ * a part that does not fit, one out of date, or the rest not applying
+ * together.
+ */
+export type ApplyAllBlock = "invalid" | "stale" | "conflict";
 
 /** One part's line on the card. */
 export interface StreamedPartLine {
@@ -107,8 +146,10 @@ export interface StreamedProposalCard {
   readonly canApplyAll: boolean;
   /** Whether the card's newest applied step is the session's newest. */
   readonly canUndo: boolean;
-  /** Whether the newest step this card applied was Apply all's. */
-  readonly appliedAll: boolean;
+  /** Why Apply all is off, when the turn is over and parts are left to apply. */
+  readonly applyAllBlock: ApplyAllBlock | null;
+  /** The card's steps still applied, oldest first: whether each was Apply all's. */
+  readonly appliedSteps: readonly { readonly all: boolean }[];
   readonly refreshed: boolean;
   /** Whether Try again has asked for the rest. */
   readonly continued: boolean;
@@ -127,11 +168,15 @@ export interface UseStreamedProposalsOptions {
   readonly clock?: Clock;
   /** Asks again, in the same scope, for the proposal in this entry. */
   refresh(entryId: string): boolean;
-  /** Asks for the rest of a proposal whose turn failed partway. */
-  continueRest(entryId: string): boolean;
+  /** Asks for the rest of a proposal whose turn failed partway, naming the parts shown. */
+  continueRest(entryId: string, shown: readonly ShownPart[]): boolean;
   /** A streamed card's preview is opening: any other card's must end. */
   onPreviewOpen(): void;
-  onOutcome?(entryId: string, outcome: ProposalOutcome): void;
+  onOutcome?(
+    entryId: string,
+    outcome: ProposalOutcome,
+    issues?: readonly TranscriptIssue[],
+  ): void;
 }
 
 export interface StreamedProposals {
@@ -197,8 +242,8 @@ interface StreamState {
   explanation: ProposalExplanation | null;
   refreshed: boolean;
   continued: boolean;
-  /** Each step this card applied, oldest first: its correlation ID and parts. */
-  readonly steps: { readonly id: string; readonly parts: readonly number[] }[];
+  /** Each step this card applied, oldest first. */
+  readonly steps: Step[];
   preview: Preview | null;
   location: EditorLocation | null;
   previewView: EditorViewName | null;
@@ -207,6 +252,28 @@ interface StreamState {
   notice: string | null;
   /** When the turn ended, for the decision time Apply all logs. */
   endedAt: number | null;
+  /** `assistant_proposal_applied` has been logged: every part that fits was applied. */
+  appliedLogged: boolean;
+  /** `assistant_result_edited` has been logged; nothing watches it again. */
+  editedLogged: boolean;
+}
+
+/** One step a card applied: one transaction, one undo entry. */
+interface Step {
+  readonly id: string;
+  readonly parts: readonly number[];
+  /** Whether Apply all made it, rather than one part's Apply. */
+  readonly all: boolean;
+  /** When it was applied (or last redone), for the time an undo logs. */
+  appliedAt: number;
+}
+
+/** The parts not applied yet, each in order on top of the ones before it that apply. */
+interface Working {
+  /** The song with them applied. */
+  readonly project: Project;
+  /** Those that applied, in order. */
+  readonly parts: readonly { part: PartState; command: RawCommandInput }[];
 }
 
 /** An edit made other than through a streamed card, and what it touched. */
@@ -256,6 +323,11 @@ export function useStreamedProposals(
     );
   }
 
+  /** Whether the card no longer offers its unapplied parts. */
+  function withdrawn(state: StreamState): boolean {
+    return state.status === "cancelled" || state.refreshed || state.continued;
+  }
+
   function statusOf(
     state: StreamState,
     part: PartState,
@@ -264,6 +336,8 @@ export function useStreamedProposals(
     const resolution = resolved(part);
     if (!resolution) return { status: "invalid", needs: null };
     if (part.appliedBy) return { status: "applied", needs: null };
+    // Nothing to dry-run for a part that is no longer on offer.
+    if (withdrawn(state)) return { status: "withdrawn", needs: null };
     const waiting = part.needs.find((index) => !state.parts[index]?.appliedBy);
     if (waiting !== undefined) return { status: "blocked", needs: waiting };
     if (staleUnder(state, part) || !applyCommands(project, [resolution.command])) {
@@ -280,19 +354,47 @@ export function useStreamedProposals(
     });
   }
 
-  function canApplyAll(state: StreamState, project: Project): boolean {
-    if (state.turn === "running" || state.status === "cancelled") return false;
-    if (state.parts.some((part) => !part.resolution.ok && !part.appliedBy)) return false;
-    const remaining = rest(state);
-    if (remaining.length === 0) return false;
-    if (remaining.some(({ part }) => staleUnder(state, part))) return false;
-    return (
-      applyCommands(
-        project,
-        remaining.map(({ command }) => command),
-      ) !== null
-    );
+  /**
+   * `project` with every part not applied yet on top, in order, each against
+   * the ones before it; a part that no longer applies is left out, so one
+   * that went wrong never hides the rest.
+   */
+  function working(state: StreamState, project: Project): Working {
+    let next = project;
+    const applied: { part: PartState; command: RawCommandInput }[] = [];
+    for (const entry of rest(state)) {
+      const after = applyCommands(next, [entry.command]);
+      if (!after) continue;
+      next = after;
+      applied.push(entry);
+    }
+    return { project: next, parts: applied };
   }
+
+  /**
+   * Whether Apply all would apply the rest now: `null` when it would, a
+   * block when it would not and says why, `undefined` when there is nothing
+   * for it to do (the turn runs, the card is withdrawn, or nothing is left).
+   */
+  function applyAllState(
+    state: StreamState,
+    project: Project,
+  ): ApplyAllBlock | null | undefined {
+    if (state.turn === "running" || withdrawn(state)) return undefined;
+    const remaining = rest(state);
+    if (remaining.length === 0) return undefined;
+    if (state.parts.some((part) => !part.resolution.ok)) return "invalid";
+    if (remaining.some(({ part }) => staleUnder(state, part))) return "stale";
+    return applyCommands(
+      project,
+      remaining.map(({ command }) => command),
+    ) === null
+      ? "conflict"
+      : null;
+  }
+
+  const canApplyAll = (state: StreamState, project: Project) =>
+    applyAllState(state, project) === null;
 
   function snapshot(state: StreamState): StreamedProposalCard {
     const project = committed();
@@ -311,17 +413,19 @@ export function useStreamedProposals(
       };
     });
     const newest = newestApplied(state);
+    const block = project ? applyAllState(state, project) : undefined;
     return {
       title: state.origin.text,
       scopeLabel: state.origin.scope.label,
       parts,
       turn: state.turn,
       status: state.status,
-      canApplyAll: project ? canApplyAll(state, project) : false,
+      canApplyAll: block === null,
+      applyAllBlock: block ?? null,
+      appliedSteps: appliedSteps(state).map((step) => ({ all: step.all })),
       canUndo:
         newest !== undefined &&
         session.proposalTarget()?.latestCorrelationId === newest.id,
-      appliedAll: (newest?.parts.length ?? 0) > 1,
       refreshed: state.refreshed,
       continued: state.continued,
       explanation: state.explanation,
@@ -362,6 +466,8 @@ export function useStreamedProposals(
         marked: [],
         notice: null,
         endedAt: null,
+        appliedLogged: false,
+        editedLogged: false,
       };
       states.set(entryId, state);
       if (origin.sentAt !== undefined) {
@@ -372,13 +478,9 @@ export function useStreamedProposals(
     }
     if (state.status === "cancelled") return;
     // Checked against the song as it would be with every earlier part that
-    // has not applied yet on top: that is what it is written against.
-    const working =
-      applyCommands(
-        project,
-        rest(state).map(({ command }) => command),
-      ) ?? project;
-    const resolution = resolvePart(working, part);
+    // has not applied yet on top (those that still apply): that is what it
+    // is written against.
+    const resolution = resolvePart(working(state, project).project, part);
     const controls = resolution.ok ? resolution.proposal.impact.controls : [];
     state.parts.push({
       index: state.parts.length,
@@ -412,11 +514,7 @@ export function useStreamedProposals(
       : null;
     if (parsed?.success) {
       const addresses = uniqueControls(state.parts.flatMap((part) => part.controls));
-      const after =
-        applyCommands(
-          project,
-          rest(state).map(({ command }) => command),
-        ) ?? project;
+      const after = working(state, project).project;
       state.explanation = {
         goal: parsed.data.goal,
         technique: parsed.data.technique,
@@ -449,7 +547,41 @@ export function useStreamedProposals(
         command_count_bucket: bucketOf("command_count", capabilities.length),
       });
     }
+    reportRefusedParts(entryId, state);
+    noticeAllApplied(state);
     publish();
+  }
+
+  /** Each part that does not fit, reported as a whole refused proposal is. */
+  function reportRefusedParts(entryId: string, state: StreamState) {
+    const analytics = options.analytics();
+    for (const part of state.parts) {
+      if (part.resolution.ok) continue;
+      const { input, issues } = part.resolution;
+      logProposalRejection(analytics, input, issues);
+      options.onOutcome?.(entryId, "rejected", transcriptIssues(input, issues));
+    }
+  }
+
+  /**
+   * Once every part that fits is applied and the turn is over, the proposal
+   * was applied: `assistant_proposal_applied`, once per card, however the
+   * parts went in.
+   */
+  function noticeAllApplied(state: StreamState) {
+    if (state.appliedLogged || state.turn === "running") return;
+    const fitting = state.parts.filter((part) => part.resolution.ok);
+    if (fitting.length === 0 || fitting.some((part) => !part.appliedBy)) return;
+    state.appliedLogged = true;
+    const analytics = options.analytics();
+    analytics.log("assistant_proposal_applied", {
+      capability: proposalCapability(capabilitiesOf(state)),
+      command_count_bucket: bucketOf("command_count", fitting.length),
+      seconds_to_decision_bucket: bucketOf(
+        "elapsed_seconds",
+        (clock.now() - (state.endedAt ?? clock.now())) / 1000,
+      ),
+    });
   }
 
   /** Runs `commands` as one step of this card's: one transaction, one undo entry. */
@@ -458,6 +590,7 @@ export function useStreamedProposals(
     state: StreamState,
     parts: readonly number[],
     commands: readonly RawCommandInput[],
+    all: boolean,
   ): boolean {
     const current = target();
     if (current.gestureActive) {
@@ -469,7 +602,7 @@ export function useStreamedProposals(
     if (state.preview) endPreview(state);
     if (wasPreviewing) state.status = "open";
     const id = createCorrelationId("asp");
-    state.steps.push({ id, parts });
+    state.steps.push({ id, parts, all, appliedAt: clock.now() });
     const result = current.execute(commands, { actor: "assistant", correlationId: id });
     if (!result.ok) {
       state.steps.pop();
@@ -493,6 +626,7 @@ export function useStreamedProposals(
       state.location = null;
     }
     options.onOutcome?.(entryId, "applied");
+    noticeAllApplied(state);
     publish();
     return true;
   }
@@ -508,7 +642,7 @@ export function useStreamedProposals(
       return;
     }
     const running = state.turn === "running";
-    if (!run(entryId, state, [index], [resolution.command])) return;
+    if (!run(entryId, state, [index], [resolution.command], false)) return;
     const analytics = options.analytics();
     analytics.log("assistant_proposal_part_applied", {
       part_index: index,
@@ -527,38 +661,20 @@ export function useStreamedProposals(
       state,
       remaining.map(({ part }) => part.index),
       remaining.map(({ command }) => command),
+      true,
     );
-    if (!applied) return;
-    const capabilities = remaining.flatMap(({ part }) =>
-      part.resolution.ok ? part.resolution.proposal.capabilities : [],
-    );
-    const analytics = options.analytics();
-    analytics.log("assistant_proposal_applied", {
-      capability: proposalCapability(capabilities),
-      command_count_bucket: bucketOf("command_count", remaining.length),
-      seconds_to_decision_bucket: bucketOf(
-        "elapsed_seconds",
-        (clock.now() - (state.endedAt ?? clock.now())) / 1000,
-      ),
-    });
-    analytics.logFeatureFirstUse("assistant_proposal");
+    // `run` logged `assistant_proposal_applied`: Apply all applies the last of it.
+    if (applied) options.analytics().logFeatureFirstUse("assistant_proposal");
   }
 
   /** Opens the preview of every part not applied yet. */
   function openPreview(state: StreamState, reveal: boolean): boolean {
     const project = committed();
-    if (!project) return false;
+    if (!project || withdrawn(state)) return false;
     // Each part in order, those that no longer apply left out.
-    let working = project;
-    const commands: RawCommandInput[] = [];
-    const addresses: ControlAddress[] = [];
-    for (const { part, command } of rest(state)) {
-      const next = applyCommands(working, [command]);
-      if (!next) continue;
-      working = next;
-      commands.push(command);
-      addresses.push(...part.controls);
-    }
+    const after = working(state, project);
+    const commands = after.parts.map(({ command }) => command);
+    const addresses = after.parts.flatMap(({ part }) => part.controls);
     if (commands.length === 0) return false;
     const opened = session.beginPreview(commands);
     if (!opened?.ok) {
@@ -570,7 +686,7 @@ export function useStreamedProposals(
     const marked = uniqueControls(addresses);
     controls.registry.setMark(marked, "previewed");
     if (reveal) {
-      const rows = proposalRows(project, working, marked);
+      const rows = proposalRows(project, after.project, marked);
       const shown = previewTarget(project, rows);
       state.previewView = shown?.view ?? null;
       const from = shown ? controls.revealControl(shown.address, { focus: false }) : null;
@@ -612,7 +728,7 @@ export function useStreamedProposals(
 
   function preview(entryId: string) {
     const state = states.get(entryId);
-    if (!state || state.status !== "open") return;
+    if (!state || state.status !== "open" || withdrawn(state)) return;
     // One preview at a time, across every card.
     let location: EditorLocation | null = null;
     for (const other of states.values()) {
@@ -686,6 +802,7 @@ export function useStreamedProposals(
     if (!state || state.refreshed) return;
     if (options.refresh(entryId)) {
       state.refreshed = true;
+      withdraw(state);
       publish();
     }
   }
@@ -693,10 +810,26 @@ export function useStreamedProposals(
   function continueRest(entryId: string) {
     const state = states.get(entryId);
     if (!state || state.turn !== "failed" || state.continued) return;
-    if (options.continueRest(entryId)) {
+    const shown: ShownPart[] = state.parts.flatMap((part) =>
+      part.resolution.ok
+        ? [{ text: partLineText(part.resolution.line), applied: part.appliedBy !== null }]
+        : [],
+    );
+    if (options.continueRest(entryId, shown)) {
       state.continued = true;
+      withdraw(state);
       publish();
     }
+  }
+
+  /** A new proposal was asked for in this one's place: its open preview ends. */
+  function withdraw(state: StreamState) {
+    if (!state.preview) return;
+    const location = state.location;
+    endPreview(state);
+    state.status = "open";
+    state.location = null;
+    if (location) controls.restoreView(location);
   }
 
   /** The step a session edit replays, and the card it belongs to. */
@@ -721,11 +854,27 @@ export function useStreamedProposals(
     if (own) {
       const { entryId, state, step } = own;
       if (edit.kind === "undo") {
-        for (const index of step.parts) {
+        // Whoever undid it: the card, the header's Undo, or a shortcut.
+        const undone = step.parts.filter(
+          (index) => state.parts[index]?.appliedBy === step.id,
+        );
+        for (const index of undone) {
           const part = state.parts[index];
-          if (part?.appliedBy === step.id) part.appliedBy = null;
+          if (part) part.appliedBy = null;
         }
         clearMarks();
+        if (undone.length > 0) {
+          options.analytics().log("assistant_proposal_undone", {
+            capability: proposalCapability(
+              undone.flatMap((index) => capabilitiesOfPart(state.parts[index])),
+            ),
+            command_count_bucket: bucketOf("command_count", undone.length),
+            seconds_to_undo_bucket: bucketOf(
+              "elapsed_seconds",
+              (clock.now() - step.appliedAt) / 1000,
+            ),
+          });
+        }
         if (!state.parts.some((part) => part.appliedBy)) {
           options.onOutcome?.(entryId, "undone");
         }
@@ -734,7 +883,9 @@ export function useStreamedProposals(
           const part = state.parts[index];
           if (part) part.appliedBy = step.id;
         }
+        step.appliedAt = clock.now();
         options.onOutcome?.(entryId, "applied");
+        noticeAllApplied(state);
       }
     } else {
       // Anything else that changed the song: another card, or the producer.
@@ -744,9 +895,29 @@ export function useStreamedProposals(
       });
       if (foreign.length > MAX_FOREIGN_EDITS) foreign.shift();
       if (edit.kind === "edit") clearMarks();
+      if (edit.kind === "edit" && edit.actor === "user") noticeEditByHand(edit);
     }
     reconcile();
     publish();
+  }
+
+  /**
+   * A producer's own edit to a control a card's applied parts changed: logs
+   * `assistant_result_edited` once for that card, which then stops watching.
+   */
+  function noticeEditByHand(edit: SessionEdit) {
+    const touched = new Set(touchedBy(edit).map(controlKey));
+    for (const state of states.values()) {
+      if (state.editedLogged) continue;
+      const applied = state.parts.filter((part) => part.appliedBy);
+      if (!applied.some((part) => [...part.keys].some((key) => touched.has(key)))) {
+        continue;
+      }
+      state.editedLogged = true;
+      options.analytics().log("assistant_result_edited", {
+        capability: proposalCapability(applied.flatMap(capabilitiesOfPart)),
+      });
+    }
   }
 
   /** A preview the session ended by itself leaves its card. */
@@ -817,11 +988,16 @@ export function useStreamedProposals(
   };
 }
 
-/** The newest step of the card's that is still applied. */
-function newestApplied(state: StreamState) {
-  return state.steps.findLast((step) =>
+/** The card's steps still applied, oldest first. */
+function appliedSteps(state: StreamState): Step[] {
+  return state.steps.filter((step) =>
     step.parts.some((index) => state.parts[index]?.appliedBy === step.id),
   );
+}
+
+/** The newest step of the card's that is still applied. */
+function newestApplied(state: StreamState): Step | undefined {
+  return appliedSteps(state).at(-1);
 }
 
 /** What a part needs, as "Needs … first" names it: a track by its name, anything else by its line. */
@@ -832,9 +1008,11 @@ function neededName(part: PartState): string {
 }
 
 function capabilitiesOf(state: StreamState): AssistantCapability[] {
-  return state.parts.flatMap((part) =>
-    part.resolution.ok ? part.resolution.proposal.capabilities : [],
-  );
+  return state.parts.flatMap(capabilitiesOfPart);
+}
+
+function capabilitiesOfPart(part: PartState | undefined): AssistantCapability[] {
+  return part?.resolution.ok ? [...part.resolution.proposal.capabilities] : [];
 }
 
 /**

@@ -11,8 +11,12 @@
  * earlier part makes (clips on a track the proposal creates) **needs** that
  * part, and cannot apply before it.
  */
-import { type ValidProposal, validateProposal } from "../../assistant/proposal";
-import type { AssistantProposalPart } from "../../assistant/protocol";
+import {
+  type ProposalIssue,
+  type ValidProposal,
+  validateProposal,
+} from "../../assistant/proposal";
+import type { AssistantProposal, AssistantProposalPart } from "../../assistant/protocol";
 import { executeTransaction } from "../../commands/execute";
 import type { RawCommandInput } from "../../commands/types";
 import type { Project } from "../../domain/entities";
@@ -36,6 +40,10 @@ export interface ResolvedPart {
 export interface RefusedPart {
   readonly ok: false;
   readonly reason: string;
+  /** The part as the one-call proposal it was checked as, for its rejection's report. */
+  readonly input: AssistantProposal;
+  /** Every reason the validator gave. */
+  readonly issues: readonly ProposalIssue[];
 }
 
 export type PartResolution = ResolvedPart | RefusedPart;
@@ -70,11 +78,12 @@ export function resolvePart(
   working: Project,
   part: AssistantProposalPart,
 ): PartResolution {
-  const validation = validateProposal(working, {
+  const input: AssistantProposal = {
     baseRevision: working.metadata.revision,
     toolsetVersion: part.toolsetVersion,
     calls: [part.call],
-  });
+  };
+  const validation = validateProposal(working, input);
   if (!validation.ok) {
     const issues: RejectionIssue[] = validation.issues.map((issue) => ({
       code: issue.code,
@@ -87,6 +96,8 @@ export function resolvePart(
       reason:
         rejectionReason(issues) ??
         "This part doesn't fit your song as it is, so it can't be applied.",
+      input,
+      issues: validation.issues,
     };
   }
   const { proposal } = validation;

@@ -48,7 +48,9 @@ test.describe("a proposal that arrives part by part", () => {
     });
     await expect(parts(page).nth(1)).toContainText("Bass · 1 bar");
     await proposalButton(page, "Apply all").click();
-    await expect(proposal(page)).toContainText("Applied as one undo step.");
+    await expect(proposal(page)).toContainText(
+      "Applied in 2 undo steps: 1 part on its own, the rest with Apply all.",
+    );
 
     // One undo takes the clip and its placement; the track stays.
     await page.keyboard.press("ControlOrMeta+z");

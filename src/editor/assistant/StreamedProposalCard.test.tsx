@@ -12,10 +12,11 @@ import {
 } from "../../assistant/tools";
 import type { ControlAddress } from "../../commands/controlAddress";
 import { setParameter } from "../../commands/definitions/parameters";
+import { removeTrack } from "../../commands/definitions/tracks";
 import { createControlRegistry } from "../../controls/registry";
 import type { Project } from "../../domain/entities";
 import { createSliceFixtureProject } from "../../domain/fixtures";
-import { SONG_SWING } from "../../domain/parameters";
+import { SONG_SWING, TRACK_VOLUME } from "../../domain/parameters";
 import { createInMemoryProjectRepository } from "../../persistence/inMemoryProjectRepository";
 import { createManualClock } from "../../shared/clock";
 import { clickAndFlush, fireAndFlush } from "../../testing/events";
@@ -30,7 +31,7 @@ import type { EditorLocation } from "../editorControls";
 import type { EditorViewName } from "../editorViews";
 import AssistantPanel from "./AssistantPanel";
 import { useAssistantChat } from "./useAssistantChat";
-import { CONTINUE_NOTE } from "./useAssistantConversation";
+import { continueNote } from "./useAssistantConversation";
 import { useAssistantPanel } from "./useAssistantPanel";
 
 /**
@@ -190,7 +191,45 @@ async function setUp() {
   const hasBass = () =>
     session.committedProject.song.tracks.some((candidate) => candidate.name === "Bass");
 
-  return { session, client, clock, ask, part, finish, events, swing, hasBass };
+  /** Ends the turn with an error, partway. */
+  function fail() {
+    fireAndFlush(() => client.last().fail({ code: "timeout", retryable: true }));
+  }
+  /** BD's volume to `value` dB: a part on the fixture's own track. */
+  const volume = (value: number): AssistantToolCall => ({
+    id: `toolu_volume_${value}`,
+    name: "parameter_set",
+    input: {
+      target: { scope: "track", trackId: track.id, parameterId: TRACK_VOLUME.id },
+      value,
+    },
+  });
+  /** The producer sets BD's volume by hand. */
+  const editVolume = (value: number) =>
+    fireAndFlush(() =>
+      session.dispatch(
+        setParameter(
+          { scope: "track", trackId: track.id, parameterId: TRACK_VOLUME.id },
+          value,
+        ),
+      ),
+    );
+
+  return {
+    session,
+    client,
+    clock,
+    track,
+    ask,
+    part,
+    finish,
+    fail,
+    volume,
+    editVolume,
+    events,
+    swing,
+    hasBass,
+  };
 }
 
 const panel = () => screen.getByRole("region", { name: "Coproducer" });
@@ -321,7 +360,9 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     expect(session.committedProject.clips.some((clip) => clip.name === "Bassline")).toBe(
       true,
     );
-    expect(cardStatus()).toHaveTextContent("Applied as one undo step.");
+    expect(cardStatus()).toHaveTextContent(
+      "Applied in 2 undo steps: 1 part on its own, the rest with Apply all.",
+    );
     // One undo takes the rest away together, and leaves the swing.
     await press(cardButton("Undo"));
     expect(hasBass()).toBe(false);
@@ -402,7 +443,9 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     await press(cardButton("Try again"));
     expect(client.turns).toHaveLength(2);
     const sent = client.turns[1]?.request;
-    expect(sent?.messages.at(-1)?.text).toBe(`Add a bassline\n\n${CONTINUE_NOTE}`);
+    expect(sent?.messages.at(-1)?.text).toBe(
+      `Add a bassline\n\n${continueNote([{ text: "Bass · new track", applied: true }])}`,
+    );
     expect(sent?.projectRevision).toBe(session.committedProject.metadata.revision);
     expect(sent?.context.tracks.some((candidate) => candidate.name === "Bass")).toBe(
       true,
@@ -447,5 +490,223 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
       (event) => event.params.feature === "assistant_proposal_part",
     );
     expect(firstUse).toHaveLength(1);
+  });
+
+  it("tells Try again which parts were shown, and withdraws those not applied", async () => {
+    const { ask, part, fail, client, session, hasBass } = await setUp();
+    await ask();
+    part(TRACK);
+    part(CLIP);
+    part(SWING);
+    await press(applyOf("Bass · new track"));
+    fail();
+    expect(applyOf("Bass · 1 bar")).toBeEnabled();
+
+    const oldCard = card();
+    await press(cardButton("Try again"));
+    const sent = client.turns[1]?.request.messages.at(-1)?.text ?? "";
+    expect(sent).toContain("Applied, so the song has them now");
+    expect(sent).toContain("- Bass · new track");
+    expect(sent).toContain(
+      "Not applied, and withdrawn; propose them again only if the song still needs them:\n- Bass · 1 bar\n- Swing 50% to 58%",
+    );
+    // The old card's parts not applied can no longer go in, alone or together.
+    const rows = within(within(oldCard).getByRole("list", { name: "Changes" }))
+      .getAllByRole("listitem")
+      .map((row) => row.textContent ?? "");
+    expect(rows[0]).toContain("Applied");
+    expect(rows[1]).toContain("Withdrawn");
+    expect(rows[2]).toContain("Withdrawn");
+    expect(
+      within(oldCard).queryByRole("button", { name: /^Apply Bass · 1 bar/ }),
+    ).toBeNull();
+    expect(within(oldCard).getByRole("button", { name: "Apply all" })).toBeDisabled();
+    expect(within(oldCard).getByRole("status")).toHaveTextContent(
+      "the parts not applied here are withdrawn",
+    );
+    expect(hasBass()).toBe(true);
+    expect(session.history.entries).toHaveLength(1);
+  });
+
+  it("checks a new part against the parts before it that still apply, skipping one that no longer does", async () => {
+    const { ask, part, volume, session, track } = await setUp();
+    await ask();
+    part(volume(-6));
+    // First in the list, so it still goes in once BD is gone.
+    part({ ...TRACK, input: { ...CREATE_EXAMPLES.track, order: 0 } });
+    // The producer deletes BD, so its volume part no longer applies.
+    fireAndFlush(() => session.dispatch(removeTrack(track.id)));
+    part(CLIP);
+    expect(
+      within(lines()[0] as HTMLElement).getByText("Out of date"),
+    ).toBeInTheDocument();
+    // The clip is read on top of the Bass track, not on the bare song.
+    expect(within(lines()[2] as HTMLElement).queryByText("Can't apply")).toBeNull();
+    expect(lineTexts()[2]).toBe("Bass · 1 bar");
+    expect(applyAt(2)).toBeDisabled();
+    expect(applyAt(2)).toHaveAccessibleDescription("Needs Bass first");
+  });
+
+  it("says Apply all of every part went in as one undo step", async () => {
+    const { ask, part, finish } = await setUp();
+    await ask();
+    part(SWING);
+    part(TRACK);
+    finish([SWING, TRACK]);
+    await press(cardButton("Apply all"));
+    expect(cardStatus()).toHaveTextContent("Applied as one undo step.");
+  });
+
+  it("says Apply all goes in as one undo step even with one part left", async () => {
+    const { ask, part, finish } = await setUp();
+    await ask();
+    part(SWING);
+    part(TRACK);
+    await press(applyOf("Swing 50% to 58%"));
+    finish([SWING, TRACK]);
+    await press(cardButton("Apply all"));
+    expect(cardStatus()).toHaveTextContent(
+      "Applied in 2 undo steps: 1 part on its own, the rest with Apply all.",
+    );
+    expect(cardStatus()).not.toHaveTextContent("Each part is its own undo step");
+  });
+
+  it("says why Apply all is off when a part can't be applied", async () => {
+    const { ask, part, finish } = await setUp();
+    await ask();
+    part(SWING);
+    part(CLIP);
+    finish([SWING, CLIP]);
+    expect(cardButton("Apply all")).toBeDisabled();
+    expect(cardStatus()).toHaveTextContent(
+      "Apply all is off because a part can't be applied; apply the others one at a time.",
+    );
+  });
+
+  it("says why Apply all is off while a part is out of date", async () => {
+    const { ask, part, finish, session } = await setUp();
+    await ask();
+    part(SWING);
+    part(TRACK);
+    fireAndFlush(() =>
+      session.dispatch(setParameter({ scope: "song", parameterId: SONG_SWING.id }, 54)),
+    );
+    finish([SWING, TRACK]);
+    expect(cardStatus()).toHaveTextContent(
+      "Apply all is off while a part is out of date.",
+    );
+  });
+});
+
+describe("a streamed proposal's analytics, as a whole proposal's (GRV-144)", () => {
+  it("logs assistant_proposal_applied once, when the last part is applied one at a time", async () => {
+    const { ask, part, finish, events } = await setUp();
+    await ask();
+    part(SWING);
+    part(TRACK);
+    await press(applyOf("Swing 50% to 58%"));
+    finish([SWING, TRACK]);
+    expect(events("assistant_proposal_applied")).toHaveLength(0);
+    await press(applyOf("Bass · new track"));
+    expect(events("assistant_proposal_applied").map((event) => event.params)).toEqual([
+      expect.objectContaining({ capability: "mixed", command_count_bucket: "2_5" }),
+    ]);
+  });
+
+  it("logs assistant_proposal_applied once when every part was applied while the turn ran", async () => {
+    const { ask, part, finish, events } = await setUp();
+    await ask();
+    part(SWING);
+    await press(applyOf("Swing 50% to 58%"));
+    expect(events("assistant_proposal_applied")).toHaveLength(0);
+    finish([SWING]);
+    expect(events("assistant_proposal_applied")).toHaveLength(1);
+  });
+
+  it("logs assistant_proposal_applied once for Apply all, not again on a redo", async () => {
+    const { ask, part, finish, events, session } = await setUp();
+    await ask();
+    part(SWING);
+    part(TRACK);
+    finish([SWING, TRACK]);
+    await press(cardButton("Apply all"));
+    expect(events("assistant_proposal_applied")).toHaveLength(1);
+    fireAndFlush(() => session.undo());
+    fireAndFlush(() => session.redo());
+    expect(events("assistant_proposal_applied")).toHaveLength(1);
+  });
+
+  it("logs assistant_proposal_undone once for each step undone, however it was undone", async () => {
+    const { ask, part, finish, events, session, clock } = await setUp();
+    await ask();
+    part(SWING);
+    part(TRACK);
+    await press(applyOf("Swing 50% to 58%"));
+    await press(applyOf("Bass · new track"));
+    finish([SWING, TRACK]);
+    clock.advance(3_000);
+    // The card's Undo.
+    await press(cardButton("Undo"));
+    expect(events("assistant_proposal_undone").map((event) => event.params)).toEqual([
+      expect.objectContaining({
+        capability: "tracks",
+        command_count_bucket: "1",
+        seconds_to_undo_bucket: "0_5s",
+      }),
+    ]);
+    // The header's Undo or a shortcut: the session's own undo.
+    fireAndFlush(() => session.undo());
+    expect(events("assistant_proposal_undone")).toHaveLength(2);
+    expect(events("undo_used").length).toBeGreaterThan(0);
+  });
+
+  it("logs assistant_proposal_rejected and a rejected outcome for each part that does not fit, when others do", async () => {
+    const { ask, part, finish, events } = await setUp();
+    await ask();
+    part(SWING);
+    part(CLIP);
+    expect(events("assistant_proposal_rejected")).toHaveLength(0);
+    finish([SWING, CLIP]);
+    expect(events("assistant_proposal_rejected").map((event) => event.params)).toEqual([
+      expect.objectContaining({ kind: "invalid", command_count_bucket: "1" }),
+    ]);
+    // The rejected outcome reaches the session's health, as a whole proposal's does.
+    expect(events("assistant_session_sad").map((event) => event.params.reason)).toContain(
+      "proposal_invalid",
+    );
+  });
+
+  it("logs assistant_proposal_rejected once for a refused part when the turn fails", async () => {
+    const { ask, part, fail, events } = await setUp();
+    await ask();
+    part(SWING);
+    part(CLIP);
+    fail();
+    expect(events("assistant_proposal_rejected")).toHaveLength(1);
+  });
+
+  it("logs assistant_result_edited once when the producer edits by hand what an applied part changed", async () => {
+    const { ask, part, finish, events, volume, editVolume } = await setUp();
+    await ask();
+    part(volume(-6));
+    part(SWING);
+    await press(applyOf("BD volume 0.0 dB to -6.0 dB"));
+    finish([volume(-6), SWING]);
+    editVolume(-9);
+    editVolume(-12);
+    expect(events("assistant_result_edited").map((event) => event.params)).toEqual([
+      expect.objectContaining({ capability: "mixer" }),
+    ]);
+  });
+
+  it("does not log assistant_result_edited for an edit to a part not applied", async () => {
+    const { ask, part, finish, events, volume, editVolume } = await setUp();
+    await ask();
+    part(volume(-6));
+    part(SWING);
+    await press(applyOf("Swing 50% to 58%"));
+    finish([volume(-6), SWING]);
+    editVolume(-9);
+    expect(events("assistant_result_edited")).toHaveLength(0);
   });
 });

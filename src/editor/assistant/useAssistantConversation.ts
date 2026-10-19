@@ -335,10 +335,11 @@ export interface AssistantConversation {
   /**
    * Asks for the rest of the proposal in entry `entryId`, whose turn failed
    * partway (GRV-144): its words and scope again, against the song as it is
-   * now, which has whatever parts the producer applied. Returns whether it
+   * now, which has whatever parts the producer applied, with a note naming
+   * the parts `shown` and which of them were applied. Returns whether it
    * went: not while a reply streams, nor with no account.
    */
-  continueProposal(entryId: string): boolean;
+  continueProposal(entryId: string, shown: readonly ShownPart[]): boolean;
   /**
    * Asks again for the proposal or recommendation in entry `entryId`, with
    * its words and its scope, against the song as it is now (GRV-5's Refresh).
@@ -365,12 +366,38 @@ export interface AssistantConversation {
   ): Extract<ConversationEntry, { kind: "reply" }> | null;
 }
 
+/** A part of a streamed proposal the card showed (GRV-144), as Try again tells the model of it. */
+export interface ShownPart {
+  /** Its line, as the card reads it ("Bass · 1 bar"). */
+  readonly text: string;
+  /** Whether the producer applied it, so the song has it now. */
+  readonly applied: boolean;
+}
+
 /**
  * What Try again for the rest of a proposal adds to the producer's words
- * (GRV-144): the song it is sent with already has the parts they applied.
+ * (GRV-144). The history drops a failed turn, so the note is the model's only
+ * record of what it showed: the parts applied are in the song it is sent
+ * with, and those not applied are withdrawn from their card, so the model
+ * proposes again only what the song still needs.
  */
-export const CONTINUE_NOTE =
-  "[Continue] Your last reply stopped partway. The song now has whatever parts of it I applied; propose only what is still missing.";
+export function continueNote(shown: readonly ShownPart[]): string {
+  const applied = shown.filter((part) => part.applied).map((part) => part.text);
+  const withdrawn = shown.filter((part) => !part.applied).map((part) => part.text);
+  const list = (texts: readonly string[]) => texts.map((text) => `- ${text}`).join("\n");
+  return [
+    "[Continue] Your last reply stopped partway, after these parts of its proposal.",
+    applied.length > 0
+      ? `Applied, so the song has them now; don't propose them again:\n${list(applied)}`
+      : null,
+    withdrawn.length > 0
+      ? `Not applied, and withdrawn; propose them again only if the song still needs them:\n${list(withdrawn)}`
+      : null,
+    "Propose only what is still missing for my request.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 // What a turn resends is built in `src/assistant/history.ts`, so that
 // code outside the editor (GRV-108) builds it the same way.
@@ -705,11 +732,14 @@ export function useAssistantConversation(
     return true;
   }
 
-  function continueProposal(entryId: string): boolean {
+  function continueProposal(entryId: string, shown: readonly ShownPart[]): boolean {
     const entry = entries().find((candidate) => candidate.id === entryId);
     if (entry?.kind !== "proposal" || !canStart()) return false;
     const { text, answers, wire, scope } = entry.origin;
-    sendMessage({ text, answers, wire: `${wire ?? text}\n\n${CONTINUE_NOTE}` }, scope);
+    sendMessage(
+      { text, answers, wire: `${wire ?? text}\n\n${continueNote(shown)}` },
+      scope,
+    );
     return true;
   }
 
