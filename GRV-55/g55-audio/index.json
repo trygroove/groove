@@ -1,0 +1,14 @@
+{
+  "id": "g55-audio",
+  "title": "Audio failure states",
+  "steps": [
+    {
+      "file": "01-a-sound-couldn-t-load-the-notice-says-it.png",
+      "caption": "A sound couldn't load: the notice says it stays silent and what to do"
+    },
+    {
+      "file": "02-play-when-the-audio-output-has-gone-chec.png",
+      "caption": "Play when the audio output has gone: check the speakers, press Play, or reload"
+    }
+  ]
+}
