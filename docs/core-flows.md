@@ -1606,8 +1606,9 @@ use.
     bars on the arrangement, and the bite is marked done.
 11. That was the chapter's last bite: the lesson leaves the panel, and
     Coproducer's wrap-up follows in the conversation.
-12. Reload the page. The beat is still there: BD's step 11 is on, and the
-    Snare pad is on BD's drum machine.
+12. Reload the page. The beat is still there: its clip still runs for four
+    bars, and opened in the Sequence view, BD's step 11 is on and the Snare
+    pad has its hits.
 
 **Outcome:** a new producer went from the welcome to a beat of their own, one
 bite at a time in their own project, doing some bites themselves and having

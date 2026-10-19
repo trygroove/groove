@@ -11,6 +11,7 @@ import {
 import { ERROR_HEADING, ERROR_REASSURANCE, errorMessage } from "./assistantErrorCopy";
 import { skippedLine } from "./cardQueue";
 import { fitComposer } from "./composerHeight";
+import LessonCard from "./LessonCard";
 import MemoryProposalCard from "./MemoryProposalCard";
 import ProposalCard from "./ProposalCard";
 import RecommendationCard from "./RecommendationCard";
@@ -193,6 +194,10 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
         when={props.chat.account().registered}
         fallback={<SignInPrompt signIn={props.chat.account().signIn} />}
       >
+        {/* The lesson under way (GRV-43), above any question it asks. */}
+        <Show when={props.chat.lesson.state()}>
+          {(state) => <LessonCard lesson={props.chat.lesson} state={state()} />}
+        </Show>
         <Show when={conversation().pendingAsk()}>
           {(pending) => (
             <AssistantAskCard
@@ -211,12 +216,15 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
         {/* Coproducer's one nudge a day (GRV-25), above the suggestions. */}
         <Show
           when={
-            !streaming() && !conversation().pendingAsk() && props.chat.nudge?.lesson()
+            !streaming() &&
+            !conversation().pendingAsk() &&
+            !props.chat.lesson.state() &&
+            props.chat.nudge?.bite()
           }
         >
-          {(lesson) => (
+          {(bite) => (
             <section class="assistant-card cue-nudge" aria-label={NUDGE_LABEL}>
-              <b>Want to try "{lesson()}"?</b>
+              <b>Want to try "{bite().title}"?</b>
               <div class="memory-proposal-actions">
                 <button
                   type="button"
@@ -327,7 +335,9 @@ function Entry(props: {
             <span class="assistant-entry-label">
               {message().answers
                 ? `Answer · ${message().answers}`
-                : `Scope · ${message().scopeLabel}`}
+                : message().lesson
+                  ? `Lesson · ${message().lesson}`
+                  : `Scope · ${message().scopeLabel}`}
             </span>
             {/* A space between the stamp and the message, so their text reads
                 as two words to a screen reader and a search, not one. The flex

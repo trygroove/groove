@@ -39,6 +39,7 @@ const storedEntrySchema = z.discriminatedUnion("kind", [
     scopeLabel: z.string(),
     answers: z.string().optional(),
     wire: z.string().optional(),
+    lesson: z.string().optional(),
   }),
   z.object({
     kind: z.literal("reply"),

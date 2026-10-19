@@ -59,6 +59,7 @@ import { useAssistantChat } from "./assistant/useAssistantChat";
 import { useAssistantPanel } from "./assistant/useAssistantPanel";
 import CompatibilityNotice from "./CompatibilityNotice";
 import { compatibilityNoticeItems } from "./compatibilityNoticeItems";
+import { controlHome } from "./controlReveal";
 import { DeviceMeterContext } from "./deviceMeters";
 import { DeviceSpectrumContext, type DeviceSpectrumSource } from "./deviceSpectrum";
 import EditorHeader from "./EditorHeader";
@@ -453,6 +454,57 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
   const chat = useAssistantChat({
     profile: producerProfile,
     project,
+    // A lesson's "Hear it" waits for the song to play, and its Show me works
+    // through the editor as the assistant (GRV-43).
+    playing: () => audio.isPlaying(),
+    lessonEditor: {
+      apply(commands) {
+        const target = session.proposalTarget();
+        if (!target || target.gestureActive) return false;
+        return target.execute(commands, {
+          actor: "assistant",
+          baseRevision: target.project.metadata.revision,
+        }).ok;
+      },
+      goTo: (view) => selectView(view, "reveal"),
+      point(address) {
+        const current = project();
+        if (!current) return;
+        const home = controlHome(current, address);
+        if (home.trackId) {
+          trackSelection.selectTrack(home.trackId);
+          if (home.padId) trackSelection.selectPad(home.trackId, home.padId);
+        }
+        if (home.placementId !== undefined)
+          trackSelection.selectPlacement(home.placementId);
+      },
+      play: () => void audio.play(),
+      async putSound(role, trackId, padId) {
+        const catalog = await assistantLibrary.load();
+        const current = project();
+        const kit = current?.song.tracks.find((each) => each.id === trackId)?.instrument;
+        const pad =
+          kit?.kind === "drumMachine"
+            ? kit.pads.find((each) => each.id === padId)
+            : undefined;
+        const playingNow = current?.song.assets.find(
+          (asset) => asset.id === pad?.assetId,
+        )?.name;
+        const sound = catalog?.packs
+          .flatMap((entry) => entry.sounds)
+          .find(
+            (candidate) =>
+              candidate.type === "one-shot" &&
+              candidate.role.includes(role) &&
+              candidate.name !== playingNow,
+          );
+        if (!sound) return false;
+        const outcome = await library.insert({ kind: "pad", trackId, padId }, sound, {
+          upgradeAnyway: false,
+        });
+        return outcome.ok;
+      },
+    },
     conversationKey: () => {
       const uid = props.libraryAccount?.uid;
       return uid ? conversationStorageKey(uid, props.projectId) : null;

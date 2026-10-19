@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { BITE_IDS } from "../lessons/ids";
 import { emptyProfile, type ProducerProfile } from "../persistence/profileDocuments";
-import { localDay, nudgeDue, nudgeLesson } from "./nudge";
+import { localDay, nudgeBite, nudgeDue } from "./nudge";
 
 const DAY = 86_400_000;
 const NOON = new Date(2026, 9, 11, 12).getTime();
@@ -39,10 +40,14 @@ describe("Coproducer's daily nudge (GRV-25)", () => {
     expect(nudgeDue(emptyProfile(NOON - 5 * DAY), NOON)).toBe(false);
   });
 
-  it("offers the first lesson the goal suggests", () => {
+  it("offers the next bite not yet done, from the chapter the goal suggests (GRV-43)", () => {
     const profile = onboarded(1, {
       memory: { ...emptyProfile(1).memory, goal: "sound_design" },
     });
-    expect(nudgeLesson(profile)).toBe("Shape a sound from scratch");
+    expect(nudgeBite(profile)?.title).toBe("Pick a wave");
+    expect(nudgeBite({ ...profile, lessonsDone: ["sound-wave"] })?.title).toBe(
+      "Darken it",
+    );
+    expect(nudgeBite({ ...profile, lessonsDone: [...BITE_IDS] })).toBeNull();
   });
 });
