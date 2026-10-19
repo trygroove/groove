@@ -1,0 +1,14 @@
+{
+  "id": "g55-crash",
+  "title": "Crash screen",
+  "steps": [
+    {
+      "file": "01-the-crash-screen-reload-saves-any-waitin.png",
+      "caption": "The crash screen: Reload saves any waiting change first"
+    },
+    {
+      "file": "02-offline-the-change-cannot-be-saved-it-sa.png",
+      "caption": "Offline, the change cannot be saved: it says so and does not reload it away"
+    }
+  ]
+}
