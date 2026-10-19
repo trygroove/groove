@@ -1,0 +1,14 @@
+{
+  "id": "exp0",
+  "title": "Export with every stem off",
+  "steps": [
+    {
+      "file": "01-stems-chosen.png",
+      "caption": "Stems chosen"
+    },
+    {
+      "file": "02-every-stem-off-nothing-to-export.png",
+      "caption": "Every stem off: nothing to export"
+    }
+  ]
+}
