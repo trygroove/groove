@@ -108,6 +108,7 @@ import {
   assistantTools,
   EXPLAIN_TOOL,
   makesChanges,
+  withProviderToolText,
   withToolText,
 } from "./tools";
 import {
@@ -300,9 +301,15 @@ async function prepare(
       withToolText(EXPLAIN_TOOL, tactics.toolText),
       withToolText(askProducerTool(), tactics.toolText),
     ]),
-    ...(turn.library ? [recommendationTool()] : []),
-    ...(videos ? [videoRecommendationTool()] : []),
-    ...(turn.memory ? providerTools([rememberTool()]) : []),
+    ...(turn.library
+      ? [withProviderToolText(recommendationTool(), tactics.toolText)]
+      : []),
+    ...(videos
+      ? [withProviderToolText(videoRecommendationTool(), tactics.toolText)]
+      : []),
+    ...(turn.memory
+      ? providerTools([withToolText(rememberTool(), tactics.toolText)])
+      : []),
   ];
   // The tool definitions take room in the window just as the prompt does.
   const systemTokens =

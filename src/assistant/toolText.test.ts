@@ -7,8 +7,10 @@ import {
 import { askProducerTool } from "./ask";
 import { runAssistantTurn } from "./gateway";
 import { createInMemoryGuardStores } from "./inMemoryGuardStores";
+import { rememberTool } from "./memory";
 import { buildAssistantPayload } from "./payload";
 import { ASSISTANT_SYSTEM_PROMPT, buildSystemBlocks, SHARED_TOOL_RULES } from "./prompt";
+import { recommendationTool } from "./recommendation";
 import { TACTICS } from "./tactics";
 import {
   assistantTools,
@@ -16,18 +18,36 @@ import {
   SCHEMA_TEXT,
   TOOL_TEXT,
   type ToolTextLevel,
+  withProviderToolText,
   withToolText,
 } from "./tools";
+import { videoRecommendationTool } from "./video";
 
 const LEVELS = TACTICS.toolText.values as readonly ToolTextLevel[];
 
-/** Every tool the model is always offered, at `level`. */
+/** Every tool the model can be offered, the conditional ones included, at `level`. */
 function offered(level: ToolTextLevel) {
+  const conditional = [recommendationTool(), videoRecommendationTool()].map((tool) => {
+    const { input_schema: inputSchema, ...rest } = withProviderToolText(tool, level);
+    return { name: rest.name, description: rest.description, inputSchema };
+  });
   return [
     ...assistantTools(level),
     withToolText(EXPLAIN_TOOL, level),
     withToolText(askProducerTool(), level),
+    ...conditional,
+    withToolText(rememberTool(), level),
   ];
+}
+
+/** What the model reads of the tools at `level`: their JSON and the shared rules. */
+function sentChars(level: ToolTextLevel): number {
+  const tools = offered(level).map(({ name, description, inputSchema }) => ({
+    name,
+    description,
+    input_schema: inputSchema,
+  }));
+  return JSON.stringify(tools).length + (level === "full" ? 0 : SHARED_TOOL_RULES.length);
 }
 
 /** Every `description` in a schema, by its path. */
@@ -132,15 +152,44 @@ describe("the toolText tactic", () => {
     }
   });
 
+  it("trims the conditional tools at both levels", () => {
+    for (const name of ["recommend_sounds", "recommend_video", "remember_producer"]) {
+      const full = offered("full").find((tool) => tool.name === name);
+      for (const level of ["moderate", "aggressive"] as const) {
+        const trimmed = offered(level).find((tool) => tool.name === name);
+        expect(trimmed?.description.length, `${name} ${level}`).toBeLessThan(
+          (full?.description.length ?? 0) * (level === "moderate" ? 0.9 : 0.7),
+        );
+      }
+    }
+  });
+
+  it("keeps the memory field value's allowed words at every level", () => {
+    for (const level of LEVELS) {
+      const text = JSON.stringify(
+        offered(level).find((tool) => tool.name === "remember_producer")?.inputSchema,
+      );
+      for (const word of ["finished_a_few", "releases", "video_or_game", "curious"]) {
+        expect(text).toContain(word);
+      }
+    }
+  });
+
+  // Targets on the description words are about 30% (moderate) and 60%
+  // (aggressive). Moderate meets it (-30.6%); aggressive reaches -56.7%,
+  // because the generated parameter ranges and the constraints stay. The tool
+  // JSON is mostly schema structure, which does not change, so the whole block
+  // shrinks by far less than its words.
   it("meets its length targets", () => {
-    const full = wordsAt("full");
-    const moderate = wordsAt("moderate");
-    const aggressive = wordsAt("aggressive");
+    const words = Object.fromEntries(LEVELS.map((level) => [level, wordsAt(level)]));
+    const sent = Object.fromEntries(LEVELS.map((level) => [level, sentChars(level)]));
     console.info(
-      `tool text chars: full ${full}, moderate ${moderate}, aggressive ${aggressive}`,
+      `tool text description chars: ${JSON.stringify(words)}; tool JSON + shared rules chars: ${JSON.stringify(sent)}`,
     );
-    expect(moderate).toBeLessThan(full * 0.8);
-    expect(aggressive).toBeLessThan(full * 0.55);
+    expect(words.moderate).toBeLessThan(words.full * 0.72);
+    expect(words.aggressive).toBeLessThan(words.full * 0.45);
+    expect(sent.moderate).toBeLessThan(sent.full);
+    expect(sent.aggressive).toBeLessThan(sent.moderate);
   });
 });
 
