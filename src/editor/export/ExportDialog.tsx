@@ -253,7 +253,8 @@ export default function ExportDialog(props: ExportDialogProps): JSX.Element {
         setGot(index + 1);
       }
       if (current.signal.aborted) throw new StemExportError("aborted", "cancelled");
-      // The finished screen takes the dialog's place, at the dialog's size.
+      // The finished screen takes the dialog's place, at least at the dialog's size;
+      // a taller screen (a one-track song) grows the dialog rather than clipping.
       setDoneHeight(root.closest(".dialog")?.getBoundingClientRect().height ?? 0);
       list.setFocused(false);
       setPhase({ kind: "done" });
