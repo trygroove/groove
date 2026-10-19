@@ -72,6 +72,7 @@ import {
   EXPORT_FEATURE_KEYS,
   EXPORT_SHORTCUT_ACTION_IDS,
 } from "./catalog/export";
+import { LESSON_EVENTS, LESSON_FEATURE_KEYS } from "./catalog/lessons";
 import {
   LIBRARY_EVENTS,
   LIBRARY_FEATURE_KEYS,
@@ -170,6 +171,7 @@ export const FEATURE_KEYS = [
   ...EXPORT_FEATURE_KEYS,
   ...ASSISTANT_FEATURE_KEYS,
   ...ONBOARDING_FEATURE_KEYS,
+  ...LESSON_FEATURE_KEYS,
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -248,6 +250,7 @@ export const ANALYTICS_EVENTS = {
   ...EXPORT_EVENTS,
   ...ASSISTANT_EVENTS,
   ...ONBOARDING_EVENTS,
+  ...LESSON_EVENTS,
 
   feature_first_use: {
     phase: 0,
