@@ -73,7 +73,13 @@ import type { AssistantVideo } from "../../assistant/video";
 import type { Project } from "../../domain/entities";
 import type { SuggestionId } from "../../projection/projectAnalysisProjection";
 import { type AssistantScope, scopedContext } from "./assistantScope";
-import { type ConversationStore, createConversationStore } from "./conversationStore";
+import {
+  type ConversationStore,
+  createConversationStore,
+  restoreOrigin,
+  type StoredConversation,
+  type StoredOrigin,
+} from "./conversationStore";
 
 /** What a turn was asked: the producer's words and the scope they were sent with. */
 export interface TurnOrigin {
@@ -97,6 +103,11 @@ export interface TurnOrigin {
    * detector is counting. A turn restored from before a reload has none.
    */
   readonly sessionTurn?: SessionTurn;
+  /**
+   * The turn was asked before a reload (GRV-135): its cards were kept with
+   * the conversation and handed back, and a proposal of it is out of date.
+   */
+  readonly restored?: boolean;
 }
 
 /** One thing in the conversation's log. */
@@ -262,6 +273,11 @@ export interface UseAssistantConversationOptions {
   readonly persistence?: {
     readonly key: Accessor<string | null>;
     readonly store?: ConversationStore;
+    /**
+     * Whether the proposal or sound card in an entry has been decided, so it
+     * is not kept (GRV-135). Reactive. Without it every card is kept.
+     */
+    readonly decided?: (entryId: string) => boolean;
   };
   /**
    * What the transcript files each turn under (GRV-8): the open project's ID
@@ -695,28 +711,45 @@ export function useAssistantConversation(
 
   /**
    * Restores the conversation kept under the key once the project has loaded
-   * (a question's options are read against it), then keeps every change. A
-   * new key (another project) brings back its own conversation, or none.
+   * (a question's options are read against it, a card's scope is found in
+   * it), then keeps every change. A new key (another project) brings back its
+   * own conversation, or none.
    */
   function keep(
     persistence: NonNullable<UseAssistantConversationOptions["persistence"]>,
   ) {
     const store = persistence.store ?? createConversationStore();
     const loaded = createMemo(() => options.project() !== null);
+    const isDecided = persistence.decided ?? (() => false);
     let restoredKey: string | null = null;
     createEffect(
-      () => ({
-        key: persistence.key(),
-        loaded: loaded(),
-        pending: pendingAsk(),
+      () => {
         // A streaming reply changes with every word: it is kept when the turn
         // starts and when it ends, not word by word.
-        entries: streaming() ? untrack(entries) : entries(),
-      }),
-      ({ key, loaded: ready, pending, entries: current }) => {
+        const current = streaming() ? untrack(entries) : entries();
+        return {
+          key: persistence.key(),
+          loaded: loaded(),
+          pending: pendingAsk(),
+          entries: current,
+          // Deciding a card drops it from what is kept (GRV-135).
+          decided: new Set(
+            current
+              .filter(
+                (entry) =>
+                  (entry.kind === "proposal" || entry.kind === "recommendation") &&
+                  isDecided(entry.id),
+              )
+              .map((entry) => entry.id),
+          ),
+        };
+      },
+      ({ key, loaded: ready, pending, entries: current, decided }) => {
         if (key === null) return;
         if (key === restoredKey) {
-          store.save(key, current, pending?.replyId ?? null);
+          store.save(key, current, pending?.replyId ?? null, (entryId) =>
+            decided.has(entryId),
+          );
           return;
         }
         if (!ready) return;
@@ -730,8 +763,9 @@ export function useAssistantConversation(
         }
         const stored = store.load(key);
         if (!stored && !switching) return;
-        setEntries(stored?.entries ?? []);
-        for (const entry of stored?.entries ?? []) {
+        const restored = stored ? restoredEntries(stored) : [];
+        setEntries(restored);
+        for (const entry of restored) {
           const n = Number(/^entry-(\d+)$/.exec(entry.id)?.[1] ?? 0);
           if (n > nextId) nextId = n;
         }
@@ -745,8 +779,40 @@ export function useAssistantConversation(
               }
             : null,
         );
+        // The cards still waiting go back to their controllers, in order, so
+        // a turn's cards come up one at a time as before (GRV-135).
+        for (const entry of restored) {
+          if (entry.kind === "proposal") {
+            options.onProposal?.(entry.id, entry.proposal, entry.origin);
+          } else if (entry.kind === "recommendation") {
+            options.onRecommendation?.(entry.id, entry.call, entry.library, entry.origin);
+          }
+        }
       },
     );
+  }
+
+  /**
+   * A stored conversation's entries, its cards' turns found again in the
+   * song as it is now: one origin per turn, which its cards share.
+   */
+  function restoredEntries(stored: StoredConversation): ConversationEntry[] {
+    const project = untrack(options.project);
+    const origins = new Map<StoredOrigin, TurnOrigin>();
+    const originOf = (kept: StoredOrigin): TurnOrigin | null => {
+      if (!project) return null;
+      let origin = origins.get(kept);
+      if (!origin) {
+        origin = restoreOrigin(kept, project);
+        origins.set(kept, origin);
+      }
+      return origin;
+    };
+    return stored.entries.flatMap((entry): ConversationEntry[] => {
+      if (entry.kind === "message" || entry.kind === "reply") return [entry];
+      const origin = originOf(entry.origin);
+      return origin ? [{ ...entry, origin }] : [];
+    });
   }
 
   return {
