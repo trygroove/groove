@@ -97,8 +97,18 @@ function linksFromEnvironment(): ExperimentLinks {
 }
 
 async function writePhase(dir: string, phase: ExperimentPhase): Promise<void> {
-  for (const [variant, report] of Object.entries(phase.reports)) {
-    const out = join(dir, phase.label, variant);
+  const reports = [
+    ...Object.entries(phase.reports).map(([variant, report]) => ({
+      out: join(dir, phase.label, variant),
+      report,
+    })),
+    // The check-6 block's turns, beside the phase's own; no variant name has an underscore.
+    ...Object.entries(phase.flattening?.reports ?? {}).map(([variant, report]) => ({
+      out: join(dir, phase.label, "_check-6", variant),
+      report,
+    })),
+  ];
+  for (const { out, report } of reports) {
     await mkdir(out, { recursive: true });
     await writeFile(join(out, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
     await writeFile(join(out, "report.md"), renderMarkdown(report));

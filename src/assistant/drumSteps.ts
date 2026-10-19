@@ -45,7 +45,7 @@ export type StepHit = keyof typeof DEFAULT_STEP_VELOCITIES;
 export const STEP_REST = ".";
 
 /** The highest MIDI-style velocity, which a note event's velocity of 1 stands for. */
-const MAX_STEP_VELOCITY = 127;
+export const MAX_STEP_VELOCITY = 127;
 
 const STEP_PATTERN = /^[xXo.]+$/;
 

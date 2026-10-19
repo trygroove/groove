@@ -48,6 +48,12 @@ import {
   isStepEntry,
   stepNoteEvent,
 } from "./drumSteps";
+import {
+  expandGenerator,
+  type GeneratorCall,
+  generatorCallSchema,
+  isGeneratorEntry,
+} from "./generators";
 import { NEW_ID_COUNTER_DIGITS } from "./prompt";
 import type { AssistantToolCall } from "./protocol";
 import type { RecommendationTargets } from "./recommendationTargets";
@@ -85,18 +91,37 @@ export const compactClipSchema = clipSchema.extend({
 
 /**
  * `clip_create`'s input as the model is offered it with the `drumStepStrings`
- * tactic on (GRV-140): a note is a compact note or a drum pad's step string.
+ * tactic on (GRV-140), the `patternGenerators` tactic on (GRV-141), or both: a
+ * note is a compact note, a drum pad's step string, or a generator call.
  */
-export const compactClipWithStepsSchema = clipSchema.extend({
-  content: z.discriminatedUnion("kind", [
-    z.strictObject({
-      kind: z.literal("notes"),
-      events: z.array(z.union([compactNoteSchema, drumStepsSchema])),
-    }),
-    ...clipContentSchema.options.filter((option) => option.shape.kind.value !== "notes"),
-  ]),
+export function compactClipWithFormsSchema(forms: {
+  readonly stepStrings: boolean;
+  readonly generators: boolean;
+}) {
+  const entry: [z.ZodType, ...z.ZodType[]] = [
+    compactNoteSchema,
+    ...(forms.stepStrings ? [drumStepsSchema] : []),
+    ...(forms.generators ? [generatorCallSchema] : []),
+  ];
+  return clipSchema.extend({
+    content: z.discriminatedUnion("kind", [
+      z.strictObject({
+        kind: z.literal("notes"),
+        events: z.array(z.union(entry)),
+      }),
+      ...clipContentSchema.options.filter(
+        (option) => option.shape.kind.value !== "notes",
+      ),
+    ]),
+  });
+}
+
+/** `clip_create` with step strings on alone (GRV-140). */
+export const compactClipWithStepsSchema = compactClipWithFormsSchema({
+  stepStrings: true,
+  generators: false,
 });
-export type { DrumSteps };
+export type { DrumSteps, GeneratorCall };
 
 /** `note_add`'s input as the model is offered it. */
 export const compactNoteAddSchema = z.strictObject({
@@ -202,6 +227,13 @@ const NOTE_FIELDS: Readonly<Record<string, (input: Record<string, unknown>) => N
     }),
   };
 
+/** The clip a step string or a generator call fills, its length checked. */
+interface ClipFill {
+  readonly trackId: string;
+  readonly lengthTicks: number;
+  readonly pads: ReadonlySet<string> | undefined;
+}
+
 type NotesAt = {
   readonly notes: unknown;
   readonly path: string;
@@ -262,11 +294,12 @@ export interface NoteExpander {
 }
 
 /**
- * What the expander needs to write out drum step strings (GRV-140): the
- * tracks and pads the turn starts with, and how a call it accepts changes
- * them (`withCreatedTargets`, handed in so this module needs nothing of
- * `tools.ts`). Without it, step strings are not expanded at all: the tactic
- * is off, and the tool's own schema refuses one.
+ * What the expander needs to write out drum step strings (GRV-140) and
+ * pattern generator calls (GRV-141): the tracks and pads the turn starts
+ * with, how a call it accepts changes them (`withCreatedTargets`, handed in
+ * so this module needs nothing of `tools.ts`), and which of the two forms its
+ * tactics offer. Without it, neither is expanded at all: the tactics are off,
+ * and the tool's own schema refuses either.
  */
 export interface StepStringOptions {
   readonly targets: RecommendationTargets;
@@ -274,6 +307,10 @@ export interface StepStringOptions {
     targets: RecommendationTargets,
     call: AssistantToolCall,
   ) => RecommendationTargets;
+  /** Whether a step string is written out (`drumStepStrings`); true when not said. */
+  readonly stepStrings?: boolean;
+  /** Whether a generator call is written out (`patternGenerators`); false when not said. */
+  readonly generators?: boolean;
 }
 
 /**
@@ -291,9 +328,16 @@ export function createNoteExpander(
   let counter = 0;
   /** The tracks and pads a step string may name, as the accepted calls leave them. */
   let targets = stepStrings?.targets ?? new Map();
+  /** Whether the model's step strings, and its generator calls, are written out. */
+  const writesSteps = stepStrings !== undefined && stepStrings.stepStrings !== false;
+  const writesGenerators = stepStrings?.generators === true;
   /** Whether `note` is one the gateway writes out. */
   const isCompact = (note: unknown) =>
-    Array.isArray(note) || (stepStrings !== undefined && isStepEntry(note));
+    Array.isArray(note) ||
+    (writesSteps && isStepEntry(note)) ||
+    (writesGenerators && isGeneratorEntry(note));
+  /** The calls accepted so far: a generator call's position in the turn, for its seed. */
+  let accepted = 0;
   /** Note IDs the turn's calls hold, minted or the model's own. */
   const taken = new Set<string>();
   /** The note IDs the gateway has given out. */
@@ -331,59 +375,91 @@ export function createNoteExpander(
       const events: unknown[] = [];
       const noteIds: string[] = [];
       let next = counter;
+      /** Gives `event` (an event awaiting its ID) the next free note ID, or false when none is left. */
+      const mint = (event: (id: string) => NoteEvent): boolean => {
+        const free = nextFree(next);
+        if (free === null) return false;
+        next = free.at;
+        noteIds.push(free.id);
+        events.push(event(free.id));
+        return true;
+      };
+      /** The clip the notes go in, checked: what a step string or a generator fills. */
+      const clipOf = (where: string, form: string): string | ClipFill => {
+        if (!at.clip) {
+          return `${where}: a ${form} goes in clip_create's content.events; ${call.name} takes notes as arrays`;
+        }
+        const length = clipLengthTickSchema.safeParse(at.clip.lengthTicks);
+        if (!length.success) {
+          return `lengthTicks: a clip is a whole number of ticks from 1 to ${MAX_CLIP_LENGTH_TICKS} (${MAX_CLIP_LENGTH_BARS} bars); its ${form}s fill it`;
+        }
+        const trackId = typeof at.clip.trackId === "string" ? at.clip.trackId : "";
+        return { trackId, lengthTicks: length.data, pads: targets.get(trackId) };
+      };
+      /** Writes a step string out into `events`, or says why it is refused. */
+      const writeSteps = (
+        entry: unknown,
+        where: string,
+        clip: ClipFill,
+      ): string | null => {
+        const expansion = expandDrumSteps(entry, {
+          ...clip,
+          maxHits: MAX_TURN_NOTES - next,
+        });
+        if (!expansion.ok) {
+          const at = expansion.field === null ? "" : `.${expansion.field}`;
+          return `${where}${at}: ${expansion.reason}`;
+        }
+        for (const hit of expansion.hits) {
+          if (!mint((id) => stepNoteEvent(hit, id))) return TOO_MANY_NOTES;
+        }
+        return null;
+      };
+      /** Writes a compact note out into `events`, or says why it is refused. */
+      const writeNote = (note: readonly unknown[], where: string): string | null => {
+        const parsed = compactNoteSchema.safeParse(note);
+        if (!parsed.success) {
+          const issue = parsed.error.issues[0];
+          const path = [where, ...(issue?.path ?? [])].join(".");
+          return `${path}: ${issue?.message ?? "not a note"}; a note is [startTicks, pitch or padId, durationTicks, velocity]`;
+        }
+        return mint((id) => noteEventOf(parsed.data, id)) ? null : TOO_MANY_NOTES;
+      };
       for (const [index, note] of at.notes.entries()) {
-        if (stepStrings !== undefined && isStepEntry(note)) {
-          const where = `${at.path}.${index}`;
-          if (!at.clip) {
-            return refusedCall(
-              `${where}: a step string goes in clip_create's content.events; ${call.name} takes notes as arrays`,
-            );
-          }
-          const { trackId } = at.clip;
-          const length = clipLengthTickSchema.safeParse(at.clip.lengthTicks);
-          if (!length.success) {
-            return refusedCall(
-              `lengthTicks: a clip is a whole number of ticks from 1 to ${MAX_CLIP_LENGTH_TICKS} (${MAX_CLIP_LENGTH_BARS} bars); its step strings fill it`,
-            );
-          }
-          const lengthTicks: number = length.data;
-          const track = typeof trackId === "string" ? trackId : "";
-          const expansion = expandDrumSteps(note, {
-            trackId: track,
-            lengthTicks,
-            pads: targets.get(track),
-            maxHits: MAX_TURN_NOTES - next,
+        const where = `${at.path}.${index}`;
+        if (writesGenerators && isGeneratorEntry(note)) {
+          const clip = clipOf(where, "generator call");
+          if (typeof clip === "string") return refusedCall(clip);
+          const expansion = expandGenerator(note, {
+            ...clip,
+            seed: `${stem}${mark}:${accepted}:${index}`,
+            maxNotes: MAX_TURN_NOTES - next,
           });
           if (!expansion.ok) {
-            const field = expansion.field === null ? "" : `.${expansion.field}`;
-            return refusedCall(`${where}${field}: ${expansion.reason}`);
+            const at = expansion.field === null ? "" : `.${expansion.field}`;
+            return refusedCall(`${where}${at}: ${expansion.reason}`);
           }
-          for (const hit of expansion.hits) {
-            const free = nextFree(next);
-            if (free === null) return refusedCall(TOO_MANY_NOTES);
-            next = free.at;
-            noteIds.push(free.id);
-            events.push(stepNoteEvent(hit, free.id));
+          for (const entry of expansion.entries) {
+            const refused = Array.isArray(entry)
+              ? writeNote(entry, where)
+              : writeSteps(entry, where, clip);
+            if (refused !== null) return refusedCall(refused);
           }
+          continue;
+        }
+        if (writesSteps && isStepEntry(note)) {
+          const clip = clipOf(where, "step string");
+          if (typeof clip === "string") return refusedCall(clip);
+          const refused = writeSteps(note, where, clip);
+          if (refused !== null) return refusedCall(refused);
           continue;
         }
         if (!Array.isArray(note)) {
           events.push(note);
           continue;
         }
-        const parsed = compactNoteSchema.safeParse(note);
-        if (!parsed.success) {
-          const issue = parsed.error.issues[0];
-          const where = [at.path, index, ...(issue?.path ?? [])].join(".");
-          return refusedCall(
-            `${where}: ${issue?.message ?? "not a note"}; a note is [startTicks, pitch or padId, durationTicks, velocity]`,
-          );
-        }
-        const free = nextFree(next);
-        if (free === null) return refusedCall(TOO_MANY_NOTES);
-        next = free.at;
-        noteIds.push(free.id);
-        events.push(noteEventOf(parsed.data, free.id));
+        const refused = writeNote(note, where);
+        if (refused !== null) return refusedCall(refused);
       }
       const expanded = { ...call, input: at.write(events) };
       const refused = check?.(expanded) ?? null;
@@ -405,6 +481,7 @@ export function createNoteExpander(
     for (const id of noteIds) minted.add(id);
     for (const id of [...noteIds, ...modelNoteIds(sent)]) taken.add(id);
     if (stepStrings) targets = stepStrings.track(targets, call);
+    accepted += 1;
     return { ok: true, call, noteIds };
   }
 }

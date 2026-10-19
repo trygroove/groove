@@ -70,6 +70,13 @@ export const TACTICS = {
     default: "off",
     alters: ["prompt", "expansion"],
   },
+  patternGenerators: {
+    description:
+      "Whether clip_create may take a named pattern generator call (fourOnTheFloor, backbeat, hats, euclidean, arpeggio, chordStabs, bassRoot) in place of notes written out, which the gateway expands into notes (GRV-141).",
+    values: ["off", "on"],
+    default: "off",
+    alters: ["prompt", "tools", "expansion"],
+  },
 } as const satisfies Readonly<Record<string, TacticDefinition>>;
 
 export type TacticId = keyof typeof TACTICS;

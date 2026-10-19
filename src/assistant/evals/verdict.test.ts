@@ -93,6 +93,87 @@ describe("judgeGoal (GRV-110)", () => {
 });
 
 describe("checkGuardrails (GRV-110)", () => {
+  it("holds check 6 only when the experiment asks, case by case on its block (GRV-141)", () => {
+    /** The check-6 block: two extreme cases, each failing check 6 in its first `fails[caseId]` runs. */
+    const block = (fails: Readonly<Record<string, number>> = {}) =>
+      report(["extreme-a", "extreme-b"], (caseId, index) => ({
+        notFlattened: index < (fails[caseId] ?? 0) ? "fail" : "pass",
+      }));
+    const held = { ...DEFAULT_GUARDRAILS, holdNotFlattened: true };
+    const steady = { control: block(), variant: block() };
+    // Not a guardrail by default: nothing is reported for it.
+    expect(
+      checkGuardrails(control, report(CASES), DEFAULT_GUARDRAILS, {
+        control: block(),
+        variant: block({ "extreme-a": 3 }),
+      }).map((row) => row.id),
+    ).not.toContain("notFlattened");
+    const notFlattened = (flattening: Parameters<typeof checkGuardrails>[3]) =>
+      checkGuardrails(control, report(CASES), held, flattening).find(
+        (row) => row.id === "notFlattened",
+      );
+    expect(notFlattened(steady)).toMatchObject({
+      pass: true,
+      label: "Extreme is not flattened (check 6): no extreme case flattened in most runs",
+      detail: "`extreme-a` 3/3 to 3/3 unflattened; `extreme-b` 3/3 to 3/3 unflattened",
+    });
+    // One noisy run of three does not sink the variant.
+    expect(
+      notFlattened({ control: block(), variant: block({ "extreme-a": 1 }) })?.pass,
+    ).toBe(true);
+    // An extreme case flattened in most of the variant's runs does.
+    expect(
+      notFlattened({ control: block(), variant: block({ "extreme-a": 2 }) }),
+    ).toMatchObject({
+      pass: false,
+      detail:
+        "`extreme-a` 3/3 to 1/3 unflattened (flattened); `extreme-b` 3/3 to 3/3 unflattened",
+    });
+    // A case the control already flattened is no regression.
+    expect(
+      notFlattened({
+        control: block({ "extreme-a": 3 }),
+        variant: block({ "extreme-a": 3 }),
+      })?.pass,
+    ).toBe(true);
+  });
+
+  it("fails check 6 as not measured when nothing judged it (GRV-141)", () => {
+    const held = { ...DEFAULT_GUARDRAILS, holdNotFlattened: true };
+    const notFlattened = (flattening: Parameters<typeof checkGuardrails>[3]) =>
+      checkGuardrails(control, report(CASES), held, flattening).find(
+        (row) => row.id === "notFlattened",
+      );
+    expect(notFlattened(null)).toMatchObject({
+      pass: false,
+      detail: "not measured: the check-6 block did not run",
+    });
+    // A block whose records carry no check 6, as a phase's own cases without a pair.
+    expect(
+      notFlattened({ control: report(CASES), variant: report(CASES) }),
+    ).toMatchObject({
+      pass: false,
+      detail: "not measured: no extreme case was judged on both sides",
+    });
+    // Judged on the control's side only: the variant's turns all errored.
+    expect(
+      notFlattened({
+        control: report(["extreme-a"], () => ({ notFlattened: "pass" })),
+        variant: report(["extreme-a"], () => ({ errorCode: "provider_error" })),
+      })?.pass,
+    ).toBe(false);
+    // And a variant refused by it is no win, however good its goal.
+    const analysis = analyzeVariant(
+      variant,
+      "outputTokens",
+      control,
+      report(CASES, () => ({ usage: { outputTokens: 10 } })),
+      held,
+    );
+    expect(analysis.verdict).toBe("no win");
+    expect(analysis.why).toMatch(/Extreme is not flattened/);
+  });
+
   it("passes every guardrail for a variant that changes nothing", () => {
     expect(checkGuardrails(control, report(CASES), DEFAULT_GUARDRAILS)).toSatisfy(
       (rows: { pass: boolean }[]) => rows.every((row) => row.pass),

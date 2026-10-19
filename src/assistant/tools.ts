@@ -82,10 +82,11 @@ import {
 import {
   COMPACT_NOTE_DESCRIPTION,
   compactClipSchema,
-  compactClipWithStepsSchema,
+  compactClipWithFormsSchema,
   compactNoteAddSchema,
 } from "./compactNotes";
 import { DEFAULT_STEP_TICKS, STEP_VELOCITY_SCALE } from "./drumSteps";
+import { GENERATORS_DESCRIPTION } from "./generators";
 import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
 /**
@@ -496,6 +497,26 @@ const CLIP_CREATE_DESCRIPTION = [
 const CLIP_CREATE_STEPS_TEXT = [
   `On a drum machine, an entry in content.events may instead be one pad's whole part as a step string, {padId, steps, stepTicks, velocity}: x a hit, X an accent, o a ghost, . a rest, one character per step of stepTicks (default ${DEFAULT_STEP_TICKS}, a 16th; 32 a 16th triplet, 24 a 32nd); ${STEP_VELOCITY_SCALE}. The string repeats from the clip's start to its end, so one bar fills a clip of any length; it may not be longer than the clip.`,
   `Example entry: ${JSON.stringify({ padId: "pad_...", steps: "x...x...x...x..." })}`,
+].join(" ");
+
+/**
+ * What `clip_create`'s description adds with the `patternGenerators` tactic on
+ * (GRV-141): an entry may be a pattern generator call.
+ */
+const CLIP_CREATE_GENERATORS_TEXT = [
+  `An entry in content.events may instead be a pattern generator call. ${GENERATORS_DESCRIPTION}`,
+  `Example entries: ${JSON.stringify({ generator: "fourOnTheFloor", padId: "pad_...", bars: 1 })}, ${JSON.stringify(
+    {
+      generator: "arpeggio",
+      chords: [
+        ["Am", 1],
+        ["F", 1],
+      ],
+      direction: "upDown",
+      rate: "16th",
+      octaves: 2,
+    },
+  )}`,
 ].join(" ");
 
 const NOTE_ADD_DESCRIPTION = [
@@ -979,35 +1000,50 @@ function toolDefinition(entry: ToolRule): AssistantToolDefinition {
 }
 
 /**
- * `clip_create` as the `drumStepStrings` tactic offers it (GRV-140): the
- * schema takes step strings, and the step-string text follows the
- * description at whatever level `toolText` leaves it.
+ * `clip_create` as the `drumStepStrings` (GRV-140) and `patternGenerators`
+ * (GRV-141) tactics offer it: the schema takes step strings, generator calls
+ * or both, and their text follows the description at whatever level
+ * `toolText` leaves it.
  */
-function withStepStrings(entry: ToolRule, level: ToolTextLevel): AssistantToolDefinition {
+function withNoteForms(
+  entry: ToolRule,
+  level: ToolTextLevel,
+  forms: { readonly stepStrings: boolean; readonly generators: boolean },
+): AssistantToolDefinition {
   const tool = withToolText(
-    toolDefinition({ ...entry, offered: compactClipWithStepsSchema }),
+    toolDefinition({ ...entry, offered: compactClipWithFormsSchema(forms) }),
     level,
   );
-  return { ...tool, description: `${tool.description} ${CLIP_CREATE_STEPS_TEXT}` };
+  const added = [
+    ...(forms.stepStrings ? [CLIP_CREATE_STEPS_TEXT] : []),
+    ...(forms.generators ? [CLIP_CREATE_GENERATORS_TEXT] : []),
+  ];
+  return { ...tool, description: [tool.description, ...added].join(" ") };
 }
 
 const toolCache = new Map<string, readonly AssistantToolDefinition[]>();
 
 /**
- * Every tool the assistant may call, generated once per level of text and
- * `drumStepStrings` value from the registry. The defaults, `full` and `off`,
- * are the text and schemas as written in this module.
+ * Every tool the assistant may call, generated once per level of text,
+ * `drumStepStrings` and `patternGenerators` value from the registry. The
+ * defaults, `full`, `off` and `off`, are the text and schemas as written in
+ * this module.
  */
 export function assistantTools(
   level: ToolTextLevel = "full",
   drumStepStrings: TacticValues["drumStepStrings"] = TACTIC_DEFAULTS.drumStepStrings,
+  patternGenerators: TacticValues["patternGenerators"] = TACTIC_DEFAULTS.patternGenerators,
 ): readonly AssistantToolDefinition[] {
-  const key = `${level}:${drumStepStrings}`;
+  const key = `${level}:${drumStepStrings}:${patternGenerators}`;
   let tools = toolCache.get(key);
   if (!tools) {
+    const forms = {
+      stepStrings: drumStepStrings === "on",
+      generators: patternGenerators === "on",
+    };
     tools = TOOL_RULES.map((entry) =>
-      drumStepStrings === "on" && entry.commandType === "clip.create"
-        ? withStepStrings(entry, level)
+      (forms.stepStrings || forms.generators) && entry.commandType === "clip.create"
+        ? withNoteForms(entry, level, forms)
         : withToolText(toolDefinition(entry), level),
     );
     toolCache.set(key, tools);

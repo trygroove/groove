@@ -30,6 +30,8 @@ export interface TestRecordOptions {
   readonly valid?: CheckResult["status"];
   /** Check 8. */
   readonly outcome?: CheckResult["status"];
+  /** Check 6; `undefined` leaves it out, as the other checks are. */
+  readonly notFlattened?: CheckResult["status"];
   /** An errored turn's gateway code; such a turn carries no checks. */
   readonly errorCode?: string;
   /** The model calls the turn made; left out, as a record saved before steps was. */
@@ -60,6 +62,9 @@ export function testRecord(options: TestRecordOptions = {}): EvalRecord {
     : {
         valid: { status: options.valid ?? "pass", detail: "" },
         outcome: { status: options.outcome ?? "pass", detail: "" },
+        ...(options.notFlattened
+          ? { notFlattened: { status: options.notFlattened, detail: "" } }
+          : {}),
       };
   return {
     caseId: options.caseId ?? "case-a",
