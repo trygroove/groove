@@ -1,0 +1,14 @@
+{
+  "id": "g168",
+  "title": "Coproducer",
+  "steps": [
+    {
+      "file": "01-the-header-has-a-coproducer-button.png",
+      "caption": "The header has a Coproducer button"
+    },
+    {
+      "file": "02-the-coproducer-panel-open.png",
+      "caption": "The Coproducer panel open"
+    }
+  ]
+}
