@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
  * and docs/architecture.html describe them in prose; this is the form that
  * fails CI. One scanner reads every non-test source file under `src/` and
  * checks its imports (`import`, `import type`, side-effect imports, dynamic
- * `import()` and `export ... from`).
+ * `import()` and `export ... from`). Test files are not scanned: a test may
+ * import whatever it needs to exercise the code under it.
  *
  * Widening an allowance below is a deliberate, reviewable edit: add the file
  * to the list and say why beside it.
@@ -30,9 +31,17 @@ function walk(directory: string): string[] {
 
 const IMPORT_PATTERN = /\b(?:from|import)\s*\(?\s*["']([^"'\n]+)["']/g;
 
+// A string literal is matched first and kept, so a `/*` or `//` inside one
+// (`accept="audio/*"`) is not taken for the start of a comment.
+const STRING_OR_COMMENT =
+  /("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`)|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
+
 /** Every module specifier a source text imports, comments excluded. */
 function importedSpecifiers(source: string): string[] {
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const code = source.replace(
+    STRING_OR_COMMENT,
+    (_match, literal?: string) => literal ?? "",
+  );
   return [...code.matchAll(IMPORT_PATTERN)].map((match) => match[1] as string);
 }
 
@@ -172,8 +181,21 @@ describe("import boundaries", () => {
         e,
       } from "seven";
       // import x from "commented";
+      /* import y from "block-commented"; */
+      const accept = "audio/*";
+      export * from "eight"; // a trailing comment
+      const glob = "*/";
     `);
-    expect(found).toEqual(["one", "two", "three", "four", "five", "six", "seven"]);
+    expect(found).toEqual([
+      "one",
+      "two",
+      "three",
+      "four",
+      "five",
+      "six",
+      "seven",
+      "eight",
+    ]);
   });
 
   it("flags a deliberate violation of each rule", () => {
