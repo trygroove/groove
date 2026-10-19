@@ -84,7 +84,7 @@ import {
   compactClipWithStepsSchema,
   compactNoteAddSchema,
 } from "./compactNotes";
-import { DEFAULT_STEP_TICKS } from "./drumSteps";
+import { DEFAULT_STEP_TICKS, STEP_VELOCITY_SCALE } from "./drumSteps";
 import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
 /**
@@ -494,7 +494,7 @@ const CLIP_CREATE_DESCRIPTION = [
  */
 const CLIP_CREATE_WITH_STEPS_DESCRIPTION = [
   CLIP_CREATE_DESCRIPTION,
-  `On a drum machine, an entry in content.events may instead be one pad's whole part as a step string, {padId, steps, stepTicks, velocity}: x a hit, X an accent, o a ghost, . a rest, one character per step of stepTicks (default ${DEFAULT_STEP_TICKS}, a 16th; 32 a 16th triplet, 24 a 32nd); velocity sets x, X and o once, 1 to 127 (default 100, 120, 50). The string repeats from the clip's start to its end, so one bar fills a clip of any length; it may not be longer than the clip.`,
+  `On a drum machine, an entry in content.events may instead be one pad's whole part as a step string, {padId, steps, stepTicks, velocity}: x a hit, X an accent, o a ghost, . a rest, one character per step of stepTicks (default ${DEFAULT_STEP_TICKS}, a 16th; 32 a 16th triplet, 24 a 32nd); ${STEP_VELOCITY_SCALE}. The string repeats from the clip's start to its end, so one bar fills a clip of any length; it may not be longer than the clip.`,
   `Example entry: ${JSON.stringify({ padId: "pad_...", steps: "x...x...x...x..." })}`,
 ].join(" ");
 

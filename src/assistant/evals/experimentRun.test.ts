@@ -17,6 +17,7 @@ import {
   replyEvents,
   toolUseEvents,
 } from "../../testing/scriptedAssistantProvider";
+import { ASSISTANT_PROMPT_VERSION } from "../prompt";
 import type { AssistantProvider } from "../provider";
 import { continuesTurn } from "../providerRequest";
 import {
@@ -25,7 +26,7 @@ import {
   type TacticDefinition,
   type TacticOverrides,
 } from "../tactics";
-import { toolNameFor } from "../tools";
+import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
 import { experimentIds, loadExperiment, validateExperiment } from "./experiment";
 import {
   concludeExperiment,
@@ -33,6 +34,7 @@ import {
   PROMPT_PATH,
   planWinPullRequest,
   TACTICS_PATH,
+  TOOLS_PATH,
   type WinPullRequest,
 } from "./experimentPr";
 import { renderExperimentMarkdown } from "./experimentReport";
@@ -456,6 +458,89 @@ describe("an experiment's dry run (GRV-110)", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("runs the real drumStepStrings tactic, and its win bumps the prompt and tool set versions it alters", async () => {
+    const DEFAULT = TACTIC_DEFAULTS.drumStepStrings;
+    const OTHER = TACTICS.drumStepStrings.values.find(
+      (value) => value !== DEFAULT,
+    ) as string;
+    // The scripted model writes less when clip_create offers step strings.
+    const offersSteps = (request: Parameters<AssistantProvider["stream"]>[0]) =>
+      request.tools.some(
+        (tool) => tool.name === "clip_create" && tool.description.includes("step string"),
+      );
+    const provider: AssistantProvider = {
+      stream(request, signal) {
+        const steps = offersSteps(request) === (OTHER === "on");
+        const script = continuesTurn(request)
+          ? []
+          : toolUseEvents("A Compressor on the master.", [compressorCall("d")], {
+              outputTokens: steps ? 500 : 900,
+            });
+        return createScriptedAssistantProvider([script]).stream(request, signal);
+      },
+    };
+    const experiment = validateExperiment({
+      id: "steps-flip",
+      card: "GRV-140",
+      hypothesis: "The other step-string setting writes fewer tokens.",
+      variants: { other: { drumStepStrings: OTHER } },
+      goal: "outputTokens",
+      cases: { caseIds: POOL },
+    });
+    const result = await runExperiment(experiment, {
+      runTurn: gatewayTurnRunner({
+        provider,
+        model: (await import("../config")).ASSISTANT_MODELS["claude-sonnet-5"],
+      }),
+    });
+    expect(result.verdict).toBe("win");
+
+    const sources: Record<string, string> = {
+      [TACTICS_PATH]: readFileSync(TACTICS_PATH, "utf8"),
+      [PROMPT_PATH]: readFileSync(PROMPT_PATH, "utf8"),
+      [TOOLS_PATH]: readFileSync(TOOLS_PATH, "utf8"),
+    };
+    const plan = planWinPullRequest(result, planOptions(sources, TACTICS));
+    if (!plan) throw new Error("expected a win's PR");
+    // drumStepStrings alters the prompt, the tools and their expansion: both versions move.
+    expect(plan.files.map((file) => file.path)).toEqual([
+      TACTICS_PATH,
+      PROMPT_PATH,
+      TOOLS_PATH,
+      "docs/experiments/steps-flip.md",
+    ]);
+    const changed = (path: string) => {
+      const before = sources[path].split("\n");
+      const after = (plan.files.find((file) => file.path === path)?.content ?? "").split(
+        "\n",
+      );
+      expect(after).toHaveLength(before.length);
+      return after.flatMap((line, index) =>
+        line === before[index] ? [] : [[before[index], line]],
+      );
+    };
+    expect(changed(TACTICS_PATH)).toEqual([
+      [`    default: "${DEFAULT}",`, `    default: "${OTHER}",`],
+    ]);
+    expect(changed(PROMPT_PATH)).toEqual([
+      [
+        `export const ASSISTANT_PROMPT_VERSION = "${ASSISTANT_PROMPT_VERSION}";`,
+        expect.stringMatching(
+          /^export const ASSISTANT_PROMPT_VERSION = "2026-10-18\.\d+";$/,
+        ),
+      ],
+    ]);
+    expect(changed(TOOLS_PATH)).toEqual([
+      [
+        `export const ASSISTANT_TOOLSET_VERSION = ${ASSISTANT_TOOLSET_VERSION};`,
+        `export const ASSISTANT_TOOLSET_VERSION = ${ASSISTANT_TOOLSET_VERSION + 1};`,
+      ],
+    ]);
+    expect(plan.body).toContain(
+      "bumps `ASSISTANT_PROMPT_VERSION` and `ASSISTANT_TOOLSET_VERSION` because the tactic alters them",
+    );
   });
 
   it("interleaves the variants case by case and run by run", async () => {

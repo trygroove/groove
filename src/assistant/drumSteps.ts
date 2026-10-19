@@ -25,6 +25,11 @@
  * Pure, and like the rest of `src/assistant`, free of Firebase and any SDK.
  */
 import { z } from "zod";
+import {
+  clipLengthTickSchema,
+  MAX_CLIP_LENGTH_BARS,
+  MAX_CLIP_LENGTH_TICKS,
+} from "../domain/clipLength";
 import type { NoteEvent } from "../domain/entities";
 import { padIdSchema } from "../domain/ids";
 import { TICKS_PER_SIXTEENTH } from "../domain/time";
@@ -46,8 +51,14 @@ const STEP_PATTERN = /^[xXo.]+$/;
 
 const stepVelocitySchema = z.int().min(1).max(MAX_STEP_VELOCITY);
 
+/**
+ * What a step string's velocities are, said the same way wherever the model
+ * reads about them: a MIDI scale, so it is not mistaken for a note array's 0 to 1.
+ */
+export const STEP_VELOCITY_SCALE = `velocity sets x, X and o once, on a MIDI scale of 1 to ${MAX_STEP_VELOCITY}, not the 0 to 1 of a note array (default ${DEFAULT_STEP_VELOCITIES.x}, ${DEFAULT_STEP_VELOCITIES.X}, ${DEFAULT_STEP_VELOCITIES.o}; Groove writes each as the value over ${MAX_STEP_VELOCITY})`;
+
 /** What the tools say a step string is. */
-export const DRUM_STEPS_DESCRIPTION = `A drum pad's part as a step string: one character per step, x a hit, X an accent, o a ghost, . a rest. stepTicks is the step's length (default ${DEFAULT_STEP_TICKS}, a 16th; 96 an 8th, 24 a 32nd, 32 a 16th triplet). velocity sets x, X and o once, 1 to 127 (default ${DEFAULT_STEP_VELOCITIES.x}, ${DEFAULT_STEP_VELOCITIES.X}, ${DEFAULT_STEP_VELOCITIES.o}). The string repeats from the clip's start to its end, so write one bar for a clip of any length; it may not be longer than the clip. No IDs: Groove gives each hit its own.`;
+export const DRUM_STEPS_DESCRIPTION = `A drum pad's part as a step string: one character per step, x a hit, X an accent, o a ghost, . a rest. stepTicks is the step's length (default ${DEFAULT_STEP_TICKS}, a 16th; 96 an 8th, 24 a 32nd, 32 a 16th triplet). ${STEP_VELOCITY_SCALE}. The string repeats from the clip's start to its end, so write one bar for a clip of any length; it may not be longer than the clip. No IDs: Groove gives each hit its own.`;
 
 /** One step string as the model writes it. */
 export const drumStepsSchema = z
@@ -99,11 +110,12 @@ export type StepExpansion =
 
 /** What a step string is checked against: its clip's length and its track's pads. */
 export interface StepClip {
+  /** The clip's length, refused unless it is a clip length (`clipLengthTickSchema`). */
   readonly lengthTicks: number;
   /** The track's pads, or undefined when the track is not known. */
   readonly pads: ReadonlySet<string> | undefined;
   readonly trackId: string;
-  /** The most hits the string may make: what is left of the turn's notes. */
+  /** The most hits the string may make: what is left of the turn's notes, as the caller counts them. */
   readonly maxHits: number;
 }
 
@@ -115,8 +127,12 @@ function noteVelocity(value: number): number {
 /**
  * The hits `raw` makes in `clip`, in tick order, or why it is refused: a
  * malformed entry, an unknown character, a `stepTicks` that is not a positive
- * integer, a string longer than the clip, or a pad the track does not have.
- * The same input always makes the same hits.
+ * integer, a clip longer than a clip may be, a string longer than the clip,
+ * or a pad the track does not have. The same input always makes the same hits.
+ *
+ * The clip's length is checked before anything is expanded, and the walk
+ * visits only hit positions, so neither a huge clip nor a string of rests can
+ * keep it busy: the work is bounded by the clip's maximum length.
  */
 export function expandDrumSteps(raw: unknown, clip: StepClip): StepExpansion {
   const parsed = drumStepsSchema.safeParse(raw);
@@ -154,6 +170,12 @@ export function expandDrumSteps(raw: unknown, clip: StepClip): StepExpansion {
       `the track "${clip.trackId.slice(0, 64)}" has no pad "${entry.padId.slice(0, 64)}". Use one of its pads: ${[...pads].join(", ")}`,
     );
   }
+  if (!clipLengthTickSchema.safeParse(clip.lengthTicks).success) {
+    return refused(
+      null,
+      `the clip's lengthTicks must be a whole number from 1 to ${MAX_CLIP_LENGTH_TICKS} (${MAX_CLIP_LENGTH_BARS} bars) for its step strings to fill`,
+    );
+  }
   const stepTicks = entry.stepTicks ?? DEFAULT_STEP_TICKS;
   const steps = [...entry.steps];
   const patternTicks = steps.length * stepTicks;
@@ -164,23 +186,28 @@ export function expandDrumSteps(raw: unknown, clip: StepClip): StepExpansion {
     );
   }
   const velocities = { ...DEFAULT_STEP_VELOCITIES, ...entry.velocity };
+  const hitSteps = steps.flatMap((char, index) =>
+    char === STEP_REST ? [] : [{ offset: index * stepTicks, char: char as StepHit }],
+  );
   const hits: StepHitEvent[] = [];
-  for (let index = 0; index * stepTicks < clip.lengthTicks; index += 1) {
-    const char = steps[index % steps.length];
-    if (char === STEP_REST) continue;
-    const startTicks = index * stepTicks;
-    if (hits.length >= clip.maxHits) {
-      return refused(
-        "steps",
-        `this string makes more notes than one proposal may write; use a shorter clip and loop its placement`,
-      );
+  if (hitSteps.length === 0) return { ok: true, hits };
+  for (let repeat = 0; repeat < clip.lengthTicks; repeat += patternTicks) {
+    for (const { offset, char } of hitSteps) {
+      const startTicks = repeat + offset;
+      if (startTicks >= clip.lengthTicks) break;
+      if (hits.length >= clip.maxHits) {
+        return refused(
+          "steps",
+          `this string makes more notes than the ${clip.maxHits} this proposal has left; use a shorter clip and loop its placement`,
+        );
+      }
+      hits.push({
+        padId: entry.padId,
+        startTicks,
+        durationTicks: Math.min(stepTicks, clip.lengthTicks - startTicks),
+        velocity: noteVelocity(velocities[char]),
+      });
     }
-    hits.push({
-      padId: entry.padId,
-      startTicks,
-      durationTicks: Math.min(stepTicks, clip.lengthTicks - startTicks),
-      velocity: noteVelocity(velocities[char as StepHit]),
-    });
   }
   return { ok: true, hits };
 }

@@ -27,6 +27,11 @@
  * judge.
  */
 import { z } from "zod";
+import {
+  clipLengthTickSchema,
+  MAX_CLIP_LENGTH_BARS,
+  MAX_CLIP_LENGTH_TICKS,
+} from "../domain/clipLength";
 import { clipContentSchema, clipSchema, type NoteEvent } from "../domain/entities";
 import { ID_PREFIXES, padIdSchema } from "../domain/ids";
 import {
@@ -334,22 +339,20 @@ export function createNoteExpander(
               `${where}: a step string goes in clip_create's content.events; ${call.name} takes notes as arrays`,
             );
           }
-          const { trackId, lengthTicks } = at.clip;
-          if (
-            typeof lengthTicks !== "number" ||
-            !Number.isInteger(lengthTicks) ||
-            lengthTicks <= 0
-          ) {
+          const { trackId } = at.clip;
+          const length = clipLengthTickSchema.safeParse(at.clip.lengthTicks);
+          if (!length.success) {
             return refusedCall(
-              `lengthTicks: the clip needs a whole, positive length for its step strings to fill`,
+              `lengthTicks: a clip is a whole number of ticks from 1 to ${MAX_CLIP_LENGTH_TICKS} (${MAX_CLIP_LENGTH_BARS} bars); its step strings fill it`,
             );
           }
+          const lengthTicks: number = length.data;
           const track = typeof trackId === "string" ? trackId : "";
           const expansion = expandDrumSteps(note, {
             trackId: track,
             lengthTicks,
             pads: targets.get(track),
-            maxHits: MAX_TURN_NOTES,
+            maxHits: MAX_TURN_NOTES - next,
           });
           if (!expansion.ok) {
             const field = expansion.field === null ? "" : `.${expansion.field}`;

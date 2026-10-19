@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_CLIP_LENGTH_BARS, MAX_CLIP_LENGTH_TICKS } from "../domain/clipLength";
 import { createDenseStepFixtureProject } from "../domain/fixtures";
 import {
   createScriptedAssistantProvider,
@@ -14,6 +15,7 @@ import {
   DEFAULT_STEP_TICKS,
   DEFAULT_STEP_VELOCITIES,
   expandDrumSteps,
+  STEP_VELOCITY_SCALE,
   type StepClip,
 } from "./drumSteps";
 import { runAssistantTurn } from "./gateway";
@@ -149,6 +151,27 @@ describe("a drum step string (GRV-140)", () => {
     expect(reasonFor({ padId: KICK, steps: "x", swing: 60 })).toMatch(/^\(entry\):/);
     expect(reasonFor({ padId: KICK, steps: "" })).toMatch(/^steps:/);
   });
+
+  it("refuses a clip longer than a clip may be, rests and all, without walking it", () => {
+    const rests = { padId: KICK, steps: ".", stepTicks: 1 };
+    for (const lengthTicks of [1e12, MAX_CLIP_LENGTH_TICKS + 1, 0, 1.5]) {
+      expect(reasonFor(rests, clip({ lengthTicks }))).toBe(
+        `(entry): the clip's lengthTicks must be a whole number from 1 to ${MAX_CLIP_LENGTH_TICKS} (${MAX_CLIP_LENGTH_BARS} bars) for its step strings to fill`,
+      );
+    }
+    expect(hitsOf(rests, clip({ lengthTicks: MAX_CLIP_LENGTH_TICKS }))).toEqual([]);
+    // A hit string over the longest clip makes one hit per step, up to the cap.
+    const ticks = hitsOf(
+      { padId: KICK, steps: "x...", stepTicks: 48 },
+      clip({ lengthTicks: MAX_CLIP_LENGTH_TICKS }),
+    );
+    expect(ticks).toHaveLength(MAX_CLIP_LENGTH_TICKS / 192);
+    expect(
+      reasonFor({ padId: KICK, steps: "x" }, clip({ lengthTicks: BAR, maxHits: 3 })),
+    ).toBe(
+      "steps: this string makes more notes than the 3 this proposal has left; use a shorter clip and loop its placement",
+    );
+  });
 });
 
 /** A turn's expander with step strings on, over a kit of KICK and HAT. */
@@ -259,11 +282,33 @@ describe("the note expander with step strings on", () => {
     for (let index = 0; index < 62; index += 1) {
       expect(notes.expand(clipCreate([{ padId: HAT, steps: "x" }])).ok).toBe(true);
     }
+    // The string is told how many notes the turn has left, so it stops there.
     expect(notes.expand(clipCreate([{ padId: HAT, steps: "x" }]))).toEqual({
       ok: false,
-      message: `One proposal may write at most ${MAX_TURN_NOTES} notes; loop a short clip instead`,
+      message: `content.events.0.steps: this string makes more notes than the ${MAX_TURN_NOTES - 992} this proposal has left; use a shorter clip and loop its placement`,
     });
     expect(notes.expand(clipCreate([{ padId: HAT, steps: "x......." }])).ok).toBe(true);
+  });
+
+  it("refuses a clip past the longest a clip may be before expanding anything", () => {
+    const notes = stepExpander();
+    // A rest-only string over a trillion ticks: refused at once, not walked.
+    const started = performance.now();
+    for (const lengthTicks of [1e12, MAX_CLIP_LENGTH_TICKS + 1]) {
+      const refused = notes.expand(
+        clipCreate([{ padId: KICK, steps: ".", stepTicks: 1 }], lengthTicks),
+      );
+      expect(refused).toEqual({
+        ok: false,
+        message: `lengthTicks: a clip is a whole number of ticks from 1 to ${MAX_CLIP_LENGTH_TICKS} (${MAX_CLIP_LENGTH_BARS} bars); its step strings fill it`,
+      });
+    }
+    expect(performance.now() - started).toBeLessThan(1_000);
+    // The longest clip there is takes the same string, and makes no notes.
+    const longest = notes.expand(
+      clipCreate([{ padId: KICK, steps: ".", stepTicks: 1 }], MAX_CLIP_LENGTH_TICKS),
+    );
+    expect(longest.ok && longest.noteIds).toEqual([]);
   });
 
   it("takes a step string only in clip_create", () => {
@@ -318,6 +363,16 @@ describe("the drumStepStrings tactic", () => {
     expect(offClip?.description).not.toContain("step string");
     expect(JSON.stringify(onClip?.inputSchema)).toContain("stepTicks");
     expect(onClip?.description).toContain("step string");
+  });
+
+  it("says the velocities are on a MIDI scale, not a note array's 0 to 1, everywhere it describes them", () => {
+    expect(STEP_VELOCITY_SCALE).toContain("MIDI scale of 1 to 127, not the 0 to 1");
+    expect(DRUM_STEP_STRINGS_LINE).toContain(STEP_VELOCITY_SCALE);
+    const onClip = assistantTools({ drumStepStrings: "on" }).find(
+      (tool) => tool.name === "clip_create",
+    );
+    expect(onClip?.description).toContain(STEP_VELOCITY_SCALE);
+    expect(JSON.stringify(onClip?.inputSchema)).toContain(STEP_VELOCITY_SCALE);
   });
 
   it("sends the form and expands it in a turn, into a proposal the browser accepts", async () => {
