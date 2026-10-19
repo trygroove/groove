@@ -45,6 +45,26 @@ describe("Dialog", () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
+  it("is not dismissed by the second click of a double-click that opened it", () => {
+    const onClose = vi.fn();
+    render(() => (
+      <Dialog label="Export" onClose={onClose}>
+        <p>contents</p>
+      </Dialog>
+    ));
+    const scrim = screen.getByRole("button", { name: "Dismiss export" });
+
+    // The first click opened the dialog; the second (detail 2) lands on the
+    // scrim that appeared under the pointer.
+    scrim.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 2 }));
+    flush();
+    expect(onClose).not.toHaveBeenCalled();
+
+    scrim.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    flush();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("takes focus when it opens and gives it back when it closes", () => {
     const opener = document.createElement("button");
     document.body.append(opener);
