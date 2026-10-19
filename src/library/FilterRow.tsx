@@ -33,6 +33,8 @@ export default function FilterRow(props: {
   onMenuOpen(open: boolean): void;
   /** The genre menu's button, which Escape hands focus back to (#874). */
   genreButtonRef?(button: HTMLButtonElement): void;
+  /** The open menu, as it appears, for the caller to move focus into. */
+  menuRef?(menu: HTMLFieldSetElement): void;
   onGenre(genre: string): void;
   /** The menu's *Any genre* row: clear every genre at once. */
   onClearGenres(): void;
@@ -63,7 +65,11 @@ export default function FilterRow(props: {
           {label()}
         </button>
         <Show when={props.menuOpen}>
-          <fieldset class="filter-menu" aria-label="Genres">
+          <fieldset
+            ref={(menu) => props.menuRef?.(menu)}
+            class="filter-menu"
+            aria-label="Genres"
+          >
             <div class="filter-menu-options">
               {/* Keyed by genre: a toggle re-counts the menu, and the row (and
                   the focus on its checkbox) must survive that (#890). */}
