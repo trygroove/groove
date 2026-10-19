@@ -1,0 +1,18 @@
+{
+  "id": "xp-after",
+  "title": "Export dialog at 375px (after)",
+  "steps": [
+    {
+      "file": "01-the-export-dialog-after.png",
+      "caption": "The Export dialog (after)"
+    },
+    {
+      "file": "02-the-export-dialog-scrolled-to-its-footer.png",
+      "caption": "The Export dialog scrolled to its footer (after)"
+    },
+    {
+      "file": "03-the-finished-screen-after.png",
+      "caption": "The finished screen (after)"
+    }
+  ]
+}

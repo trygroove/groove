@@ -1,0 +1,18 @@
+{
+  "id": "xp-before",
+  "title": "Export dialog at 375px (before)",
+  "steps": [
+    {
+      "file": "01-the-export-dialog-before.png",
+      "caption": "The Export dialog (before)"
+    },
+    {
+      "file": "02-the-export-dialog-scrolled-to-its-footer.png",
+      "caption": "The Export dialog scrolled to its footer (before)"
+    },
+    {
+      "file": "03-the-finished-screen-before.png",
+      "caption": "The finished screen (before)"
+    }
+  ]
+}
