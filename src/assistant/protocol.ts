@@ -18,6 +18,7 @@ import {
 import { MAX_SELECTED_NOTES } from "../projection/selectedNotes";
 import type { AssistantAsk } from "./ask";
 import { ASSISTANT_LIBRARY_LIMITS, ASSISTANT_REQUEST_LIMITS } from "./config";
+import { assistantLessonContextSchema } from "./lesson";
 import { assistantMemoryContextSchema } from "./memory";
 import { assistantTurnSessionSchema } from "./transcripts";
 import type { AssistantVideo } from "./video";
@@ -295,6 +296,12 @@ export const assistantTurnRequestSchema = z.strictObject({
    * one is answered without memory.
    */
   memory: assistantMemoryContextSchema.optional(),
+  /**
+   * The lesson under way (GRV-43, `lesson.ts`): where it stands and what just
+   * happened, so Coproducer teaches the bite. A turn without one is no
+   * lesson's.
+   */
+  lesson: assistantLessonContextSchema.optional(),
   /**
    * The conversation, turn and project the transcript files this turn under
    * (GRV-8). Never sent to the provider. Optional, so a turn without one is

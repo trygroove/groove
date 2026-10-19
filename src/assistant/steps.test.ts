@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ASK_PRODUCER_TOOL_NAME } from "./ask";
 import { createNoteExpander } from "./compactNotes";
+import { START_LESSON_TOOL_NAME } from "./lessonTool";
 import { REMEMBER_TOOL_NAME } from "./memory";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
 import {
@@ -36,6 +37,7 @@ describe("continuesAfter", () => {
     expect(continuesAfter("end_turn", [])).toBe(false);
     expect(continuesAfter("tool_use", [other(RECOMMEND_SOUNDS_TOOL)])).toBe(false);
     expect(continuesAfter("tool_use", [other(REMEMBER_TOOL_NAME)])).toBe(false);
+    expect(continuesAfter("tool_use", [other(START_LESSON_TOOL_NAME)])).toBe(false);
   });
 });
 

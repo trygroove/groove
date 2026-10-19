@@ -51,6 +51,8 @@ import {
   historyOf as historyOfEntries,
   MAX_MESSAGE_CHARS,
 } from "../../assistant/history";
+import type { AssistantLessonContext } from "../../assistant/lesson";
+import { parseLessonCall, splitLessonCalls } from "../../assistant/lessonTool";
 import {
   type AssistantMemoryContext,
   type MemoryProposal,
@@ -71,6 +73,7 @@ import type { SessionHealth, SessionTurn } from "../../assistant/sessionHealth";
 import type { ReplyRating } from "../../assistant/transcripts";
 import type { AssistantVideo } from "../../assistant/video";
 import type { Project } from "../../domain/entities";
+import type { ChapterId } from "../../lessons/ids";
 import type { SuggestionId } from "../../projection/projectAnalysisProjection";
 import { type AssistantScope, scopedContext } from "./assistantScope";
 import { type ConversationStore, createConversationStore } from "./conversationStore";
@@ -240,6 +243,13 @@ export interface UseAssistantConversationOptions {
    * Coproducer cannot propose adding to it.
    */
   readonly memory?: () => AssistantMemoryContext | null;
+  /**
+   * The lesson under way (GRV-43), sent with every turn while there is one,
+   * or null outside a lesson.
+   */
+  readonly lesson?: () => AssistantLessonContext | null;
+  /** Hears that Coproducer started a lesson, and which chapter (GRV-43). */
+  readonly onStartLesson?: (chapter: ChapterId) => void;
   /** Hears each memory proposal as it arrives, under its entry's ID (GRV-25). */
   readonly onMemoryProposal?: (entryId: string, proposal: MemoryProposal) => void;
   /** Hears that Coproducer asked a question skipped in onboarding (GRV-25). */
@@ -442,11 +452,18 @@ export function useAssistantConversation(
           );
           return;
         case "proposal": {
-          // Memory proposals (GRV-25) and recommendations (GRV-23) come back
-          // among the proposal's calls: each is a card of its own, and the
-          // changes, if any, are one. A memory proposal that does not parse
-          // is dropped: it would have changed nothing.
-          const remembered = splitMemoryProposals(event.proposal);
+          // A lesson to start (GRV-43), memory proposals (GRV-25) and
+          // recommendations (GRV-23) come back among the proposal's calls:
+          // a lesson starts in the panel, the rest are each a card of their
+          // own, and the changes, if any, are one. A lesson or memory call
+          // that does not parse is dropped: it would have changed nothing.
+          const started = splitLessonCalls(event.proposal);
+          for (const call of started.lessons) {
+            const chapter = parseLessonCall(call);
+            if (chapter) options.onStartLesson?.(chapter);
+          }
+          if (!started.proposal) return;
+          const remembered = splitMemoryProposals(started.proposal);
           for (const call of remembered.memory) {
             const proposal = parseRememberCall(call);
             if (!proposal) continue;
@@ -556,6 +573,7 @@ export function useAssistantConversation(
     if (!project) return;
     const said = message.wire ?? message.text;
     const memory = options.memory?.() ?? null;
+    const lesson = options.lesson?.() ?? null;
     const where = options.session?.();
     const turnId = where ? newId() : undefined;
     const analytics = options.analytics();
@@ -567,6 +585,7 @@ export function useAssistantConversation(
       ],
       context: scopedContext(project, scope),
       ...(memory ? { memory } : {}),
+      ...(lesson ? { lesson } : {}),
       ...(where && turnId
         ? {
             session: {

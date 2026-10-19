@@ -8,7 +8,10 @@ import {
 } from "../domain/fixtures";
 import { SONG_SWING } from "../domain/parameters";
 import { createStarterProject } from "../editor/starterProject";
+import { lessonCue } from "../lessons/cue";
+import { skip, startBite } from "../lessons/session";
 import { buildAssistantLibrary, DRUM_PACK_ID } from "../testing/assistantLibrary";
+import { starterWorld } from "../testing/lessonWorld";
 import {
   createEmulatorAssistantProvider,
   DUSTIER_ROLE,
@@ -22,11 +25,14 @@ import {
   LOOSEN_EXPLANATION,
   LOOSEN_SWING,
   LOOSEN_VOLUME_DROP_DB,
+  lessonReplyText,
   MISFIT_ASSET_ID,
   usesEmulatorProvider,
 } from "./emulatorProvider";
 import { type AssistantGatewayDeps, runAssistantTurn } from "./gateway";
 import { createInMemoryGuardStores } from "./inMemoryGuardStores";
+import type { AssistantLessonContext } from "./lesson";
+import { START_LESSON_TOOL_NAME } from "./lessonTool";
 import { type AssistantMemoryContext, REMEMBER_TOOL_NAME } from "./memory";
 import { buildAssistantPayload } from "./payload";
 import { validateProposal } from "./proposal";
@@ -209,6 +215,65 @@ describe("the emulator's assistant provider", () => {
     expect(reply.proposal?.calls).toEqual([
       expect.objectContaining({ name: REMEMBER_TOOL_NAME, input: EMULATOR_REMEMBER }),
     ]);
+  });
+
+  it("ends [lesson] in start_lesson on a turn that carries memory (GRV-43)", async () => {
+    const memory: AssistantMemoryContext = {
+      taste: [],
+      artists: "",
+      experience: null,
+      goal: null,
+      learn: [],
+      gear: [],
+      notes: [],
+      askLater: null,
+    };
+    const reply = await turn(
+      gateway(),
+      "Teach me to make a beat [lesson]",
+      new AbortController().signal,
+      createReferenceProject(),
+      undefined,
+      memory,
+    ).result;
+    expect(reply.proposal?.calls).toEqual([
+      expect.objectContaining({
+        name: START_LESSON_TOOL_NAME,
+        input: { chapter: "beat" },
+      }),
+    ]);
+  });
+
+  it("answers a lesson's turn naming its bite, or the chapter at its end (CF-037)", async () => {
+    const world = starterWorld();
+    const settings = { style: "boom_bap" } as const;
+    const started = startBite("beat", "beat-kick", world, settings);
+    const startedCue = lessonCue(started.state, started.event, settings, []);
+    const project = createStarterProject("owner-1", () => 0.5);
+    const answer = (lesson: AssistantLessonContext) =>
+      runAssistantTurn(
+        gateway(),
+        { uid: "uid-1", signInProvider: "google.com" },
+        {
+          projectRevision: project.metadata.revision,
+          messages: [{ role: "user", text: 'Let\'s do "The kick pattern".' }],
+          context: buildAssistantPayload(project),
+          lesson,
+        },
+        { signal: new AbortController().signal, onChunk: () => {} },
+      );
+    expect((await answer(startedCue)).text).toBe(lessonReplyText(startedCue));
+    expect(lessonReplyText(startedCue)).toContain('"The kick pattern"');
+
+    const last = startBite("beat", "beat-loop", world, settings).state;
+    const over = skip(last, world, settings);
+    if (!over) throw new Error("not skipped");
+    const wrapUp = lessonCue(over.state, over.event, settings, []);
+    expect((await answer(wrapUp)).text).toContain('"Make a beat" finished');
+    // A message the producer wrote mid-lesson is answered as any other.
+    expect((await answer({ ...startedCue, moment: "under_way" })).text).toBe(
+      EMULATOR_REPLY_CHUNKS.join(""),
+    );
   });
 
   it("ends [ask-rich] in a question about the project's first track, with a preview that applies", async () => {

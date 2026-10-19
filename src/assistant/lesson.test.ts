@@ -1,0 +1,124 @@
+import { describe, expect, it } from "vitest";
+import { lessonCue } from "../lessons/cue";
+import { skip, startBite } from "../lessons/session";
+import { starterWorld } from "../testing/lessonWorld";
+import { MINIMAL_ASSISTANT_CONTEXT } from "../testing/scriptedAssistantProvider";
+import {
+  type AssistantLessonContext,
+  assistantLessonContextSchema,
+  LESSON_BLOCK_HEADING,
+  LESSON_RULES,
+  lessonBlock,
+} from "./lesson";
+import {
+  isLessonCall,
+  parseLessonCall,
+  START_LESSON_TOOL_NAME,
+  splitLessonCalls,
+  startLessonTool,
+} from "./lessonTool";
+import { buildSystemBlocks, MEMORY_BLOCK_HEADING } from "./prompt";
+
+const settings = { style: "boom_bap" } as const;
+
+function cue(): AssistantLessonContext {
+  const world = starterWorld();
+  const { state, event } = startBite("beat", "beat-kick", world, settings);
+  return lessonCue(state, event, settings, []);
+}
+
+describe("a lesson as a turn carries it (GRV-43)", () => {
+  it("takes every cue the lessons build, started or over", () => {
+    expect(assistantLessonContextSchema.parse(cue())).toEqual(cue());
+    const world = starterWorld();
+    const { state } = startBite("tour", "tour-mixer", world, settings);
+    const over = skip(state, world, settings);
+    if (!over) throw new Error("not skipped");
+    const wrapUp = lessonCue(over.state, over.event, settings, []);
+    expect(assistantLessonContextSchema.safeParse(wrapUp).success).toBe(true);
+  });
+
+  it("refuses a field it does not name, or a bite it does not know", () => {
+    expect(
+      assistantLessonContextSchema.safeParse({ ...cue(), projectId: "prj_x" }).success,
+    ).toBe(false);
+    expect(
+      assistantLessonContextSchema.safeParse({ ...cue(), biteId: "beat-gone" }).success,
+    ).toBe(false);
+  });
+
+  it("puts the rules and the lesson in one block, after memory and before the ID stem", () => {
+    const lesson = cue();
+    const memory = {
+      taste: ["Hip hop"],
+      artists: "",
+      experience: null,
+      goal: null,
+      learn: [],
+      gear: [],
+      notes: [],
+      askLater: null,
+    };
+    const blocks = buildSystemBlocks(
+      MINIMAL_ASSISTANT_CONTEXT,
+      undefined,
+      "Stem0000000000000",
+      memory,
+      undefined,
+      lesson,
+    );
+    expect(blocks).toHaveLength(5);
+    expect(blocks[2].text.startsWith(MEMORY_BLOCK_HEADING)).toBe(true);
+    expect(blocks[3].text).toBe(lessonBlock(lesson));
+    expect(blocks[3].text.startsWith(LESSON_RULES)).toBe(true);
+    expect(blocks[3].text).toContain(`${LESSON_BLOCK_HEADING}${JSON.stringify(lesson)}`);
+    expect(buildSystemBlocks(MINIMAL_ASSISTANT_CONTEXT, undefined, "S")).toHaveLength(3);
+  });
+
+  it("tells Coproducer how each moment is taught, and that celebration is words only", () => {
+    for (const moment of ["bite_started", "step_done", "bite_done", "chapter_done"]) {
+      expect(LESSON_RULES).toContain(`"${moment}"`);
+    }
+    expect(LESSON_RULES).toMatch(/no emoji/);
+    expect(LESSON_RULES).toMatch(/ask_producer/);
+  });
+});
+
+describe("start_lesson (GRV-43)", () => {
+  it("names a chapter, and nothing else", () => {
+    const tool = startLessonTool();
+    expect(tool.name).toBe(START_LESSON_TOOL_NAME);
+    expect(JSON.stringify(tool.inputSchema)).toContain('"beat"');
+    const call = (input: unknown) => ({
+      id: "toolu_1",
+      name: START_LESSON_TOOL_NAME,
+      input,
+    });
+    expect(parseLessonCall(call({ chapter: "sound" }))).toBe("sound");
+    expect(parseLessonCall(call({ chapter: "basslines" }))).toBeNull();
+    expect(parseLessonCall(call({ chapter: "beat", bite: "beat-kick" }))).toBeNull();
+  });
+
+  it("is taken out of a proposal, which is left with only its changes", () => {
+    const lesson = {
+      id: "toolu_1",
+      name: START_LESSON_TOOL_NAME,
+      input: { chapter: "beat" },
+    };
+    const change = { id: "toolu_2", name: "parameter_set", input: {} };
+    const alone = splitLessonCalls({
+      baseRevision: 1,
+      toolsetVersion: 10,
+      calls: [lesson],
+    });
+    expect(alone).toEqual({ proposal: null, lessons: [lesson] });
+    const mixed = splitLessonCalls({
+      baseRevision: 1,
+      toolsetVersion: 10,
+      calls: [lesson, change],
+    });
+    expect(mixed.proposal?.calls).toEqual([change]);
+    expect(isLessonCall(lesson)).toBe(true);
+    expect(isLessonCall(change)).toBe(false);
+  });
+});

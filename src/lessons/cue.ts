@@ -11,7 +11,7 @@
  * already carries to the same provider.
  */
 import { chapter } from "./chapters";
-import type { BiteEnding, BiteId, ChapterId } from "./ids";
+import type { BeatStyle, BiteEnding, BiteId, ChapterId, LessonMoment } from "./ids";
 import {
   biteOf,
   chapterOf,
@@ -19,18 +19,7 @@ import {
   type LessonState,
   stepWords,
 } from "./session";
-import type { BeatStyle } from "./style";
 import type { LessonSettings } from "./types";
-
-/** Where the lesson stands as a turn is sent. */
-export const LESSON_MOMENTS = [
-  "bite_started",
-  "step_done",
-  "bite_done",
-  "chapter_done",
-  "under_way",
-] as const;
-export type LessonMoment = (typeof LESSON_MOMENTS)[number];
 
 export interface LessonCue {
   readonly chapterId: ChapterId;
@@ -48,13 +37,13 @@ export interface LessonCue {
   /** The step under way, in plain words, or null between bites. */
   readonly step: string | null;
   /** What the producer changed during what just ended, a line each. */
-  readonly changes: readonly string[];
+  readonly changes: string[];
   /** The beat the chapter teaches, for "Make a beat"; null otherwise. */
   readonly style: BeatStyle | null;
   /** The bite's quiz question and answer, once it is over. */
   readonly quiz: string | null;
   /** The next bite's title after a bite; a few pointers after the chapter. */
-  readonly next: readonly string[];
+  readonly next: string[];
 }
 
 /** Where a producer might go after each chapter, besides the other chapters. */
