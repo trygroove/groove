@@ -225,4 +225,81 @@ test.describe("Export dialog layout", () => {
     );
     expect(await rects(page)).toEqual(stereo);
   });
+
+  // GRV-163: the note is the one line of copy that says why Export is off or how
+  // the stems split, so at a normal window it must wrap rather than end in an
+  // ellipsis, and it must sit inside its slot rather than be clipped by it.
+  test("wraps the footer note so the whole sentence reads at 1280 x 720", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/");
+    await harness(page, "mountExportDialog", "over");
+    const dialog = page.getByRole("dialog", { name: "Export" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("radio", { name: "Stems (ZIP)" }).check();
+    const note = dialog.locator(".export-note");
+    await expect(note).toHaveText(/is over the 2 GiB browser limit/);
+    const clipped = () =>
+      page.evaluate(() => {
+        const note = document.querySelector(".export-note") as HTMLElement;
+        const slot = note.parentElement as HTMLElement;
+        return {
+          across: note.scrollWidth > note.clientWidth,
+          // The slot bottom-aligns the note, so a note taller than the slot
+          // spills up out of it: check both edges.
+          above:
+            note.getBoundingClientRect().top < slot.getBoundingClientRect().top - 0.5,
+          below:
+            note.getBoundingClientRect().bottom >
+            slot.getBoundingClientRect().bottom + 0.5,
+        };
+      });
+    expect(await clipped()).toEqual({ across: false, above: false, below: false });
+
+    // A failure is the same one-line slot's other message: it wraps the same way.
+    await dialog.getByRole("button", { name: "Export", exact: true }).click();
+    await harness(page, "progress", 0.5);
+    await harness(page, "fail");
+    await expect(dialog.getByRole("alert")).toContainText("ZIP 1 failed:");
+    expect(
+      await page.evaluate(() => {
+        const alert = document.querySelector(".export-alert") as HTMLElement;
+        const slot = alert.parentElement as HTMLElement;
+        const box = alert.getBoundingClientRect();
+        const edge = slot.getBoundingClientRect();
+        return {
+          across: alert.scrollWidth > alert.clientWidth,
+          above: box.top < edge.top - 0.5,
+          below: box.bottom > edge.bottom + 0.5,
+        };
+      }),
+    ).toEqual({ across: false, above: false, below: false });
+  });
+
+  test("says why Export is off, in full, with no tracks on", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/");
+    await harness(page, "mountExportDialog", "few");
+    const dialog = page.getByRole("dialog", { name: "Export" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("radio", { name: "Stems (ZIP)" }).check();
+    const options = dialog.getByRole("option");
+    for (let i = 0; i < (await options.count()); i++) {
+      await options.nth(i).click();
+    }
+    const note = dialog.locator(".export-note");
+    await expect(note).toHaveText("Turn on at least one track to export stems.");
+    expect(
+      await page.evaluate(() => {
+        const note = document.querySelector(".export-note") as HTMLElement;
+        const slot = note.parentElement as HTMLElement;
+        return (
+          note.scrollWidth <= note.clientWidth &&
+          note.getBoundingClientRect().top >= slot.getBoundingClientRect().top - 0.5 &&
+          note.getBoundingClientRect().bottom <= slot.getBoundingClientRect().bottom + 0.5
+        );
+      }),
+    ).toBe(true);
+  });
 });

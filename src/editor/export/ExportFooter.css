@@ -5,7 +5,7 @@
   display: flex;
   align-items: flex-end;
   gap: 24px;
-  height: 74px;
+  height: 124px;
   padding: 14px 24px 18px;
 }
 
@@ -74,13 +74,15 @@
 }
 
 /* Between the readouts and the actions, on their baseline: it takes the room
-   they leave and never wraps. */
+   they leave. At 1280 wide that is about 200px, so a sentence wraps to up to
+   five lines (12px at 18px), and the footer is as tall as the prototype's
+   (docs/export-dialog.html `.b-ft`) so all five fit. */
 .export-message {
   display: flex;
   flex: 1;
   align-items: flex-end;
   min-width: 0;
-  height: 42px;
+  height: 92px;
   overflow: hidden;
 }
 
@@ -91,9 +93,6 @@
   background: var(--color-danger-wash);
   color: var(--color-foreground-bright);
   font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Mounted throughout so a screen reader announces each failure; framed only
@@ -107,11 +106,8 @@
 .export-note {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
   color: var(--color-foreground);
   font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .export-slot progress {

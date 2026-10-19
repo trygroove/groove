@@ -46,8 +46,8 @@ function Readout(props: {
  * The footer of the Release design (EXP-004). Everything in it has a fixed
  * size, so a label change, a message or a failure moves nothing: the readouts
  * sit in fixed-width slots, the actions in a fixed-width box, and the message
- * in the one-line slot between them, which never wraps: a long one ends in an
- * ellipsis, with the whole text on hover. It sits in the row rather than under
+ * in the message slot between them, which wraps a long one over up to five
+ * lines rather than cutting it off (GRV-163). It sits in the row rather than under
  * it so an empty slot leaves no blank strip at the foot of the dialog. The alert is always
  * mounted and only its content changes, so a screen reader announces each one.
  */
