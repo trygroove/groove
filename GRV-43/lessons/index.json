@@ -1,0 +1,18 @@
+{
+  "id": "lessons",
+  "title": "Lessons with Coproducer",
+  "steps": [
+    {
+      "file": "01-the-lesson-starts-in-coproducer-s-panel.png",
+      "caption": "The lesson starts in Coproducer's panel"
+    },
+    {
+      "file": "02-a-bite-done-and-the-next-one-to-pull.png",
+      "caption": "A bite done, and the next one to pull"
+    },
+    {
+      "file": "03-a-term-explained-under-the-step.png",
+      "caption": "A term, explained under the step"
+    }
+  ]
+}
