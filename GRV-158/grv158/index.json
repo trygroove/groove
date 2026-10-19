@@ -1,0 +1,14 @@
+{
+  "id": "grv158",
+  "title": "Export complete heading",
+  "steps": [
+    {
+      "file": "01-n-c-d-the-dots-over-the-show-in-full.png",
+      "caption": "Ünïcødé: the dots over the Ü show in full"
+    },
+    {
+      "file": "02-a-long-accented-name-still-ellipsised-ac.png",
+      "caption": "A long accented name: still ellipsised, accent and descenders whole"
+    }
+  ]
+}
