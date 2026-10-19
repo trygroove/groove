@@ -48,6 +48,7 @@ import { resolveTactics, type TacticOverrides, type TacticValues } from "../tact
 import type { AssistantTurnLog, ToolBundleFallback } from "../telemetry";
 import { ASSISTANT_TOOLSET_VERSION, type ToolBundleId } from "../tools";
 import { caseChecksFor, checkOutcome, runCaseCheck } from "./caseChecks";
+import { isReplyCheck, runReplyCheck } from "./caseChecksContext";
 import {
   caseMessages,
   casePairs,
@@ -562,11 +563,22 @@ export function evaluateTurn(
   };
   if (turn.error) return { ...base, checks: {}, stats: null, fingerprint: null };
   const outcome = checkOutcome(evalCase.expect, turn);
+  const caseChecks = caseChecksFor(evalCase.checks, evalCase.exempt);
+  // The reply checks (GRV-150) read the text alone, so they judge every turn.
+  const replyChecks = Object.fromEntries(
+    caseChecks.flatMap((id) =>
+      isReplyCheck(id) ? [[id, runReplyCheck(id, turn.text, evalCase.facts)]] : [],
+    ),
+  );
   const proposed = turn.proposal !== null && turn.proposal !== undefined;
   if (evalCase.expect !== "proposal" && !proposed) {
-    return { ...base, checks: { outcome }, stats: null, fingerprint: null };
+    return {
+      ...base,
+      checks: { outcome, ...replyChecks },
+      stats: null,
+      fingerprint: null,
+    };
   }
-  const caseChecks = caseChecksFor(evalCase.checks, evalCase.exempt);
   const project = evalCase.fixture();
   const judged = turn.session
     ? fromSession(sessionJudgement(project, turn.session, whyNoProposal(turn)))
@@ -584,6 +596,7 @@ export function evaluateTurn(
         coverage: notJudged,
         outcome,
         ...Object.fromEntries(caseChecks.map((id) => [id, notJudged])),
+        ...replyChecks,
       },
       stats: null,
       fingerprint: null,
@@ -609,6 +622,7 @@ export function evaluateTurn(
             action: evalCase.action,
             recommendations: judged.recommendations,
             library: evalCase.library ? evalLibrary() : null,
+            facts: evalCase.facts,
           }),
         ]),
       ),

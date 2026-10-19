@@ -161,7 +161,7 @@ describe("runEvals", () => {
     const markdown = renderMarkdown(report);
     expect(markdown).toContain("**Errored turns: 1 of 2**");
     expect(markdown).toContain(
-      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | 0/0 | - | - | - | 0/0 | - | 1 |",
+      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | 0/0 | - | - | - | 0/0 | - | - | - | 1 |",
     );
     expect(markdown).toContain(
       "**Run 2** (0 s): errored, not judged: provider_error: The assistant could not take that request. (provider: rejected, HTTP 400)",
@@ -543,6 +543,40 @@ describe("evaluateTurn for the basic production actions (GRV-119)", () => {
     const markdown = renderSummaryMarkdown(summaryOf(report));
     expect(markdown).toContain("## By set");
     expect(markdown).toContain("| Basic production actions | 1 | 0.0% (0/1) |");
+  });
+});
+
+describe("evaluateTurn for the project-context cases (GRV-150)", () => {
+  const find = (id: string) => EVAL_CASES.find((entry) => entry.id === id) as EvalCase;
+  const base = { durationMs: 1, error: null, stopReason: null };
+
+  it("judges the reply of a turn that proposed nothing", () => {
+    const evalCase = find("context-cancelled-hat");
+    const good = evaluateTurn(evalCase, 1, {
+      ...base,
+      text: "Nothing is muted: BD and SD are both playing.",
+      proposal: null,
+    } as never);
+    expect(good.checks).toEqual({
+      outcome: expect.objectContaining({ status: "pass" }),
+      noAbsentTrack: expect.objectContaining({ status: "pass" }),
+    });
+    const bad = evaluateTurn(evalCase, 1, {
+      ...base,
+      text: "Nothing is muted: BD, SD and the Closed Hat track I just proposed are playing.",
+      proposal: null,
+    } as never);
+    expect(bad.checks.noAbsentTrack?.status).toBe("fail");
+  });
+
+  it("judges the reply even when the turn proposed nothing it was asked for", () => {
+    const record = evaluateTurn(find("context-applied-snare"), 1, {
+      ...base,
+      text: "There's no snare track in the project yet — I never actually added it.",
+      proposal: null,
+    } as never);
+    expect(record.checks.outcome?.status).toBe("fail");
+    expect(record.checks.noDeniedTrack?.status).toBe("fail");
   });
 });
 

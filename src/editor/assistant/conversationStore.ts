@@ -13,11 +13,13 @@
  * producer has not decided yet (GRV-135), with the turn that asked for them,
  * so a proposal comes back to be refreshed and a held sound card comes back
  * to be tried. A decided card, an error, a memory card and a video are not
- * kept. Whatever cannot be read back, a corrupt entry or one written by an
+ * kept. A reply keeps what became of its proposal (GRV-150), which the next
+ * turn resends. Whatever cannot be read back, a corrupt entry or one written by an
  * older shape, is dropped, never repaired.
  */
 import { z } from "zod";
 import { type AssistantAsk, assistantAskSchema } from "../../assistant/ask";
+import { HISTORY_PROPOSALS } from "../../assistant/history";
 import {
   type AssistantLibraryContext,
   type AssistantProposal,
@@ -62,6 +64,7 @@ const storedEntrySchema = z.discriminatedUnion("kind", [
     ask: assistantAskSchema.optional(),
     turnId: sessionIdSchema.optional(),
     rating: z.enum(REPLY_RATINGS).optional(),
+    proposal: z.enum(HISTORY_PROPOSALS).optional(),
   }),
 ]);
 
@@ -111,6 +114,8 @@ const storedCardSchemas = [
       calls: z.array(toolCallSchema),
     }),
     origin: originIndex,
+    /** The reply that made it, which carries its outcome (GRV-150). */
+    replyId: entryId,
   }),
   z.object({
     kind: z.literal("recommendation"),
@@ -152,6 +157,7 @@ export type StoredCard =
       readonly id: string;
       readonly proposal: AssistantProposal;
       readonly origin: StoredOrigin;
+      readonly replyId: string;
     }
   | {
       readonly kind: "recommendation";
@@ -277,6 +283,7 @@ export function serializeConversation(
             ...(entry.ask ? { ask: entry.ask } : {}),
             ...(entry.turnId ? { turnId: entry.turnId } : {}),
             ...(entry.rating ? { rating: entry.rating } : {}),
+            ...(entry.proposal ? { proposal: entry.proposal } : {}),
           };
         case "proposal":
           return {
@@ -284,6 +291,7 @@ export function serializeConversation(
             id: entry.id,
             proposal: entry.proposal,
             origin: indexOf(entry.origin),
+            replyId: entry.replyId,
           };
         default:
           return {

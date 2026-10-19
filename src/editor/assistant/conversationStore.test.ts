@@ -233,6 +233,19 @@ describe("the conversation across a reload (GRV-42)", () => {
     ]);
   });
 
+  it("keeps what became of a reply's proposal, so the next turn still says it (GRV-150)", () => {
+    const reply = {
+      kind: "reply",
+      id: "entry-2",
+      text: "I'll add a Closed Hat.",
+      streaming: false,
+      stopped: false,
+      proposal: "cancelled",
+    } as const;
+    const stored = parseConversation(serializeConversation([reply], null));
+    expect(stored?.entries).toEqual([reply]);
+  });
+
   it("carries on in memory when storage throws", async () => {
     const mounted = mount(createConversationStore(hostileStorage()));
     mounted.conversation.send("Hi");
@@ -298,6 +311,26 @@ describe("a proposal still waiting across a reload (GRV-135)", () => {
     second.dispose();
   });
 
+  it("still records what became of it on the reply that made it (GRV-150)", async () => {
+    const store = createConversationStore(memoryStorage());
+    const first = mount(store, () => KEY, project, { onProposal: vi.fn() });
+    first.conversation.send("Turn the kick down");
+    await vi.waitFor(() => expect(first.client.turns).toHaveLength(1));
+    first.client.last().text("Here's a quieter kick.");
+    first.client.last().emit({ type: "proposal", proposal });
+    first.client.last().done();
+    flush();
+    first.dispose();
+
+    const second = mount(store, () => KEY, project, { onProposal: vi.fn() });
+    const [, reply, card] = second.conversation.entries();
+    second.conversation.recordProposalOutcome(card?.id ?? "", "cancelled");
+    flush();
+    const after = second.conversation.entries().find((entry) => entry.id === reply?.id);
+    expect(after?.kind === "reply" && after.proposal).toBe("cancelled");
+    second.dispose();
+  });
+
   it("keeps the cards still to decide, one origin per turn, and drops decided ones", () => {
     const origin = {
       text: "Add a snare",
@@ -340,7 +373,7 @@ describe("a proposal still waiting across a reload (GRV-135)", () => {
     const raw = serializeConversation(
       [
         { kind: "message", id: "entry-1", text: "Add a snare", scopeLabel: "BD" },
-        { kind: "proposal", id: "entry-2", proposal, origin },
+        { kind: "proposal", id: "entry-2", proposal, origin, replyId: "entry-1" },
         {
           kind: "recommendation",
           id: "entry-3",
@@ -401,7 +434,9 @@ describe("a proposal still waiting across a reload (GRV-135)", () => {
       parseConversation(
         JSON.stringify({
           version: 1,
-          entries: [{ kind: "proposal", id: "entry-2", proposal, origin: 0 }],
+          entries: [
+            { kind: "proposal", id: "entry-2", proposal, origin: 0, replyId: "entry-1" },
+          ],
           origins: [],
           pendingAskReplyId: null,
         }),
