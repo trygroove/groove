@@ -6,6 +6,8 @@
  * the selected track and the message, and a bundle that is not enough asks
  * for every tool with need_more_tools. The report gives the bundle chosen per
  * case, how often a turn fell back, and cache reads and writes per turn.
+ * Its first run (Actions run 39240796160) died when the API credit ran out,
+ * erroring most turns in both arms, so its "no win" is not a verdict.
  * `bun run assistant:experiment -- tool-bundles`.
  */
 import { defineExperiment } from "../../src/assistant/evals/experiment";
