@@ -7,7 +7,7 @@ import type { Project } from "../domain/entities";
 import { createSliceFixtureProject } from "../domain/fixtures";
 import { SONG_TEMPO } from "../domain/parameters";
 import { createInMemoryProjectRepository } from "../persistence/inMemoryProjectRepository";
-import type { ProjectRepository } from "../persistence/projectRepository";
+import { type ProjectRepository, saveFailure } from "../persistence/projectRepository";
 import { createManualClock } from "../shared/clock";
 import { expectNoContent, recordErrorReports } from "../testing/errorReports";
 import { memoryStorage } from "../testing/storage";
@@ -205,9 +205,26 @@ describe("reconnecting (GRV-55)", () => {
   });
 
   it("leaves a failure no retry can clear as it is", async () => {
-    const { session } = await setUp();
+    const { repository, project, open } = await setUp();
+    let writes = 0;
+    const tooLarge: ProjectRepository = Object.create(repository);
+    tooLarge.saveChanges = async () => {
+      writes += 1;
+      return saveFailure("document_too_large", "Injected persistence failure");
+    };
+    const session = open(tooLarge, project);
+    session.dispatch(tempo(128));
+    await session.autosave.flush();
+    expect(session.autosave.status.state).toBe("failed");
+    expect(session.autosave.status.failure?.retryable).toBe(false);
+    expect(writes).toBe(1);
+
     session.reconnected();
     await settle();
-    expect(session.autosave.status.state).toBe("idle");
+
+    expect(writes).toBe(1);
+    expect(session.autosave.status.state).toBe("failed");
+    expect(session.autosave.status.failure?.reason).toBe("document_too_large");
+    expect(session.autosave.status.pending).toBeGreaterThan(0);
   });
 });
