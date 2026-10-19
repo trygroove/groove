@@ -3,7 +3,7 @@ import type { JsonObject } from "../domain/serialize";
 
 /**
  * The Firestore layout of a producer's profile (GRV-25): whether they have
- * been through onboarding, and what Coproducer remembers about them.
+ * been through onboarding, and what Cue remembers about them.
  *
  * A profile belongs to the person, never to a project, so it lives under the
  * user, beside their favourites and packs:
@@ -90,7 +90,7 @@ export const MEMORY_FIELDS = [
 ] as const;
 export type MemoryField = (typeof MEMORY_FIELDS)[number];
 
-/** What Coproducer remembers from the five questions. */
+/** What Cue remembers from the five questions. */
 export interface ProducerMemory {
   /** Genres they love. */
   readonly taste: readonly string[];
@@ -104,7 +104,7 @@ export interface ProducerMemory {
   readonly gear: readonly string[];
 }
 
-/** One thing the producer confirmed Coproducer should remember. */
+/** One thing the producer confirmed Cue should remember. */
 export interface MemoryNote {
   readonly id: string;
   readonly text: string;
@@ -122,7 +122,7 @@ export interface ProducerProfile {
   /** Oldest first, at most {@link MAX_MEMORY_NOTES}. */
   readonly notes: readonly MemoryNote[];
   /**
-   * Questions skipped in onboarding that Coproducer may still ask, once each, when
+   * Questions skipped in onboarding that Cue may still ask, once each, when
    * the conversation makes them relevant. One leaves the list when it is
    * asked.
    */
@@ -132,7 +132,7 @@ export interface ProducerProfile {
    * choices for customer validation. Unticked unless they tick it.
    */
   readonly validationConsent: boolean;
-  /** The local day (`YYYY-MM-DD`) Coproducer last offered a nudge, if ever. */
+  /** The local day (`YYYY-MM-DD`) Cue last offered a nudge, if ever. */
   readonly lastNudgeDay: string | null;
   /** When the profile was last written, epoch milliseconds. */
   readonly modifiedAt: number;

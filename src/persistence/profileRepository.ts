@@ -1,7 +1,7 @@
 import type { ProducerProfile } from "./profileDocuments";
 
 /**
- * The profile boundary (GRV-25): one producer's onboarding state and what Coproducer
+ * The profile boundary (GRV-25): one producer's onboarding state and what Cue
  * remembers about them, kept per user so it follows the person across
  * projects and devices.
  *
