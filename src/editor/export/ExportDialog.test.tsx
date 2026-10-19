@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
 import { flush } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OfflineRenderError } from "../../audio/offlineRenderer";
@@ -61,6 +61,19 @@ function renderDialog(exportWav: typeof exportStereoWav, onClose = vi.fn()) {
 }
 
 describe("ExportDialog", () => {
+  it("ignores the second click of a double click on Export instead of cancelling", async () => {
+    const pending = pendingExport();
+    const { download } = renderDialog(pending.exportWav);
+    clickAndFlush(screen.getByRole("button", { name: "Export" }));
+    // The second click of the pair lands on Cancel, which took Export's place.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }), { detail: 2 });
+    flush();
+    expect(pending.options()?.signal?.aborted).toBe(false);
+    pending.resolve(FILE);
+    await settle();
+    expect(download).toHaveBeenCalledTimes(1);
+  });
+
   it("opens with Stereo WAV chosen and Stems (ZIP) offered but not chosen", () => {
     renderDialog(pendingExport().exportWav);
     expect(screen.getByRole("dialog", { name: "Export" })).toBeVisible();
