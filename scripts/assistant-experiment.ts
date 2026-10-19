@@ -30,7 +30,9 @@
  *   `docs/experiments/<id>.md`;
  * - either way it posts the report on the experiment's card
  *   (`.github/scripts/linear.mjs`, which needs `LINEAR_API_KEY`; without it
- *   the comment is skipped, and said so), saying so when the PR failed to open.
+ *   the comment is skipped, and said so), saying so when the PR failed to open;
+ * - then it moves the card: Ready For Review on a win (its held PR waits
+ *   there), Done on no win, Blocked when inconclusive or the PR did not open.
  *
  * The budget is `--budget` (or `EXPERIMENT_BUDGET`) when given, else the
  * file's `budget`, else $25. It exits 1 when the key was refused, the account
@@ -52,6 +54,7 @@ import {
 } from "../src/assistant/evals/experiment";
 import { parseExperimentArgs, resolveBudget } from "../src/assistant/evals/experimentCli";
 import {
+  type CardState,
   concludeExperiment,
   type ExperimentPublisher,
   type WinPullRequest,
@@ -152,6 +155,18 @@ async function postComment(card: string, body: string): Promise<string | null> {
   }
 }
 
+/** Moves the card on the board through the one Linear client, if it has a key. */
+async function moveCard(card: string, state: CardState): Promise<void> {
+  if (!process.env.LINEAR_API_KEY) {
+    console.log(`LINEAR_API_KEY is not set, so ${card} was not moved to ${state}.`);
+    return;
+  }
+  execFileSync("node", [".github/scripts/linear.mjs", "state", card, state], {
+    encoding: "utf8",
+  });
+  console.log(`Moved ${card} to ${state}`);
+}
+
 /** Opens the win's PR: a branch off this commit, one commit, pushed, `gh pr create`. */
 async function openPullRequest(plan: WinPullRequest): Promise<string> {
   git("switch", "-c", plan.branch);
@@ -198,6 +213,9 @@ const SKIPPED: ExperimentPublisher = {
   openPullRequest: async (plan) => {
     console.log(`\n--no-post: no PR opened (it would be ${plan.branch}: ${plan.title}).`);
     return `(not opened: ${plan.branch})`;
+  },
+  moveCard: async (card, state) => {
+    console.log(`--no-post: ${card} was not moved (it would go to ${state}).`);
   },
 };
 
@@ -247,7 +265,7 @@ async function main(): Promise<number> {
     await writeResult(dir, result, links);
     const concluded = await concludeExperiment(
       result,
-      options.noPost ? SKIPPED : { postComment, openPullRequest },
+      options.noPost ? SKIPPED : { postComment, openPullRequest, moveCard },
       {
         readFile: (path) =>
           execFileSync("git", ["show", `HEAD:${path}`], { encoding: "utf8" }),

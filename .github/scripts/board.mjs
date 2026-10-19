@@ -18,8 +18,11 @@
  *   node board.mjs pr     On a pull_request event: a PR that closes a card
  *                         puts it in QA (or Ready For Review when it changes the
  *                         security rules); the PR that completes a card merging
- *                         puts it in QA; the PR that closes a card merging puts
- *                         it in Done.
+ *                         puts it in QA, unless it adds or changes that card's
+ *                         assistant experiment (`evals/experiments/<id>.ts`):
+ *                         then it starts the experiment and the card stays In
+ *                         Progress until the verdict moves it; the PR that
+ *                         closes a card merging puts it in Done.
  *
  * Nothing here needs a cursor or a webhook. Every rule reads the card's own
  * state and the comments on it, so a poll that runs twice does the work once:
@@ -322,6 +325,102 @@ async function poll() {
 
 // ---------------------------------------------------------------- pr
 
+const EXPERIMENTS = "assistant-experiments.yml";
+const EXPERIMENT_FILE = /^evals\/experiments\/([a-z0-9-]+)\.ts$/;
+
+/**
+ * The assistant experiments (GRV-110) a merged PR added or changed, each with
+ * the card its file names (`card: "GRV-12"`), read at the merge commit.
+ */
+function experimentsIn(p) {
+  const experiments = [];
+  let files;
+  try {
+    files = gh([
+      "api",
+      "--paginate",
+      `repos/${REPO}/pulls/${p.number}/files`,
+      "--jq",
+      '.[] | select(.status != "removed") | .filename',
+    ]).split("\n");
+  } catch {
+    return experiments;
+  }
+  const card = new RegExp(`\\bcard:\\s*["'](${linear.TEAM_KEY}-\\d+)["']`);
+  for (const file of files) {
+    const id = file.match(EXPERIMENT_FILE)?.[1];
+    if (!id) continue;
+    try {
+      const source = gh([
+        "api",
+        "-H",
+        "Accept: application/vnd.github.raw",
+        `repos/${REPO}/contents/${file}?ref=${p.merge_commit_sha}`,
+      ]);
+      const named = source.match(card)?.[1];
+      if (named) experiments.push({ id, card: named });
+    } catch (error) {
+      console.log(`${file}: could not read it at the merge (${error.message})`);
+    }
+  }
+  return experiments;
+}
+
+/**
+ * Starts the experiment on main, in the Assistant experiments workflow, and
+ * says so on its card. The card stays In Progress: the run's verdict moves it
+ * (Ready For Review on a win, Done on no win, Blocked otherwise), since QA has
+ * nothing to test on production until a win's held PR lands. A run that cannot
+ * be started blocks the card instead. The dispatch uses DISPATCH_TOKEN (the
+ * job's own token, which may start workflows) where it is set.
+ */
+async function startExperiment({ id, card }) {
+  const runs = `https://github.com/${REPO}/actions/workflows/${EXPERIMENTS}`;
+  try {
+    execFileSync(
+      "gh",
+      [
+        "workflow",
+        "run",
+        EXPERIMENTS,
+        "--repo",
+        REPO,
+        "--ref",
+        "main",
+        "-f",
+        `experiment=${id}`,
+      ],
+      {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          GH_TOKEN: process.env.DISPATCH_TOKEN || process.env.GH_TOKEN,
+        },
+      },
+    );
+  } catch (error) {
+    await linear.comment(
+      card,
+      `**Experiment not started.** \`${id}\` merged, but the Assistant experiments workflow could not be started (${String(
+        error.stderr ?? error.message,
+      )
+        .trim()
+        .slice(
+          0,
+          300,
+        )}). Run it from the [Actions tab](${runs}) with experiment \`${id}\` on \`main\`.`,
+    );
+    await move(card, "Blocked");
+    return;
+  }
+  await linear.comment(
+    card,
+    `**Experiment started.** \`${id}\` is running against the live model on \`main\` ([Assistant experiments](${runs})). Its verdict goes on this card and moves it: Ready For Review on a win (the held PR with the new defaults), Done on no win, Blocked when inconclusive.`,
+  );
+  console.log(`${card}: started experiment ${id}`);
+}
+
 async function move(identifier, state) {
   const card = await linear.issue(identifier, { comments: false });
   if (!card) return console.log(`${identifier}: no such card`);
@@ -336,9 +435,17 @@ async function pr() {
   const p = event.pull_request;
   if (p.merged) {
     // The PR that completes a card merged on its own (merge.yml queues safe
-    // PRs without an approval): production is QA'd after the deploy. The PR
+    // PRs without an approval): production is QA'd after the deploy, unless
+    // the card is an assistant experiment, whose verdict is its test. The PR
     // that closes a card (the preview path) was QA'd before it merged.
-    for (const id of completedBy(p.body)) await move(id, "QA");
+    const completed = completedBy(p.body);
+    const experiments = completed.length
+      ? experimentsIn(p).filter((e) => completed.includes(e.card))
+      : [];
+    for (const experiment of experiments) await startExperiment(experiment);
+    for (const id of completed) {
+      if (!experiments.some((e) => e.card === id)) await move(id, "QA");
+    }
     for (const id of closedBy(p.body)) await move(id, "Done");
     return;
   }

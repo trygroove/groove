@@ -6,6 +6,7 @@ import { ASSISTANT_TOOLSET_VERSION } from "../tools";
 import {
   bumpPromptVersion,
   bumpToolsetVersion,
+  cardStateAfter,
   PROMPT_PATH,
   setTacticDefault,
   TACTICS_PATH,
@@ -61,5 +62,17 @@ describe("a win's file changes (GRV-110)", () => {
       `export const ASSISTANT_TOOLSET_VERSION = ${ASSISTANT_TOOLSET_VERSION + 1};`,
     );
     expect(() => bumpToolsetVersion("")).toThrow(/no ASSISTANT_TOOLSET_VERSION/);
+  });
+});
+
+describe("where the verdict leaves the card", () => {
+  it("waits a win on its held PR, finishes no win, and blocks everything else", () => {
+    expect(cardStateAfter("win", "https://github.com/trygroove/groove/pull/1")).toBe(
+      "Ready For Review",
+    );
+    expect(cardStateAfter("no win", null)).toBe("Done");
+    expect(cardStateAfter("inconclusive", null)).toBe("Blocked");
+    // A win whose PR did not open has nothing to review.
+    expect(cardStateAfter("win", null)).toBe("Blocked");
   });
 });
