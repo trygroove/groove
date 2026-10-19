@@ -116,10 +116,7 @@ const RULES: Rule[] = [
     name: "tone is imported only under src/audio",
     scope: (f) => !under("src/audio/")(f),
     restricted: isTone,
-    allowed: {
-      "src/library/toneAuditionEngine.ts":
-        "auditions a library sound outside any project graph; the engine behind the library browser",
-    },
+    allowed: {},
   },
   {
     name: "src/assistant imports no Firebase, Tone or the Anthropic SDK",
