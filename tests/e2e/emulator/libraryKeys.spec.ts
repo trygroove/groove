@@ -185,3 +185,43 @@ test.describe("library keys", () => {
     await expect(trail.getByRole("button").nth(1)).toHaveText(name);
   });
 });
+
+// GRV-164: the keys sheet is drawn over the library, but the genre menu (a
+// higher z-index) stayed on top of it, and a click on the sheet's area reached
+// the genre checkboxes behind it. The sheet opening closes the menu, and what
+// sits under the sheet is never the topmost element there.
+test.describe("library keys over the genre menu", () => {
+  test("opening the keys sheet closes the genre menu and covers the button behind it", async ({
+    page,
+  }) => {
+    await newProjectOnInstrumentView(page);
+    await openPadSlot(page, "BD");
+    const genre = library(page).getByRole("button", { name: /^Any genre\b/ });
+    await genre.click();
+    const menu = library(page).getByRole("group", { name: "Genres" });
+    await expect(menu).toBeVisible();
+
+    await page.keyboard.press("?");
+
+    await expect(page.getByRole("dialog", { name: "Library keys" })).toBeVisible();
+    await expect(menu).toHaveCount(0);
+    const box = await genre.boundingBox();
+    if (!box) throw new Error("the genre button has no box on screen");
+    const topmost = await page.evaluate(
+      ({ x, y }) => document.elementFromPoint(x, y)?.closest(".library-keys") !== null,
+      { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+    );
+    expect(topmost).toBe(true);
+  });
+
+  test("the genre menu cannot be opened behind the keys sheet", async ({ page }) => {
+    await newProjectOnInstrumentView(page);
+    await openPadSlot(page, "BD");
+    await page.keyboard.press("?");
+    await expect(page.getByRole("dialog", { name: "Library keys" })).toBeVisible();
+
+    await page.keyboard.press("g");
+
+    await expect(library(page).getByRole("group", { name: "Genres" })).toHaveCount(0);
+  });
+});
