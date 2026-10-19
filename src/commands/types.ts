@@ -114,6 +114,13 @@ export interface CommandDefinition<Payload> {
   readonly schema: ZodType<Payload>;
   /** One line, suitable for a history entry or an AI proposal diff. */
   summarize(payload: Payload, project: Project): string;
+  /**
+   * True for a command that only brings along what another command needs (an
+   * asset carried in, a pack pin moved). It never names a transaction it shares
+   * with a command that is not supporting, so adding a drum machine reads
+   * "Add track", not "Add <its first sample> to the project" (GRV-160).
+   */
+  readonly supporting?: boolean;
   /** Pure, deterministic transition. */
   apply(project: Project, payload: Payload): CommandApplyResult;
   /**
@@ -148,6 +155,7 @@ export interface RegisteredCommand {
   readonly schema: ZodType<unknown>;
   parsePayload(input: unknown): PayloadParseResult;
   summarize(payload: unknown, project: Project): string;
+  readonly supporting: boolean;
   apply(project: Project, payload: unknown): CommandApplyResult;
   invert(payload: unknown, before: Project, after: Project): readonly RawCommandInput[];
   touches(payload: unknown, project: Project): readonly ControlAddress[];
@@ -184,6 +192,7 @@ export function eraseCommand<Payload>(
     summarize(payload, project) {
       return definition.summarize(payload as Payload, project);
     },
+    supporting: definition.supporting ?? false,
     apply(project, payload) {
       return definition.apply(project, payload as Payload);
     },

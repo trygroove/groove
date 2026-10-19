@@ -107,6 +107,7 @@ function fail(
 interface CommandStep {
   readonly project: Project;
   readonly summary: string;
+  readonly supporting: boolean;
   readonly inverse: readonly RawCommandInput[];
 }
 
@@ -138,6 +139,7 @@ function runCommand(
     return {
       project: result.project,
       summary: definition.summarize(payload, project),
+      supporting: definition.supporting,
       inverse: definition.invert(payload, project, result.project),
     };
   } catch (error) {
@@ -190,7 +192,7 @@ export function executeTransaction(
 
   const envelopes: CommandEnvelope[] = [];
   const inverse: RawCommandInput[] = [];
-  const summaries: string[] = [];
+  const summaries: { readonly text: string; readonly supporting: boolean }[] = [];
   let working = project;
 
   for (let index = 0; index < commands.length; index += 1) {
@@ -222,7 +224,7 @@ export function executeTransaction(
     if ("error" in step) {
       return fail(project, "rejected", input.type, index, step.error);
     }
-    summaries.push(step.summary);
+    summaries.push({ text: step.summary, supporting: step.supporting });
     // Inverses run newest-first, and each command's inverse is generated
     // against the state it saw, not the final state.
     inverse.unshift(...step.inverse);
@@ -320,7 +322,17 @@ function shelfReconciliationInverse(before: Project, after: Project): RawCommand
   return inverse;
 }
 
-function summarize(summaries: readonly string[]): string {
+/**
+ * A transaction is named for its first command, with a count of the rest.
+ * Supporting commands (an asset carried in, a pack pin moved) are left out of
+ * both when anything else is in the transaction: they are how the change was
+ * made, not what it was.
+ */
+function summarize(
+  steps: readonly { readonly text: string; readonly supporting: boolean }[],
+): string {
+  const lead = steps.filter((step) => !step.supporting);
+  const summaries = (lead.length > 0 ? lead : steps).map((step) => step.text);
   if (summaries.length === 1) {
     return summaries[0];
   }
