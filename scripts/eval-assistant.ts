@@ -62,6 +62,7 @@ import {
   renderMarkdown,
   renderSummaryMarkdown,
 } from "../src/assistant/evals/markdown";
+import { withProviderReasons } from "../src/assistant/evals/providerReason";
 import {
   buildReport,
   type EvalRecord,
@@ -249,7 +250,7 @@ async function live(options: EvalCliOptions): Promise<EvalReport> {
     `Running ${cases.length} cases x ${options.runs} runs against ${model.id} (the live model), up to ${options.maxSteps ?? ASSISTANT_MAX_STEPS} steps a turn, tactics ${tacticsText(resolveTactics(options.tactics))}...`,
   );
   const report = await runEvals({
-    provider: createAnthropicProvider({ apiKey }),
+    provider: withProviderReasons((fetch) => createAnthropicProvider({ apiKey, fetch })),
     model,
     cases,
     runs: options.runs,
