@@ -87,6 +87,15 @@ describe("validateExperiment (GRV-110)", () => {
     expect(
       issues({ ...VALID, guardrails: { everyTurnChecks: ["noSuchCheck"] } }),
     ).toMatch(/everyTurnChecks/);
+    // A case check a session does not judge on each turn would pass unjudged.
+    expect(
+      issues({
+        ...VALID,
+        guardrails: { everyTurnChecks: ["noEmptyClips", "hatDensity"] },
+      }),
+    ).toMatch(
+      /everyTurnChecks.*only a check judged on every turn: noEmptyClips, clipsPlaced/,
+    );
   });
 
   it("takes the full suite or a case list as its pool, and a tighter bar", () => {

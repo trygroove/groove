@@ -276,6 +276,16 @@ describe("the assistant's system prompt", () => {
     );
   });
 
+  it("sends the guided-build rule in the turn's system blocks when guidedBuild is on", () => {
+    const blocks = (guidedBuild: "on" | "off") =>
+      buildSystemBlocks(MINIMAL_ASSISTANT_CONTEXT, undefined, "S".repeat(17), undefined, {
+        ...TACTIC_DEFAULTS,
+        guidedBuild,
+      })[0].text;
+    expect(blocks("on")).toContain(GUIDED_BUILD_RULE);
+    expect(blocks("off")).not.toContain(GUIDED_BUILD_RULE);
+  });
+
   it("says what a guided build's stages are", () => {
     for (const phrase of [
       '"develop this", "arrange this", "make it a full tune"',
@@ -283,7 +293,7 @@ describe("the assistant's system prompt", () => {
       "the sections laid out as placements that reuse those clips (parts left out for builds and drops) plus any new tracks the plan needs, empty",
       "from an empty song, the core loop",
       "Never leave a clip without notes",
-      "call explain_change and then ask_producer together",
+      "call explain_change and then ask_producer together: ask_producer is the one call allowed after explain_change",
       "with the one you would do next suggested",
       "write that one section or step as one proposal",
       '("add a clap on 2 and 4") is not one of these',

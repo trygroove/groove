@@ -40,7 +40,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { TACTICS, type TacticDefinition, type TacticOverrides } from "../tactics";
-import { CASE_CHECK_IDS, type CaseCheckId } from "./caseChecks";
+import { CASE_CHECK_IDS, type CaseCheckId, EVERY_CASE_CHECKS } from "./caseChecks";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { EVAL_SELECTIONS, type EvalSelection, inSelection } from "./sets";
 import { casesInSplit } from "./splits";
@@ -95,7 +95,12 @@ export interface ExperimentGuardrails {
   readonly noMaxTokens?: boolean;
   /** The variant's mean output tokens per turn (`byTurn`) is no higher than the control's. */
   readonly outputTokensPerTurn?: boolean;
-  /** These checks pass on every turn's own proposal (a session's `turnChecks`). */
+  /**
+   * These checks pass on every turn's own proposal (a session's `turnChecks`).
+   * Only the checks a session judges on each turn may be named: those every
+   * case is judged by (`EVERY_CASE_CHECKS`, 16 and 20); any other would be
+   * missing from every session turn and pass without judging anything.
+   */
   readonly everyTurnChecks?: readonly CaseCheckId[];
 }
 
@@ -235,7 +240,17 @@ const definitionSchema = z.strictObject({
         .optional(),
       noMaxTokens: z.boolean().optional(),
       outputTokensPerTurn: z.boolean().optional(),
-      everyTurnChecks: z.array(z.enum(CASE_CHECK_IDS)).min(1).optional(),
+      everyTurnChecks: z
+        .array(
+          z
+            .enum(CASE_CHECK_IDS)
+            .refine(
+              (id) => EVERY_CASE_CHECKS.includes(id),
+              `only a check judged on every turn: ${EVERY_CASE_CHECKS.join(", ")}`,
+            ),
+        )
+        .min(1)
+        .optional(),
     })
     .optional(),
   focus: z.array(z.string().min(1)).min(1).optional(),
