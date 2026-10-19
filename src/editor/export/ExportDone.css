@@ -36,8 +36,13 @@
   white-space: nowrap;
 }
 
+/* The clip is for the ellipsis, sideways. The 0.98 line is shorter than the
+   font, so the padding lets an accented capital (Ü) and a descender stand
+   outside it unclipped, and the negative margin keeps the heading's height. */
 .export-out h3 .export-name {
   min-width: 0;
+  padding-block: 0.25em;
+  margin-block: -0.25em;
   overflow: hidden;
   text-overflow: ellipsis;
 }
