@@ -42,7 +42,6 @@ import {
   assistantSystemPrompt,
   LIBRARY_BLOCK_HEADING,
   MEMORY_BLOCK_HEADING,
-  PROMPT_RULES_IN_TOOLS,
 } from "./prompt";
 import { validateProposal } from "./proposal";
 import { createProposalExecutor } from "./proposalExecutor";
@@ -63,7 +62,7 @@ import {
   EXPLAIN_TOOL_NAME,
   toolNameFor,
 } from "./tools";
-import { RECOMMEND_VIDEO_TOOL, type VideoFinder, videoRecommendationTool } from "./video";
+import { RECOMMEND_VIDEO_TOOL, type VideoFinder } from "./video";
 
 function call(command: RawCommandInput) {
   return { name: toolNameFor(command.type), input: command.payload };
@@ -340,28 +339,6 @@ describe("runAssistantTurn: tutorial videos (GRV-16, ADR 0009)", () => {
     expect(h.provider.requests[0].tools.map((tool) => tool.name)).toContain(
       RECOMMEND_VIDEO_TOOL,
     );
-  });
-
-  // GRV-147: the trimmed prompt levels say the tutorial rules in the tool.
-  it("puts the tutorial rules in recommend_video's description at a trimmed promptText", async () => {
-    const offered = async (promptText: "full" | "moderate") => {
-      const h = harness([replyEvents(["ok"])]);
-      h.deps = { ...h.deps, findVideo: verifier, tactics: { promptText } };
-      await run(h);
-      const request = h.provider.requests[0];
-      return {
-        tool: request.tools.find((tool) => tool.name === RECOMMEND_VIDEO_TOOL),
-        prompt: request.system[0].text,
-      };
-    };
-    const full = await offered("full");
-    const moderate = await offered("moderate");
-    expect(full.tool?.description).toBe(videoRecommendationTool().description);
-    expect(full.prompt).toContain("and recommend_video is among your tools");
-    expect(moderate.tool?.description).toBe(
-      `${videoRecommendationTool().description} ${PROMPT_RULES_IN_TOOLS.moderate.recommend_video}`,
-    );
-    expect(moderate.prompt).not.toContain("recommend_video");
   });
 
   it("returns the videos its searches find, with their title and channel, and drops the rest", async () => {

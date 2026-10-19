@@ -86,10 +86,10 @@ export const TACTICS = {
   },
   promptText: {
     description:
-      "How the system prompt's own rules are worded (GRV-147): `full` as written; `moderate` about a quarter shorter, rules said twice merged and examples cut; `aggressive` about half, a sentence a rule. Every level keeps every rule, and the trimmed ones say recommend_video's rules in its description.",
+      "How the system prompt's own rules are worded (GRV-147): `full` as written; `moderate` shorter, rules said twice merged and examples cut; `aggressive` shorter still, about a sentence a rule. Every level keeps every rule, in the prompt.",
     values: ["full", "moderate", "aggressive"],
     default: "full",
-    alters: ["prompt", "tools"],
+    alters: ["prompt"],
   },
   promptDropAppFeatures: {
     description:
