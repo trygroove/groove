@@ -1,0 +1,14 @@
+{
+  "id": "grv-163-after",
+  "title": "Export footer note at 1280 x 720",
+  "steps": [
+    {
+      "file": "01-stems-over-2-gib-the-whole-note-wraps-un.png",
+      "caption": "Stems over 2 GiB: the whole note wraps under the readouts"
+    },
+    {
+      "file": "02-no-tracks-on-the-sentence-that-says-why-.png",
+      "caption": "No tracks on: the sentence that says why Export is off reads in full"
+    }
+  ]
+}
