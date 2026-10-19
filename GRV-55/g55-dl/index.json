@@ -1,0 +1,10 @@
+{
+  "id": "g55-dl",
+  "title": "Export download blocked",
+  "steps": [
+    {
+      "file": "01-the-browser-blocked-the-download-allow-d.png",
+      "caption": "The browser blocked the download: allow downloads for this site, then try again"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "id": "g55-oom",
+  "title": "Export out of memory",
+  "steps": [
+    {
+      "file": "01-the-render-ran-out-of-memory-close-other.png",
+      "caption": "The render ran out of memory: close other tabs, or export stems, and try again"
+    }
+  ]
+}
