@@ -167,6 +167,25 @@ describe("Mixer returns (#386)", () => {
     expect(screen.getByRole("button", { name: "Edit Verb" })).toBeTruthy();
   });
 
+  it("Escape cancels a return name edit: the name comes back, nothing is committed", () => {
+    const { history } = renderMixer();
+    addReturn();
+    const name = within(returnStrips()[0]).getByRole("textbox", {
+      name: "Return name",
+    }) as HTMLInputElement;
+    name.focus();
+    name.value = "escape retest";
+    fireEvent.keyDown(name, { key: "Escape" });
+    flush();
+    expect(name).toHaveValue("Return A");
+    expect(document.activeElement).not.toBe(name);
+    // Leaving the field afterwards commits nothing.
+    fireEvent.change(name);
+    flush();
+    expect(history.project.song.returns[0].name).toBe("Return A");
+    expect(history.entries).toHaveLength(1);
+  });
+
   it("caps the return name field at the longest name a return may have", () => {
     const { history } = renderMixer();
     addReturn();

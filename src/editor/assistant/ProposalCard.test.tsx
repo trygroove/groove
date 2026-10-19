@@ -38,6 +38,11 @@ import { EditorSession } from "../EditorSession";
 import type { EditorLocation } from "../editorControls";
 import type { EditorViewName } from "../editorViews";
 import AssistantPanel, { PREVIEWING_STATUS } from "./AssistantPanel";
+import {
+  type ConversationStore,
+  conversationStorageKey,
+  createConversationStore,
+} from "./conversationStore";
 import { useAssistantChat } from "./useAssistantChat";
 import { useAssistantPanel } from "./useAssistantPanel";
 
@@ -63,7 +68,13 @@ const ARRANGEMENT: EditorLocation = {
   openPlacementId: null,
 } as unknown as EditorLocation;
 
-async function setUp(options: { retention?: FakeRetentionClient } = {}) {
+async function setUp(
+  options: {
+    retention?: FakeRetentionClient;
+    /** Where the conversation is kept across a reload (GRV-135). */
+    conversationStore?: ConversationStore;
+  } = {},
+) {
   const repository = createInMemoryProjectRepository();
   const project = createSliceFixtureProject();
   const created = await repository.createProject(project);
@@ -111,6 +122,12 @@ async function setUp(options: { retention?: FakeRetentionClient } = {}) {
       expanded: () => panel.layout().mode === "floating",
       client: async () => client,
       analytics: () => analytics,
+      ...(options.conversationStore
+        ? {
+            conversationKey: () => conversationStorageKey("u1", project.metadata.id),
+            conversationStore: options.conversationStore,
+          }
+        : {}),
       ...(options.retention
         ? {
             retention: {
@@ -361,6 +378,71 @@ describe("the proposal card (GRV-5)", () => {
     expect(asked?.projectRevision).toBe(session.committedProject.metadata.revision);
     expect(asked?.context.selection?.description).toContain("BD");
     expect(within(card()).queryByRole("button", { name: "Refresh" })).toBeNull();
+  });
+
+  it("comes back out of date after a reload, and Refresh asks for one that applies (GRV-135)", async () => {
+    const store = createConversationStore(memoryStorage());
+    const before = await setUp({ conversationStore: store });
+    await before.propose();
+    expect(cardStatus()).toHaveTextContent("Nothing has changed yet.");
+    cleanup();
+
+    const { session, client, events } = await setUp({ conversationStore: store });
+    expect(card()).toHaveAccessibleName("Proposal: Loosen the beat");
+    const rows = within(
+      within(card()).getByRole("list", { name: "Changes" }),
+    ).getAllByRole("listitem");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "Swing 50% → to 58%",
+      "BD volume 0.0 dB → to -3.0 dB",
+    ]);
+    expect(cardStatus()).toHaveTextContent(
+      "Out of date. This was proposed before the page reloaded",
+    );
+    expect(cardButton("Apply")).toBeDisabled();
+    expect(within(card()).queryByRole("button", { name: "Preview" })).toBeNull();
+    // It was shown before the reload; coming back is not a new showing.
+    expect(events("assistant_proposal_shown")).toHaveLength(0);
+
+    await press(cardButton("Refresh"));
+    expect(client.turns).toHaveLength(1);
+    const asked = client.last().request;
+    expect(asked.messages.at(-1)).toEqual({ role: "user", text: "Loosen the beat" });
+    expect(asked.context.selection?.description).toContain("BD");
+    fireAndFlush(() => client.last().text("Same again."));
+    fireAndFlush(() =>
+      client.last().emit({
+        type: "proposal",
+        proposal: {
+          baseRevision: session.committedProject.metadata.revision,
+          toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+          calls: [
+            {
+              id: "toolu_9",
+              name: "parameter_set",
+              input: { target: { scope: "song", parameterId: SONG_SWING.id }, value: 58 },
+            },
+          ],
+        },
+      }),
+    );
+    fireAndFlush(() => client.last().done());
+    const cards = within(panel()).getAllByRole("region", { name: /^Proposal\b/ });
+    expect(cards).toHaveLength(2);
+    const fresh = cards[1] as HTMLElement;
+    await press(within(fresh).getByRole("button", { name: "Apply" }));
+    expect(session.committedProject.song.swing).toBe(58);
+  });
+
+  it("does not come back after a reload once it was applied (GRV-135)", async () => {
+    const store = createConversationStore(memoryStorage());
+    const before = await setUp({ conversationStore: store });
+    await before.propose();
+    await press(cardButton("Apply"));
+    cleanup();
+
+    await setUp({ conversationStore: store });
+    expect(within(panel()).queryByRole("region", { name: /^Proposal\b/ })).toBeNull();
   });
 
   it("titles a proposal that answered a question with the answer, and Refresh resends it as an answer (GRV-42)", async () => {

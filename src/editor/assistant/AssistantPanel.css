@@ -28,7 +28,7 @@
 
 /* A tutorial video fills the window from inside the panel (GRV-16). The panel
    is its own stacking context, so the panel itself lifts over the app's
-   chrome (the release badge and the telemetry notice, 1000) while it does.
+   chrome (the telemetry notice, 1000) while it does.
    The player stays where it is in the document: moving an iframe reloads it. */
 .assistant-panel.assistant-panel-video-expanded {
   z-index: 1001;

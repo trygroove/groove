@@ -3,8 +3,8 @@
 // Later domain code (command timestamps, revision authorship, autosave
 // backoff, etc.) should depend on a `Clock` rather than calling `Date.now()`
 // directly, so tests can inject a deterministic one instead of racing real
-// time. This lives outside `src/testing` for the same reason `shared/id.ts`
-// does: production code is a consumer too, not just tests.
+// time. This lives outside `src/testing` so that
+// production code can use it as well as tests.
 
 export interface Clock {
   /** Current time in epoch milliseconds. */
