@@ -1,0 +1,14 @@
+{
+  "id": "g163-before",
+  "title": "Export footer note",
+  "steps": [
+    {
+      "file": "01-stems-over-2-gib-whole.png",
+      "caption": "Stems over 2 GiB, whole"
+    },
+    {
+      "file": "02-no-tracks-on-why.png",
+      "caption": "No tracks on, why"
+    }
+  ]
+}
