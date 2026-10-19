@@ -31,16 +31,17 @@ test("inserting a loop from Add loop selects its new track", async ({ page }) =>
   // Whichever loop the library lists first: its name is read off the row, so
   // the test keeps working when the delivered library changes. A row offers
   // Insert once it is selected.
-  const audition = library(page)
-    .getByRole("list", { name: "Sounds", exact: true })
-    .getByRole("button", { name: /^Audition / })
-    .first();
-  const loopName = ((await audition.getAttribute("aria-label")) ?? "").replace(
+  const sounds = library(page).getByRole("list", { name: "Sounds", exact: true });
+  const first = sounds.getByRole("button", { name: /^Audition / }).first();
+  const loopName = ((await first.getAttribute("aria-label")) ?? "").replace(
     /^Audition /,
     "",
   );
   expect(loopName).not.toBe("");
-  await audition.click();
+  // Pinned by the name just read, not by position: the library fills in as its
+  // packs arrive, so "the first row" can be a different loop by the time of the
+  // click, and then `Insert <loopName>` never appears.
+  await sounds.getByRole("button", { name: `Audition ${loopName}`, exact: true }).click();
   const insert = library(page).getByRole("button", { name: `Insert ${loopName}` });
   await insert.click();
   await expect(library(page)).toHaveCount(0);
