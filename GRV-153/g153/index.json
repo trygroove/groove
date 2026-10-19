@@ -1,0 +1,18 @@
+{
+  "id": "g153",
+  "title": "Export dialog in small windows",
+  "steps": [
+    {
+      "file": "01-short-window-the-dialog-scrolls-inside-i.png",
+      "caption": "Short window: the dialog scrolls inside it"
+    },
+    {
+      "file": "02-short-window-scrolled-to-close-and-expor.png",
+      "caption": "Short window scrolled to Close and Export"
+    },
+    {
+      "file": "03-narrow-window-scrolled-to-the-footer.png",
+      "caption": "Narrow window scrolled to the footer"
+    }
+  ]
+}
