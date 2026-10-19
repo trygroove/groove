@@ -139,7 +139,7 @@ export interface EditorViewProps {
   /** Injected in tests; Firestore (or memory) otherwise. */
   readonly favouritesRepository?: () => Promise<FavouritesRepository>;
   /**
-   * Where the producer's profile is, for what Cue remembers (GRV-25).
+   * Where the producer's profile is, for what Coproducer remembers (GRV-25).
    * Injected in tests; Firestore (or memory) otherwise.
    */
   readonly profileRepository?: () => Promise<ProfileRepository>;
@@ -441,7 +441,7 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
       }
     },
   });
-  // What Cue remembers about a signed-in producer (GRV-25), read once per
+  // What Coproducer remembers about a signed-in producer (GRV-25), read once per
   // editor and sent with every turn.
   const producerProfile = useProducerProfile({
     uid: () =>

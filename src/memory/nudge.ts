@@ -1,9 +1,9 @@
 /**
- * Cue's one nudge a day (GRV-25): when it may offer a returning producer
+ * Coproducer's one nudge a day (GRV-25): when it may offer a returning producer
  * something to try, and what. Pure, so the rule is tested on its own.
  *
  * Nothing else is pushed in the app: the producer pulls what they need from
- * Cue. Email nudges are GRV-45, streaks and challenges GRV-46.
+ * Coproducer. Email nudges are GRV-45, streaks and challenges GRV-46.
  */
 import { suggestedLesson } from "../onboarding/questions";
 import type { ProducerProfile } from "../persistence/profileDocuments";
@@ -16,7 +16,7 @@ export function localDay(ms: number): string {
 }
 
 /**
- * Whether Cue may nudge `profile` at `now`: they have been through onboarding
+ * Whether Coproducer may nudge `profile` at `now`: they have been through onboarding
  * (completed or skipped) on an earlier day, and have not been nudged today.
  */
 export function nudgeDue(profile: ProducerProfile | null, now: number): boolean {
@@ -26,7 +26,7 @@ export function nudgeDue(profile: ProducerProfile | null, now: number): boolean 
 }
 
 /**
- * What Cue offers: the next unfinished bite once lessons exist (GRV-43); for
+ * What Coproducer offers: the next unfinished bite once lessons exist (GRV-43); for
  * now the first lesson its goal suggests.
  */
 export function nudgeLesson(profile: ProducerProfile): string {

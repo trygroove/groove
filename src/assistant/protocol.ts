@@ -290,7 +290,7 @@ export const assistantTurnRequestSchema = z.strictObject({
   context: assistantContextPayloadSchema,
   library: assistantLibraryContextSchema.optional(),
   /**
-   * What Cue remembers about the producer (GRV-25, `memory.ts`): read before
+   * What Coproducer remembers about the producer (GRV-25, `memory.ts`): read before
    * the reply, and the only turns offered `remember_producer`. A turn without
    * one is answered without memory.
    */

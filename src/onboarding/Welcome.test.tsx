@@ -69,7 +69,7 @@ function renderWelcome(replyDelayMs = 0) {
   return { projects };
 }
 
-const card = () => screen.getByRole("region", { name: "Cue asks" });
+const card = () => screen.getByRole("region", { name: "Coproducer asks" });
 const option = (label: string) => within(card()).getByRole("button", { name: label });
 const send = () =>
   clickAndFlush(within(card()).getByRole("button", { name: "Send the answer" }));
@@ -97,11 +97,13 @@ function answerEverything() {
 }
 
 describe("the welcome (GRV-25)", () => {
-  it("introduces Cue under its name and asks what music you love, with a way out", async () => {
+  it("introduces Coproducer under its name and asks what music you love, with a way out", async () => {
     renderWelcome();
-    expect(screen.getByRole("heading", { level: 1, name: "Cue" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Coproducer" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("log", { name: "Conversation" })).toHaveTextContent(
-      /I'm Cue/,
+      /I'm Coproducer/,
     );
     expect(card()).toHaveTextContent(/What music do you love/);
     expect(
@@ -267,7 +269,7 @@ describe("the welcome (GRV-25)", () => {
     expect(loaded.ok && loaded.profile?.validationConsent).toBe(true);
   });
 
-  it("opens the studio with the conversation and Cue's panel waiting in it", async () => {
+  it("opens the studio with the conversation and Coproducer's panel waiting in it", async () => {
     const { projects } = renderWelcome();
     answerEverything();
     clickAndFlush(await screen.findByRole("button", { name: OPEN_STUDIO_LABEL }));
@@ -369,7 +371,7 @@ describe("what the welcome saves on (GRV-25)", () => {
     clickAndFlush(option("Ableton Move"));
     send();
 
-    // Cue is still writing its last reply, and Skip is already gone.
+    // Coproducer is still writing its last reply, and Skip is already gone.
     expect(screen.queryByRole("button", { name: SKIP_LABEL })).not.toBeInTheDocument();
     await screen.findByRole("button", { name: OPEN_STUDIO_LABEL });
     await waitFor(async () => {

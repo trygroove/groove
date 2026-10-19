@@ -85,9 +85,9 @@ function memoryOf(draft: Draft): ProducerMemory {
 }
 
 /**
- * The Memory page (GRV-25): every field and note Cue remembers, editable,
+ * The Memory page (GRV-25): every field and note Coproducer remembers, editable,
  * with Forget on each and Forget everything, and the box to share the
- * answers' choices for customer validation. Only the producer and Cue ever
+ * answers' choices for customer validation. Only the producer and Coproducer ever
  * read it; it is never in a project.
  *
  * Analytics: `memory_forgotten` with what was forgotten (a field, a note, or

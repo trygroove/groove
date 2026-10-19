@@ -265,7 +265,7 @@ function relativeDbCase(
 /** The first lesson onboarding offers a producer who wants to finish a track. */
 const FIRST_LESSON_ASK = lessonOfferAsk("first_track");
 
-/** The conversation the lesson offer ends: the producer's goal, then Cue's offer. */
+/** The conversation the lesson offer ends: the producer's goal, then Coproducer's offer. */
 const FIRST_LESSON_HISTORY: readonly AssistantMessage[] = [
   { role: "user", text: "My goal is to finish my first track." },
   {

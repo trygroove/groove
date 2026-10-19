@@ -232,7 +232,7 @@ export function goalLabel(goal: ProducerGoal): string {
   return GOAL_CHOICES.find(([, value]) => value === goal)?.[0] ?? goal;
 }
 
-/** What Cue says once question `id` is answered (or skipped). */
+/** What Coproducer says once question `id` is answered (or skipped). */
 export function acknowledgement(
   id: OnboardingQuestionId,
   memory: ProducerMemory,
@@ -269,11 +269,11 @@ export function acknowledgement(
 /** The welcome's first words, before the first question. */
 export const WELCOME_TEXT = `Welcome to Groove! I'm ${ASSISTANT_NAME}, the producer beside you: I suggest real changes to your song and explain why they work, so you finish the tracks you start. I'd love to learn a bit about you so I can make my suggestions and advice yours. First:`;
 
-/** What Cue says once the last question is settled. */
+/** What Coproducer says once the last question is settled. */
 export const SAVED_TEXT =
   "That's everything. I've saved it to memory, and you can see or change it any time on the Memory page.";
 
-/** The first lesson Cue suggests, from the producer's goal (GRV-43 builds them). */
+/** The first lesson Coproducer suggests, from the producer's goal (GRV-43 builds them). */
 export function suggestedLesson(goal: ProducerGoal | null): string {
   switch (goal) {
     case "first_track":
@@ -288,7 +288,7 @@ export function suggestedLesson(goal: ProducerGoal | null): string {
 }
 
 /**
- * Cue's offer of a first lesson, as it says it: on the welcome, where the
+ * Coproducer's offer of a first lesson, as it says it: on the welcome, where the
  * studio is still to open, or in the panel once it has.
  */
 export function lessonOfferText(

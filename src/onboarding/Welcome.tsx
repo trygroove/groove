@@ -34,7 +34,7 @@ export interface WelcomeProps {
   readonly analytics?: Analytics;
   readonly profiles?: () => Promise<ProfileRepository>;
   readonly projects?: () => Promise<ProjectRepository>;
-  /** How long Cue writes before each reply; 0 in tests. */
+  /** How long Coproducer writes before each reply; 0 in tests. */
   readonly replyDelayMs?: number;
 }
 
@@ -44,15 +44,15 @@ export const SKIP_LABEL = "Skip to the studio";
 export const OPEN_STUDIO_LABEL = "Open the studio";
 
 /**
- * The welcome (GRV-25): a full-screen conversation with Cue, no editor, in
- * the Studio style: a centred header with Cue's name and its mark, then the
+ * The welcome (GRV-25): a full-screen conversation with Coproducer, no editor, in
+ * the Studio style: a centred header with Coproducer's name and its mark, then the
  * conversation and its questions drawn exactly as the assistant panel draws
  * them (`AssistantPanel.css`, `AssistantAskCard`), unboxed on the black.
  *
  * Someone who has already been through onboarding is sent on to the
  * dashboard. Skip to the studio saves onboarding as skipped and goes to the
  * dashboard; Open the studio, once memory is saved, creates the first
- * project, opens Cue's panel in it, and carries the conversation over.
+ * project, opens Coproducer's panel in it, and carries the conversation over.
  */
 export default function Welcome(props: WelcomeProps): JSX.Element {
   const analytics = props.analytics ?? defaultAnalytics;
@@ -145,7 +145,7 @@ export default function Welcome(props: WelcomeProps): JSX.Element {
 
   // Once the answers are saved there is nothing left to centre: the run-out
   // goes, and Open the studio scrolls up clear of the screen's bottom edge.
-  // Keyed on the conversation too, so it follows Cue's last reply in.
+  // Keyed on the conversation too, so it follows Coproducer's last reply in.
   let actions: HTMLDivElement | undefined;
   createEffect(
     () =>
@@ -172,7 +172,7 @@ export default function Welcome(props: WelcomeProps): JSX.Element {
   async function openStudio(): Promise<void> {
     try {
       const projectId = await onboarding.openStudio();
-      // The studio opens with Cue's panel open, where the conversation carries on.
+      // The studio opens with Coproducer's panel open, where the conversation carries on.
       const layout = loadLayout();
       if (!isOpen(layout)) saveLayout(toggle(layout));
       navigate(`/projects/${projectId}`);

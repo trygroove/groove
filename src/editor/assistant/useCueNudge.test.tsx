@@ -84,7 +84,7 @@ async function renderEditorChat(
   return { client, transport, profiles };
 }
 
-describe("Cue's daily nudge (GRV-25)", () => {
+describe("Coproducer's daily nudge (GRV-25)", () => {
   it("is not offered on the day of onboarding", async () => {
     const { transport } = await renderEditorChat(onboarded({ onboardedAt: Date.now() }));
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -106,7 +106,7 @@ describe("Cue's daily nudge (GRV-25)", () => {
     });
   });
 
-  it("asks Cue for it on Let's try it", async () => {
+  it("asks Coproducer for it on Let's try it", async () => {
     const { client, transport } = await renderEditorChat(
       onboarded({ onboardedAt: Date.now() - DAY }),
     );

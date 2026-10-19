@@ -1085,7 +1085,7 @@
   }
 }
 
-/* Something Cue proposes remembering (GRV-25): Remember and Not now, then a
+/* Something Coproducer proposes remembering (GRV-25): Remember and Not now, then a
    receipt line with Undo once it is saved. */
 .memory-proposal {
   gap: 6px;
@@ -1414,7 +1414,7 @@
   height: auto;
 }
 
-/* Cue's one nudge a day (GRV-25), over the suggestions. */
+/* Coproducer's one nudge a day (GRV-25), over the suggestions. */
 .cue-nudge {
   flex: none;
   gap: 8px;

@@ -80,18 +80,18 @@ async function renderChat() {
   return { client, transport, profiles };
 }
 
-const panel = () => screen.getByRole("region", { name: "Cue" });
+const panel = () => screen.getByRole("region", { name: "Coproducer" });
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 async function send(text: string) {
-  const composer = within(panel()).getByRole("textbox", { name: "Message Cue" });
+  const composer = within(panel()).getByRole("textbox", { name: "Message Coproducer" });
   fireAndFlush(() => fireEvent.input(composer, { target: { value: text } }));
   clickAndFlush(within(panel()).getByRole("button", { name: "Send" }));
   await settle();
 }
 
 /**
- * Cue's reply proposing a note, as the gateway returns it among the calls,
+ * Coproducer's reply proposing a note, as the gateway returns it among the calls,
  * with any other calls the reply made beside it.
  */
 function proposeNote(
@@ -120,8 +120,8 @@ function proposeNote(
   fireAndFlush(() => turn.done());
 }
 
-describe("Cue's memory in the conversation (GRV-25)", () => {
-  it("sends what Cue remembers with every turn", async () => {
+describe("Coproducer's memory in the conversation (GRV-25)", () => {
+  it("sends what Coproducer remembers with every turn", async () => {
     const { client } = await renderChat();
     await waitFor(() => expect(panel()).toBeInTheDocument());
     await settle();

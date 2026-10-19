@@ -124,7 +124,7 @@ export interface UseAssistantChatOptions {
   /** What times a proposal's undo against its apply (GRV-103); the real clock by default. */
   readonly clock?: Clock;
   /**
-   * The producer's profile (GRV-25): what Cue remembers, sent with every
+   * The producer's profile (GRV-25): what Coproducer remembers, sent with every
    * turn, and where a confirmed memory card is saved. Without it turns carry
    * no memory.
    */
@@ -157,7 +157,7 @@ export interface AssistantChat {
   readonly ask: AskDraft;
   /** The memory cards, when there is a profile to save them to (GRV-25). */
   readonly memory: AssistantMemoryProposals | null;
-  /** Cue's one nudge a day, when there is a profile to read it from (GRV-25). */
+  /** Coproducer's one nudge a day, when there is a profile to read it from (GRV-25). */
   readonly nudge: CueNudge | null;
   /** The account's answer about keeping conversations, when it is asked for. */
   readonly retention: AssistantRetention | null;

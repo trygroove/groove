@@ -9,7 +9,7 @@
  * user's favourite sounds (LIB-011), which live under the user, not a project.
  *
  * `profileDocuments.ts` and `profileRepository.ts` are the pair again for a
- * producer's profile: onboarding and what Cue remembers (GRV-25).
+ * producer's profile: onboarding and what Coproducer remembers (GRV-25).
  *
  * `firestoreProjectRepository.ts`, `firestoreFavouritesRepository.ts` and
  * `firestoreProfileRepository.ts` are deliberately not re-exported here: they

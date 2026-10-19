@@ -106,6 +106,9 @@
  * the model makes a note ID only for notes_duplicate's newIds: output was
  * half of what a turn cost, and most of a sketch's output was whole note
  * events.
+ *
+ * 2026-10-19.1 (GRV-168): the assistant is named Coproducer (`ASSISTANT_NAME`),
+ * which the prompt reads, so the model calls itself what the toolbar calls it.
  */
 import { customAlphabet } from "nanoid";
 import { ASSISTANT_NAME } from "../../site.config.mjs";
@@ -135,7 +138,7 @@ import type { AssistantContextPayload, AssistantLibraryContext } from "./protoco
 import type { ProviderTextBlock } from "./providerRequest";
 import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-17.2";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-19.1";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",

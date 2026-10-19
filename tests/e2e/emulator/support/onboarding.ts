@@ -23,8 +23,8 @@ import { expect, type Locator, type Page } from "@playwright/test";
  *
  * Written from GRV-25's spec against accessible names and roles only:
  *
- *  - the welcome: a `main` whose level-1 heading is Cue's name;
- *  - Cue's question: a region named "Cue asks", its options buttons named
+ *  - the welcome: a `main` whose level-1 heading is Coproducer's name;
+ *  - Coproducer's question: a region named "Coproducer asks", its options buttons named
  *    by their labels, a "Skip this question" button, and a text box for the
  *    answer in the producer's own words ("Artists you love" on the first
  *    question, "Something else" on the others) with a "Send the answer"
@@ -32,7 +32,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
  *  - "Skip to the studio", and at the end "Open the studio";
  *  - the memory card: a region named "Saved to memory", with an unticked
  *    checkbox to share the answers' choices;
- *  - in the editor, Cue's panel: a region named "Cue", holding the
+ *  - in the editor, Coproducer's panel: a region named "Coproducer", holding the
  *    conversation (a log named "Conversation").
  */
 
@@ -40,7 +40,7 @@ const firestoreEmulatorHost = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:
 const PROJECT_ID = "demo-solid-groove";
 
 /** The assistant's name, as the product spells it. */
-export const CUE = "Cue";
+export const CUE = "Coproducer";
 
 /**
  * Writes `uid` a profile that has skipped onboarding, with nothing in memory,
@@ -91,7 +91,7 @@ export async function seedSkippedOnboarding(uid: string): Promise<void> {
 /** The welcome page. */
 export const welcome = (page: Page): Locator => page.getByRole("main");
 
-/** Cue's question, on the welcome or in the panel. */
+/** Coproducer's question, on the welcome or in the panel. */
 export const cueAsks = (scope: Page | Locator): Locator =>
   scope.getByRole("region", { name: `${CUE} asks` });
 
@@ -110,7 +110,7 @@ export const skipQuestion = (scope: Page | Locator): Locator =>
 export const memoryCard = (page: Page): Locator =>
   page.getByRole("region", { name: "Saved to memory" });
 
-/** Cue's panel in the editor. */
+/** Coproducer's panel in the editor. */
 export const cuePanel = (page: Page): Locator =>
   page.getByRole("region", { name: CUE, exact: true });
 
@@ -118,7 +118,7 @@ export const cuePanel = (page: Page): Locator =>
 export const conversationIn = (scope: Page | Locator): Locator =>
   scope.getByRole("log", { name: "Conversation" });
 
-/** Waits for Cue's next question to be `question`. */
+/** Waits for Coproducer's next question to be `question`. */
 export async function expectQuestion(page: Page, question: RegExp): Promise<void> {
   await expect(cueAsks(page)).toBeVisible();
   await expect(cueAsks(page)).toContainText(question);

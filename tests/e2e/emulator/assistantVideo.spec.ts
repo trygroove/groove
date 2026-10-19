@@ -95,7 +95,7 @@ test.describe("a tutorial video the assistant recommends", () => {
     await page.keyboard.press("Escape");
     await expect(card).not.toHaveClass(/assistant-video-expanded/);
     // One press puts the video back and nothing else: the panel stays open.
-    await expect(page.getByRole("region", { name: "Cue" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Coproducer" })).toBeVisible();
 
     await card.getByRole("button", { name: "Close video" }).click();
     await expect(card.locator("iframe")).toHaveCount(0);

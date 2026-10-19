@@ -161,7 +161,7 @@ export type ConversationEntry =
       readonly origin: TurnOrigin;
     }
   /**
-   * Something the reply proposes Cue remember about the producer (GRV-25):
+   * Something the reply proposes Coproducer remember about the producer (GRV-25):
    * nothing is saved until they confirm it on its card.
    */
   | {
@@ -235,14 +235,14 @@ export interface UseAssistantConversationOptions {
    */
   readonly library?: (project: Project) => Promise<AssistantLibraryContext | null>;
   /**
-   * What Cue remembers about the producer, sent with every turn (GRV-25), or
+   * What Coproducer remembers about the producer, sent with every turn (GRV-25), or
    * null when there is nothing to send. Without it turns carry no memory and
-   * Cue cannot propose adding to it.
+   * Coproducer cannot propose adding to it.
    */
   readonly memory?: () => AssistantMemoryContext | null;
   /** Hears each memory proposal as it arrives, under its entry's ID (GRV-25). */
   readonly onMemoryProposal?: (entryId: string, proposal: MemoryProposal) => void;
-  /** Hears that Cue asked a question skipped in onboarding (GRV-25). */
+  /** Hears that Coproducer asked a question skipped in onboarding (GRV-25). */
   readonly onMemoryQuestionAsked?: (
     question: NonNullable<AssistantAsk["memoryQuestion"]>,
   ) => void;

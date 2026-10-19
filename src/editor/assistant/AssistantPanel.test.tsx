@@ -70,8 +70,8 @@ function countingStorage() {
 const clearance = () =>
   document.documentElement.style.getPropertyValue(CLEARANCE_PROPERTY);
 
-const panel = () => screen.getByRole("region", { name: "Cue" });
-const queryPanel = () => screen.queryByRole("region", { name: "Cue" });
+const panel = () => screen.getByRole("region", { name: "Coproducer" });
+const queryPanel = () => screen.queryByRole("region", { name: "Coproducer" });
 const button = (name: string) => within(panel()).getByRole("button", { name });
 const edge = () => within(panel()).getByRole("separator");
 const opener = () => screen.getByRole("button", { name: "Open it" });
@@ -108,7 +108,7 @@ describe("AssistantPanel", () => {
     const log = within(panel()).getByRole("log", { name: "Conversation" });
     expect(log).toBeEmptyDOMElement();
     const composer = within(panel()).getByRole("textbox", {
-      name: "Message Cue",
+      name: "Message Coproducer",
     });
     expect(composer).toBeDisabled();
     expect(composer).toHaveAccessibleDescription(UNAVAILABLE_NOTE);
@@ -119,11 +119,11 @@ describe("AssistantPanel", () => {
     clickAndFlush(opener());
     clickAndFlush(button("Minimise"));
     expect(panel()).toHaveAttribute("data-mode", "minimised");
-    expect(panel()).toHaveTextContent("Cue");
+    expect(panel()).toHaveTextContent("Coproducer");
     expect(within(panel()).queryByRole("separator")).toBeNull();
     expect(within(panel()).queryByRole("log")).toBeNull();
 
-    clickAndFlush(within(panel()).getByText("Cue"));
+    clickAndFlush(within(panel()).getByText("Coproducer"));
     expect(panel()).toHaveAttribute("data-mode", "floating");
     // Restore is the keyboard's way back from the bar.
     clickAndFlush(button("Minimise"));

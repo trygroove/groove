@@ -519,7 +519,7 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
     expect(sent.system[2].text.startsWith(MEMORY_BLOCK_HEADING)).toBe(true);
     expect(sent.system[2].text).toContain("Making more trap lately");
     expect(sent.system[2].text).toContain('"askLater":"goal"');
-    expect(sent.system[0].text).toMatch(/You are Cue/);
+    expect(sent.system[0].text).toMatch(/You are Coproducer/);
   });
 
   it("returns a memory proposal among the turn's calls, for the browser to take out", async () => {

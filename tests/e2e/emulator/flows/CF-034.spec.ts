@@ -75,7 +75,7 @@ test.describe("CF-034", () => {
       const projectUrl = await newProject(page);
       await expect(arrangement(page)).toBeVisible();
 
-      // 2. Press the Cue button, type "The kick is too clean. Anything
+      // 2. Press the Coproducer button, type "The kick is too clean. Anything
       //    dustier?" and press Enter. Your message appears in the conversation,
       //    and the assistant's reply follows it.
       await assistantButton(page).click();
