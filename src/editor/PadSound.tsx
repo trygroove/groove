@@ -59,7 +59,7 @@ function padValue(pad: DrumPad, definition: ParameterDefinition): number {
   return pad.parameters[key] ?? definition.defaultValue;
 }
 
-function formatPadValue(definition: ParameterDefinition, value: number): string {
+export function formatPadValue(definition: ParameterDefinition, value: number): string {
   if (definition.id === TRACK_VOLUME.id) return formatDb(TRACK_VOLUME, value);
   if (definition.id === TRACK_PAN.id) return formatPan(value);
   return formatInstrumentValue(definition, value);
