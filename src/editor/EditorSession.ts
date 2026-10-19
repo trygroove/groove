@@ -551,7 +551,13 @@ export class EditorSession {
     void this.autosave.flush();
   }
 
-  dispose(): void {
+  /**
+   * Tears the session down. With `keepUnsavedWrites`, an autosave that still
+   * holds unwritten edits is left running (GRV-55): its owner keeps the queue
+   * and disposes it once the edits are written, so closing a project whose
+   * last write failed never drops it.
+   */
+  dispose(options: { readonly keepUnsavedWrites?: boolean } = {}): void {
     if (this.disposed) return;
     this.disposed = true;
     this.endOpenPreview("cancelled", "disposed", false);
@@ -565,7 +571,9 @@ export class EditorSession {
     this.cancelReload?.();
     this.cancelReload = null;
     this.unwatch();
-    this.autosave.dispose();
+    if (!options.keepUnsavedWrites || this.autosave.status.pending === 0) {
+      this.autosave.dispose();
+    }
     this.history.dispose();
   }
 

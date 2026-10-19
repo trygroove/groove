@@ -10,6 +10,7 @@ import type { Project } from "../domain/entities";
 import type { ProjectId } from "../domain/ids";
 import type { SaveStatus } from "../persistence/autosave";
 import type { ProjectRepository } from "../persistence/projectRepository";
+import { holdPendingWrites } from "../shared/pendingWrites";
 import { assistantProposalTarget } from "./assistantProposalTarget";
 import {
   EditorSession,
@@ -82,6 +83,51 @@ function watchNavigationFlush(getSession: () => EditorSession | null): void {
     window.removeEventListener("beforeunload", handleBeforeUnload);
     window.removeEventListener("online", handleOnline);
   });
+}
+
+/**
+ * Holds a session's queued edits where the crash screen can write them
+ * (GRV-55). Returns the release.
+ */
+function holdSessionWrites(session: EditorSession): () => void {
+  return holdPendingWrites({
+    pending: () => session.autosave.status.pending,
+    flush: () => session.autosave.flush(),
+  });
+}
+
+/**
+ * Disposes a closing session once its last write has settled (GRV-55). If
+ * that write left edits unwritten (the connection dropped), the session goes
+ * but its autosave and their queue stay held: written when the browser is back
+ * online, or by the crash screen's Reload, and only then let go. A queued
+ * edit is never dropped because its project closed.
+ */
+function retireSession(session: EditorSession, release: () => void): void {
+  release();
+  if (session.autosave.status.pending === 0) {
+    session.dispose();
+    return;
+  }
+  session.dispose({ keepUnsavedWrites: true });
+  const { autosave } = session;
+  const flush = async () => {
+    await autosave.flush();
+    if (autosave.status.pending === 0) {
+      releaseRetired();
+      autosave.dispose();
+    }
+  };
+  const onOnline = () => void flush();
+  const releaseHeld = holdPendingWrites({
+    pending: () => autosave.status.pending,
+    flush,
+  });
+  const releaseRetired = () => {
+    releaseHeld();
+    if (typeof window !== "undefined") window.removeEventListener("online", onOnline);
+  };
+  if (typeof window !== "undefined") window.addEventListener("online", onOnline);
 }
 
 export interface EditorSessionState {
@@ -253,6 +299,7 @@ export function useEditorSession(
       let unsubscribeEdits: (() => void) | null = null;
       let unsubscribeRemote: (() => void) | null = null;
       let unsubscribeNotices: (() => void) | null = null;
+      let releaseWrites: () => void = () => {};
 
       function applySnapshot(snapshot: EditorSessionSnapshot): void {
         setState((draft) => {
@@ -292,6 +339,7 @@ export function useEditorSession(
           draft.droppedPlacements = droppedPlacements;
         });
         session = localSession;
+        releaseWrites = holdSessionWrites(localSession);
         unsubscribeHistory = localSession.subscribe(applySnapshot);
         unsubscribeEdits = localSession.subscribeEdits((edit) => {
           for (const listener of [...editListeners]) listener(edit);
@@ -319,7 +367,11 @@ export function useEditorSession(
         unsubscribeNotices?.();
         if (localSession) {
           const disposing = localSession;
-          void disposing.autosave.flush().finally(() => disposing.dispose());
+          const release = releaseWrites;
+          void disposing.autosave
+            .flush()
+            .catch(() => undefined)
+            .then(() => retireSession(disposing, release));
         }
         if (session === localSession) {
           session = null;

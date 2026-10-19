@@ -8,6 +8,11 @@ import type { Project } from "../domain/entities";
 import { createReferenceProject, createSliceFixtureProject } from "../domain/fixtures";
 import type { ClipId } from "../domain/ids";
 import { createInMemoryProjectRepository } from "../persistence/inMemoryProjectRepository";
+import {
+  __resetPendingWritesForTests,
+  flushPendingWrites,
+  unsavedWriteCount,
+} from "../shared/pendingWrites";
 import { estimateStereoBytes, exportFacts } from "./export/exportFacts";
 import { planStemsFiles } from "./export/stemsExport";
 import { useEditorSession } from "./useEditorSession";
@@ -202,6 +207,75 @@ describe("useEditorSession navigation flush", () => {
     cleanupHook();
 
     await vi.waitFor(() => expect(repository.writes.length).toBeGreaterThan(0));
+  });
+});
+
+describe("useEditorSession's queued edits outlive the editor (GRV-55)", () => {
+  async function openSession() {
+    const repository = createInMemoryProjectRepository();
+    const project = createSliceFixtureProject();
+    const created = await repository.createProject(project);
+    if (!created.ok) throw new Error("fixture project failed to create");
+    const clip = project.clips[0];
+    if (clip.content.kind !== "notes") throw new Error("expected a note clip");
+    const eventId = clip.content.events[0].id;
+    const hook = renderHook(
+      () =>
+        useEditorSession(
+          () => project.metadata.id,
+          () => repository,
+        ),
+      {},
+    );
+    await vi.waitFor(() => expect(hook.result.state.loading).toBe(false));
+    const edit = () => hook.result.dispatch(removeNotes(clip.id as ClipId, [eventId]));
+    const saved = async () => {
+      const loaded = await repository.loadProject(project.metadata.id);
+      if (!loaded.ok) throw new Error("expected the project to load");
+      const savedClip = loaded.value.clips.find((candidate) => candidate.id === clip.id);
+      return (
+        savedClip?.content.kind === "notes" &&
+        !savedClip.content.events.some((event) => event.id === eventId)
+      );
+    };
+    return { repository, hook, edit, saved };
+  }
+
+  afterEach(() => __resetPendingWritesForTests());
+
+  it("lets the crash screen write a live session's queued edit", async () => {
+    const { edit, saved } = await openSession();
+    edit();
+    expect(unsavedWriteCount()).toBe(1);
+
+    expect(await flushPendingWrites()).toBe("saved");
+    expect(await saved()).toBe(true);
+  });
+
+  it("keeps an edit whose write failed as the editor closed, and writes it back online", async () => {
+    const { repository, hook, edit, saved } = await openSession();
+    repository.failNextWrites({ count: 1 });
+    edit();
+
+    hook.cleanup();
+    await vi.waitFor(() => expect(repository.writes.length).toBeGreaterThan(0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(await saved()).toBe(false);
+    // Not dropped: still held, for the crash screen or the connection.
+    expect(unsavedWriteCount()).toBe(1);
+
+    window.dispatchEvent(new Event("online"));
+    await vi.waitFor(async () => expect(await saved()).toBe(true));
+    expect(unsavedWriteCount()).toBe(0);
+  });
+
+  it("lets go of a closed session whose last write landed", async () => {
+    const { repository, hook, edit, saved } = await openSession();
+    edit();
+    hook.cleanup();
+    await vi.waitFor(() => expect(repository.writes.length).toBeGreaterThan(0));
+    await vi.waitFor(async () => expect(await saved()).toBe(true));
+    expect(unsavedWriteCount()).toBe(0);
   });
 });
 

@@ -1,6 +1,10 @@
 import { cleanup, render, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Analytics } from "../analytics/analytics";
+import { ConsentStore } from "../analytics/consent";
+import { createRecordingTransport } from "../analytics/transport";
+import { memoryStorage } from "../testing/storage";
 import AppErrorFallback from "./AppErrorFallback";
 
 afterEach(() => cleanup());
@@ -79,5 +83,74 @@ describe("AppErrorFallback (PRD OPS-03: a boundary is a capture point)", () => {
     ));
 
     expect(screen.getByText("a bare string")).toBeInTheDocument();
+  });
+});
+
+describe("AppErrorFallback's Reload (GRV-55)", () => {
+  function setUp(flushWrites: () => Promise<"nothing_queued" | "saved" | "unsaved">) {
+    const transport = createRecordingTransport();
+    const analytics = new Analytics({
+      transport,
+      consent: new ConsentStore(memoryStorage()),
+      storage: memoryStorage(),
+    });
+    const reload = vi.fn();
+    const flush = vi.fn(flushWrites);
+    render(() => (
+      <AppErrorFallback
+        error={new Error("boom")}
+        reset={() => {}}
+        report={() => true}
+        flushWrites={flush}
+        reload={reload}
+        analytics={analytics}
+      />
+    ));
+    const reloaded = () => transport.named("crash_reloaded").map((event) => event.params);
+    return { reload, flush, reloaded };
+  }
+
+  it("says Reload saves first, writes queued edits, then reloads", async () => {
+    const { reload, flush, reloaded } = setUp(async () => "saved");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Reload to carry on. Any change still waiting to save is saved first.",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Reload" }));
+
+    expect(flush).toHaveBeenCalledOnce();
+    expect(reload).toHaveBeenCalledOnce();
+    expect(reloaded()).toEqual([expect.objectContaining({ save_outcome: "saved" })]);
+  });
+
+  it("reloads straight away when nothing was waiting to save", async () => {
+    const { reload, reloaded } = setUp(async () => "nothing_queued");
+
+    await userEvent.click(screen.getByRole("button", { name: "Reload" }));
+
+    expect(reload).toHaveBeenCalledOnce();
+    expect(reloaded()).toEqual([
+      expect.objectContaining({ save_outcome: "nothing_queued" }),
+    ]);
+  });
+
+  it("does not reload an unsaved edit away: it says so, and offers Reload anyway", async () => {
+    const { reload, flush, reloaded } = setUp(async () => "unsaved");
+
+    await userEvent.click(screen.getByRole("button", { name: "Reload" }));
+
+    expect(reload).not.toHaveBeenCalled();
+    expect(reloaded()).toEqual([]);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Your latest changes couldn't be saved. Check your connection, then press Reload to try again.",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Reload" }));
+    expect(flush).toHaveBeenCalledTimes(2);
+    expect(reload).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Reload anyway" }));
+    expect(reload).toHaveBeenCalledOnce();
+    expect(reloaded()).toEqual([expect.objectContaining({ save_outcome: "unsaved" })]);
   });
 });

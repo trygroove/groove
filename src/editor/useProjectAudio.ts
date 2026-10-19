@@ -32,6 +32,7 @@ import {
   previewAssetId,
 } from "../projection/previewOverride";
 import { createDeviceMeters } from "./deviceMeters";
+import { type LeakReportOptions, reportAudioLeaks } from "./leakReport";
 import { createTrackLevels, type TrackLevel } from "./trackLevels";
 
 /**
@@ -193,6 +194,8 @@ export interface UseProjectAudioOptions {
   readonly webAudioAvailable?: boolean;
   /** The error-reporting boundary; tests inject a recorder (GRV-55). */
   readonly reportError?: typeof reportError;
+  /** How a project's leaked audio resources are reported (GRV-55); tests pin sampling. */
+  readonly leaks?: Pick<LeakReportOptions, "random" | "sampleRate" | "warn">;
 }
 
 /**
@@ -433,8 +436,20 @@ export function useProjectAudio(
     metronome?.dispose();
     metronome = null;
     transport = null;
-    void graph?.dispose();
+    const closing = graph;
+    const closingOwner = ownerId;
     graph = null;
+    if (closing && closingOwner) {
+      // Once the project's scope is disposed, anything still registered under
+      // it is a leak (GRV-55).
+      void closing.dispose().then(() =>
+        reportAudioLeaks(runtime.ownedResources?.(closingOwner) ?? [], {
+          ...options.leaks,
+          analytics,
+          report,
+        }),
+      );
+    }
     preview = null;
     // A new project starts with none of the last one's failed sounds.
     failedAssets.clear();

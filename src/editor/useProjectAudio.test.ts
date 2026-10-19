@@ -617,6 +617,63 @@ describe("useProjectAudio", () => {
     cleanupHook();
   });
 
+  describe("leaks (GRV-55)", () => {
+    it("reports nothing when a closed project left nothing registered", async () => {
+      const { analytics } = fakeAnalytics();
+      const recorded = recordErrorReports();
+      const runtime = AudioRuntimeModule.getAudioRuntime();
+      const project = createSliceFixtureProject();
+      const { cleanup: cleanupHook } = renderHook(
+        () =>
+          useProjectAudioModule.useProjectAudio(() => project, {
+            runtime,
+            analytics,
+            reportError: recorded.report,
+            leaks: { sampleRate: 1, warn: () => {} },
+          }),
+        {},
+      );
+      await Promise.resolve();
+      cleanupHook();
+      await vi.waitFor(() =>
+        expect(runtime.registry.countForOwner(project.metadata.id)).toBe(0),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(
+        recorded.reports.filter((report) => report.code === "resource_leak"),
+      ).toEqual([]);
+    });
+
+    it("reports what a closed project left registered", async () => {
+      const { analytics, transport } = fakeAnalytics();
+      const recorded = recordErrorReports();
+      const runtime = AudioRuntimeModule.getAudioRuntime();
+      const project = createSliceFixtureProject();
+      const { cleanup: cleanupHook } = renderHook(
+        () =>
+          useProjectAudioModule.useProjectAudio(() => project, {
+            runtime,
+            analytics,
+            reportError: recorded.report,
+            leaks: { sampleRate: 1, warn: () => {} },
+          }),
+        {},
+      );
+      await Promise.resolve();
+      // A node allocated as the project closes, which nothing will dispose.
+      const scope = runtime.openProjectScope(project.metadata.id);
+      cleanupHook();
+      const late = scope.register("node", () => {});
+      await vi.waitFor(() => expect(transport.named("resources_leaked")).toHaveLength(1));
+
+      expect(recorded.payloads()[0]?.tags).toMatchObject({
+        error_code: "resource_leak",
+        leaked_node_bucket: "1_4",
+      });
+      await scope.release(late);
+    });
+  });
+
   // LOOP-006 / INS-02 analytics: a project with a tempo-labelled loop reports
   // `audio_loop` first-use, and a loop that cannot be decoded reports
   // `asset_load_failed`.
