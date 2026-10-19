@@ -38,6 +38,8 @@ import { reportProjectLoad } from "./projectLoadReport";
  * `beforeunload` comes first and is the one chance to ask the user to stay
  * (GRV-60): while an edit is still unsaved it shows the browser's "leave
  * site?" prompt and starts the write, which can finish while the prompt is up.
+ *
+ * `online` retries a save the connection dropped (GRV-55).
  */
 function watchNavigationFlush(getSession: () => EditorSession | null): void {
   if (typeof window === "undefined") return;
@@ -64,13 +66,21 @@ function watchNavigationFlush(getSession: () => EditorSession | null): void {
     event.returnValue = "";
   }
 
+  // Back online (GRV-55): a save that failed for want of a connection is
+  // written now, without waiting for Retry.
+  function handleOnline(): void {
+    getSession()?.reconnected();
+  }
+
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("pagehide", flush);
   window.addEventListener("beforeunload", handleBeforeUnload);
+  window.addEventListener("online", handleOnline);
   onCleanup(() => {
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     window.removeEventListener("pagehide", flush);
     window.removeEventListener("beforeunload", handleBeforeUnload);
+    window.removeEventListener("online", handleOnline);
   });
 }
 

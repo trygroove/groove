@@ -38,6 +38,7 @@ import {
   timeoutScheduler,
 } from "../shared/scheduler";
 import { markProjectOpened } from "./deviceProjectRecord";
+import { reportSaveFailures, type SaveFailureReportOptions } from "./saveFailureReport";
 import {
   type PreviewEndReason,
   type PreviewHost,
@@ -157,6 +158,8 @@ export interface EditorSessionOptions {
    * heals and the next open is clean.
    */
   readonly dropped?: DroppedReferences;
+  /** Where a failed save is reported (GRV-55); the app-wide boundary by default. */
+  readonly saveFailures?: SaveFailureReportOptions;
 }
 
 function isCommandId(value: string): value is CommandId {
@@ -207,6 +210,7 @@ export class EditorSession {
   private readonly noticeListeners = new Set<SessionNoticeListener>();
   private readonly unsubscribeHistory: () => void;
   private readonly unsubscribeSave: () => void;
+  private readonly unsubscribeSaveFailures: () => void;
   private readonly previewHost: PreviewHost = {
     cancelPreview: (preview) => this.endPreview(preview, "cancelled", "cancelled"),
     commitPreview: (preview, actor) => this.commitPreview(preview, actor),
@@ -253,6 +257,10 @@ export class EditorSession {
     this.remoteRevision = options.project.metadata.revision;
     this.unsubscribeHistory = this.history.subscribe(() => this.onHistoryChange());
     this.unsubscribeSave = this.autosave.subscribe((status) => this.onSaveStatus(status));
+    this.unsubscribeSaveFailures = reportSaveFailures(
+      this.autosave,
+      options.saveFailures,
+    );
     this.unwatch = options.repository.watchProject(this.projectId, (event) =>
       this.onRemoteEvent(event),
     );
@@ -529,6 +537,20 @@ export class EditorSession {
     return true;
   }
 
+  /**
+   * The browser is back online (GRV-55): write what is still unsaved now
+   * rather than waiting for the producer to press Retry or edit again. A
+   * failure no retry can clear (a refused document, a project that is gone)
+   * is left as it is, still saying why.
+   */
+  reconnected(): void {
+    if (this.disposed) return;
+    const { pending, state, failure } = this.autosave.status;
+    if (pending === 0) return;
+    if (state === "failed" && !failure?.retryable) return;
+    void this.autosave.flush();
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -539,6 +561,7 @@ export class EditorSession {
     this.noticeListeners.clear();
     this.unsubscribeHistory();
     this.unsubscribeSave();
+    this.unsubscribeSaveFailures();
     this.cancelReload?.();
     this.cancelReload = null;
     this.unwatch();
