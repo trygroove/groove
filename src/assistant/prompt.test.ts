@@ -12,6 +12,7 @@ import {
   describeParameter,
   newId,
 } from "./prompt";
+import { TACTIC_DEFAULTS } from "./tactics";
 
 const STEPS_PROMPT = assistantSystemPrompt({ oneResponseProposal: "off" });
 const ONE_RESPONSE_PROMPT = assistantSystemPrompt({ oneResponseProposal: "on" });
@@ -165,7 +166,8 @@ describe("the assistant's system prompt", () => {
       undefined,
       "S".repeat(17),
     );
-    expect(prompt.text).toBe(ASSISTANT_SYSTEM_PROMPT);
+    // The prompt production's tactics make, so a tactic's win keeps this green.
+    expect(prompt.text).toBe(assistantSystemPrompt(TACTIC_DEFAULTS));
     // The project block stays the JSON alone, for anything that reads it back.
     expect(project.text).toBe(
       `The open project, as JSON:\n${JSON.stringify(MINIMAL_ASSISTANT_CONTEXT)}`,

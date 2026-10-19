@@ -17,6 +17,7 @@ import {
   replyEvents,
   toolUseEvents,
 } from "../../testing/scriptedAssistantProvider";
+import { ASSISTANT_PROMPT_VERSION } from "../prompt";
 import type { AssistantProvider } from "../provider";
 import { continuesTurn } from "../providerRequest";
 import {
@@ -25,7 +26,8 @@ import {
   type TacticDefinition,
   type TacticOverrides,
 } from "../tactics";
-import { toolNameFor } from "../tools";
+import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
+import { casePairs } from "./cases";
 import { experimentIds, loadExperiment, validateExperiment } from "./experiment";
 import {
   concludeExperiment,
@@ -33,6 +35,7 @@ import {
   PROMPT_PATH,
   planWinPullRequest,
   TACTICS_PATH,
+  TOOLS_PATH,
   type WinPullRequest,
 } from "./experimentPr";
 import { renderExperimentMarkdown } from "./experimentReport";
@@ -458,6 +461,89 @@ describe("an experiment's dry run (GRV-110)", () => {
     }
   });
 
+  it("runs the real drumStepStrings tactic, and its win bumps the prompt and tool set versions it alters", async () => {
+    const DEFAULT = TACTIC_DEFAULTS.drumStepStrings;
+    const OTHER = TACTICS.drumStepStrings.values.find(
+      (value) => value !== DEFAULT,
+    ) as string;
+    // The scripted model writes less when clip_create offers step strings.
+    const offersSteps = (request: Parameters<AssistantProvider["stream"]>[0]) =>
+      request.tools.some(
+        (tool) => tool.name === "clip_create" && tool.description.includes("step string"),
+      );
+    const provider: AssistantProvider = {
+      stream(request, signal) {
+        const steps = offersSteps(request) === (OTHER === "on");
+        const script = continuesTurn(request)
+          ? []
+          : toolUseEvents("A Compressor on the master.", [compressorCall("d")], {
+              outputTokens: steps ? 500 : 900,
+            });
+        return createScriptedAssistantProvider([script]).stream(request, signal);
+      },
+    };
+    const experiment = validateExperiment({
+      id: "steps-flip",
+      card: "GRV-140",
+      hypothesis: "The other step-string setting writes fewer tokens.",
+      variants: { other: { drumStepStrings: OTHER } },
+      goal: "outputTokens",
+      cases: { caseIds: POOL },
+    });
+    const result = await runExperiment(experiment, {
+      runTurn: gatewayTurnRunner({
+        provider,
+        model: (await import("../config")).ASSISTANT_MODELS["claude-sonnet-5"],
+      }),
+    });
+    expect(result.verdict).toBe("win");
+
+    const sources: Record<string, string> = {
+      [TACTICS_PATH]: readFileSync(TACTICS_PATH, "utf8"),
+      [PROMPT_PATH]: readFileSync(PROMPT_PATH, "utf8"),
+      [TOOLS_PATH]: readFileSync(TOOLS_PATH, "utf8"),
+    };
+    const plan = planWinPullRequest(result, planOptions(sources, TACTICS));
+    if (!plan) throw new Error("expected a win's PR");
+    // drumStepStrings alters the prompt, the tools and their expansion: both versions move.
+    expect(plan.files.map((file) => file.path)).toEqual([
+      TACTICS_PATH,
+      PROMPT_PATH,
+      TOOLS_PATH,
+      "docs/experiments/steps-flip.md",
+    ]);
+    const changed = (path: string) => {
+      const before = sources[path].split("\n");
+      const after = (plan.files.find((file) => file.path === path)?.content ?? "").split(
+        "\n",
+      );
+      expect(after).toHaveLength(before.length);
+      return after.flatMap((line, index) =>
+        line === before[index] ? [] : [[before[index], line]],
+      );
+    };
+    expect(changed(TACTICS_PATH)).toEqual([
+      [`    default: "${DEFAULT}",`, `    default: "${OTHER}",`],
+    ]);
+    expect(changed(PROMPT_PATH)).toEqual([
+      [
+        `export const ASSISTANT_PROMPT_VERSION = "${ASSISTANT_PROMPT_VERSION}";`,
+        expect.stringMatching(
+          /^export const ASSISTANT_PROMPT_VERSION = "2026-10-18\.\d+";$/,
+        ),
+      ],
+    ]);
+    expect(changed(TOOLS_PATH)).toEqual([
+      [
+        `export const ASSISTANT_TOOLSET_VERSION = ${ASSISTANT_TOOLSET_VERSION};`,
+        `export const ASSISTANT_TOOLSET_VERSION = ${ASSISTANT_TOOLSET_VERSION + 1};`,
+      ],
+    ]);
+    expect(plan.body).toContain(
+      "bumps `ASSISTANT_PROMPT_VERSION` and `ASSISTANT_TOOLSET_VERSION` because the tactic alters them",
+    );
+  });
+
   it("interleaves the variants case by case and run by run", async () => {
     const calls: string[] = [];
     await runExperiment(
@@ -670,5 +756,118 @@ describe("keeping cuts in a dry run (GRV-110 section 5a)", () => {
       { name: "nothing", verdict: "restore", why: expect.stringMatching(/^Unfinished/) },
     ]);
     expect(result.verdict).toBe("inconclusive");
+  });
+});
+
+describe("check 6 as a guardrail in a dry run (GRV-141)", () => {
+  /** A compressor on the master at `threshold`: proposals differ by their threshold. */
+  function compressorAt(threshold: number) {
+    const call = compressorCall("c");
+    const input = call.input as { device: { parameters: Record<string, number> } };
+    return {
+      ...call,
+      input: {
+        ...input,
+        device: {
+          ...input.device,
+          parameters: { ...input.device.parameters, threshold },
+        },
+      },
+    };
+  }
+
+  /**
+   * Every case answered with a compressor, the generators variants in fewer
+   * tokens. An extreme case gets a harder threshold, unless `flattens` and the
+   * variant turns generators on: then it gets the conventional answer.
+   */
+  function generatorTurns(flattens: boolean): ExperimentTurnRunner {
+    return (evalCase, tactics) => {
+      const generators = tactics.patternGenerators === "on";
+      const extreme = evalCase.axis === "extreme" && !(flattens && generators);
+      return runCaseTurn(evalCase, {
+        provider: createScriptedAssistantProvider([
+          toolUseEvents(
+            "A Compressor on the master.",
+            [compressorAt(extreme ? -30 : -18)],
+            {
+              outputTokens: generators ? 600 + caseWobble(evalCase.id) : 1_000,
+            },
+          ),
+        ]),
+      });
+    };
+  }
+
+  it("judges check 6 on the pattern-generators experiment's own block, which its phases alone never hold", async () => {
+    const experiment = await loadExperiment("pattern-generators");
+    expect(experiment.guardrails.holdNotFlattened).toBe(true);
+    // The defect this guards against: neither split of the heavy set holds a pair.
+    expect(casePairs(experiment.train)).toEqual([]);
+    expect(casePairs(experiment.heldout)).toEqual([]);
+
+    const result = await runExperiment(experiment, {
+      runTurn: generatorTurns(false),
+      now: fixedNow,
+    });
+    // Train: the goal reads the heavy train cases alone, check 6 its block alone.
+    expect(result.train.caseIds).toEqual(experiment.train.map((entry) => entry.id));
+    expect(result.train.flattening?.caseIds).toEqual([
+      "variation-mangled",
+      "variation-fill",
+      "process-crushed",
+      "process-glue",
+    ]);
+    expect(result.train.reports.control.caseIds).toEqual(result.train.caseIds);
+    expect(
+      result.train.reports.control.records.some(
+        (record) => record.checks.notFlattened !== undefined,
+      ),
+    ).toBe(false);
+    for (const analysis of result.trainAnalyses) {
+      const guardrail = analysis.guardrails.find((entry) => entry.id === "notFlattened");
+      expect(guardrail).toMatchObject({
+        pass: true,
+        detail:
+          "`variation-mangled` 3/3 to 3/3 unflattened; `process-crushed` 3/3 to 3/3 unflattened",
+      });
+      expect(analysis.verdict).toBe("win");
+    }
+    // The gate judges it on the held-out block, a pool case in both running once.
+    const [gate] = result.gates;
+    expect(gate.phase.flattening?.caseIds).toEqual(
+      experiment.flattening.heldout.map((entry) => entry.id),
+    );
+    expect(gate.phase.reports.control.records).toHaveLength(
+      experiment.heldout.length * 5,
+    );
+    expect(
+      gate.analysis.guardrails.find((entry) => entry.id === "notFlattened"),
+    ).toMatchObject({
+      pass: true,
+      detail:
+        "`sketch-broken` 5/5 to 5/5 unflattened; `arrange-no-build` 5/5 to 5/5 unflattened; `balance-lopsided` 5/5 to 5/5 unflattened",
+    });
+    expect(result.verdict).toBe("win");
+  });
+
+  it("refuses a variant that answers the extreme cases conventionally", async () => {
+    const result = await runExperiment(await loadExperiment("pattern-generators"), {
+      runTurn: generatorTurns(true),
+      now: fixedNow,
+    });
+    for (const analysis of result.trainAnalyses) {
+      expect(analysis.goal.outcome).toBe("better");
+      expect(
+        analysis.guardrails.find((entry) => entry.id === "notFlattened"),
+      ).toMatchObject({
+        pass: false,
+        detail:
+          "`variation-mangled` 3/3 to 0/3 unflattened (flattened); `process-crushed` 3/3 to 0/3 unflattened (flattened)",
+      });
+      expect(analysis.verdict).toBe("no win");
+    }
+    expect(result.gates).toEqual([]);
+    expect(result.verdict).toBe("no win");
   });
 });
