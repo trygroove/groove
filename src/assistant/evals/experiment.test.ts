@@ -264,6 +264,17 @@ describe("the experiment files (GRV-110)", () => {
     ]).toEqual(["low"]);
   });
 
+  it("include GRV-142's: oneResponseProposal=on on the heavy set, for latency p50", async () => {
+    const written = (await import("../../../evals/experiments/one-response-proposal"))
+      .default;
+    expect(written.variants).toEqual({ "one-response": { oneResponseProposal: "on" } });
+    expect(written.guardrails).toBeUndefined();
+    const experiment = await loadExperiment("one-response-proposal");
+    expect(experiment.card).toBe("GRV-142");
+    expect(experiment.goal).toBe("latencyP50");
+    expect(experiment.cases).toEqual({ set: "heavyOutput" });
+  });
+
   it("refuses a missing file, a file with no default export, and a misnamed one", async () => {
     // Inside the repository, where the test runner can load a module from.
     mkdirSync(resolve("tmp"), { recursive: true });

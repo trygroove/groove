@@ -66,7 +66,7 @@ export function setLines(card: Scorecard): string[] {
 }
 
 /**
- * The heavy set's three numbers (GRV-131), beside the baseline's when there
+ * The heavy set's numbers (GRV-131, GRV-142), beside the baseline's when there
  * is one; nothing for a run with no heavy case.
  */
 export function heavySetLines(
@@ -142,11 +142,11 @@ export function caseSecondaryLines(card: Scorecard): string[] {
   return [
     "## Cost by case",
     "",
-    "| Case | Turns | Latency p50 | p95 | First text p50 | Input tok | Output tok | Cache read tok | Cost/turn | Stop reasons |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| Case | Turns | Latency p50 | p95 | First text p50 | Model calls mean / p95 | Input tok | Output tok | Cache read tok | Cost/turn | Stop reasons |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ...Object.entries(card.cases).map(
       ([caseId, s]) =>
-        `| \`${caseId}\` | ${s.turns} | ${formatMetric("ms", s.latencyMs.p50)} | ${formatMetric("ms", s.latencyMs.p95)} | ${formatMetric("ms", s.firstTextMs.p50)} | ${formatMetric("tokens", s.meanTokens.input)} | ${formatMetric("tokens", s.meanTokens.output)} | ${formatMetric("tokens", s.meanTokens.cacheRead)} | ${formatMetric("usd", s.costUsd.perTurn)} | ${stopReasonMix(s)} |`,
+        `| \`${caseId}\` | ${s.turns} | ${formatMetric("ms", s.latencyMs.p50)} | ${formatMetric("ms", s.latencyMs.p95)} | ${formatMetric("ms", s.firstTextMs.p50)} | ${formatMetric("calls", s.modelCalls?.mean ?? null)} / ${formatMetric("calls", s.modelCalls?.p95 ?? null)} | ${formatMetric("tokens", s.meanTokens.input)} | ${formatMetric("tokens", s.meanTokens.output)} | ${formatMetric("tokens", s.meanTokens.cacheRead)} | ${formatMetric("usd", s.costUsd.perTurn)} | ${stopReasonMix(s)} |`,
     ),
     "",
   ];

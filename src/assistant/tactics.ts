@@ -49,6 +49,13 @@ export const TACTICS = {
     default: "low",
     alters: ["request"],
   },
+  oneResponseProposal: {
+    description:
+      "Whether the model writes a whole proposal's change calls in one response (on), at most two steps of change calls a turn, rather than a part a step (off).",
+    values: ["off", "on"],
+    default: "off",
+    alters: ["prompt", "expansion"],
+  },
 } as const satisfies Readonly<Record<string, TacticDefinition>>;
 
 export type TacticId = keyof typeof TACTICS;

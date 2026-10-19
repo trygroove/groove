@@ -375,9 +375,9 @@ describe("runEvals", () => {
     expect(provider.requests.every((sent) => sent.output_config?.effort === "low")).toBe(
       true,
     );
-    expect(report.tactics).toEqual({ thinkingEffort: "low" });
+    expect(report.tactics).toEqual({ ...TACTIC_DEFAULTS, thinkingEffort: "low" });
     expect(renderMarkdown(report)).toContain(
-      `- Tactics: ${describeTactics({ thinkingEffort: "low" })}`,
+      `- Tactics: ${describeTactics({ ...TACTIC_DEFAULTS, thinkingEffort: "low" })}`,
     );
     expect(renderSummaryMarkdown(summaryOf(report))).toContain(
       "- Tactics: thinkingEffort=low",

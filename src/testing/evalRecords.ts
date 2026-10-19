@@ -32,6 +32,8 @@ export interface TestRecordOptions {
   readonly outcome?: CheckResult["status"];
   /** An errored turn's gateway code; such a turn carries no checks. */
   readonly errorCode?: string;
+  /** The model calls the turn made; left out, as a record saved before steps was. */
+  readonly modelCalls?: number;
 }
 
 export function testRecord(options: TestRecordOptions = {}): EvalRecord {
@@ -69,6 +71,9 @@ export function testRecord(options: TestRecordOptions = {}): EvalRecord {
     durationMs: options.durationMs ?? 10_000,
     firstTextMs: options.firstTextMs === undefined ? 2_000 : options.firstTextMs,
     usage,
+    ...(options.modelCalls === undefined
+      ? {}
+      : { steps: { calls: options.modelCalls, refused: [] } }),
     error: turnError ? `${turnError.code}: scripted` : null,
     turnError,
     stopReason: turnError ? null : (options.stopReason ?? "tool_use"),

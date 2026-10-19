@@ -95,10 +95,14 @@ import { recordTurn, type TranscriptWrite } from "./retention";
 import { costMicroUsd, spendDay, usdToMicro } from "./spend";
 import {
   answerStep,
+  CHANGE_STEPS_SPENT,
   continuesAfter,
   expandCalls,
-  goesOnToReaim,
+  goesOnToRefuse,
+  isChangeCall,
+  MAX_CHANGE_STEPS,
   misaimedIn,
+  refusedIn,
 } from "./steps";
 import { NO_USAGE, type ProviderUsage, StreamReader } from "./streamEvents";
 import { resolveTactics, type TacticOverrides, type TacticValues } from "./tactics";
@@ -283,7 +287,13 @@ async function prepare(
   idStem: string,
   videos: boolean,
 ): Promise<PreparedTurn> {
-  const system = buildSystemBlocks(turn.context, turn.library, idStem, turn.memory);
+  const system = buildSystemBlocks(
+    turn.context,
+    turn.library,
+    idStem,
+    turn.memory,
+    tactics,
+  );
   // A turn that carries the library may also recommend from it (GRV-23), one
   // that can search YouTube may recommend a tutorial (GRV-16), and one that
   // carries the producer's memory may propose adding to it (GRV-25).
@@ -832,6 +842,13 @@ export async function runAssistantTurn(
     // a question, or stops on its own. Each step's text reaches the producer
     // as its own paragraph as it streams.
     const maxSteps = limits.maxSteps ?? ASSISTANT_MAX_STEPS;
+    // A proposal written in one response (GRV-142): a step that would end
+    // the turn with a call that would be refused goes on so the model can
+    // fix it, and the turn takes at most MAX_CHANGE_STEPS steps of changes,
+    // steps fixing refused calls aside.
+    const oneResponse = tactics.oneResponseProposal === "on";
+    let changeSteps = 0;
+    let fixing = false;
     let messages = prepared.request.messages;
     const texts: string[] = [];
     const calls: AssistantToolCall[] = [];
@@ -854,24 +871,42 @@ export async function runAssistantTurn(
         throw new AssistantGatewayError("reply_too_long", TOO_LONG_MESSAGE);
       }
       texts.push(outcome.text);
+      const changes: boolean = outcome.toolCalls.some(isChangeCall);
+      const overLimit: boolean =
+        oneResponse && changes && !fixing && changeSteps >= MAX_CHANGE_STEPS;
       // Whether the step is the last is settled before it is answered, so a
       // last step's notes are numbered once, by `expandCalls`.
+      const refused =
+        misaimedIn(outcome.toolCalls, targets) +
+        (oneResponse ? refusedIn(outcome.toolCalls, idStem) : 0) +
+        (overLimit ? 1 : 0);
       const goesOn =
         continuesAfter(outcome.stopReason, outcome.toolCalls) ||
-        goesOnToReaim(outcome.stopReason, outcome.toolCalls, {
-          misaimed: misaimedIn(outcome.toolCalls, targets),
-        });
+        goesOnToRefuse(outcome.stopReason, outcome.toolCalls, refused);
       // The last step allowed hands its calls on as they came, as a turn of
-      // one call does: the browser refuses whatever does not fit.
+      // one call does: the browser refuses whatever does not fit. Change
+      // calls past the limit are left out: the proposal is what came before.
       if (!goesOn || step >= maxSteps) {
-        calls.push(...expandCalls(outcome.toolCalls, notes));
+        const handed = overLimit
+          ? outcome.toolCalls.filter((entry) => !isChangeCall(entry))
+          : outcome.toolCalls;
+        calls.push(...expandCalls(handed, notes));
         // A turn whose steps made calls stopped for them, as one call's would.
         stopReason = calls.length > 0 ? "tool_use" : outcome.stopReason;
         break;
       }
-      const answered = answerStep(outcome.toolCalls, targets, notes);
+      const answered = answerStep(
+        outcome.toolCalls,
+        targets,
+        notes,
+        overLimit ? { refuseChanges: CHANGE_STEPS_SPENT } : {},
+      );
       targets = answered.targets;
       calls.push(...answered.kept);
+      if (changes && !fixing && !overLimit) changeSteps += 1;
+      // The next step fixes this one's refusals; one told the limit is spent
+      // has nothing to fix.
+      fixing = !overLimit && answered.results.some((result) => result.is_error);
       messages = [
         ...messages,
         { role: "assistant", content: outcome.content },
