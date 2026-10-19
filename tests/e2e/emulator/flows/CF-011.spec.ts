@@ -1,4 +1,5 @@
 import { walkthrough } from "../../support/walkthrough";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 
 /**
@@ -226,7 +227,7 @@ test.describe("CF-011", () => {
     // project has to show, and the save status is how the editor reports that
     // the write completed.
     await expect(page.locator(".save-status")).toHaveText("Saved", { timeout: 10_000 });
-    await page.reload();
+    await reloadPage(page);
 
     // 6. The project reopens with nothing selected, so zoom to selection has
     //    nothing to act on until you select something again.

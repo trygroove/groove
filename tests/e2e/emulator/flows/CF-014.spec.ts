@@ -1,4 +1,5 @@
 import { walkthrough } from "../../support/walkthrough";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 
 /**
@@ -63,31 +64,68 @@ async function namesOf(controls: Locator): Promise<string[]> {
 const playheadReadout = (page: Page): Locator =>
   page.getByText(/^Playhead at bar \d+\.\d+$/);
 
+type Point = { x: number; y: number };
+
+/**
+ * The element's box once its layout has stopped moving: the same box on two
+ * animation frames running. A view that has just mounted (the mixer's strips,
+ * the rail) can still be settling, and a box read mid-settle points the mouse at
+ * where the element was, not where it is.
+ */
+async function settledBox(target: Locator, what: string) {
+  await target.evaluate(
+    (el) =>
+      new Promise<void>((resolve) => {
+        const key = () => {
+          const r = el.getBoundingClientRect();
+          return `${r.x},${r.y},${r.width},${r.height}`;
+        };
+        let last = key();
+        const frame = () =>
+          requestAnimationFrame(() => {
+            const now = key();
+            if (now === last) resolve();
+            else {
+              last = now;
+              frame();
+            }
+          });
+        frame();
+      }),
+  );
+  const box = await target.boundingBox();
+  if (!box) throw new Error(`${what} is not visible`);
+  return box;
+}
+
 /**
  * Presses on `source`, moves to `to` in small steps (past any drag threshold),
- * runs `beforeRelease` while still holding, then lets go.
+ * runs `beforeRelease` while still holding, then lets go. `to` is read after the
+ * source has settled, so a drop point never goes stale while the view lays out.
  */
 async function drag(
   page: Page,
   source: Locator,
-  to: { x: number; y: number },
+  to: Point | (() => Promise<Point>),
   beforeRelease?: () => Promise<void>,
 ): Promise<void> {
-  const box = await source.boundingBox();
-  if (!box) throw new Error("drag source is not visible");
+  const box = await settledBox(source, "drag source");
+  const destination = typeof to === "function" ? await to() : to;
   const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  await page.mouse.move(from.x + 2, from.y + 2, { steps: 4 });
-  await page.mouse.move(to.x, to.y, { steps: 12 });
+  await page.mouse.move(from.x + 5, from.y + 5, { steps: 4 });
+  // The app has picked the item up (`dragLift.ts` marks the document) before the
+  // pointer travels on, so the first move to the drop point is read as a drag.
+  await expect(page.locator("html.drag-lifting")).toHaveCount(1);
+  await page.mouse.move(destination.x, destination.y, { steps: 12 });
   await beforeRelease?.();
   await page.mouse.up();
 }
 
 /** A point just inside the leading edge of `target`: its top, or its left. */
-async function leadingEdge(target: Locator, axis: "top" | "left") {
-  const box = await target.boundingBox();
-  if (!box) throw new Error("drop target is not visible");
+async function leadingEdge(target: Locator, axis: "top" | "left"): Promise<Point> {
+  const box = await settledBox(target, "drop target");
   return axis === "top"
     ? { x: box.x + box.width / 2, y: box.y + 2 }
     : { x: box.x + 2, y: box.y + box.height / 2 };
@@ -152,7 +190,7 @@ test.describe("CF-014", () => {
     await drag(
       page,
       arrangementHeader(page, "Sampler"),
-      await leadingEdge(arrangementHeader(page, "BD"), "top"),
+      () => leadingEdge(arrangementHeader(page, "BD"), "top"),
       async () => {
         await expect(dropIndicator(page)).toBeVisible();
         await step("Drag Sampler up — a marker shows it will land at the top");
@@ -203,7 +241,7 @@ test.describe("CF-014", () => {
     await drag(
       page,
       mixerStrip(page, "Synth"),
-      await leadingEdge(mixerStrip(page, "Sampler"), "left"),
+      () => leadingEdge(mixerStrip(page, "Sampler"), "left"),
       async () => {
         await expect(dropIndicator(page)).toBeVisible();
         await step("Drag the Synth strip left — a marker shows where it lands");
@@ -245,7 +283,7 @@ test.describe("CF-014", () => {
       await expect(page.getByRole("button", { name: "Start playback" })).toBeVisible();
     }
     await expect(page.locator(".save-status")).toHaveText("Saved", { timeout: 10_000 });
-    await page.reload();
+    await reloadPage(page);
     await expect(trackRail(page)).toHaveText(["Synth", "BD", "Sampler"]);
     await viewLink(page, "Arrangement").click();
     await page.getByTestId("arrangement-view-ready").waitFor();

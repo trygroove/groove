@@ -11,6 +11,7 @@ import {
   panelButton,
   storedTranscripts,
 } from "./support/assistant";
+import { reloadPage } from "./support/reload";
 import { expect, test } from "./support/test";
 
 /**
@@ -91,7 +92,7 @@ test.describe("the assistant's disclosure and setting", () => {
     expect(await storedTranscripts(invitedProducer.uid)).toEqual([]);
 
     // A reload asks again from the account's stored answer: no disclosure.
-    await page.reload();
+    await reloadPage(page);
     await arrangement(page).waitFor();
     // The panel remembers whether it was open on this device.
     if (!(await panel(page).isVisible())) await assistantButton(page).click();
