@@ -897,6 +897,14 @@ export default function LibraryModal(props: LibraryModalProps): JSX.Element {
       }
     >
       <Show when={keysOpen()}>
+        {/* The sheet is a panel with the library still showing round it, so a
+            backdrop under it takes every click there and closes the sheet
+            instead: nothing behind the sheet can be clicked (GRV-164). */}
+        <div
+          class="library-keys-backdrop"
+          aria-hidden="true"
+          onClick={() => setKeysOpen(false)}
+        />
         <LibraryKeys onClose={() => setKeysOpen(false)} />
       </Show>
       <div class="library-modal-body">

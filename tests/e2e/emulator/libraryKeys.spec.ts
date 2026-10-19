@@ -5,6 +5,7 @@ import {
   openPadSlot,
   railButton,
   readout,
+  similarList,
   slotSound,
   soundList,
 } from "./support/library";
@@ -223,5 +224,43 @@ test.describe("library keys over the genre menu", () => {
     await page.keyboard.press("g");
 
     await expect(library(page).getByRole("group", { name: "Genres" })).toHaveCount(0);
+  });
+
+  // The sheet is a panel inset from the library's edges, and the strips of
+  // library round it stayed live: a sound row's similar-sounds button and the
+  // rail's Favourites took a click through them. A click there now lands on
+  // the sheet's backdrop and closes the sheet; nothing behind it reacts.
+  // `page.mouse` clicks the point itself, as a person does, rather than
+  // waiting for the button to be clickable.
+  test("a click on the library round the keys sheet closes it and reaches nothing behind", async ({
+    page,
+  }) => {
+    await newProjectOnInstrumentView(page);
+    await openPadSlot(page, "BD");
+    const similar = soundList(page)
+      .getByRole("button", { name: /^Sounds like / })
+      .first();
+    await expect(similar).toBeVisible();
+    const sheet = page.getByRole("dialog", { name: "Library keys" });
+
+    await page.keyboard.press("?");
+    await expect(sheet).toBeVisible();
+    const box = await similar.boundingBox();
+    if (!box) throw new Error("the similar-sounds button has no box on screen");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+    await expect(sheet).toHaveCount(0);
+    await expect(similarList(page)).toHaveCount(0);
+    await expect(soundList(page)).toBeVisible();
+
+    await page.keyboard.press("?");
+    await expect(sheet).toBeVisible();
+    const favourites = railButton(page, "Favourites");
+    const rail = await favourites.boundingBox();
+    if (!rail) throw new Error("the Favourites rail button has no box on screen");
+    await page.mouse.click(rail.x + 8, rail.y + rail.height / 2);
+
+    await expect(sheet).toHaveCount(0);
+    await expect(favourites).not.toHaveAttribute("aria-current", "true");
   });
 });
