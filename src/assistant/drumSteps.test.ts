@@ -349,9 +349,11 @@ describe("the drumStepStrings tactic", () => {
   });
 
   it("offers step strings in clip_create only when on, and changes no other tool", () => {
-    const off = assistantTools({ drumStepStrings: "off" });
-    const on = assistantTools({ drumStepStrings: "on" });
-    expect(assistantTools()).toBe(assistantTools(TACTIC_DEFAULTS));
+    const off = assistantTools("full", "off");
+    const on = assistantTools("full", "on");
+    expect(assistantTools()).toBe(
+      assistantTools("full", TACTIC_DEFAULTS.drumStepStrings),
+    );
     expect(on.map((tool) => tool.name)).toEqual(off.map((tool) => tool.name));
     for (const [index, tool] of on.entries()) {
       if (tool.name === "clip_create") continue;
@@ -365,10 +367,24 @@ describe("the drumStepStrings tactic", () => {
     expect(onClip?.description).toContain("step string");
   });
 
+  it("keeps the step-string text when toolText trims clip_create (GRV-146)", () => {
+    for (const level of ["moderate", "aggressive"] as const) {
+      const trimmed = assistantTools(level, "off").find(
+        (tool) => tool.name === "clip_create",
+      );
+      const onClip = assistantTools(level, "on").find(
+        (tool) => tool.name === "clip_create",
+      );
+      expect(onClip?.description.startsWith(`${trimmed?.description} `)).toBe(true);
+      expect(onClip?.description).toContain("step string");
+      expect(JSON.stringify(onClip?.inputSchema)).toContain("stepTicks");
+    }
+  });
+
   it("says the velocities are on a MIDI scale, not a note array's 0 to 1, everywhere it describes them", () => {
     expect(STEP_VELOCITY_SCALE).toContain("MIDI scale of 1 to 127, not the 0 to 1");
     expect(DRUM_STEP_STRINGS_LINE).toContain(STEP_VELOCITY_SCALE);
-    const onClip = assistantTools({ drumStepStrings: "on" }).find(
+    const onClip = assistantTools("full", "on").find(
       (tool) => tool.name === "clip_create",
     );
     expect(onClip?.description).toContain(STEP_VELOCITY_SCALE);

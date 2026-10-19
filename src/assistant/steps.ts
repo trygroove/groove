@@ -21,9 +21,17 @@
  * is refused back to the model, even on the step that would have ended the
  * turn, so it can name the right pad rather than leave the browser a card
  * for a pad that does not exist.
+ *
+ * Under the `oneResponseProposal` tactic (GRV-142) the model writes a whole
+ * proposal's calls in one response, so the step that would end the turn is
+ * checked as an answered one is: one with a call that would be refused goes
+ * on, so the model can fix it ({@link refusedIn}). A turn then takes at most
+ * {@link MAX_CHANGE_STEPS} steps of change calls; a further one is refused
+ * back to the model with {@link CHANGE_STEPS_SPENT}. A step straight after one
+ * with refused calls is fixing them and does not count.
  */
 import { isAskCall } from "./ask";
-import type { ExpandedCall, NoteExpander } from "./compactNotes";
+import { createNoteExpander, type ExpandedCall, type NoteExpander } from "./compactNotes";
 import { isRememberCall } from "./memory";
 import type { AssistantStopReason, AssistantToolCall } from "./protocol";
 import type { ProviderToolResultBlock } from "./providerRequest";
@@ -43,6 +51,17 @@ export const ADDED_RESULT =
   "Added to the proposal. Nothing changes until the producer applies the whole proposal. Go on to the next step; call explain_change once the proposal is complete.";
 
 const NOTED_RESULT = "Noted.";
+
+/**
+ * How many steps of change calls a turn may take when the model writes a
+ * proposal in one response (`oneResponseProposal`, GRV-142): the response,
+ * and one more for a proposal that did not fit. Steps that fix refused calls
+ * do not count.
+ */
+export const MAX_CHANGE_STEPS = 2;
+
+/** What a change call past {@link MAX_CHANGE_STEPS} is told. */
+export const CHANGE_STEPS_SPENT = `Refused, not added to the proposal: a proposal takes at most ${MAX_CHANGE_STEPS} responses of changes, and this one has had them. Send no more changes; finish with what the proposal has, calling explain_change for it if you have not.`;
 
 /**
  * What a change call that joined the proposal is told: {@link ADDED_RESULT},
@@ -65,7 +84,7 @@ export function addedResult(noteIds: readonly string[]): string {
  * Whether `call` changes the song, rather than explaining, asking,
  * recommending or proposing something to remember (GRV-25).
  */
-function isChangeCall(call: AssistantToolCall): boolean {
+export function isChangeCall(call: AssistantToolCall): boolean {
   return (
     call.name !== EXPLAIN_TOOL_NAME &&
     call.name !== RECOMMEND_SOUNDS_TOOL &&
@@ -142,12 +161,14 @@ export function expandCalls(
  * out and is told so; one that does not is refused, with why, and left out. A
  * recommendation aimed at a track or pad that is neither in `targets` nor
  * made by an earlier call is refused the same way. Any other call is noted
- * and kept.
+ * and kept. Given `refuseChanges`, every change call is refused with it
+ * instead, and numbers no notes (GRV-142's limit on steps of changes).
  */
 export function answerStep(
   calls: readonly AssistantToolCall[],
   targets: RecommendationTargets,
   notes: NoteExpander,
+  options: { readonly refuseChanges?: string } = {},
 ): AnsweredStep {
   const kept: AssistantToolCall[] = [];
   let known = targets;
@@ -169,6 +190,14 @@ export function answerStep(
     if (!isChangeCall(call)) {
       kept.push(call);
       return { type: "tool_result", tool_use_id: call.id, content: NOTED_RESULT };
+    }
+    if (options.refuseChanges !== undefined) {
+      return {
+        type: "tool_result",
+        tool_use_id: call.id,
+        content: options.refuseChanges,
+        is_error: true,
+      };
     }
     // A note ID of the model's in the gateway's counter is refused before
     // any of the call's notes is numbered (`compactNotes.ts`).
@@ -221,5 +250,36 @@ export function goesOnToReaim(
   calls: readonly AssistantToolCall[],
   answered: Pick<AnsweredStep, "misaimed">,
 ): boolean {
-  return stopReason === "tool_use" && answered.misaimed > 0 && !calls.some(isAskCall);
+  return goesOnToRefuse(stopReason, calls, answered.misaimed);
+}
+
+/**
+ * How many of a step's change calls {@link answerStep} would refuse for not
+ * fitting their tool, or for a note ID in the gateway's counter, without
+ * numbering any of the turn's notes: each is written out by an expander of
+ * its own, since whether a call fits does not depend on its notes' IDs.
+ */
+export function refusedIn(calls: readonly AssistantToolCall[], stem: string): number {
+  return calls.filter((call) => {
+    if (!isChangeCall(call)) return false;
+    const notes = createNoteExpander(stem);
+    if (notes.refuseGatewayIds(call) !== null) return true;
+    return !notes.expand(call, (written) => {
+      const resolution = resolveToolCall(written.name, written.input);
+      return resolution.ok ? null : resolution.message;
+    }).ok;
+  }).length;
+}
+
+/**
+ * Whether a step the turn would have ended on goes on after all, because
+ * `refused` of its calls are told so: it asked nothing, so the model can
+ * send them again, or finish without them.
+ */
+export function goesOnToRefuse(
+  stopReason: AssistantStopReason,
+  calls: readonly AssistantToolCall[],
+  refused: number,
+): boolean {
+  return stopReason === "tool_use" && refused > 0 && !calls.some(isAskCall);
 }

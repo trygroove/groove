@@ -250,6 +250,16 @@ describe("the experiment files (GRV-110)", () => {
     }
   });
 
+  it("include GRV-146's: toolText moderate and aggressive, for time to the first word", async () => {
+    const experiment = await loadExperiment("tool-text");
+    expect(experiment.goal).toBe("firstTextP50");
+    expect(experiment.cases).toBe("all");
+    expect([
+      ...experiment.variants.slice(1).map((v) => v.name),
+      ...experiment.atDefaults,
+    ]).toEqual(["moderate", "aggressive"]);
+  });
+
   it("include GRV-110's own: thinkingEffort=low on the heavy set, for output tokens", async () => {
     const written = (await import("../../../evals/experiments/thinking-effort-low"))
       .default;
@@ -262,6 +272,17 @@ describe("the experiment files (GRV-110)", () => {
       ...experiment.variants.slice(1).map((v) => v.name),
       ...experiment.atDefaults,
     ]).toEqual(["low"]);
+  });
+
+  it("include GRV-142's: oneResponseProposal=on on the heavy set, for latency p50", async () => {
+    const written = (await import("../../../evals/experiments/one-response-proposal"))
+      .default;
+    expect(written.variants).toEqual({ "one-response": { oneResponseProposal: "on" } });
+    expect(written.guardrails).toBeUndefined();
+    const experiment = await loadExperiment("one-response-proposal");
+    expect(experiment.card).toBe("GRV-142");
+    expect(experiment.goal).toBe("latencyP50");
+    expect(experiment.cases).toEqual({ set: "heavyOutput" });
   });
 
   it("refuses a missing file, a file with no default export, and a misnamed one", async () => {

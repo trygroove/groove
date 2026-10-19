@@ -7,10 +7,14 @@ import {
   ADDED_RESULT,
   addedResult,
   answerStep,
+  CHANGE_STEPS_SPENT,
   continuesAfter,
   expandCalls,
   goesOnToReaim,
+  goesOnToRefuse,
+  MAX_CHANGE_STEPS,
   misaimedIn,
+  refusedIn,
 } from "./steps";
 import { CREATE_EXAMPLES, EXPLAIN_TOOL_NAME, OFFERED_CLIP_EXAMPLE } from "./tools";
 
@@ -200,5 +204,66 @@ describe("answerStep: where a recommendation is aimed (GRV-129)", () => {
         answerStep([bad, ask], known, createNoteExpander(STEM)),
       ),
     ).toBe(false);
+  });
+});
+
+describe("a proposal in one response (GRV-142)", () => {
+  const wrapped = { id: "toolu_3", name: "track_create", input: { track: change.input } };
+  const notesAt = (notes: unknown[]) => ({
+    id: "toolu_4",
+    name: "note_add",
+    input: { clipId: OFFERED_CLIP_EXAMPLE.id, notes },
+  });
+
+  it("counts the change calls an answer would refuse, numbering no notes", () => {
+    const notes = createNoteExpander(STEM);
+    expect(refusedIn([change, other(EXPLAIN_TOOL_NAME)], STEM)).toBe(0);
+    expect(refusedIn([change, wrapped, notesAt([[0, "not a note"]])], STEM)).toBe(2);
+    expect(refusedIn([notesAt([[0, 40, 96, 0.8]])], STEM)).toBe(0);
+    // The turn's own counter is untouched: its first note still gets n001.
+    const answered = answerStep([notesAt([[0, 40, 96, 0.8]])], new Map(), notes);
+    expect(answered.results[0]?.content).toContain(`evt_${STEM}n001`);
+  });
+
+  it("refuses every change call once the turn's steps of changes are spent, and notes the rest", () => {
+    const notes = createNoteExpander(STEM);
+    const explain = other(EXPLAIN_TOOL_NAME, "toolu_5");
+    const answered = answerStep(
+      [change, notesAt([[0, 40, 96, 0.8]]), explain],
+      new Map(),
+      notes,
+      {
+        refuseChanges: CHANGE_STEPS_SPENT,
+      },
+    );
+    expect(answered.kept).toEqual([explain]);
+    expect(answered.results).toEqual([
+      {
+        type: "tool_result",
+        tool_use_id: "toolu_1",
+        content: CHANGE_STEPS_SPENT,
+        is_error: true,
+      },
+      {
+        type: "tool_result",
+        tool_use_id: "toolu_4",
+        content: CHANGE_STEPS_SPENT,
+        is_error: true,
+      },
+      { type: "tool_result", tool_use_id: "toolu_5", content: "Noted." },
+    ]);
+    expect(CHANGE_STEPS_SPENT).toContain(`at most ${MAX_CHANGE_STEPS} responses`);
+    // No note was numbered for the refused call.
+    const next = answerStep([notesAt([[0, 40, 96, 0.8]])], new Map(), notes);
+    expect(next.results[0]?.content).toContain(`evt_${STEM}n001`);
+  });
+
+  it("goes on after a step it would have ended on, only when something was refused and nothing asked", () => {
+    expect(goesOnToRefuse("tool_use", [change], 1)).toBe(true);
+    expect(goesOnToRefuse("tool_use", [change], 0)).toBe(false);
+    expect(goesOnToRefuse("tool_use", [change, other(ASK_PRODUCER_TOOL_NAME)], 1)).toBe(
+      false,
+    );
+    expect(goesOnToRefuse("end_turn", [], 1)).toBe(false);
   });
 });

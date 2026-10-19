@@ -377,12 +377,11 @@ describe("runEvals", () => {
     expect(provider.requests.every((sent) => sent.output_config?.effort === "low")).toBe(
       true,
     );
-    expect(report.tactics).toEqual(resolveTactics({ thinkingEffort: "low" }));
-    expect(renderMarkdown(report)).toContain(
-      `- Tactics: ${describeTactics(resolveTactics({ thinkingEffort: "low" }))}`,
-    );
+    const resolved = resolveTactics({ thinkingEffort: "low" });
+    expect(report.tactics).toEqual(resolved);
+    expect(renderMarkdown(report)).toContain(`- Tactics: ${describeTactics(resolved)}`);
     expect(renderSummaryMarkdown(summaryOf(report))).toContain(
-      "- Tactics: thinkingEffort=low",
+      `- Tactics: ${describeTactics(resolved)}`,
     );
 
     const production = await runEvals({

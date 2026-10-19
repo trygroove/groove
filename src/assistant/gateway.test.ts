@@ -39,6 +39,7 @@ import { type AssistantMemoryContext, REMEMBER_TOOL_NAME } from "./memory";
 import { buildAssistantPayload } from "./payload";
 import {
   ASSISTANT_PROMPT_VERSION,
+  assistantSystemPrompt,
   LIBRARY_BLOCK_HEADING,
   MEMORY_BLOCK_HEADING,
 } from "./prompt";
@@ -52,7 +53,7 @@ import {
   type AssistantTurnResult,
 } from "./protocol";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
-import { ADDED_RESULT } from "./steps";
+import { ADDED_RESULT, CHANGE_STEPS_SPENT } from "./steps";
 import { type AssistantTurnLog, TURN_LOG_KEYS } from "./telemetry";
 import {
   ASSISTANT_TOOLSET_VERSION,
@@ -1778,5 +1779,185 @@ describe("runAssistantTurn: where a recommendation is aimed (GRV-129)", () => {
     const result = await run(h, kitRequest());
     expect(h.provider.requests).toHaveLength(1);
     expect(result.proposal?.calls).toHaveLength(2);
+  });
+});
+
+describe("runAssistantTurn: a proposal in one response (GRV-142)", () => {
+  const project = createReferenceProject();
+  const [track] = project.song.tracks;
+  const noteClip = project.clips.find((clip) => clip.content.kind === "notes");
+  if (!noteClip) throw new Error("the reference project has a note clip");
+  const stem = "Stem0000000000000";
+  const muteCall = call(setTrackFlag(track.id, "muted", !track.mixer.muted));
+  const soloCall = call(setTrackFlag(track.id, "soloed", !track.mixer.soloed));
+  const volumeCall = call(
+    setParameter({ scope: "track", trackId: track.id, parameterId: TRACK_VOLUME.id }, -9),
+  );
+  /** A call that does not fit its tool: track_set_flag with no track or value. */
+  const badCall = { name: muteCall.name, input: { flag: "muted" } };
+  const explainCall = {
+    name: EXPLAIN_TOOL_NAME,
+    input: { goal: "A tighter track", technique: "Set it up in one go" },
+  };
+  const addCall = (notes: unknown[]) => ({
+    name: "note_add",
+    input: { clipId: noteClip.id, notes },
+  });
+
+  function turn(h: Harness, oneResponseProposal: "on" | "off" = "on") {
+    return runAssistantTurn(
+      { ...h.deps, idStem: () => stem, tactics: { oneResponseProposal } },
+      SIGNED_IN,
+      request(),
+      { signal: new AbortController().signal, onChunk: (chunk) => h.chunks.push(chunk) },
+    );
+  }
+  const names = (result: AssistantTurnResult) =>
+    result.proposal?.calls.map((entry) => entry.name);
+  /** The answers the model was sent before its `index`th request, from 0. */
+  const answersBefore = (h: Harness, index: number) =>
+    h.provider.requests[index].messages.at(-1)?.content as unknown as {
+      tool_use_id: string;
+      content: string;
+      is_error?: boolean;
+    }[];
+
+  it("asks for the whole proposal in one response, and production's prompt is unchanged", async () => {
+    const on = harness([toolUseEvents("Done.", [muteCall, explainCall])]);
+    await turn(on, "on");
+    const prompt = on.provider.requests[0].system[0].text;
+    expect(prompt).toBe(assistantSystemPrompt({ oneResponseProposal: "on" }));
+    expect(prompt).toContain("Write the whole proposal in one response");
+    expect(prompt).not.toContain("each step starts with one short sentence");
+    const off = harness([toolUseEvents("Done.", [muteCall, explainCall])]);
+    await turn(off, "off");
+    expect(off.provider.requests[0].system[0].text).toBe(
+      assistantSystemPrompt({ oneResponseProposal: "off" }),
+    );
+  });
+
+  it("applies several calls in one step in order, numbering their notes in call order", async () => {
+    const script = () => [
+      toolUseEvents("A fuller part, quieter, muted.", [
+        addCall([[0, 40, 96, 0.8]]),
+        volumeCall,
+        addCall([
+          [96, 43, 96, 0.7],
+          [192, 45, 96, 0.6],
+        ]),
+        muteCall,
+        explainCall,
+      ]),
+    ];
+    const results = [];
+    for (let run = 0; run < 2; run += 1) {
+      const h = harness(script());
+      results.push(await turn(h));
+      expect(h.provider.requests).toHaveLength(1);
+    }
+    const [result, again] = results;
+    expect(names(result)).toEqual([
+      "note_add",
+      volumeCall.name,
+      "note_add",
+      muteCall.name,
+      EXPLAIN_TOOL_NAME,
+    ]);
+    const noteIds = (result.proposal?.calls ?? []).flatMap(
+      (entry) =>
+        (entry.input as { notes?: { id: string }[] }).notes?.map((n) => n.id) ?? [],
+    );
+    expect(noteIds).toEqual([`evt_${stem}n001`, `evt_${stem}n002`, `evt_${stem}n003`]);
+    // The same calls always expand to the same proposal.
+    expect(again.proposal).toEqual(result.proposal);
+    expect(validateProposal(project, result.proposal).ok).toBe(true);
+  });
+
+  it("refuses a bad call partway back to the model, keeping the calls around it", async () => {
+    const h = harness(
+      [toolUseEvents("Quieter and muted.", [volumeCall, badCall, explainCall])],
+      {},
+      [toolUseEvents("Fixed.", [muteCall])],
+    );
+    const result = await turn(h);
+    // The fix explains nothing, so the turn asks once more, and it ends.
+    expect(h.provider.requests).toHaveLength(3);
+    const answers = answersBefore(h, 1);
+    expect(answers[0]).not.toHaveProperty("is_error");
+    expect(answers[1]).toMatchObject({ is_error: true });
+    expect(answers[1].content).toContain("Refused, not added to the proposal");
+    expect(names(result)).toEqual([volumeCall.name, EXPLAIN_TOOL_NAME, muteCall.name]);
+    expect(validateProposal(project, result.proposal).ok).toBe(true);
+
+    // Off, the step that explains ends the turn, and the browser refuses it.
+    const off = harness([
+      toolUseEvents("Quieter and muted.", [volumeCall, badCall, explainCall]),
+    ]);
+    await turn(off, "off");
+    expect(off.provider.requests).toHaveLength(1);
+  });
+
+  it("refuses a third step of change calls, telling the model to finish with what it has", async () => {
+    const h = harness([toolUseEvents("Muting it, continuing.", [muteCall])], {}, [
+      toolUseEvents("Then its volume, continuing.", [volumeCall]),
+      toolUseEvents("And solo it.", [soloCall]),
+      toolUseEvents("Done.", [explainCall]),
+    ]);
+    const result = await turn(h);
+    expect(h.provider.requests).toHaveLength(4);
+    expect(answersBefore(h, 3)).toEqual([
+      {
+        type: "tool_result",
+        tool_use_id: "toolu_1",
+        content: CHANGE_STEPS_SPENT,
+        is_error: true,
+      },
+    ]);
+    expect(names(result)).toEqual([muteCall.name, volumeCall.name, EXPLAIN_TOOL_NAME]);
+
+    // Off, a turn takes as many steps of changes as it needs.
+    const off = harness([toolUseEvents("Muting it.", [muteCall])], {}, [
+      toolUseEvents("Then its volume.", [volumeCall]),
+      toolUseEvents("And solo it.", [soloCall]),
+      toolUseEvents("Done.", [explainCall]),
+    ]);
+    expect(names(await turn(off, "off"))).toEqual([
+      muteCall.name,
+      volumeCall.name,
+      soloCall.name,
+      EXPLAIN_TOOL_NAME,
+    ]);
+  });
+
+  it("refuses a change past the limit again, and leaves it out on the last step allowed", async () => {
+    const h = harness([toolUseEvents("Mute.", [muteCall])], { maxSteps: 4 }, [
+      toolUseEvents("Volume.", [volumeCall]),
+      toolUseEvents("Solo.", [soloCall]),
+      toolUseEvents("Solo, really.", [soloCall, explainCall]),
+    ]);
+    const result = await turn(h);
+    expect(h.provider.requests).toHaveLength(4);
+    expect(names(result)).toEqual([muteCall.name, volumeCall.name, EXPLAIN_TOOL_NAME]);
+  });
+
+  it("does not count a step fixing refused calls towards the limit", async () => {
+    const h = harness(
+      [toolUseEvents("Mute and set its volume.", [muteCall, badCall])],
+      {},
+      [
+        toolUseEvents("Fixed.", [soloCall]),
+        toolUseEvents("And its volume, the second part.", [volumeCall]),
+        toolUseEvents("Done.", [explainCall]),
+      ],
+    );
+    const result = await turn(h);
+    expect(h.provider.requests).toHaveLength(4);
+    expect(answersBefore(h, 3).some((answer) => answer.is_error)).toBe(false);
+    expect(names(result)).toEqual([
+      muteCall.name,
+      soloCall.name,
+      volumeCall.name,
+      EXPLAIN_TOOL_NAME,
+    ]);
   });
 });

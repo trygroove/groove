@@ -14,6 +14,9 @@ import {
 } from "./prompt";
 import { TACTIC_DEFAULTS } from "./tactics";
 
+const STEPS_PROMPT = assistantSystemPrompt({ oneResponseProposal: "off" });
+const ONE_RESPONSE_PROMPT = assistantSystemPrompt({ oneResponseProposal: "on" });
+
 describe("the assistant's system prompt", () => {
   it("is versioned by date", () => {
     expect(ASSISTANT_PROMPT_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
@@ -200,8 +203,9 @@ describe("the assistant's system prompt", () => {
     expect(ASSISTANT_SYSTEM_PROMPT).toContain(
       "Always start the reply with a sentence saying what you are proposing or asking, before any tool call",
     );
-    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
-      "a step that runs out of it loses the whole reply",
+    expect(STEPS_PROMPT).toContain("a step that runs out of it loses the whole reply");
+    expect(ONE_RESPONSE_PROMPT).toContain(
+      "a response that runs out of it loses the whole reply",
     );
     expect(ASSISTANT_SYSTEM_PROMPT).toContain("looped: true to fill its length");
     expect(ASSISTANT_SYSTEM_PROMPT).toContain("never the whole part you would propose");
@@ -211,14 +215,37 @@ describe("the assistant's system prompt", () => {
   // bass clips, meaning to write the new notes once the calls came back. A
   // turn now goes on in steps (steps.ts), but a replacement still stays in one.
   it("builds a proposal in narrated steps, ended by explain_change", () => {
-    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("No tool ever answers back");
-    expect(ASSISTANT_SYSTEM_PROMPT).toContain("each step starts with one short sentence");
-    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    expect(STEPS_PROMPT).not.toContain("No tool ever answers back");
+    expect(STEPS_PROMPT).toContain("each step starts with one short sentence");
+    expect(STEPS_PROMPT).toContain(
       "to replace a clip's notes, clear them and add the new ones (note_add) in the same step",
     );
-    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
-      "call explain_change once, as your last call",
+    expect(STEPS_PROMPT).toContain("call explain_change once, as your last call");
+  });
+
+  // GRV-142: the oneResponseProposal tactic asks for every change call at
+  // once, after one line, and a second response only when it does not fit.
+  it("writes a proposal in one response under oneResponseProposal, a second only when it does not fit", () => {
+    expect(ONE_RESPONSE_PROMPT).not.toContain("each step starts with one short sentence");
+    expect(ONE_RESPONSE_PROMPT).toContain("start with one short line saying what it is");
+    expect(ONE_RESPONSE_PROMPT).toContain(
+      "with no sentence between them and none per part",
     );
+    expect(ONE_RESPONSE_PROMPT).toContain(
+      "a proposal takes at most two responses of changes, and a third is refused",
+    );
+    expect(ONE_RESPONSE_PROMPT).toContain(
+      "to replace a clip's notes, clear them and add the new ones (note_add) in the same response",
+    );
+    expect(ONE_RESPONSE_PROMPT).toContain("call explain_change once, as your last call");
+    // Only the passages about building a proposal and its room differ.
+    const strip = (prompt: string) =>
+      prompt
+        .replace(/Build it in steps.*in the same step\./, "")
+        .replace(/Write the whole proposal.*ends with explain_change\./, "")
+        .replace(/## Keeping each step[\s\S]*?(?=## The producer)/, "")
+        .replace(/## Keeping a response[\s\S]*?(?=## The producer)/, "");
+    expect(strip(ONE_RESPONSE_PROMPT)).toBe(strip(STEPS_PROMPT));
   });
 
   // GRV-6 QA: drum pads are in every drum track's "pads" (GRV-23), not only
