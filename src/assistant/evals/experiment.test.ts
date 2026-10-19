@@ -63,6 +63,32 @@ describe("validateExperiment (GRV-110)", () => {
     );
   });
 
+  // GRV-145: a focus within the pool, and the stricter guardrails.
+  it("takes a focus within the pool and the stricter guardrails, and refuses a focus outside it", () => {
+    const focused = validateExperiment({
+      ...VALID,
+      focus: ["sketch-house", "sketch-broken"],
+      guardrails: { noMaxTokens: true, everyTurnChecks: ["noEmptyClips"] },
+    });
+    expect(focused.focus).toEqual(["sketch-house", "sketch-broken"]);
+    expect(focused.guardrails.noMaxTokens).toBe(true);
+    expect(focused.guardrails.everyTurnChecks).toEqual(["noEmptyClips"]);
+    expect(validateExperiment(VALID).focus).toBeNull();
+    expect(issues({ ...VALID, focus: ["basic-tempo"] })).toMatch(
+      /focus: "basic-tempo" is not one of the cases/,
+    );
+    expect(issues({ ...VALID, focus: ["sketch-broken"] })).toMatch(
+      /focus: none of them is a train case/,
+    );
+    expect(issues({ ...VALID, focus: ["sketch-house", "sketch-house"] })).toMatch(
+      /focus: a case is named twice/,
+    );
+    expect(issues({ ...VALID, focus: [] })).toMatch(/focus/);
+    expect(
+      issues({ ...VALID, guardrails: { everyTurnChecks: ["noSuchCheck"] } }),
+    ).toMatch(/everyTurnChecks/);
+  });
+
   it("takes the full suite or a case list as its pool, and a tighter bar", () => {
     const all = validateExperiment({
       ...VALID,
@@ -273,6 +299,33 @@ describe("the experiment files (GRV-110)", () => {
     expect(experiment.card).toBe("GRV-142");
     expect(experiment.goal).toBe("latencyP50");
     expect(experiment.cases).toEqual({ set: "heavyOutput" });
+  });
+
+  it("include GRV-145's: guidedBuild=on over the suite, for quality on its session cases", async () => {
+    const written = (await import("../../../evals/experiments/guided-build")).default;
+    expect(written.variants).toEqual({ guided: { guidedBuild: "on" } });
+    const experiment = await loadExperiment("guided-build");
+    expect(experiment.card).toBe("GRV-145");
+    expect(experiment.goal).toBe("quality");
+    expect(experiment.cases).toBe("all");
+    expect(experiment.focus).toEqual([
+      "develop-track-arrange",
+      "full-track-empty",
+      "full-tune-loop",
+    ]);
+    // Every focus case is a session, and trains: at least the 3 an interval needs.
+    const focus = experiment.train.filter((entry) =>
+      experiment.focus?.includes(entry.id),
+    );
+    expect(focus).toHaveLength(3);
+    expect(focus.every((entry) => entry.session)).toBe(true);
+    expect(experiment.guardrails).toEqual({
+      ...DEFAULT_GUARDRAILS,
+      noMaxTokens: true,
+      outputTokensPerTurn: true,
+      everyTurnChecks: ["noEmptyClips", "clipsPlaced"],
+    });
+    expect(experiment.budgetUsd).toBe(40);
   });
 
   it("refuses a missing file, a file with no default export, and a misnamed one", async () => {

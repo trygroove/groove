@@ -56,6 +56,13 @@ export const TACTICS = {
     default: "off",
     alters: ["prompt", "expansion"],
   },
+  guidedBuild: {
+    description:
+      'Whether a large, open request (a whole track, "develop this") is built over several short proposals, the smallest playable step first and each ending with a question offering the next steps (on), rather than in one (off).',
+    values: ["off", "on"],
+    default: "off",
+    alters: ["prompt"],
+  },
 } as const satisfies Readonly<Record<string, TacticDefinition>>;
 
 export type TacticId = keyof typeof TACTICS;

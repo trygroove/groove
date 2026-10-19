@@ -8,6 +8,7 @@ import { ASSISTANT_MODELS } from "./config";
 import { runAssistantTurn } from "./gateway";
 import { createInMemoryGuardStores } from "./inMemoryGuardStores";
 import { buildAssistantPayload } from "./payload";
+import { GUIDED_BUILD_RULE } from "./prompt";
 import { buildProviderRequest, type ProviderRequestParts } from "./providerRequest";
 import {
   describeTactics,
@@ -141,6 +142,21 @@ describe("a tactic's default", () => {
     const off = await openingRequest({ thinkingEffort: OFF } as TacticOverrides);
     expect(off).not.toBe(production);
     expect(off.replace(`"effort":"${OFF}"`, `"effort":"${DEFAULT}"`)).toBe(production);
+  });
+
+  // GRV-145: guidedBuild changes the system prompt by its one paragraph.
+  it("guidedBuild changes only the prompt, by its paragraph", async () => {
+    const production = await openingRequest();
+    const other = TACTICS.guidedBuild.values.find(
+      (value) => value !== TACTIC_DEFAULTS.guidedBuild,
+    ) as TacticOverrides["guidedBuild"];
+    const flipped = await openingRequest({ guidedBuild: other });
+    expect(flipped).not.toBe(production);
+    const paragraph = JSON.stringify(`\n\n${GUIDED_BUILD_RULE}`).slice(1, -1);
+    const [withRule, without] =
+      other === "on" ? [flipped, production] : [production, flipped];
+    expect(withRule).toContain(paragraph);
+    expect(withRule.replace(paragraph, "")).toBe(without);
   });
 
   it("is not an effort a budget-thinking model is sent", () => {

@@ -236,7 +236,8 @@ export function turnsOf(record: EvalRecord): readonly EvalTurn[] {
   return record.session?.turns ?? [record];
 }
 
-function byTurnOf(records: readonly EvalRecord[]): ByTurn {
+/** Every turn of `records` on its own, a session's apart (GRV-145). */
+export function byTurnOf(records: readonly EvalRecord[]): ByTurn {
   const turns = records.flatMap(turnsOf);
   const outputs = turns
     .map((turn) => turn.usage?.outputTokens)

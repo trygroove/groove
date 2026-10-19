@@ -302,3 +302,155 @@ describe("analyzeCut (GRV-110 section 5a)", () => {
     expect(analysis.why).toMatch(/Overall pass rate may be worse/);
   });
 });
+
+// GRV-145: a focus within the pool, the stricter guardrails, and a phase
+// judged on the guardrails alone.
+describe("a focus and the stricter guardrails (GRV-145)", () => {
+  const POOL = ["case-a", "case-b", "case-c", "case-d"];
+  const FOCUS = ["case-a", "case-b", "case-c"];
+  const STRICT: ExperimentGuardrails = {
+    ...DEFAULT_GUARDRAILS,
+    noMaxTokens: true,
+    outputTokensPerTurn: true,
+    everyTurnChecks: ["noEmptyClips", "clipsPlaced"],
+  };
+  const pool = report(POOL);
+
+  /** A session of `turns` turns, each `outputTokens` long and its checks as given. */
+  function session(
+    caseId: string,
+    run: number,
+    turns: readonly { outputTokens: number; noEmptyClips?: "pass" | "fail" }[],
+  ) {
+    const base = testRecord({ caseId, run, set: "musical" });
+    return {
+      ...base,
+      session: {
+        maxTurns: 5,
+        ended: "done" as const,
+        turns: turns.map((entry, index) => ({
+          ...testRecord({ caseId, usage: { outputTokens: entry.outputTokens } }),
+          turn: index + 1,
+          request: "Next.",
+        })),
+      },
+      turnChecks: turns.map((entry) => ({
+        valid: { status: "pass" as const, detail: "" },
+        noEmptyClips: { status: entry.noEmptyClips ?? ("pass" as const), detail: "" },
+        clipsPlaced: { status: "pass" as const, detail: "" },
+      })),
+    };
+  }
+
+  it("reads the goal from the focus cases alone", () => {
+    // Better only on case-d, outside the focus: nothing for the goal.
+    const outside = report(POOL, (caseId) => ({
+      usage: { outputTokens: caseId === "case-d" ? 10 : 100 },
+    }));
+    const goal = judgeGoal("outputTokens", pool, outside, FOCUS);
+    expect(goal).toMatchObject({ change: 0, pairedCases: 3, control: 100, variant: 100 });
+    expect(goal.label).toBe("Output tokens per turn on the focus cases");
+    expect(judgeGoal("outputTokens", pool, outside).pairedCases).toBe(4);
+  });
+
+  it("adds the stricter guardrails only when asked, judged on the focus cases", () => {
+    const ids = (limits: ExperimentGuardrails) =>
+      checkGuardrails(pool, pool, limits, FOCUS).map((entry) => entry.id);
+    expect(ids(DEFAULT_GUARDRAILS)).not.toContain("noMaxTokens");
+    expect(ids(STRICT).slice(-3)).toEqual([
+      "noMaxTokens",
+      "outputTokensPerTurn",
+      "everyTurnChecks",
+    ]);
+    expect(checkGuardrails(pool, pool, STRICT, FOCUS).every((entry) => entry.pass)).toBe(
+      true,
+    );
+    // A cut-off reply outside the focus is the default bar's business only.
+    const outside = report(POOL, (caseId, index) =>
+      caseId === "case-d" && index === 0 ? { errorCode: "reply_too_long" } : {},
+    );
+    const strict = checkGuardrails(pool, outside, STRICT, FOCUS);
+    expect(strict.find((entry) => entry.id === "noMaxTokens")?.pass).toBe(true);
+    expect(strict.find((entry) => entry.id === "maxTokens")?.pass).toBe(false);
+  });
+
+  it("refuses any max_tokens stop on a focus case, even one the control had too", () => {
+    const cut = report(POOL, (caseId, index) =>
+      caseId === "case-a" && index === 0 ? { errorCode: "reply_too_long" } : {},
+    );
+    const result = checkGuardrails(cut, cut, STRICT, FOCUS).find(
+      (entry) => entry.id === "noMaxTokens",
+    );
+    expect(result).toMatchObject({ pass: false, detail: "1 of 9 runs" });
+    expect(result?.label).toBe("No max_tokens stop on the focus cases");
+  });
+
+  it("holds a session's output tokens per turn to the control's single turn", () => {
+    const single = buildTestReport(
+      FOCUS.map((caseId) => testRecord({ caseId, usage: { outputTokens: 9_000 } })),
+    );
+    const lighter = buildTestReport(
+      FOCUS.map((caseId) =>
+        session(caseId, 1, [{ outputTokens: 4_000 }, { outputTokens: 5_000 }]),
+      ),
+    );
+    const heavier = buildTestReport(
+      FOCUS.map((caseId) =>
+        session(caseId, 1, [{ outputTokens: 9_000 }, { outputTokens: 9_500 }]),
+      ),
+    );
+    const perTurn = (current: EvalReport) =>
+      checkGuardrails(single, current, STRICT, FOCUS).find(
+        (entry) => entry.id === "outputTokensPerTurn",
+      );
+    expect(perTurn(lighter)).toMatchObject({
+      pass: true,
+      detail: "9,000 over 3 turns to 4,500 over 6",
+    });
+    expect(perTurn(heavier)?.pass).toBe(false);
+  });
+
+  it("refuses a check failing on any turn's own proposal, though the final song passes", () => {
+    const sessions = buildTestReport([
+      session("case-a", 1, [{ outputTokens: 100 }, { outputTokens: 100 }]),
+      session("case-b", 1, [
+        { outputTokens: 100, noEmptyClips: "fail" },
+        { outputTokens: 100 },
+      ]),
+    ]);
+    const result = checkGuardrails(sessions, sessions, STRICT, FOCUS).find(
+      (entry) => entry.id === "everyTurnChecks",
+    );
+    expect(result).toMatchObject({ pass: false, detail: "1 of 4 turns failed" });
+    expect(result?.label).toBe(
+      "Checks 16 and 20 hold on every turn's proposal on the focus cases",
+    );
+  });
+
+  it("judges a phase on the guardrails alone when told: a win, or a keep, when every one holds", () => {
+    const options = { focus: FOCUS, guardrailsOnly: true };
+    const heldout = report(["case-x", "case-y"]);
+    const improve = analyzeVariant(variant, "quality", heldout, heldout, STRICT, options);
+    expect(improve.verdict).toBe("win");
+    expect(improve.goal.pairedCases).toBe(0);
+    expect(improve.why).toMatch(/only the guardrails judge it/);
+    const cut = analyzeVariant(
+      { ...variant, kind: "cut" },
+      "quality",
+      heldout,
+      heldout,
+      STRICT,
+      options,
+    );
+    expect(cut.verdict).toBe("keep");
+    const broken = report(["case-x", "case-y"], () => ({ valid: "fail" }));
+    expect(
+      analyzeVariant(variant, "quality", heldout, broken, STRICT, options).verdict,
+    ).toBe("no win");
+    // Without it, no paired case is inconclusive, as ever.
+    expect(
+      analyzeVariant(variant, "quality", heldout, heldout, STRICT, { focus: FOCUS })
+        .verdict,
+    ).toBe("inconclusive");
+  });
+});

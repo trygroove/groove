@@ -23,6 +23,8 @@
  *   GRV-6's QA used it, at a chosen volume.
  * - {@link createBdSketchProject} (GRV-107): that track after an applied
  *   sketch: BD plus bass, chords, melody and texture tracks, each with a clip.
+ * - {@link createEmptySongProject} (GRV-145): a song with no tracks at all,
+ *   at 120 BPM: where "make me a full track" starts from nothing.
  */
 import type {
   Clip,
@@ -444,6 +446,13 @@ function bdTrack(context: DomainFactoryContext, volume: number) {
     events: hits(context, pad.id, [0, 4, 8, 12], 0.9),
   });
   return { track, pad, clip, asset: kick };
+}
+
+/** A song with no tracks, clips or placements, at 120 BPM (GRV-145). */
+export function createEmptySongProject(): Project {
+  const context = evalContext("eval-empty");
+  const song: Song = { ...createEmptySong(120), master: createNewProjectMaster(context) };
+  return project(context, "Empty Song", song, []);
 }
 
 /**
