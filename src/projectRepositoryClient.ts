@@ -24,7 +24,16 @@ import type { ProjectRepository } from "./persistence/projectRepository";
 let cached: Promise<ProjectRepository> | null = null;
 
 export function getProjectRepository(): Promise<ProjectRepository> {
-  cached ??= createProjectRepository();
+  if (!cached) {
+    const pending = createProjectRepository();
+    cached = pending;
+    // A failed chunk import (a tab left open across a deploy, GRV-137) must
+    // not be replayed for the life of the tab: forget it so the next call
+    // tries again.
+    pending.catch(() => {
+      if (cached === pending) cached = null;
+    });
+  }
   return cached;
 }
 
