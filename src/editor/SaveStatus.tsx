@@ -32,7 +32,7 @@ const SAVE_FAILURE_REASON_LABEL: Record<SaveFailureReason, string> = {
  * message says that rather than only that the save failed.
  */
 export const OFFLINE_LABEL = "Offline";
-export const OFFLINE_MESSAGE = "You're offline.";
+export const OFFLINE_MESSAGE = "Offline. Reconnect to save.";
 export const OFFLINE_DETAIL =
   "You're offline. Your changes are kept here and save when you reconnect.";
 

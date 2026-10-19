@@ -38,7 +38,9 @@ test.describe("Firebase failure states", () => {
     // Offline, it says so while the write waits (GRV-55), then that it failed.
     await expect(saveStatus(page)).toHaveText(/^(Offline|Save failed)$/);
     await expect(saveStatus(page)).toHaveText("Save failed", { timeout: 60_000 });
-    const recovery = page.getByRole("alert").filter({ hasText: "You're offline." });
+    const recovery = page
+      .getByRole("alert")
+      .filter({ hasText: "Offline. Reconnect to save." });
     await expect(recovery).toBeVisible();
     await expect(recovery.getByRole("button", { name: "Retry" })).toBeVisible();
 
