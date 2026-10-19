@@ -596,6 +596,24 @@ describe("SoundsView filters", () => {
     );
   });
 
+  // GRV-165: G used to leave focus on the header, so Down walked the list behind.
+  it("moves focus into the genre menu on G, and Up and Down walk its genres", async () => {
+    const { press, selected } = renderView();
+    await rows();
+
+    press("library.genre_menu");
+    const menu = await screen.findByRole("group", { name: "Genres" });
+    const options = [...menu.querySelectorAll("input")];
+    await waitFor(() => expect(document.activeElement).toBe(options[0]));
+
+    press("library.select_next");
+    expect(document.activeElement).toBe(options[1]);
+    press("library.select_previous");
+    expect(document.activeElement).toBe(options[0]);
+    // The list behind the menu is not driven by the arrows.
+    expect(selected()).toBeNull();
+  });
+
   // #890: ticking a genre re-counts the menu; the row must survive that, or
   // focus drops to <body> and the next Space or Enter misses the checkbox.
   it("keeps focus on a genre checkbox after it toggles, on and off again", async () => {
