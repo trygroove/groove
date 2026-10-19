@@ -73,7 +73,12 @@ import {
 import type { AssistantGuardStores } from "./guards";
 import { type BoundedHistory, boundHistory, estimateTokens } from "./history";
 import { rememberTool } from "./memory";
-import { ASSISTANT_PROMPT_VERSION, buildSystemBlocks, createIdStem } from "./prompt";
+import {
+  ASSISTANT_PROMPT_VERSION,
+  buildSystemBlocks,
+  createIdStem,
+  withPromptRules,
+} from "./prompt";
 import {
   AssistantGatewayError,
   type AssistantProposal,
@@ -317,7 +322,12 @@ async function prepare(
       ? [withProviderToolText(recommendationTool(), tactics.toolText)]
       : []),
     ...(videos
-      ? [withProviderToolText(videoRecommendationTool(), tactics.toolText)]
+      ? [
+          withPromptRules(
+            withProviderToolText(videoRecommendationTool(), tactics.toolText),
+            tactics.promptText,
+          ),
+        ]
       : []),
     ...(turn.memory
       ? providerTools([withToolText(rememberTool(), tactics.toolText)])

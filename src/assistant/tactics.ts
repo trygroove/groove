@@ -84,6 +84,41 @@ export const TACTICS = {
     default: "off",
     alters: ["prompt"],
   },
+  promptText: {
+    description:
+      "How the system prompt's own rules are worded (GRV-147): `full` as written; `moderate` about a quarter shorter, rules said twice merged and examples cut; `aggressive` about half, a sentence a rule. Every level keeps every rule, and the trimmed ones say recommend_video's rules in its description.",
+    values: ["full", "moderate", "aggressive"],
+    default: "full",
+    alters: ["prompt", "tools"],
+  },
+  promptDropAppFeatures: {
+    description:
+      'Whether the system prompt leaves out its "What Groove has" section, the map of panels the assistant cannot use (GRV-101), to test whether it still earns its place (GRV-147).',
+    values: ["keep", "drop"],
+    default: "keep",
+    alters: ["prompt"],
+  },
+  promptDropToolAddressing: {
+    description:
+      'Whether the system prompt leaves out its "How the tools address things" bullets (ID shapes, note arrays, parameter IDs, ticks, placements, order), which the tool descriptions and the new-ID block also say (GRV-147). A tactic\'s own bullets there stay.',
+    values: ["keep", "drop"],
+    default: "keep",
+    alters: ["prompt"],
+  },
+  promptDropStaleDescription: {
+    description:
+      "Whether the system prompt leaves out its two sentences saying the project description is never out of date (GRV-122), whose bug the description's pad counts fixed (GRV-147).",
+    values: ["keep", "drop"],
+    default: "keep",
+    alters: ["prompt"],
+  },
+  promptDropDrumSoundPads: {
+    description:
+      'Whether the system prompt leaves out its bullet saying a named drum sound is a pad found by name in "pads" (GRV-122), which the drum-parts bullet before it mostly says (GRV-147).',
+    values: ["keep", "drop"],
+    default: "keep",
+    alters: ["prompt"],
+  },
 } as const satisfies Readonly<Record<string, TacticDefinition>>;
 
 export type TacticId = keyof typeof TACTICS;
