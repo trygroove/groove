@@ -32,10 +32,25 @@ function inClip(clip: Clip, hits: readonly Hit[]): Hit[] {
   return hits.filter((hit) => hit.step >= 0 && hit.step < steps);
 }
 
+/** True when the row already holds exactly these notes (ids aside). */
+function sameNotes(row: readonly NoteEvent[], notes: readonly NoteEvent[]): boolean {
+  if (row.length !== notes.length) return false;
+  const key = (note: NoteEvent) =>
+    `${note.startTicks}:${note.durationTicks}:${note.velocity}:${note.probability}`;
+  const held = new Map<string, number>();
+  for (const note of row) held.set(key(note), (held.get(key(note)) ?? 0) + 1);
+  for (const note of notes) {
+    const left = held.get(key(note)) ?? 0;
+    if (left === 0) return false;
+    held.set(key(note), left - 1);
+  }
+  return true;
+}
+
 /**
  * The commands that replace a row with `hits`: remove every note in the row,
- * then add one 16th per hit. Other rows are untouched. Empty when there is
- * nothing to do, so a no-op writes no revision.
+ * then add one 16th per hit. Other rows are untouched. Empty when the row already
+ * matches (or is empty and stays empty), so a no-op writes no revision.
  */
 export function rowCommands(
   clip: Clip,
@@ -43,7 +58,8 @@ export function rowCommands(
   hits: readonly Hit[],
   ids: IdFactory,
 ): RawCommandInput[] {
-  const existing = rowNotes(clip, trigger).map((note) => note.id);
+  const row = rowNotes(clip, trigger);
+  const existing = row.map((note) => note.id);
   const notes: NoteEvent[] = inClip(clip, hits).map((hit) => ({
     id: ids("event"),
     trigger,
@@ -52,6 +68,7 @@ export function rowCommands(
     velocity: hit.velocity as NoteEvent["velocity"],
     probability: null,
   }));
+  if (sameNotes(row, notes)) return [];
   const commands: RawCommandInput[] = [];
   if (existing.length > 0) commands.push(removeNotes(clip.id, existing));
   if (notes.length > 0) commands.push(addNotes(clip.id, notes));

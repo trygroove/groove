@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { flush } from "solid-js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConsentStore } from "../analytics/consent";
 import { memoryStorage } from "../testing/storage";
 import TelemetryDisclosure from "./TelemetryDisclosure";
@@ -198,5 +198,34 @@ describe("TelemetryDisclosure (PRD OPS-02, section 10 Security and privacy)", ()
       name: /Share usage and error reports/,
     });
     expect(toggle).toHaveAttribute("aria-describedby", "telemetry-disclosure-note");
+  });
+});
+
+// GRV-148: Escape closes the panel and gives focus back to the Privacy item,
+// through the registry's `view.close_surface`, as every other popover does.
+describe("TelemetryDisclosure Escape (GRV-148)", () => {
+  async function openPanel() {
+    setup();
+    const user = userEvent.setup();
+    const summary = screen.getByText("Privacy");
+    await user.click(summary);
+    const details = summary.closest("details") as HTMLDetailsElement;
+    await vi.waitFor(() => expect(details.open).toBe(true));
+    return { user, summary, details };
+  }
+
+  it("closes on Escape and returns focus to the summary", async () => {
+    const { user, summary, details } = await openPanel();
+    await user.keyboard("{Escape}");
+    await vi.waitFor(() => expect(details.open).toBe(false));
+    expect(summary).toHaveFocus();
+  });
+
+  it("closes on Escape pressed on the checkbox inside", async () => {
+    const { user, summary, details } = await openPanel();
+    screen.getByRole("checkbox").focus();
+    await user.keyboard("{Escape}");
+    await vi.waitFor(() => expect(details.open).toBe(false));
+    expect(summary).toHaveFocus();
   });
 });
