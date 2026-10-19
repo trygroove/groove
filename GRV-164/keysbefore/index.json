@@ -1,0 +1,14 @@
+{
+  "id": "keysbefore",
+  "title": "Library keys over the genre menu",
+  "steps": [
+    {
+      "file": "01-the-genre-menu-open-in-the-library.png",
+      "caption": "The genre menu open in the library"
+    },
+    {
+      "file": "02-library-keys-opened-from-the-genre-menu.png",
+      "caption": "Library keys opened from the genre menu"
+    }
+  ]
+}
