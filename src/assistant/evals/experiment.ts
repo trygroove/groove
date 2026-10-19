@@ -40,7 +40,12 @@ import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { TACTICS, type TacticDefinition, type TacticOverrides } from "../tactics";
-import { CASE_CHECK_IDS, type CaseCheckId, EVERY_CASE_CHECKS } from "./caseChecks";
+import {
+  CASE_CHECK_IDS,
+  EVERY_CASE_CHECKS,
+  type EveryCaseCheckId,
+  isEveryCaseCheck,
+} from "./caseChecks";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { EVAL_SELECTIONS, type EvalSelection, inSelection } from "./sets";
 import { casesInSplit } from "./splits";
@@ -101,7 +106,7 @@ export interface ExperimentGuardrails {
    * case is judged by (`EVERY_CASE_CHECKS`, 16 and 20); any other would be
    * missing from every session turn and pass without judging anything.
    */
-  readonly everyTurnChecks?: readonly CaseCheckId[];
+  readonly everyTurnChecks?: readonly EveryCaseCheckId[];
 }
 
 /** Which cases an experiment draws its train and held-out cases from. */
@@ -245,7 +250,7 @@ const definitionSchema = z.strictObject({
           z
             .enum(CASE_CHECK_IDS)
             .refine(
-              (id) => EVERY_CASE_CHECKS.includes(id),
+              isEveryCaseCheck,
               `only a check judged on every turn: ${EVERY_CASE_CHECKS.join(", ")}`,
             ),
         )

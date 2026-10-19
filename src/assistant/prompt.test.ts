@@ -255,6 +255,11 @@ describe("the assistant's system prompt", () => {
     const on = assistantSystemPrompt({ oneResponseProposal: "off", guidedBuild: "on" });
     expect(off).not.toContain(GUIDED_BUILD_RULE);
     expect(on).toContain(GUIDED_BUILD_RULE);
+    // The ask_producer paragraph's "without asking again" must not read as
+    // "ask nothing this turn": offering the next steps is not asking again.
+    expect(GUIDED_BUILD_RULE).toContain(
+      "Offering those next steps after carrying out the step they chose is not asking again",
+    );
     // One paragraph more, straight after the one on asking, and nothing else.
     expect(on.replace(`\n\n${GUIDED_BUILD_RULE}`, "")).toBe(off);
     expect(on).toContain(
