@@ -77,6 +77,10 @@ export interface ByTurn {
   readonly outputTokens: number | null;
   /** Over the turns that came back with a reply. */
   readonly latencyMs: Percentiles;
+  /** Mean estimated cost over the turns that recorded usage; null for an unknown model. */
+  readonly costUsd: number | null;
+  /** The model calls each turn made, retries included. */
+  readonly modelCalls: ModelCalls;
 }
 
 /** The model calls a turn made, retries included (GRV-142). */
@@ -220,7 +224,7 @@ export function turnCostUsd(model: AssistantModelProfile, usage: ProviderUsage):
   return costMicroUsd(model, usage) / 1_000_000;
 }
 
-function modelCallsOf(records: readonly EvalRecord[]): ModelCalls {
+function modelCallsOf(records: readonly EvalTurn[]): ModelCalls {
   const calls = records
     .map((record) => record.steps?.calls)
     .filter((value): value is number => typeof value === "number");
@@ -236,11 +240,15 @@ export function turnsOf(record: EvalRecord): readonly EvalTurn[] {
   return record.session?.turns ?? [record];
 }
 
-function byTurnOf(records: readonly EvalRecord[]): ByTurn {
+function byTurnOf(
+  records: readonly EvalRecord[],
+  model: AssistantModelProfile | null,
+): ByTurn {
   const turns = records.flatMap(turnsOf);
-  const outputs = turns
-    .map((turn) => turn.usage?.outputTokens)
-    .filter((value): value is number => typeof value === "number");
+  const usages = turns
+    .map((turn) => turn.usage)
+    .filter((usage): usage is ProviderUsage => !!usage);
+  const outputs = usages.map((usage) => usage.outputTokens);
   return {
     turns: turns.length,
     perRun: records.length === 0 ? null : turns.length / records.length,
@@ -249,6 +257,12 @@ function byTurnOf(records: readonly EvalRecord[]): ByTurn {
     latencyMs: percentiles(
       turns.filter((turn) => !turn.error).map((turn) => turn.durationMs),
     ),
+    costUsd:
+      model && usages.length > 0
+        ? usages.reduce((sum, usage) => sum + turnCostUsd(model, usage), 0) /
+          usages.length
+        : null,
+    modelCalls: modelCallsOf(turns),
   };
 }
 
@@ -298,7 +312,7 @@ export function secondaryOf(
     maxTokensRate: share("max_tokens"),
     refusalRate: share("refusal"),
     modelCalls: modelCallsOf(records),
-    byTurn: byTurnOf(records),
+    byTurn: byTurnOf(records, model),
   };
 }
 
@@ -542,7 +556,8 @@ function compareMetrics<View>(
 /**
  * The heavy set's numbers (GRV-131, GRV-142), each the plain mean of the
  * per-case figure over the heavy cases scored, so every case weighs the same
- * however many of its turns errored.
+ * however many of its turns errored. A case's figure is per turn: a session
+ * case's turns count one by one (GRV-145), not summed into one run.
  */
 export interface HeavySet {
   /** The heavy cases these numbers are over, in the group's order. */
@@ -573,14 +588,39 @@ export function heavySetOf(
     (id) => caseIds.includes(id) && card.cases[id] !== undefined,
   );
   if (ids.length === 0) return null;
-  const cases = ids.map((id) => card.cases[id]);
+  const cases = ids.map((id) => perTurnOf(card.cases[id]));
   return {
     caseIds: ids,
-    outputTokens: meanOf(cases.map((s) => s.meanTokens.output)),
-    latencyP50Ms: meanOf(cases.map((s) => s.latencyMs.p50)),
-    costPerTurnUsd: meanOf(cases.map((s) => s.costUsd.perTurn)),
-    modelCallsMean: meanOf(cases.map((s) => s.modelCalls?.mean ?? null)),
-    modelCallsP95: meanOf(cases.map((s) => s.modelCalls?.p95 ?? null)),
+    outputTokens: meanOf(cases.map((s) => s.outputTokens)),
+    latencyP50Ms: meanOf(cases.map((s) => s.latencyP50Ms)),
+    costPerTurnUsd: meanOf(cases.map((s) => s.costPerTurnUsd)),
+    modelCallsMean: meanOf(cases.map((s) => s.modelCallsMean)),
+    modelCallsP95: meanOf(cases.map((s) => s.modelCallsP95)),
+  };
+}
+
+/**
+ * One case's per-turn figures: from its turns one by one where the scorecard
+ * kept them (GRV-145), else, for one saved before sessions, from its runs,
+ * which were all single turns then.
+ */
+function perTurnOf(card: Secondary): Omit<HeavySet, "caseIds"> {
+  const { byTurn } = card;
+  if (byTurn) {
+    return {
+      outputTokens: byTurn.outputTokens,
+      latencyP50Ms: byTurn.latencyMs.p50,
+      costPerTurnUsd: byTurn.costUsd,
+      modelCallsMean: byTurn.modelCalls.mean,
+      modelCallsP95: byTurn.modelCalls.p95,
+    };
+  }
+  return {
+    outputTokens: card.meanTokens.output,
+    latencyP50Ms: card.latencyMs.p50,
+    costPerTurnUsd: card.costUsd.perTurn,
+    modelCallsMean: card.modelCalls?.mean ?? null,
+    modelCallsP95: card.modelCalls?.p95 ?? null,
   };
 }
 

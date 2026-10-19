@@ -13,14 +13,15 @@ import {
   toolUseEvents,
 } from "../../testing/scriptedAssistantProvider";
 import { ASK_PRODUCER_TOOL_NAME, type AssistantAsk, answerMessage } from "../ask";
+import { MAX_PROPOSAL_COMMANDS } from "../proposal";
 import type { AssistantProposal } from "../protocol";
 import { continuesTurn } from "../providerRequest";
 import { ASSISTANT_TOOLSET_VERSION, toolCallsFor, toolNameFor } from "../tools";
 import { type EvalCase, parseJsonEvalCase } from "./cases";
 import { createHouseLoopProject } from "./fixtures";
 import { renderMarkdown, sessionLines } from "./markdown";
-import { type EvalTurn, evaluateTurn, runEvals } from "./run";
-import { scorecardOf } from "./scorecard";
+import { type EvalTurn, evaluateRecords, evaluateTurn, runEvals } from "./run";
+import { heavySetOf, scorecardOf } from "./scorecard";
 import {
   DEFAULT_SESSION_TURNS,
   runSession,
@@ -195,6 +196,47 @@ describe("the scripted producer (GRV-145)", () => {
     ]);
   });
 
+  it("judges the final song turn by turn, so a session may add up to more calls than one proposal may hold", async () => {
+    const perTurn = 40;
+    const turns = scriptedTurns((turnCase, index) => {
+      const project = turnCase.fixture();
+      const calls = Array.from({ length: perTurn }, (_, step) =>
+        volumeCall(project, "Bass", -1 - ((index * perTurn + step) % 30)),
+      );
+      return turn({
+        proposal: proposalOf(project, calls),
+        ask: index < 2 ? nextStepAsk(`ask_${index}`, 0) : null,
+      });
+    });
+    const result = await runSession(SESSION_CASE, turns.runTurn);
+    expect(result.session?.ended).toBe("done");
+    expect(result.proposal?.calls.length).toBeGreaterThan(MAX_PROPOSAL_COMMANDS);
+
+    const record = evaluateTurn(SESSION_CASE, 1, result);
+    expect(record.turnChecks?.map((checks) => checks.valid?.status)).toEqual([
+      "pass",
+      "pass",
+      "pass",
+    ]);
+    expect(record.checks.valid).toEqual({
+      status: "pass",
+      detail: `${3 * perTurn} commands applied over 3 turns`,
+    });
+    expect(record.checks.atomicUndo?.status).toBe("pass");
+    expect(record.stats?.commandCount).toBe(3 * perTurn);
+    // The last call of the last turn sets the fader the final song keeps.
+    expect(record.stats?.mixer).toContain(
+      `Bass volume=${-1 - ((3 * perTurn - 1) % 30)} pan=0`,
+    );
+
+    // A saved report replays the same, from its turns.
+    const [replayed] = evaluateRecords(
+      [{ ...record, caseId: SESSION_CASE.id }],
+      [SESSION_CASE],
+    );
+    expect(replayed.checks).toEqual(record.checks);
+  });
+
   it("stops at the cap with the question still open", async () => {
     const turns = scriptedTurns((_turnCase, index) =>
       turn({ text: "Asking.", ask: nextStepAsk(`ask_${index}`, 0) }),
@@ -362,6 +404,54 @@ describe("a session case through runEvals (GRV-145)", () => {
     );
   });
 
+  it("reads a heavy session case per turn in the heavy set, not per session", () => {
+    const heavy: EvalCase = { ...SESSION_CASE, id: "develop-track-arrange" };
+    const session = (durations: readonly number[]) => ({
+      turns: durations.map((durationMs, index) => ({
+        ...turn({ durationMs, steps: { calls: 2, refused: [] } }),
+        turn: index + 1,
+        request: heavy.request,
+      })),
+      ended: "done" as const,
+      maxTurns: 5,
+    });
+    const sessions = [session([1_000, 3_000]), session([2_000, 2_000])];
+    const records = sessions.map((entry, index) =>
+      evaluateTurn(heavy, index + 1, {
+        ...turn({
+          durationMs: entry.turns.reduce((total, t) => total + t.durationMs, 0),
+          usage: {
+            inputTokens: 2_000,
+            outputTokens: 1_000,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+          },
+          steps: { calls: 4, refused: [] },
+        }),
+        session: entry,
+      }),
+    );
+    const card = scorecardOf({
+      model: "claude-sonnet-5",
+      caseIds: [heavy.id],
+      records,
+      summary: { checks: {}, errored: { total: 0 } },
+    });
+    const set = heavySetOf(card);
+    expect(set?.caseIds).toEqual([heavy.id]);
+    // Each turn spent 500 output tokens and made 2 model calls; a session's
+    // sums (1,000 and 4) would read twice that.
+    expect(set?.outputTokens).toBe(500);
+    expect(set?.modelCallsMean).toBe(2);
+    expect(set?.latencyP50Ms).toBe(2_000);
+    expect(card.cases[heavy.id].meanTokens.output).toBe(1_000);
+    const perTurnCost = card.cases[heavy.id].byTurn?.costUsd;
+    expect(perTurnCost).not.toBeNull();
+    expect(set?.costPerTurnUsd).toBeCloseTo(
+      (card.cases[heavy.id].costUsd.perTurn ?? Number.NaN) / 2,
+    );
+  });
+
   it("counts a run of one turn as one turn, and lists no sessions", () => {
     const records = [
       evaluateTurn(
@@ -381,6 +471,8 @@ describe("a session case through runEvals (GRV-145)", () => {
       perRun: 1,
       outputTokens: 500,
       latencyMs: { count: 1, p50: 2_000, p95: 2_000 },
+      costUsd: card.secondary.costUsd.perTurn,
+      modelCalls: { count: 0, mean: null, p95: null },
     });
     expect(sessionLines(records)).toEqual([]);
   });
