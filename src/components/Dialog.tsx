@@ -113,7 +113,13 @@ export default function Dialog(props: DialogProps): JSX.Element {
         class="dialog-scrim"
         tabindex={-1}
         aria-label={dismissLabel()}
-        onClick={() => props.onClose()}
+        onClick={(event) => {
+          // The second click of a double-click on whatever opened this dialog
+          // lands on the scrim that just appeared under the pointer. It is the
+          // tail of the gesture that opened the dialog, not a dismissal.
+          if (event.detail > 1) return;
+          props.onClose();
+        }}
       />
       <section
         class={["dialog", `dialog-${props.size ?? "panel"}`, props.class]}
