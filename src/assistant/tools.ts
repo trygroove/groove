@@ -1051,6 +1051,135 @@ export function assistantTools(
   return tools;
 }
 
+/**
+ * The bundles a turn may be offered under the `toolBundles` tactic (GRV-143):
+ * a few fixed subsets of the command tools, so a mixing tweak does not pay
+ * for every note tool. `everything` is every tool, as `all` sends. Which one a
+ * turn gets is a gateway rule (`toolBundleRule.ts`), never a model call.
+ *
+ * Each bundle names command types, and its tools keep the registry's order,
+ * so a bundle's tool block is the same bytes every time it is sent: the few
+ * bundles are a few prompt-cache entries, not one per request. The tools that
+ * are not commands (`explain_change`, `ask_producer`, and the conditional
+ * `recommend_sounds`, `recommend_video` and `remember_producer`) are offered
+ * with every bundle, and every bundle but `everything` adds
+ * {@link NEED_MORE_TOOLS_TOOL}.
+ *
+ * - `mix`: the mixer, devices, returns and sends, and the sound itself
+ *   (instruments, samples, drum pads, every numeric parameter).
+ * - `notes`: clips and their notes, every note transform, and placing a clip
+ *   (a clip plays only once placed).
+ * - `arrange`: tracks, clips and placements, and the song's tempo and swing
+ *   (`parameter_set`).
+ */
+export const TOOL_BUNDLES = {
+  mix: [
+    "parameter.set",
+    "instrument.change",
+    "instrument.setSample",
+    "drum.setPadAsset",
+    "drum.setPadParameter",
+    "device.add",
+    "device.remove",
+    "device.reorder",
+    "device.duplicate",
+    "device.setBypass",
+    "device.reset",
+    "return.create",
+    "return.update",
+    "return.delete",
+    "send.add",
+    "send.remove",
+    "track.setFlag",
+  ],
+  notes: [
+    "clip.create",
+    "clip.update",
+    "clip.delete",
+    "note.add",
+    "note.update",
+    "note.remove",
+    "notes.transpose",
+    "notes.scaleVelocity",
+    "notes.quantize",
+    "notes.quantizeToScale",
+    "notes.duplicate",
+    "notes.clear",
+    "notes.vary",
+    "placement.create",
+  ],
+  arrange: [
+    "parameter.set",
+    "track.create",
+    "track.update",
+    "track.reorder",
+    "track.delete",
+    "clip.create",
+    "clip.update",
+    "clip.delete",
+    "placement.create",
+    "placement.update",
+    "placement.delete",
+  ],
+  everything: ASSISTANT_COMMAND_TYPES,
+} as const satisfies Readonly<Record<string, readonly string[]>>;
+
+export type ToolBundleId = keyof typeof TOOL_BUNDLES;
+
+/** Every bundle's ID, `everything` last. */
+export const TOOL_BUNDLE_IDS = Object.keys(TOOL_BUNDLES) as ToolBundleId[];
+
+/** The bundle that is every tool, and the one a turn falls back to. */
+export const EVERYTHING_BUNDLE: ToolBundleId = "everything";
+
+/**
+ * The tool every bundle but `everything` carries (GRV-143). It changes
+ * nothing: when the model calls it, the gateway runs the step again with
+ * every tool.
+ */
+export const NEED_MORE_TOOLS_NAME = "need_more_tools";
+
+export const NEED_MORE_TOOLS_TOOL: Pick<
+  AssistantToolDefinition,
+  "name" | "description" | "inputSchema"
+> = {
+  name: NEED_MORE_TOOLS_NAME,
+  description:
+    "You were given only some of the change tools. If the request needs one you do not have (such as adding a track, writing notes, or changing the mix, a device or an instrument), call this alone, before saying anything, and you are given every tool. It changes nothing.",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+};
+
+/** Whether `call` asks for every tool (GRV-143). */
+export function isNeedMoreToolsCall(call: { readonly name: string }): boolean {
+  return call.name === NEED_MORE_TOOLS_NAME;
+}
+
+const bundleCache = new Map<string, readonly AssistantToolDefinition[]>();
+
+/**
+ * The command tools `bundle` offers, as {@link assistantTools} generates them
+ * for the same tactic values, in the registry's order. The same array every
+ * call for the same arguments, so its bytes never vary. `everything` is
+ * {@link assistantTools} itself.
+ */
+export function bundleTools(
+  bundle: ToolBundleId,
+  level: ToolTextLevel = "full",
+  drumStepStrings: TacticValues["drumStepStrings"] = TACTIC_DEFAULTS.drumStepStrings,
+  patternGenerators: TacticValues["patternGenerators"] = TACTIC_DEFAULTS.patternGenerators,
+): readonly AssistantToolDefinition[] {
+  const all = assistantTools(level, drumStepStrings, patternGenerators);
+  if (bundle === EVERYTHING_BUNDLE) return all;
+  const key = `${bundle}:${level}:${drumStepStrings}:${patternGenerators}`;
+  let tools = bundleCache.get(key);
+  if (!tools) {
+    const types: readonly string[] = TOOL_BUNDLES[bundle];
+    tools = all.filter((tool) => types.includes(tool.commandType));
+    bundleCache.set(key, tools);
+  }
+  return tools;
+}
+
 /** The longest goal or technique an explanation may carry. */
 export const MAX_EXPLANATION_LENGTH = 600;
 

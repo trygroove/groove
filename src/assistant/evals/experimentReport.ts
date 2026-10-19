@@ -29,6 +29,12 @@ import {
   formatMetric,
 } from "./scorecard";
 import { comparisonTables } from "./scorecardMarkdown";
+import {
+  hasBundles,
+  type ToolBundleSummary,
+  toolBundleLines,
+  toolBundleSummary,
+} from "./toolBundleReport";
 import { GOAL_METRICS, type VariantAnalysis } from "./verdict";
 
 /** Where the run happened and what it opened, for the report's links. */
@@ -104,6 +110,7 @@ function analysisLines(
     ...(heavy
       ? ["##### Heavy set", "", ...comparisonTables(heavy, "#####", COLUMNS)]
       : []),
+    ...toolBundleLines(control, variant, "####"),
     ...sessionLines(control.records, "#### Sessions: the control"),
     ...sessionLines(variant.records, `#### Sessions: \`${analysis.variant}\``),
     "",
@@ -277,6 +284,11 @@ export function renderExperimentMarkdown(
 export interface ExperimentPhaseSummary
   extends Omit<ExperimentPhase, "reports" | "flattening"> {
   readonly reports: Readonly<Record<string, EvalSummary>>;
+  /**
+   * Each report's tool bundles, case by case, with its cache tokens per turn
+   * (GRV-143); absent when no variant was offered a bundle.
+   */
+  readonly toolBundles?: Readonly<Record<string, ToolBundleSummary>>;
   readonly flattening: {
     readonly caseIds: readonly string[];
     readonly reports: Readonly<Record<string, EvalSummary>>;
@@ -291,10 +303,21 @@ function summaries(
   );
 }
 
+function bundleSummaries(
+  reports: Readonly<Record<string, EvalReport>>,
+): Record<string, ToolBundleSummary> | null {
+  const bundles = Object.fromEntries(
+    Object.entries(reports).map(([name, report]) => [name, toolBundleSummary(report)]),
+  );
+  return Object.values(bundles).some(hasBundles) ? bundles : null;
+}
+
 function phaseSummary(phase: ExperimentPhase): ExperimentPhaseSummary {
+  const toolBundles = bundleSummaries(phase.reports);
   return {
     ...phase,
     reports: summaries(phase.reports),
+    ...(toolBundles ? { toolBundles } : {}),
     flattening: phase.flattening
       ? {
           caseIds: phase.flattening.caseIds,

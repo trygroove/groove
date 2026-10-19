@@ -130,6 +130,7 @@ export function secondaryLines(card: Scorecard): string[] {
     `| Input tokens per turn | ${formatMetric("tokens", s.meanTokens.input)} |`,
     `| Output tokens per turn | ${formatMetric("tokens", s.meanTokens.output)} |`,
     `| Cache-read tokens per turn | ${formatMetric("tokens", s.meanTokens.cacheRead)} |`,
+    `| Cache-write tokens per turn | ${formatMetric("tokens", s.meanTokens.cacheWrite ?? null)} |`,
     `| Tokens in all (input / output / cache read / cache write) | ${[s.tokens.input, s.tokens.output, s.tokens.cacheRead, s.tokens.cacheWrite].map((n) => formatMetric("tokens", n)).join(" / ")} (${s.tokens.turns} turns) |`,
     `| Cost per turn / of the run | ${formatMetric("usd", s.costUsd.perTurn)} / ${formatMetric("usd", s.costUsd.total)} |`,
     `| Stop reasons | ${stopReasonMix(s)} |`,

@@ -7,15 +7,23 @@ import {
   ASSISTANT_COMMAND_TYPES,
   ASSISTANT_TOOLSET_VERSION,
   assistantTools,
+  bundleTools,
   CREATE_EXAMPLES,
+  EVERYTHING_BUNDLE,
   EXPLAIN_TOOL,
   EXPLAIN_TOOL_NAME,
+  isNeedMoreToolsCall,
+  NEED_MORE_TOOLS_NAME,
+  NEED_MORE_TOOLS_TOOL,
   NON_ASSISTANT_COMMANDS,
   OFFERED_CLIP_EXAMPLE,
   PROPOSAL_CAPABILITIES,
   proposalCapability,
   proposalExplanationSchema,
   resolveToolCall,
+  TOOL_BUNDLE_IDS,
+  TOOL_BUNDLES,
+  type ToolBundleId,
   toolCallsFor,
   toolNameFor,
 } from "./tools";
@@ -270,5 +278,80 @@ describe("toolNameFor", () => {
   it("replaces every dot, so a deeper command type still makes a legal name", () => {
     expect(toolNameFor("note.add")).toBe("note_add");
     expect(toolNameFor("a.b.c")).toBe("a_b_c");
+  });
+});
+
+describe("tool bundles (GRV-143)", () => {
+  const focused = TOOL_BUNDLE_IDS.filter((id) => id !== EVERYTHING_BUNDLE);
+
+  it("are a few fixed bundles, everything among them and last", () => {
+    expect(TOOL_BUNDLE_IDS).toEqual(["mix", "notes", "arrange", "everything"]);
+    expect([...TOOL_BUNDLES.everything]).toEqual([...ASSISTANT_COMMAND_TYPES]);
+  });
+
+  it("put every tool in at least one bundle short of everything", () => {
+    const covered = new Set(focused.flatMap((id) => [...TOOL_BUNDLES[id]]));
+    for (const type of ASSISTANT_COMMAND_TYPES)
+      expect(covered.has(type), type).toBe(true);
+  });
+
+  it("name only allowlisted commands, each once, and are smaller than every tool", () => {
+    for (const id of TOOL_BUNDLE_IDS) {
+      const types: readonly string[] = TOOL_BUNDLES[id];
+      expect(new Set(types).size, id).toBe(types.length);
+      for (const type of types) expect(ASSISTANT_COMMAND_TYPES, id).toContain(type);
+    }
+    for (const id of focused) {
+      expect(TOOL_BUNDLES[id].length, id).toBeLessThan(ASSISTANT_COMMAND_TYPES.length);
+    }
+  });
+
+  it("offer their tools in the registry's order, as assistantTools generates them", () => {
+    for (const id of TOOL_BUNDLE_IDS) {
+      const tools = bundleTools(id);
+      const all = assistantTools();
+      expect(tools.map((tool) => tool.commandType)).toEqual(
+        all
+          .map((tool) => tool.commandType)
+          .filter((type) => (TOOL_BUNDLES[id] as readonly string[]).includes(type)),
+      );
+      for (const tool of tools) expect(all).toContain(tool);
+    }
+    expect(bundleTools(EVERYTHING_BUNDLE)).toBe(assistantTools());
+  });
+
+  it("keep each bundle's tool block byte-stable, at every tactic value", () => {
+    for (const id of TOOL_BUNDLE_IDS) {
+      for (const level of ["full", "moderate", "aggressive"] as const) {
+        for (const steps of ["off", "on"] as const) {
+          const first = bundleTools(id as ToolBundleId, level, steps, "off");
+          // The same array every time, so the same bytes.
+          expect(bundleTools(id as ToolBundleId, level, steps, "off")).toBe(first);
+          expect(JSON.stringify(first)).toBe(
+            JSON.stringify(
+              assistantTools(level, steps, "off").filter((tool) =>
+                first.some((entry) => entry.name === tool.name),
+              ),
+            ),
+          );
+        }
+      }
+    }
+  });
+
+  it("offer need_more_tools: a call that takes nothing and is no command", () => {
+    expect(NEED_MORE_TOOLS_TOOL.name).toBe(NEED_MORE_TOOLS_NAME);
+    expect(NEED_MORE_TOOLS_TOOL.inputSchema).toEqual({
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    });
+    expect(assistantTools().map((tool) => tool.name)).not.toContain(NEED_MORE_TOOLS_NAME);
+    expect(isNeedMoreToolsCall({ name: NEED_MORE_TOOLS_NAME })).toBe(true);
+    expect(isNeedMoreToolsCall({ name: "parameter_set" })).toBe(false);
+    expect(resolveToolCall(NEED_MORE_TOOLS_NAME, {})).toMatchObject({
+      ok: false,
+      code: "unknown_tool",
+    });
   });
 });

@@ -112,6 +112,8 @@ export interface Secondary {
     readonly input: number | null;
     readonly output: number | null;
     readonly cacheRead: number | null;
+    /** Absent from scorecards saved before it existed (GRV-143). */
+    readonly cacheWrite?: number | null;
   };
   /** Estimated US dollars, from the model's price; null for an unknown model or no tokens. */
   readonly costUsd: { readonly total: number | null; readonly perTurn: number | null };
@@ -304,6 +306,7 @@ export function secondaryOf(
       input: mean(tokens.input),
       output: mean(tokens.output),
       cacheRead: mean(tokens.cacheRead),
+      cacheWrite: mean(tokens.cacheWrite),
     },
     costUsd: {
       total: totalCost,
@@ -455,6 +458,12 @@ export const SCORECARD_METRICS: readonly Metric[] = [
     kind: "tokens",
     higherIsBetter: false,
     value: (c) => c.secondary.meanTokens.cacheRead,
+  },
+  {
+    label: "Cache-write tokens per turn",
+    kind: "tokens",
+    higherIsBetter: false,
+    value: (c) => c.secondary.meanTokens.cacheWrite ?? null,
   },
   {
     label: "Cost per turn",

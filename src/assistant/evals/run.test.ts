@@ -363,6 +363,29 @@ describe("runEvals", () => {
     expect(Object.keys(report).slice(-3)).toEqual(["scorecard", "summary", "records"]);
   });
 
+  it("records the tool bundle a turn opened with, and none under all (GRV-143)", async () => {
+    const reply = () =>
+      createScriptedAssistantProvider([
+        toolUseEvents("A Compressor on the master.", [compressorCall("a", -18)]),
+      ]);
+    const all = await runEvals({
+      provider: reply(),
+      cases: [glue],
+      runs: 1,
+      now: fixedNow,
+    });
+    expect(all.records[0]?.toolBundle).toBeNull();
+    const bundled = await runEvals({
+      provider: reply(),
+      cases: [glue],
+      runs: 1,
+      now: fixedNow,
+      tactics: { toolBundles: "bundled" },
+    });
+    // "Add a compressor on the master to glue the mix."
+    expect(bundled.records[0]?.toolBundle).toEqual({ bundle: "mix", fallback: null });
+  });
+
   it("runs every turn with the tactics given, and names every value in the report (GRV-110)", async () => {
     const provider = createScriptedAssistantProvider([
       toolUseEvents("A Compressor on the master to glue it.", [compressorCall("t", -18)]),

@@ -58,8 +58,10 @@ import { type AssistantTurnLog, TURN_LOG_KEYS } from "./telemetry";
 import {
   ASSISTANT_TOOLSET_VERSION,
   assistantTools,
+  bundleTools,
   CREATE_EXAMPLES,
   EXPLAIN_TOOL_NAME,
+  NEED_MORE_TOOLS_NAME,
   toolNameFor,
 } from "./tools";
 import { RECOMMEND_VIDEO_TOOL, type VideoFinder } from "./video";
@@ -1959,5 +1961,141 @@ describe("runAssistantTurn: a proposal in one response (GRV-142)", () => {
       volumeCall.name,
       EXPLAIN_TOOL_NAME,
     ]);
+  });
+});
+
+describe("runAssistantTurn: tool bundles (GRV-143)", () => {
+  const project = createReferenceProject();
+  const [track] = project.song.tracks;
+  const muteCall = call(setTrackFlag(track.id, "muted", !track.mixer.muted));
+  const explainCall = {
+    name: EXPLAIN_TOOL_NAME,
+    input: { goal: "The track drops out.", technique: "Muting takes it out of the mix." },
+  };
+  const needMore = { name: NEED_MORE_TOOLS_NAME, input: {} };
+  const ALWAYS = [EXPLAIN_TOOL_NAME, ASK_PRODUCER_TOOL_NAME];
+  const EVERY_TOOL = [...assistantTools().map((tool) => tool.name), ...ALWAYS];
+
+  function bundled(h: Harness): Harness {
+    h.deps = { ...h.deps, tactics: { toolBundles: "bundled" } };
+    return h;
+  }
+
+  const asking = (text: string) => request({ messages: [{ role: "user", text }] });
+  const names = (h: Harness, index: number) =>
+    h.provider.requests[index]?.tools.map((tool) => tool.name);
+
+  it("offers every tool and no need_more_tools under all, production's default", async () => {
+    const h = harness([replyEvents(["Sure."])]);
+    await run(h, asking("Make the kick louder"));
+    expect(names(h, 0)).toEqual(EVERY_TOOL);
+    expect(h.logs[0]).toMatchObject({ toolBundle: null, toolBundleFallback: null });
+  });
+
+  it("offers the bundle the rule picks, need_more_tools after the tools every bundle has", async () => {
+    const h = bundled(harness([replyEvents(["Sure."])]));
+    await run(h, asking("Make the kick louder"));
+    expect(names(h, 0)).toEqual([
+      ...bundleTools("mix").map((tool) => tool.name),
+      ...ALWAYS,
+      NEED_MORE_TOOLS_NAME,
+    ]);
+    expect(h.logs[0]).toMatchObject({ toolBundle: "mix", toolBundleFallback: null });
+  });
+
+  it("sends a bundle's tool block byte for byte the same whatever else the turn says", async () => {
+    const first = bundled(harness([replyEvents(["Sure."])]));
+    await run(first, asking("Make the kick louder"));
+    const second = bundled(harness([replyEvents(["Sure."])]));
+    await run(
+      second,
+      request({
+        messages: [
+          { role: "user", text: "Hi" },
+          { role: "assistant", text: "Hello." },
+          { role: "user", text: "Pan the hats left a bit" },
+        ],
+      }),
+    );
+    expect(second.logs[0]?.toolBundle).toBe("mix");
+    expect(JSON.stringify(second.provider.requests[0]?.tools)).toBe(
+      JSON.stringify(first.provider.requests[0]?.tools),
+    );
+  });
+
+  it("sends the everything bundle exactly as all does, so the two share a cache entry", async () => {
+    const all = harness([replyEvents(["Sure."])]);
+    all.deps = { ...all.deps, idStem: () => "stem" };
+    await run(all, asking("Make me a house beat"));
+    const h = bundled(harness([replyEvents(["Sure."])]));
+    h.deps = { ...h.deps, idStem: () => "stem" };
+    await run(h, asking("Make me a house beat"));
+    expect(h.logs[0]?.toolBundle).toBe("everything");
+    expect(JSON.stringify(h.provider.requests[0])).toBe(
+      JSON.stringify(all.provider.requests[0]),
+    );
+  });
+
+  it("re-runs the step with every tool when the model calls need_more_tools", async () => {
+    const h = bundled(
+      harness([
+        toolUseEvents("", [needMore]),
+        toolUseEvents("Muting it.", [muteCall, explainCall]),
+      ]),
+    );
+    const result = await run(h, asking("Quantize the notes"));
+    expect(h.provider.requests).toHaveLength(2);
+    expect(names(h, 0)).toContain(NEED_MORE_TOOLS_NAME);
+    expect(names(h, 0)).not.toContain(muteCall.name);
+    // The same step again: the same messages, every tool, no need_more_tools.
+    expect(names(h, 1)).toEqual(EVERY_TOOL);
+    expect(h.provider.requests[1]?.messages).toEqual(h.provider.requests[0]?.messages);
+    expect(h.provider.requests[1]?.system).toEqual(h.provider.requests[0]?.system);
+    // Its call is the gateway's, never the proposal's.
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([
+      muteCall.name,
+      EXPLAIN_TOOL_NAME,
+    ]);
+    expect(result.text).toBe("Muting it.");
+    expect(h.logs[0]).toMatchObject({
+      toolBundle: "notes",
+      toolBundleFallback: "need_more_tools",
+      attempts: 2,
+    });
+  });
+
+  it("does not count the re-run as one of the turn's steps", async () => {
+    const h = bundled(
+      harness(
+        [toolUseEvents("", [needMore]), toolUseEvents("", [muteCall])],
+        { maxSteps: 2 },
+        [toolUseEvents("Done.", [explainCall])],
+      ),
+    );
+    const result = await run(h, asking("Quantize the notes"));
+    expect(h.provider.requests).toHaveLength(3);
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([
+      muteCall.name,
+      EXPLAIN_TOOL_NAME,
+    ]);
+  });
+
+  it("takes a call to a tool the bundle did not offer, and offers every tool from then on", async () => {
+    const h = bundled(
+      harness([toolUseEvents("Muting it.", [muteCall])], {}, [
+        toolUseEvents("Done.", [explainCall]),
+      ]),
+    );
+    const result = await run(h, asking("Quantize the notes"));
+    expect(names(h, 0)).not.toContain(muteCall.name);
+    expect(names(h, 1)).toEqual(EVERY_TOOL);
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([
+      muteCall.name,
+      EXPLAIN_TOOL_NAME,
+    ]);
+    expect(h.logs[0]).toMatchObject({
+      toolBundle: "notes",
+      toolBundleFallback: "unoffered_tool",
+    });
   });
 });
