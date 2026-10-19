@@ -45,11 +45,22 @@ const [inlineCount, setInlineCount] = createSignal(0);
  */
 export const inlineDisclosureMounted = () => inlineCount() > 0;
 
-/** `view.close_surface` (Escape) for the open panel, mounted only while it is open. */
+/** Whether a modal dialog is open anywhere in the document. */
+const modalOpen = () => document.querySelector('[aria-modal="true"]') !== null;
+
+/**
+ * `view.close_surface` (Escape) for the open panel, mounted only while it is open.
+ *
+ * A modal dialog opened over the panel (the shortcuts guide, an export or a
+ * confirmation) is the topmost surface, so its Escape is the dialog's alone and
+ * the panel waits for the next one (GRV-148). The panel and the dialog listen
+ * through separate controllers, so this stands down rather than relying on
+ * which one hears the key first.
+ */
 function CloseOnEscape(props: { onClose(): void }): JSX.Element {
   useShortcuts({
     handlers: (): ShortcutHandlers => ({
-      "view.close_surface": { run: () => props.onClose() },
+      "view.close_surface": { run: () => props.onClose(), isEnabled: () => !modalOpen() },
     }),
     contexts: () => [],
   });
