@@ -1,0 +1,10 @@
+{
+  "id": "badge",
+  "title": "Release badge under the Export dialog",
+  "steps": [
+    {
+      "file": "01-export-complete-at-1280x420-the-build-ba.png",
+      "caption": "Export complete at 1280x420: the build badge no longer draws over the dialog"
+    }
+  ]
+}
