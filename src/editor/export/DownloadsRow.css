@@ -85,3 +85,8 @@
   height: 2px;
   background: var(--color-accent);
 }
+
+.download-empty {
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+}
