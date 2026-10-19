@@ -1,0 +1,18 @@
+{
+  "id": "g55-save",
+  "title": "Save failure states",
+  "steps": [
+    {
+      "file": "01-offline-with-an-edit-waiting-the-header-.png",
+      "caption": "Offline with an edit waiting: the header says Offline, and its title says the changes are kept"
+    },
+    {
+      "file": "02-the-write-failed-while-offline-it-says-s.png",
+      "caption": "The write failed while offline: it says so and offers Retry"
+    },
+    {
+      "file": "03-back-online-the-edit-made-offline-saved-.png",
+      "caption": "Back online, the edit made offline saved by itself"
+    }
+  ]
+}
