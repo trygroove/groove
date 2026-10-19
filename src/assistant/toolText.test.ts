@@ -11,7 +11,7 @@ import { rememberTool } from "./memory";
 import { buildAssistantPayload } from "./payload";
 import { ASSISTANT_SYSTEM_PROMPT, buildSystemBlocks, SHARED_TOOL_RULES } from "./prompt";
 import { recommendationTool } from "./recommendation";
-import { TACTICS } from "./tactics";
+import { TACTIC_DEFAULTS, TACTICS } from "./tactics";
 import {
   assistantTools,
   EXPLAIN_TOOL,
@@ -132,13 +132,10 @@ describe("the toolText tactic", () => {
 
   it("sends the shared rules only for moderate and aggressive", () => {
     for (const level of LEVELS) {
-      const [prompt] = buildSystemBlocks(
-        {} as never,
-        undefined,
-        "stem",
-        undefined,
-        level,
-      );
+      const [prompt] = buildSystemBlocks({} as never, undefined, "stem", undefined, {
+        ...TACTIC_DEFAULTS,
+        toolText: level,
+      });
       expect(prompt.text.includes(SHARED_TOOL_RULES)).toBe(level !== "full");
     }
   });

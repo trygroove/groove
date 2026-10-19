@@ -85,7 +85,7 @@ describe("the tactic registry", () => {
     expect(nonDefaultTactics({ thinkingEffort: DEFAULT })).toEqual({});
     expect(nonDefaultTactics(off)).toEqual(off);
     expect(describeTactics(TACTIC_DEFAULTS)).toBe(
-      `thinkingEffort=${DEFAULT}, toolText=${TACTIC_DEFAULTS.toolText}`,
+      TACTIC_IDS.map((id) => `${id}=${TACTIC_DEFAULTS[id]}`).join(", "),
     );
     expect(describeTactics(off)).toBe(`thinkingEffort=${OFF} (default ${DEFAULT})`);
   });
