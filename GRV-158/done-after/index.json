@@ -1,0 +1,10 @@
+{
+  "id": "done-after",
+  "title": "Export complete, long name",
+  "steps": [
+    {
+      "file": "01-long-name-fits.png",
+      "caption": "Long name fits"
+    }
+  ]
+}
