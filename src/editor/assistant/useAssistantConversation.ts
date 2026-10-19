@@ -344,8 +344,10 @@ export interface AssistantConversation {
    * Asks again for the proposal or recommendation in entry `entryId`, with
    * its words and its scope, against the song as it is now (GRV-5's Refresh).
    * Returns whether it went: not while a reply streams, nor with no account.
+   * `shown` is a streamed card's parts (GRV-144): when any was applied, the
+   * message names them, as Try again's does.
    */
-  refresh(entryId: string): boolean;
+  refresh(entryId: string, shown?: readonly ShownPart[]): boolean;
   /** The question waiting for an answer, if there is one (GRV-42). */
   readonly pendingAsk: Accessor<PendingAsk | null>;
   /**
@@ -382,11 +384,31 @@ export interface ShownPart {
  * proposes again only what the song still needs.
  */
 export function continueNote(shown: readonly ShownPart[]): string {
+  return shownNote(
+    "[Continue] Your last reply stopped partway, after these parts of its proposal.",
+    shown,
+  );
+}
+
+/**
+ * What Refresh on a streamed proposal some of whose parts were applied adds
+ * to the producer's words (GRV-144): the song it is sent with has those parts
+ * already, so without the note the model would propose them a second time
+ * (a second Bass track).
+ */
+export function refreshNote(shown: readonly ShownPart[]): string {
+  return shownNote(
+    "[Refresh] The song changed under your last proposal, after I applied some of its parts.",
+    shown,
+  );
+}
+
+function shownNote(lead: string, shown: readonly ShownPart[]): string {
   const applied = shown.filter((part) => part.applied).map((part) => part.text);
   const withdrawn = shown.filter((part) => !part.applied).map((part) => part.text);
   const list = (texts: readonly string[]) => texts.map((text) => `- ${text}`).join("\n");
   return [
-    "[Continue] Your last reply stopped partway, after these parts of its proposal.",
+    lead,
     applied.length > 0
       ? `Applied, so the song has them now; don't propose them again:\n${list(applied)}`
       : null,
@@ -743,12 +765,17 @@ export function useAssistantConversation(
     return true;
   }
 
-  function refresh(entryId: string): boolean {
+  function refresh(entryId: string, shown?: readonly ShownPart[]): boolean {
     const entry = entries().find((candidate) => candidate.id === entryId);
     if (entry?.kind !== "proposal" && entry?.kind !== "recommendation") return false;
     if (!canStart()) return false;
     const { text, answers, wire, scope } = entry.origin;
-    sendMessage({ text, answers, wire }, scope);
+    // Parts already applied are named, so the new proposal does not repeat them.
+    const noted =
+      shown?.some((part) => part.applied) === true
+        ? `${wire ?? text}\n\n${refreshNote(shown)}`
+        : wire;
+    sendMessage({ text, answers, wire: noted }, scope);
     return true;
   }
 

@@ -121,8 +121,11 @@ export interface UseAssistantProposalsOptions {
   /** The project on screen, for working out where a control lives. */
   readonly project: Accessor<Project | null>;
   readonly analytics: () => Analytics;
-  /** Asks again, in the same scope, for the proposal in this entry. */
-  refresh(entryId: string): boolean;
+  /**
+   * Asks again, in the same scope, for the proposal in this entry; for a
+   * streamed one, naming the parts it showed and which were applied.
+   */
+  refresh(entryId: string, shown?: readonly ShownPart[]): boolean;
   /**
    * Asks for the rest of a streamed proposal whose turn failed partway
    * (GRV-144). Without it the card offers no Try again.
@@ -228,7 +231,7 @@ export function useAssistantProposals(
     project: options.project,
     analytics: options.analytics,
     clock: options.clock,
-    refresh: (entryId) => options.refresh(entryId),
+    refresh: (entryId, shown) => options.refresh(entryId, shown),
     continueRest: (entryId, shown) => options.continueRest?.(entryId, shown) ?? false,
     onPreviewOpen: () => endWholePreviews(),
     onOutcome: (entryId, outcome, issues) =>

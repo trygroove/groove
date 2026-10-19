@@ -28,9 +28,17 @@ export function streamedStatusText(card: Card): string {
   const withdrawn = card.parts.some((part) => part.status === "withdrawn");
   const say = (() => {
     if (card.status === "cancelled") {
-      return applied > 0
-        ? "Dismissed. The parts you applied stay."
-        : "Cancelled. Nothing changed.";
+      const said =
+        applied > 0
+          ? "Dismissed. The parts you applied stay."
+          : "Cancelled. Nothing changed.";
+      // A turn that failed after the card was cancelled can still be asked again.
+      if (card.turn !== "failed") return said;
+      return `${said} ${
+        card.continued
+          ? "Asked for the rest below."
+          : "The rest of this proposal didn't arrive."
+      }`;
     }
     if (card.status === "previewing") {
       const view = (name: Card["previewView"]) =>
@@ -234,16 +242,6 @@ export default function StreamedProposalCard(
               Refresh
             </button>
           </Show>
-          <Show when={card().turn === "failed" && !card().continued}>
-            <button
-              type="button"
-              class="assistant-button"
-              disabled={!props.canAsk}
-              onClick={act(() => props.proposals.continueRest(props.entryId), null)}
-            >
-              Try again
-            </button>
-          </Show>
           <button
             type="button"
             class="assistant-button"
@@ -253,6 +251,17 @@ export default function StreamedProposalCard(
             )}
           >
             Cancel
+          </button>
+        </Show>
+        {/* Offered on a cancelled card too: its failed turn's error offers no retry of its own. */}
+        <Show when={card().turn === "failed" && !card().continued}>
+          <button
+            type="button"
+            class="assistant-button"
+            disabled={!props.canAsk}
+            onClick={act(() => props.proposals.continueRest(props.entryId), null)}
+          >
+            Try again
           </button>
         </Show>
         <output class="assistant-proposal-say">{streamedStatusText(card())}</output>

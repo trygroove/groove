@@ -31,7 +31,7 @@ import type { EditorLocation } from "../editorControls";
 import type { EditorViewName } from "../editorViews";
 import AssistantPanel from "./AssistantPanel";
 import { useAssistantChat } from "./useAssistantChat";
-import { continueNote } from "./useAssistantConversation";
+import { continueNote, refreshNote } from "./useAssistantConversation";
 import { useAssistantPanel } from "./useAssistantPanel";
 
 /**
@@ -395,6 +395,51 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     expect(within(card()).queryByRole("button", { name: "Refresh" })).toBeNull();
   });
 
+  it("tells Refresh which parts were applied, so the new proposal does not repeat them", async () => {
+    const { ask, part, finish, session, client, hasBass } = await setUp();
+    await ask();
+    part(TRACK);
+    part(SWING);
+    await press(applyOf("Bass · new track"));
+    fireAndFlush(() =>
+      session.dispatch(setParameter({ scope: "song", parameterId: SONG_SWING.id }, 54)),
+    );
+    finish([TRACK, SWING]);
+    await press(cardButton("Refresh"));
+    expect(client.turns).toHaveLength(2);
+    expect(client.turns[1]?.request.messages.at(-1)?.text).toBe(
+      `Add a bassline\n\n${refreshNote([
+        { text: "Bass · new track", applied: true },
+        { text: "Swing 50% to 58%", applied: false },
+      ])}`,
+    );
+    expect(hasBass()).toBe(true);
+  });
+
+  it("goes out of date when another streamed card applies a change to what a part touches", async () => {
+    const { ask, part, finish, volume, session, track } = await setUp();
+    await ask();
+    part(volume(-6));
+    finish([volume(-6)]);
+    await ask();
+    part(volume(-3));
+    finish([volume(-3)]);
+    const [first, second] = within(panel()).getAllByRole("region", {
+      name: /^Proposal\b/,
+    });
+    if (!first || !second) throw new Error("two proposal cards were expected");
+    await press(within(first).getByRole("button", { name: /^Apply BD/ }));
+    const volumeOf = () =>
+      session.committedProject.song.tracks.find((candidate) => candidate.id === track.id)
+        ?.mixer.volume;
+    expect(volumeOf()).toBe(-6);
+    const rows = within(
+      within(second).getByRole("list", { name: "Changes" }),
+    ).getAllByRole("listitem");
+    expect(within(rows[0] as HTMLElement).getByText("Out of date")).toBeInTheDocument();
+    expect(within(second).getByRole("button", { name: "Apply all" })).toBeDisabled();
+  });
+
   it("arrives out of date when the producer edited what it touches while it was written", async () => {
     const { ask, part, session } = await setUp();
     await ask();
@@ -449,6 +494,23 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     expect(sent?.projectRevision).toBe(session.committedProject.metadata.revision);
     expect(sent?.context.tracks.some((candidate) => candidate.name === "Bass")).toBe(
       true,
+    );
+  });
+
+  it("still offers Try again when the card was cancelled before its turn failed", async () => {
+    const { ask, part, fail, client } = await setUp();
+    await ask();
+    part(TRACK);
+    await press(cardButton("Cancel"));
+    fail();
+    expect(cardStatus()).toHaveTextContent(
+      "Cancelled. Nothing changed. The rest of this proposal didn't arrive.",
+    );
+    expect(within(panel()).getAllByRole("button", { name: "Try again" })).toHaveLength(1);
+    await press(cardButton("Try again"));
+    expect(client.turns).toHaveLength(2);
+    expect(client.turns[1]?.request.messages.at(-1)?.text).toBe(
+      `Add a bassline\n\n${continueNote([{ text: "Bass · new track", applied: false }])}`,
     );
   });
 

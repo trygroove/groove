@@ -20,7 +20,10 @@
  *   telling the model which parts it showed and which were applied.
  * - **Try again** and **Refresh** withdraw every part not applied yet: the
  *   new card proposes again what is still needed, so nothing can be applied
- *   twice from two cards.
+ *   twice from two cards. Refresh, when some parts were applied, names them
+ *   as Try again does, so the new proposal does not make them a second time.
+ * - An edit through one streamed card is foreign to every other: it can make
+ *   another card's parts stale, as the producer's own edit does.
  *
  * Analytics, as a whole proposal's card logs them:
  *
@@ -166,8 +169,11 @@ export interface UseStreamedProposalsOptions {
   readonly project: Accessor<Project | null>;
   readonly analytics: () => Analytics;
   readonly clock?: Clock;
-  /** Asks again, in the same scope, for the proposal in this entry. */
-  refresh(entryId: string): boolean;
+  /**
+   * Asks again, in the same scope, for the proposal in this entry, naming
+   * the parts shown so those applied are not proposed again.
+   */
+  refresh(entryId: string, shown: readonly ShownPart[]): boolean;
   /** Asks for the rest of a proposal whose turn failed partway, naming the parts shown. */
   continueRest(entryId: string, shown: readonly ShownPart[]): boolean;
   /** A streamed card's preview is opening: any other card's must end. */
@@ -276,11 +282,13 @@ interface Working {
   readonly parts: readonly { part: PartState; command: RawCommandInput }[];
 }
 
-/** An edit made other than through a streamed card, and what it touched. */
+/** A committed edit, and what it touched: what makes another card's parts stale. */
 interface ForeignEdit {
   /** The committed revision it was made on. */
   readonly revision: number;
   readonly keys: ReadonlySet<string>;
+  /** The streamed card whose step it applied, undid or redid, if any: foreign to every other. */
+  readonly owner: StreamState | null;
 }
 
 /** How many foreign edits are remembered, newest kept. */
@@ -318,6 +326,7 @@ export function useStreamedProposals(
     if (remoteChanges !== state.origin.remoteChanges) return true;
     return foreign.some(
       (edit) =>
+        edit.owner !== state &&
         edit.revision >= state.baseRevision &&
         [...part.keys].some((key) => edit.keys.has(key)),
     );
@@ -800,7 +809,7 @@ export function useStreamedProposals(
   function refresh(entryId: string) {
     const state = states.get(entryId);
     if (!state || state.refreshed) return;
-    if (options.refresh(entryId)) {
+    if (options.refresh(entryId, shownParts(state))) {
       state.refreshed = true;
       withdraw(state);
       publish();
@@ -810,12 +819,7 @@ export function useStreamedProposals(
   function continueRest(entryId: string) {
     const state = states.get(entryId);
     if (!state || state.turn !== "failed" || state.continued) return;
-    const shown: ShownPart[] = state.parts.flatMap((part) =>
-      part.resolution.ok
-        ? [{ text: partLineText(part.resolution.line), applied: part.appliedBy !== null }]
-        : [],
-    );
-    if (options.continueRest(entryId, shown)) {
+    if (options.continueRest(entryId, shownParts(state))) {
       state.continued = true;
       withdraw(state);
       publish();
@@ -888,15 +892,17 @@ export function useStreamedProposals(
         noticeAllApplied(state);
       }
     } else {
-      // Anything else that changed the song: another card, or the producer.
-      foreign.push({
-        revision: edit.before.metadata.revision,
-        keys: new Set(touchedBy(edit).map(controlKey)),
-      });
-      if (foreign.length > MAX_FOREIGN_EDITS) foreign.shift();
       if (edit.kind === "edit") clearMarks();
       if (edit.kind === "edit" && edit.actor === "user") noticeEditByHand(edit);
     }
+    // Every edit is foreign to the cards that did not make it: another
+    // streamed card's step, a whole proposal, or the producer.
+    foreign.push({
+      revision: edit.before.metadata.revision,
+      keys: new Set(touchedBy(edit).map(controlKey)),
+      owner: own?.state ?? null,
+    });
+    if (foreign.length > MAX_FOREIGN_EDITS) foreign.shift();
     reconcile();
     publish();
   }
@@ -998,6 +1004,15 @@ function appliedSteps(state: StreamState): Step[] {
 /** The newest step of the card's that is still applied. */
 function newestApplied(state: StreamState): Step | undefined {
   return appliedSteps(state).at(-1);
+}
+
+/** The parts a card showed that fit the song, and whether each was applied. */
+function shownParts(state: StreamState): ShownPart[] {
+  return state.parts.flatMap((part) =>
+    part.resolution.ok
+      ? [{ text: partLineText(part.resolution.line), applied: part.appliedBy !== null }]
+      : [],
+  );
 }
 
 /** What a part needs, as "Needs … first" names it: a track by its name, anything else by its line. */
