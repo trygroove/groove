@@ -22,7 +22,10 @@ test.describe("editor width beside a classic scrollbar", () => {
         browserName !== "chromium",
         "needs a classic scrollbar, which only Chromium's --hide-scrollbars switch can restore",
       );
-      await page.setViewportSize({ width: 1280, height: 720 });
+      // Shorter than the editor's minimum height (600px), so the page scrolls
+      // vertically in every view, the Mixer included (which scrolls inside its
+      // own pane in a taller window, GRV-188).
+      await page.setViewportSize({ width: 1280, height: 560 });
       await newProject(page);
       await pressView(page, view);
 
