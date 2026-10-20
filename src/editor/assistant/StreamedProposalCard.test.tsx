@@ -577,7 +577,9 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     const { ask, part, client, session, hasBass } = await setUp();
     await ask();
     part(TRACK);
+    expect(within(card()).getByText("More parts on the way…")).toBeInTheDocument();
     fireAndFlush(() => client.last().fail({ code: "timeout", retryable: true }));
+    expect(within(card()).queryByText("More parts on the way…")).toBeNull();
     expect(cardStatus()).toHaveTextContent("The rest of this proposal didn't arrive.");
     // The error says what went wrong; the card is what offers Try again.
     expect(within(panel()).getAllByRole("button", { name: "Try again" })).toHaveLength(1);

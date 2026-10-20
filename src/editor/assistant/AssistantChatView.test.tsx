@@ -15,7 +15,7 @@ import {
 } from "../../testing/fakeAssistantClient";
 import { memoryStorage } from "../../testing/storage";
 import type { EditorViewName } from "../editorViews";
-import { SIGN_IN_NOTE, WRITING_STATUS } from "./AssistantChatView";
+import { SIGN_IN_NOTE, STILL_WRITING_NOTE, WRITING_STATUS } from "./AssistantChatView";
 import AssistantPanel from "./AssistantPanel";
 import { ERROR_REASSURANCE } from "./assistantErrorCopy";
 import { LAYOUT_STORAGE_KEY } from "./assistantPanelLayout";
@@ -161,8 +161,10 @@ describe("the assistant's conversation", () => {
     expect(log()).toHaveAttribute("aria-busy", "true");
     expect(button("Stop")).toBeEnabled();
     expect(status()).toBe(WRITING_STATUS);
+    expect(log()).toHaveTextContent(STILL_WRITING_NOTE);
 
     fireAndFlush(() => turn.done());
+    expect(log()).not.toHaveTextContent(STILL_WRITING_NOTE);
     expect(log()).toHaveAttribute("aria-busy", "false");
     expect(button("Send")).toBeDisabled();
     expect(status()).toBe("");
@@ -199,6 +201,7 @@ describe("the assistant's conversation", () => {
     clickAndFlush(button("Stop"));
     expect(client.last().stopped).toBe(true);
     expect(log()).toHaveTextContent("Here is Stopped.");
+    expect(log()).not.toHaveTextContent(STILL_WRITING_NOTE);
     expect(log()).toHaveAttribute("aria-busy", "false");
     expect(composer()).toHaveFocus();
     expect(button("Send")).toBeInTheDocument();
@@ -337,6 +340,7 @@ describe("the assistant's inline errors", () => {
         retry,
       );
       expect(JSON.stringify(project)).toBe(before);
+      expect(log()).not.toHaveTextContent(STILL_WRITING_NOTE);
       // The composer is usable again at once.
       expect(composer()).toBeEnabled();
     });
