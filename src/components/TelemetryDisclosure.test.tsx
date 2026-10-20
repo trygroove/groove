@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { createSignal, flush } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConsentStore } from "../analytics/consent";
-import { type ShortcutHandlers, useShortcuts } from "../shortcuts";
+import { type ShortcutHandlers, useShortcutScope } from "../shortcuts";
 import { memoryStorage } from "../testing/storage";
 import ConfirmDialog from "./ConfirmDialog";
 import TelemetryDisclosure from "./TelemetryDisclosure";
@@ -235,20 +235,27 @@ describe("TelemetryDisclosure Escape (GRV-148)", () => {
 
 // GRV-148 QA: a modal dialog opened over the panel (the shortcuts guide in the
 // studio) is the topmost surface, so one Escape closes the dialog alone and
-// the panel waits for the next one, whichever controller hears the key first.
-// In the studio the editor's controller is mounted long before the panel's.
+// the panel waits for the next one, wherever its owner sits in the tree. In
+// the studio the editor is mounted long before the panel. The dialog's modal
+// shortcut scope is what hides the panel's (GRV-186).
 describe("TelemetryDisclosure Escape under a modal dialog (GRV-148)", () => {
-  /** A modal's Escape owner, like the editor's: it closes the dialog when open. */
-  function ModalOwner(props: { open: boolean; onClose(): void }): JSX.Element {
-    useShortcuts({
+  /** A modal dialog's Escape, registered while it is open, like the guide's. */
+  function ModalScope(props: { onClose(): void }): JSX.Element {
+    useShortcutScope({
+      modal: true,
       handlers: (): ShortcutHandlers => ({
         "view.close_surface": { run: () => props.onClose() },
       }),
-      contexts: () => [],
+      contexts: () => ["dialog"],
     });
+    return <div role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" />;
+  }
+
+  /** Owns the dialog's open state, like the editor owns the guide's. */
+  function ModalOwner(props: { open: boolean; onClose(): void }): JSX.Element {
     return (
       <Show when={props.open}>
-        <div role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" />
+        <ModalScope onClose={() => props.onClose()} />
       </Show>
     );
   }
@@ -280,7 +287,7 @@ describe("TelemetryDisclosure Escape under a modal dialog (GRV-148)", () => {
   }
 
   for (const ownerFirst of [true, false]) {
-    it(`one Escape closes only the dialog (its controller attached ${ownerFirst ? "before" : "after"} the panel's)`, async () => {
+    it(`one Escape closes only the dialog (its owner mounted ${ownerFirst ? "before" : "after"} the panel)`, async () => {
       const { user, details, dialogOpen } = await openBoth(ownerFirst);
       await user.keyboard("{Escape}");
       flush();

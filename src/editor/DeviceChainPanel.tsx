@@ -21,7 +21,7 @@ import type { Device, Track } from "../domain/entities";
 import { createIdFactory, type DeviceId, type IdFactory } from "../domain/ids";
 import { MAX_TRACK_INSERTS } from "../domain/parse";
 import type { ShortcutHandlers } from "../shortcuts/ShortcutController";
-import { useShortcuts } from "../shortcuts/useShortcuts";
+import { useShortcutScope } from "../shortcuts/useShortcutScope";
 import DeviceCard from "./DeviceCard";
 import "./NewTrackButtons.css";
 import { previewOrder } from "./trackReorder";
@@ -186,7 +186,7 @@ export function DeviceChain(props: DeviceChainProps): JSX.Element {
     queueMicrotask(() => grip?.focus());
   }
 
-  useShortcuts({
+  useShortcutScope({
     handlers: (): ShortcutHandlers => ({
       "device.move_earlier": {
         run: () => moveFocused(-1),

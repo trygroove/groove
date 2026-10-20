@@ -84,4 +84,3 @@ export {
   useShortcutRoot,
   useShortcutScope,
 } from "./useShortcutScope";
-export { useShortcuts } from "./useShortcuts";

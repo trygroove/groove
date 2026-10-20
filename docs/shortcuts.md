@@ -289,7 +289,10 @@ override recorded on the entry:
   `catalog.test.ts`.
 - **No component owns a key listener.** Every surface that responds to a key —
   the editor, the `?` guide, and `ConfirmDialog` — registers a handler with
-  `useShortcuts` instead of comparing `event.key`. `src/shortcuts/` is the only
+  `useShortcutScope` instead of comparing `event.key`. All of them share the
+  app's one `ShortcutController` (GRV-186): a press runs in the most recently
+  mounted scope that has an enabled handler, and a modal scope hides the ones
+  under it. `src/shortcuts/` is the only
   place in `src/` that reads `KeyboardEvent.key` for a mapping (`ShortcutGuide`
   reads it for its `Tab` focus trap, which is modal focus management, not a
   mapping). `src/shortcuts/docs.test.ts` enforces this over `src/` — the shipped
@@ -319,7 +322,7 @@ the guide marks it "Not available here" from `controller.isEnabled()`.
    keys, group, contexts, and Ableton position.
 2. Add the ID to `SHORTCUT_ACTION_IDS` in both the registry and
    `src/analytics/catalog.ts`.
-3. Register a handler on the surface that owns the action with `useShortcuts`
+3. Register a handler on the surface that owns the action with `useShortcutScope`
    (see `src/editor/EditorView.tsx`, or `src/components/ConfirmDialog.tsx` for a
    modal). Never add a `keydown` listener to a component. Nothing else changes:
    tooltips, the guide, and analytics pick the entry up automatically.

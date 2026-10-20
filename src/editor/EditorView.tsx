@@ -545,9 +545,7 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
     song,
     surfaces,
     openPlacement,
-    guideOpen,
     setGuideOpen,
-    exportOpen,
     assistant,
     sendAssistantDraft: () => chat.sendDraft(),
     assistantAsk: {
