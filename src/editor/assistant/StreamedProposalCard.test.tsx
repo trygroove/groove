@@ -653,6 +653,25 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     expect(session.project.song.tracks.some((t) => t.name === "Bass")).toBe(true);
   });
 
+  it("stops following when the producer previews another card mid-stream", async () => {
+    const { ask, part, finish, session, revealControl } = await setUp();
+    await ask();
+    part(SWING);
+    finish([SWING]);
+    await ask();
+    part(TRACK);
+    const cards = within(panel()).getAllByRole("region", { name: /^Proposal\b/ });
+    expect(cards).toHaveLength(2);
+    // The first card's own Preview takes the preview from the streaming one.
+    await press(within(cards[0] as HTMLElement).getByRole("button", { name: "Preview" }));
+    expect(session.project.song.swing).toBe(58);
+    const preview = session.activePreview;
+    const revealed = revealControl.mock.calls.length;
+    part(CLIP);
+    expect(session.activePreview).toBe(preview);
+    expect(revealControl.mock.calls.length).toBe(revealed);
+  });
+
   it("follows the stream: each new part reveals where it lands", async () => {
     const { ask, part, revealControl } = await setUp();
     await ask();
@@ -709,7 +728,7 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
   });
 
   it("logs each preview shown once, as automatic or as the producer's own", async () => {
-    const { ask, part, events } = await setUp();
+    const { ask, part, events, revealControl } = await setUp();
     await ask();
     part(SWING);
     part(TRACK);
@@ -722,6 +741,10 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
       expect.objectContaining({ automatic: true }),
       expect.objectContaining({ automatic: false }),
     ]);
+    // The producer's own pick ends the follow: a later part does not move it.
+    const revealed = revealControl.mock.calls.length;
+    part(CLIP);
+    expect(revealControl.mock.calls.length).toBe(revealed);
   });
 
   it("logs the first part once per proposal, and each part applied once", async () => {

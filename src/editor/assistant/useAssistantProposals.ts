@@ -390,8 +390,16 @@ export function useAssistantProposals(
       update(entryId, { status: "stale" });
       return;
     }
-    // One preview at a time: another card's ends, and the place it came
-    // from is where this one's Cancel returns to.
+    // One preview at a time. Others end only once this one opened (the
+    // session supersedes theirs), so a preview that cannot open leaves the
+    // producer's own in place.
+    const opened = session.beginPreview(entry.handle.proposal.commands);
+    if (!opened?.ok) {
+      // A preview nobody asked for says nothing when it cannot open.
+      if (!automatic) update(entryId, { notice: BUSY });
+      return;
+    }
+    // The place another card's preview came from is where this one's Cancel returns to.
     let location: EditorLocation | null = null;
     for (const [otherId, other] of entries) {
       if (otherId === entryId || !other.preview) continue;
@@ -400,12 +408,6 @@ export function useAssistantProposals(
       update(otherId, { status: "pending", returnView: null });
     }
     streamed.endPreviews();
-    const opened = session.beginPreview(entry.handle.proposal.commands);
-    if (!opened?.ok) {
-      // A preview nobody asked for says nothing when it cannot open.
-      if (!automatic) update(entryId, { notice: BUSY });
-      return;
-    }
     entry.preview = opened.preview;
     controls.registry.setMark(entry.addresses, "previewed");
     const project = options.project();

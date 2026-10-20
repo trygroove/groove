@@ -784,6 +784,8 @@ export function useStreamedProposals(
       if (!state.preview) continue;
       endPreview(state);
       state.status = "open";
+      // Previewing elsewhere is the producer's choice: stop following here.
+      state.following = false;
       changed = true;
     }
     if (changed) publish();
@@ -823,6 +825,8 @@ export function useStreamedProposals(
         endPreview(other);
         other.status = "open";
         other.location = null;
+        // Previewing elsewhere is the producer's choice: stop following here.
+        other.following = false;
       }
       options.onPreviewOpen();
       state.location = location;
