@@ -8,7 +8,7 @@
     },
     {
       "file": "02-the-write-failed-while-offline-it-says-s.png",
-      "caption": "The write failed while offline: it says so and offers Retry"
+      "caption": "The write failed while offline: it says so, says to reconnect, and offers Retry"
     },
     {
       "file": "03-back-online-the-edit-made-offline-saved-.png",
