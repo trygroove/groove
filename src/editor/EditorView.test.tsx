@@ -1181,7 +1181,7 @@ describe("EditorView", () => {
 
     await screen.findByText("Save failed", {}, { timeout: 3_000 });
     expect(
-      within(saveStatusGroup()).getByText("Check your connection."),
+      within(saveStatusGroup()).getByText("Offline. Reconnect to save."),
     ).toBeInTheDocument();
     const retryButton = saveRetryButton();
     expect(retryButton).not.toBeNull();

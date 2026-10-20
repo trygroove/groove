@@ -270,6 +270,28 @@ describe("useEditorSession's queued edits outlive the editor (GRV-55)", () => {
     expect(unsavedWriteCount()).toBe(0);
   });
 
+  it("writes a closed editor's failed edit by itself, with no online event, and lets go", async () => {
+    // QA (GRV-55): the browser's `online` event did not come when the
+    // connection did, so the retry cannot wait for it.
+    const { repository, hook, edit, saved } = await openSession();
+    repository.failNextWrites({ count: 1 });
+    edit();
+
+    hook.cleanup();
+    await vi.waitFor(() => expect(repository.writes.length).toBeGreaterThan(0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(await saved()).toBe(false);
+    const removed = vi.spyOn(window, "removeEventListener");
+
+    await vi.waitFor(async () => expect(await saved()).toBe(true), { timeout: 5_000 });
+    await vi.waitFor(() => expect(unsavedWriteCount()).toBe(0));
+    // Let go: no longer waiting for the connection either.
+    await vi.waitFor(() =>
+      expect(removed).toHaveBeenCalledWith("online", expect.any(Function)),
+    );
+    removed.mockRestore();
+  });
+
   it("stops retrying an edit no write can land, but still counts it as unsaved", async () => {
     const { repository, hook, edit } = await openSession();
     let refused = 0;

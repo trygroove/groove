@@ -11,7 +11,7 @@ import { updateTrack } from "../commands";
 import type { Track } from "../domain/entities";
 import { TRACK_PALETTE } from "../domain/trackPalette";
 import { ariaBool } from "../shared/aria";
-import { type ShortcutHandlers, useShortcutScope } from "../shortcuts";
+import { useCloseOnEscape } from "../shortcuts";
 import "./TrackColorPicker.css";
 
 export interface TrackColorPickerProps {
@@ -166,11 +166,6 @@ export default function TrackColorPicker(props: TrackColorPickerProps): JSX.Elem
  * controller at all.
  */
 function CloseOnEscape(props: { onClose(): void }): JSX.Element {
-  useShortcutScope({
-    handlers: (): ShortcutHandlers => ({
-      "view.close_surface": { run: () => props.onClose() },
-    }),
-    contexts: () => [],
-  });
+  useCloseOnEscape(() => props.onClose());
   return null;
 }

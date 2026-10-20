@@ -273,6 +273,16 @@ override recorded on the entry:
 - **Deterministic context resolution.** A shortcut fires only if one of its
   declared contexts is active. A registry test proves no two mappings can match
   the same event in the same context, so dispatch is never ambiguous.
+- **One press, one action; the top surface first** (GRV-148). Every surface
+  that answers a key (the editor, a dialog, a popover, the Privacy panel)
+  attaches its own `ShortcutController`, and the controllers on the window
+  share one listener. A press is offered to the controller attached last, the
+  surface opened most recently, first, and stops at the first that runs it; a
+  controller with no enabled handler for the key passes it down. So Escape on
+  the Privacy panel closes the panel and leaves the arrangement's selection
+  alone. A popover or panel that is not modal closes through
+  `useCloseOnEscape`, which also stands down while a modal dialog is open over
+  it, because the `?` guide's Escape belongs to the editor's older controller.
 - **Layout-aware character matching.** Matching reads `KeyboardEvent.key`, not
   `code`, and ignores the Shift *modifier* for punctuation keys — `?` works
   whether the layout needs Shift, AltGr, or nothing.

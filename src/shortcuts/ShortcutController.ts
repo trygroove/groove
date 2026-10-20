@@ -263,13 +263,74 @@ export class ShortcutController {
     return { shortcut, handler };
   }
 
-  /** Listens on a target until the returned function is called. */
+  /**
+   * Listens on a target until the returned function is called.
+   *
+   * The app attaches one controller (GRV-186), but a test or a stray
+   * provider-less surface can attach another, so one press can reach
+   * several. It runs one action, not one per controller: the controllers on a
+   * target share a single listener that offers the press to the one attached
+   * last first, the surface opened most recently and so the one on top, and
+   * stops at the first that runs it (GRV-148). A controller with no enabled
+   * handler for the key passes it down to the one below.
+   *
+   * One listener is also what makes the decision see the page as it was when
+   * the key went down: a browser runs a microtask checkpoint between two
+   * listeners of one event, so with a listener each, a surface the first one
+   * closed was already gone from the document when the next one asked.
+   */
   attach(target: EventTarget): () => void {
-    const listener = (event: Event) => {
-      this.handleKeyDown(event as KeyboardEvent);
+    let layer = layers.get(target);
+    if (!layer) {
+      const controllers: ShortcutController[] = [];
+      const listener = (event: Event) =>
+        dispatchToLayer(controllers, event as KeyboardEvent);
+      target.addEventListener("keydown", listener);
+      layer = { controllers, listener };
+      layers.set(target, layer);
+    }
+    const { controllers } = layer;
+    controllers.push(this);
+    return () => {
+      const index = controllers.lastIndexOf(this);
+      if (index === -1) return;
+      controllers.splice(index, 1);
+      if (controllers.length > 0 || layers.get(target) !== layer) return;
+      target.removeEventListener("keydown", layer.listener);
+      layers.delete(target);
     };
-    target.addEventListener("keydown", listener);
-    return () => target.removeEventListener("keydown", listener);
+  }
+
+  /** Forgets the held key: a fresh press elsewhere means this one was let go. */
+  releaseHeldKey(): void {
+    this.heldKey = null;
+  }
+}
+
+/** The controllers attached to one target, oldest first, and their listener. */
+interface Layer {
+  readonly controllers: ShortcutController[];
+  readonly listener: (event: Event) => void;
+}
+
+const layers = new WeakMap<EventTarget, Layer>();
+
+/**
+ * Offers one press to a target's controllers, newest first, until one runs it.
+ *
+ * A controller that ignored an auto-repeat because it ran the press (or
+ * because its action is not repeatable) owns the key too, so a repeat never
+ * falls through to an action under it.
+ */
+function dispatchToLayer(
+  controllers: readonly ShortcutController[],
+  event: KeyboardEvent,
+) {
+  const stack = [...controllers];
+  if (!event.repeat) for (const controller of stack) controller.releaseHeldKey();
+  for (let index = stack.length - 1; index >= 0; index -= 1) {
+    const dispatch = stack[index].handleKeyDown(event);
+    if (dispatch.ran || dispatch.rejected === "repeat") return;
   }
 }
 

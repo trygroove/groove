@@ -491,6 +491,15 @@
   right: var(--assistant-dock-space);
 }
 
+/* The notices between the header and the views stop short of the docked
+   assistant as well, so their Dismiss buttons are never under the column
+   (GRV-55). */
+.editor > .compatibility-notice,
+.editor > .load-recovery-notice,
+.editor > .missing-sounds {
+  margin-right: var(--assistant-dock-space);
+}
+
 /* The Instrument and Mixer views (UI-001). Only one view is on the page at a
    time, so each takes the whole body rather than a band of it — the room the
    instrument controls exist to be given. Both scroll inside themselves. */
