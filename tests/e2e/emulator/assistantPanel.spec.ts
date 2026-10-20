@@ -173,4 +173,28 @@ test.describe("assistant panel", () => {
     expect(box.x + box.width).toBeLessThanOrEqual(360);
     await buttonsAnswer(page, "floating in a small window");
   });
+
+  test("a notice under the header stops at the docked panel, so Dismiss can be clicked", async ({
+    page,
+  }) => {
+    // QA (GRV-55): the sound-load notice's Dismiss sat under the docked
+    // column. Any notice shares the band; this one is the simplest to raise.
+    await page.addInitScript(() => {
+      delete (window as unknown as Record<string, unknown>).OfflineAudioContext;
+    });
+    await openEditor(page);
+    await page.keyboard.press(ASSISTANT_CHORD);
+    await panelButton(page, "Dock to the right").click();
+    await expect(panel(page)).toHaveAttribute("data-mode", "docked");
+
+    const notice = page.getByRole("region", { name: "Browser support" });
+    const dismiss = notice.getByRole("button", { name: /^Dismiss/ });
+    const box = await dismiss.boundingBox();
+    const panelBox = await panel(page).boundingBox();
+    if (!box || !panelBox) throw new Error("no Dismiss or panel box");
+    expect(box.x + box.width).toBeLessThanOrEqual(panelBox.x);
+    expect(await hits(dismiss, box.x + box.width / 2, box.y + box.height / 2)).toBe(true);
+    await dismiss.click();
+    await expect(notice).toHaveCount(0);
+  });
 });

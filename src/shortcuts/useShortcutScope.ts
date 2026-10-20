@@ -19,13 +19,19 @@ export const ShortcutRootContext = createContext<ShortcutController | null>(null
 let fallback: ShortcutController | undefined;
 
 /**
- * The controller a scope rendered with no `ShortcutRoot` above it uses: one per
- * page, created on first use and listening on the window from then on. In the
- * app every surface is under `ShortcutRoot`, so this only serves a component
- * rendered on its own (a component test); it is still one controller, never one
- * per surface.
+ * The controller a scope rendered with no `ShortcutRoot` above it uses, in a
+ * test only: one per page, created on first use and listening on the window
+ * from then on, so a component test can render a surface on its own. It is
+ * still one controller, never one per surface.
+ *
+ * Outside tests there is no fallback: a surface rendered outside
+ * `ShortcutRoot` would otherwise get a second controller on the window, which
+ * is the parallel dispatch GRV-186 removed, so it throws instead.
  */
 function fallbackRoot(): ShortcutController {
+  if (import.meta.env.MODE !== "test") {
+    throw new Error("useShortcutScope needs a ShortcutRoot above it (GRV-186)");
+  }
   if (!fallback) {
     fallback = new ShortcutController({});
     fallback.attach(window);

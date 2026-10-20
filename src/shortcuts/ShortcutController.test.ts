@@ -786,3 +786,91 @@ describe("scopes", () => {
     expect(first).toHaveBeenCalledTimes(1);
   });
 });
+
+// GRV-148: every surface that answers a key attaches its own controller to the
+// window, so one press reaches all of them. One press runs one action: the
+// controller attached last, the surface opened last, hears it first, and the
+// first to run it is the only one that does.
+describe("attach, with more than one controller on a target (GRV-148)", () => {
+  const escapePress = () =>
+    new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+
+  function closer(run: () => void, isEnabled?: () => boolean): ShortcutController {
+    return new ShortcutController({
+      handlers: () => ({ "view.close_surface": { run, isEnabled } }),
+      contexts: () => [],
+      platform: "other",
+      isTextEntry: () => false,
+    });
+  }
+
+  it("runs the action on the controller attached last, and on no other", () => {
+    const below = vi.fn();
+    const above = vi.fn();
+    const detachBelow = closer(below).attach(window);
+    const detachAbove = closer(above).attach(window);
+    try {
+      window.dispatchEvent(escapePress());
+      expect(above).toHaveBeenCalledTimes(1);
+      expect(below).not.toHaveBeenCalled();
+    } finally {
+      detachAbove();
+      detachBelow();
+    }
+  });
+
+  it("passes the key down when the one above has it disabled or unhandled", () => {
+    const below = vi.fn();
+    const above = vi.fn();
+    const detachBelow = closer(below).attach(window);
+    const detachAbove = closer(above, () => false).attach(window);
+    const detachNone = new ShortcutController({
+      handlers: () => ({}),
+      contexts: () => [],
+      platform: "other",
+    }).attach(window);
+    try {
+      window.dispatchEvent(escapePress());
+      expect(above).not.toHaveBeenCalled();
+      expect(below).toHaveBeenCalledTimes(1);
+    } finally {
+      detachNone();
+      detachAbove();
+      detachBelow();
+    }
+  });
+
+  it("gives the key back to the one below once the one above detaches", () => {
+    const below = vi.fn();
+    const above = vi.fn();
+    const detachBelow = closer(below).attach(window);
+    const detachAbove = closer(above).attach(window);
+    detachAbove();
+    try {
+      window.dispatchEvent(escapePress());
+      expect(below).toHaveBeenCalledTimes(1);
+      expect(above).not.toHaveBeenCalled();
+    } finally {
+      detachBelow();
+    }
+  });
+
+  it("decides on the state before the press, even if an action changes it", () => {
+    // The browser runs a microtask checkpoint between two listeners, so a
+    // surface closed by one is already gone when the next one asks.
+    let modal = true;
+    const panel = vi.fn();
+    const detachEditor = closer(() => {
+      modal = false;
+    }).attach(window);
+    const detachPanel = closer(panel, () => !modal).attach(window);
+    try {
+      window.dispatchEvent(escapePress());
+      expect(modal).toBe(false);
+      expect(panel).not.toHaveBeenCalled();
+    } finally {
+      detachPanel();
+      detachEditor();
+    }
+  });
+});

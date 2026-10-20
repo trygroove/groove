@@ -78,6 +78,7 @@ export {
   SHORTCUT_GROUP_LABELS,
   SHORTCUT_GROUPS,
 } from "./types";
+export { useCloseOnEscape } from "./useCloseOnEscape";
 export type { ShortcutScopeHandle, ShortcutScopeHookOptions } from "./useShortcutScope";
 export {
   ShortcutRootContext,

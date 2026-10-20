@@ -160,6 +160,14 @@ function invalid(issues: readonly ProposalIssue[]): ProposalValidation {
   return { ok: false, issues };
 }
 
+function staleRevision(baseRevision: number, project: Project): ProposalIssue {
+  return {
+    code: "stale_revision",
+    callIndex: null,
+    message: `The proposal was built against revision ${baseRevision}, but the project is at revision ${project.metadata.revision}`,
+  };
+}
+
 function describeShape(error: z.ZodError): string {
   return error.issues
     .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
@@ -245,7 +253,16 @@ export function rejectedProposalShape(input: unknown): {
  * would apply to. Returns the commands and their impact, or every reason it
  * cannot apply. Never throws and never changes `project`.
  */
-export function validateProposal(project: Project, input: unknown): ProposalValidation {
+export function validateProposal(
+  project: Project,
+  input: unknown,
+  /**
+   * Whether the edits committed since `baseRevision` leave a proposal with
+   * these command types valid (GRV-132). Without it, any revision change is
+   * stale.
+   */
+  editsLeaveValid?: (baseRevision: number, commandTypes: readonly string[]) => boolean,
+): ProposalValidation {
   const shape = proposalInputSchema.safeParse(input);
   if (!shape.success) {
     return invalid([
@@ -277,15 +294,8 @@ export function validateProposal(project: Project, input: unknown): ProposalVali
       },
     ]);
   }
-  if (baseRevision !== project.metadata.revision) {
-    return invalid([
-      {
-        code: "stale_revision",
-        callIndex: null,
-        message: `The proposal was built against revision ${baseRevision}, but the project is at revision ${project.metadata.revision}`,
-      },
-    ]);
-  }
+  const moved = baseRevision !== project.metadata.revision;
+  if (moved && !editsLeaveValid) return invalid([staleRevision(baseRevision, project)]);
 
   const commands: RawCommandInput[] = [];
   const capabilities: AssistantCapability[] = [];
@@ -308,6 +318,15 @@ export function validateProposal(project: Project, input: unknown): ProposalVali
     capabilities.push(resolution.capability);
   });
   if (issues.length > 0) return invalid(issues);
+  if (
+    moved &&
+    !editsLeaveValid?.(
+      baseRevision,
+      commands.map((command) => command.type),
+    )
+  ) {
+    return invalid([staleRevision(baseRevision, project)]);
+  }
   const rangeIssues = valueIssues(project, commands);
   if (rangeIssues.length > 0) return invalid(rangeIssues);
 
@@ -315,7 +334,8 @@ export function validateProposal(project: Project, input: unknown): ProposalVali
   // project, without committing a revision.
   const dryRun = executeTransaction(project, commands, {
     actor: "assistant",
-    baseRevision,
+    // A proposal the edits since leave valid is checked against the song as it is.
+    ...(moved ? {} : { baseRevision }),
     commitRevision: false,
   });
   if (!dryRun.ok) return invalid(dryRun.issues.map(fromCommandIssue));

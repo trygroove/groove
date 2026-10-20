@@ -40,7 +40,11 @@ import {
   type AssistantProposal,
   type AssistantStopReason,
 } from "../protocol";
-import { type AssistantProvider, ProviderFailure } from "../provider";
+import {
+  type AssistantProvider,
+  ProviderFailure,
+  type ProviderRejection,
+} from "../provider";
 import { continuesTurn, type ProviderMessagesRequest } from "../providerRequest";
 import { splitRecommendations } from "../recommendation";
 import type { ProviderUsage } from "../streamEvents";
@@ -101,6 +105,12 @@ export interface EvalTurnError {
    * Absent from reports saved before the evals told it apart.
    */
   readonly outOfCredit?: boolean;
+  /**
+   * The provider's own reason for the last refused call, scrubbed (GRV-147):
+   * the API error's `type` and `message`. Absent when it gave none, and from
+   * reports saved before the evals kept it.
+   */
+  readonly providerReason?: ProviderRejection;
 }
 
 /**
@@ -270,7 +280,10 @@ export function describeTurnError(error: EvalTurnError): string {
     : error.outOfCredit
       ? " The account is out of API credit."
       : "";
-  return `${error.code}: ${error.message}${provider.length > 0 ? ` (provider: ${provider.join(", ")})` : ""}${auth}`;
+  const reason = error.providerReason
+    ? ` The provider said: ${error.providerReason.type}: ${error.providerReason.message}`
+    : "";
+  return `${error.code}: ${error.message}${provider.length > 0 ? ` (provider: ${provider.join(", ")})` : ""}${auth}${reason}`;
 }
 
 /**
@@ -315,9 +328,12 @@ function measureProvider(provider: AssistantProvider): {
   steps: () => EvalSteps;
   /** Whether a call was refused because the account is out of API credit. */
   outOfCredit: () => boolean;
+  /** The provider's reason for the last call it refused with one. */
+  reason: () => ProviderRejection | null;
 } {
   let calls = 0;
   let outOfCredit = false;
+  let reason: ProviderRejection | null = null;
   const refused: EvalRefusedCall[] = [];
   let outputTokens: number | null = null;
   let thinkingChars = 0;
@@ -348,7 +364,10 @@ function measureProvider(provider: AssistantProvider): {
             yield raw;
           }
         } catch (error) {
-          if (error instanceof ProviderFailure && error.outOfCredit) outOfCredit = true;
+          if (error instanceof ProviderFailure) {
+            if (error.outOfCredit) outOfCredit = true;
+            if (error.reason !== null) reason = error.reason;
+          }
           throw error;
         }
       },
@@ -356,6 +375,7 @@ function measureProvider(provider: AssistantProvider): {
     tokens: () => ({ outputTokens, thinkingChars, toolInputChars, textChars }),
     steps: () => ({ calls, refused: [...refused] }),
     outOfCredit: () => outOfCredit,
+    reason: () => reason,
   };
 }
 
@@ -482,10 +502,12 @@ async function runOneTurn(
     };
   } catch (error) {
     const log = turnLog as AssistantTurnLog | null;
+    const reason = measured.reason();
     const provider = {
       providerStatus: log?.providerStatus ?? null,
       providerFailures: log?.failures ?? [],
       ...(measured.outOfCredit() ? { outOfCredit: true } : {}),
+      ...(reason === null ? {} : { providerReason: reason }),
     };
     const turnError: EvalTurnError =
       error instanceof EvalTimeout || controller.signal.aborted

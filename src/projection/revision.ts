@@ -18,6 +18,24 @@
  * held weakly, so an entity that becomes unreachable (a project is closed, a
  * clip is deleted) is collected normally: this module never grows unbounded
  * on its own.
+ *
+ * Which change detector to use (GRV-80; the same note heads `fingerprint.ts`
+ * and `revision.ts`):
+ *
+ *  - `revision.ts`: an object-identity counter. A per-entity render-cache key
+ *    within one process; free, but meaningless across reloads, tabs or builds.
+ *    The arrangement projection labels entities with it.
+ *  - `fingerprint.ts`: content equality (stable JSON + FNV-1a), valid across
+ *    builds and processes. It has two reasons to exist: the audio
+ *    `topologyFingerprint` (node-graph shape vs. a changed value, which an
+ *    identity counter cannot express) and the assistant context fingerprint
+ *    (did the song change, selected notes included).
+ *
+ * For a new projection: use the counter when the only consumer is a cache
+ * inside this process; use a fingerprint when equality must survive a process
+ * boundary or must separate kinds of change. Either way, every input the
+ * output reads must be in the dependency list: `projectionFreshness.test.ts`
+ * changes one field at a time to catch the ones that are not.
  */
 
 const revisions = new WeakMap<object, number>();

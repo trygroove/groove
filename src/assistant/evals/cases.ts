@@ -319,6 +319,39 @@ const SNARE_APPLIED = loggedTurn(
   "applied",
 );
 
+/**
+ * GRV-150's QA session up to "make the snare a little brighter", turn for
+ * turn: the snare applied, turned down and applied, a question about what
+ * changed, and (after a reload) a Closed Hat cancelled. QA did not quote the
+ * answer to "what did you just change?"; this one is what a model that never
+ * learns what became of its proposals can say, and what "I never actually
+ * added it" a turn later builds on. A case whose history leaves these turns
+ * out, or answers that question as if it knew, passed without the fix.
+ */
+const QA_SESSION: readonly HistoryEntry[] = [
+  ...SNARE_APPLIED,
+  ...loggedTurn(
+    "make it quieter",
+    "I'll bring the SD down 6 dB, from 0.0 dB to -6.0 dB, so the snare sits behind the kick.",
+    "applied",
+  ),
+  ...loggedTurn(
+    "what did you just change?",
+    "I proposed two changes: a new SD drum machine track with a snare on beats 2 and 4, then turning the SD down from 0.0 dB to -6.0 dB. Both were proposals for you to apply, so I can't tell from here whether either of them actually went in.",
+  ),
+  ...loggedTurn(
+    "add a closed hi-hat on the offbeats",
+    "I'll add a Closed Hat: a new drum machine track with one closed hi-hat pad on every offbeat 8th, looped under the kick and snare.",
+    "cancelled",
+  ),
+];
+
+/** QA's reply to "make the snare a little brighter", which the next turn resent. */
+const SNARE_DENIED = loggedTurn(
+  "make the snare a little brighter",
+  "There's no snare track in the project yet — I never actually added it. Want me to add one now, with a brighter snare on beats 2 and 4?",
+);
+
 /** What the producer's track names and the snare's own word call the SD track. */
 const SNARE_WORDS = ["snare", "SD"];
 
@@ -639,20 +672,9 @@ export const TYPESCRIPT_CASES: readonly EvalCase[] = [
     capability: "projectContext",
     axis: "conventional",
     request: "make the snare a little brighter",
-    history: historyOf([
-      ...SNARE_APPLIED,
-      ...loggedTurn(
-        "make it quieter",
-        "I'll bring the SD down 3 dB, from 0.0 dB to -3.0 dB, so the snare sits behind the kick.",
-        "applied",
-      ),
-      ...loggedTurn(
-        "what did you just change?",
-        "I proposed turning the SD track down by 3 dB, from 0.0 dB to -3.0 dB. Nothing else changed: the BD and the snare pattern are as they were.",
-      ),
-    ]),
+    history: historyOf(QA_SESSION),
     expect: "proposal",
-    fixture: () => createBdSdProject(-3),
+    fixture: () => createBdSdProject(-6),
     selection: null,
     scope: { tracks: ["SD"], createTracks: false, ...NOTHING_ELSE },
     checks: ["noDeniedTrack"],
@@ -663,20 +685,13 @@ export const TYPESCRIPT_CASES: readonly EvalCase[] = [
     capability: "projectContext",
     axis: "conventional",
     request: "is anything muted right now?",
-    history: historyOf([
-      ...SNARE_APPLIED,
-      ...loggedTurn(
-        "add a closed hi-hat on the offbeats",
-        "I'll add a Closed Hat: a new drum machine track with one closed hi-hat pad on every offbeat 8th, looped under the kick and snare.",
-        "cancelled",
-      ),
-    ]),
+    history: historyOf([...QA_SESSION, ...SNARE_DENIED]),
     expect: "explain",
-    fixture: () => createBdSdProject(0),
+    fixture: () => createBdSdProject(-6),
     selection: null,
     scope: { tracks: [], createTracks: false, ...NOTHING_ELSE },
-    checks: ["noAbsentTrack"],
-    facts: { absent: ["closed hat", "hi-hat", "hat"] },
+    checks: ["noAbsentTrack", "noDeniedTrack"],
+    facts: { present: SNARE_WORDS, absent: ["closed hat", "hi-hat", "hat"] },
   },
   // GRV-119: the basic production actions, a set of their own.
   ...BASIC_ACTION_CASES,

@@ -52,10 +52,13 @@
   right: var(--assistant-inset);
   bottom: 0;
   width: var(--assistant-floating-width);
-  max-width: calc(100vw - 2 * var(--assistant-inset));
+  /* Percentages, not vw/vh: a fixed box's percentage is of the viewport
+     without its scrollbars, which is where `bottom: 0` sits. `100vh` includes
+     a classic scrollbar, so the panel's top ran under the header (GRV-188). */
+  max-width: calc(100% - 2 * var(--assistant-inset));
   height: var(--assistant-height);
   max-height: calc(
-    100vh -
+    100% -
     var(--editor-header-height, 40px) -
     2 *
     var(--size-divider, 5px)

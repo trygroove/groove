@@ -148,17 +148,27 @@ function retireSession(session: EditorSession, release: () => void): void {
   }
   session.dispose({ keepUnsavedWrites: true });
   const { autosave } = session;
+  let retired = false;
+  // Landed, or failed in a way no further write can clear: let go of the
+  // autosave, keeping count of any edit it could never write.
+  const settle = () => {
+    if (retired || autosave.writing || writablePending(autosave) > 0) return;
+    retired = true;
+    releaseRetired();
+    unsubscribe();
+    holdStuckWrites(stuckPending(autosave));
+    autosave.dispose();
+  };
   const flush = async () => {
     await autosave.flush();
-    // Landed, or failed in a way no further write can clear: let go of the
-    // autosave, keeping count of any edit it could never write.
-    if (writablePending(autosave) === 0) {
-      releaseRetired();
-      holdStuckWrites(stuckPending(autosave));
-      autosave.dispose();
-    }
+    settle();
   };
   const onOnline = () => void flush();
+  // The session's retries keep running on the kept autosave, so a write that
+  // lands by itself lets go of it too.
+  const unsubscribe = autosave.subscribe((status) => {
+    if (status.state === "saved" || status.state === "failed") queueMicrotask(settle);
+  });
   const releaseHeld = holdPendingWrites({
     pending: () => writablePending(autosave),
     stuck: () => stuckPending(autosave),

@@ -2,7 +2,7 @@ import { type JSX, Show } from "@solidjs/web";
 import { type Component, createEffect, createSignal, onCleanup } from "solid-js";
 import { ASSISTANT_NAME } from "../../site.config.mjs";
 import { type ConsentState, type ConsentStore, consentStore } from "../analytics/consent";
-import { type ShortcutHandlers, useShortcutScope } from "../shortcuts";
+import { useCloseOnEscape } from "../shortcuts";
 import "./TelemetryDisclosure.css";
 
 /**
@@ -45,22 +45,9 @@ const [inlineCount, setInlineCount] = createSignal(0);
  */
 export const inlineDisclosureMounted = () => inlineCount() > 0;
 
-/**
- * `view.close_surface` (Escape) for the open panel, mounted only while it is open.
- *
- * A modal dialog opened over the panel (the shortcuts guide, an export or a
- * confirmation) is the topmost surface, so its Escape is the dialog's alone and
- * the panel waits for the next one (GRV-148). Each of those registers a modal
- * shortcut scope, which hides this one while it is open (GRV-186), so the
- * panel needs to know nothing about them.
- */
+/** `view.close_surface` (Escape) for the open panel, mounted only while it is open. */
 function CloseOnEscape(props: { onClose(): void }): JSX.Element {
-  useShortcutScope({
-    handlers: (): ShortcutHandlers => ({
-      "view.close_surface": { run: () => props.onClose() },
-    }),
-    contexts: () => [],
-  });
+  useCloseOnEscape(() => props.onClose());
   return null;
 }
 

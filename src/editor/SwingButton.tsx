@@ -5,7 +5,7 @@ import type { ControlSettle } from "../commands/controlGesture";
 import { control } from "../controls/control";
 import { SONG_SWING } from "../domain/parameters";
 import { ariaBool } from "../shared/aria";
-import { type ShortcutHandlers, useShortcutScope } from "../shortcuts";
+import { useCloseOnEscape } from "../shortcuts";
 import SwingControl from "./SwingControl";
 import SwingGlyph from "./SwingGlyph";
 import "./SwingButton.css";
@@ -110,11 +110,6 @@ export default function SwingButton(props: SwingButtonProps): JSX.Element {
 
 /** `view.close_surface` for the open panel, mounted only while it is open. */
 function CloseOnEscape(props: { onClose(): void }): JSX.Element {
-  useShortcutScope({
-    handlers: (): ShortcutHandlers => ({
-      "view.close_surface": { run: () => props.onClose() },
-    }),
-    contexts: () => [],
-  });
+  useCloseOnEscape(() => props.onClose());
   return null;
 }
