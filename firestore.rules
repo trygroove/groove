@@ -170,7 +170,8 @@ service cloud.firestore {
       // onboarding, and what Cue remembers about them. One document, owner
       // only, never in a project. `src/persistence/profileDocuments.ts` owns
       // the full shape; the rules check what keeps it small and theirs (the
-      // note cap is `MAX_MEMORY_NOTES` there).
+      // note cap is `MAX_MEMORY_NOTES` there, the lesson cap
+      // `MAX_LESSON_BITES_DONE`).
       match /profile/{document} {
         allow read, delete: if signedIn() && request.auth.uid == uid;
         allow create, update: if signedIn() && request.auth.uid == uid
@@ -179,9 +180,16 @@ service cloud.firestore {
       }
     }
 
+    // Every field a profile must have. `lessonsDone` (GRV-43) came later, so
+    // it may be missing from a profile written before it; the app always
+    // writes it now.
     function profileFields() {
       return ['schemaVersion', 'onboarding', 'onboardedAt', 'memory', 'notes',
               'laterQuestions', 'validationConsent', 'lastNudgeDay', 'modifiedAt'];
+    }
+
+    function profileOptionalFields() {
+      return ['lessonsDone'];
     }
 
     function memoryFields() {
@@ -189,7 +197,7 @@ service cloud.firestore {
     }
 
     function validProfile(data) {
-      return data.keys().hasOnly(profileFields())
+      return data.keys().hasOnly(profileFields().concat(profileOptionalFields()))
         && data.keys().hasAll(profileFields())
         && data.schemaVersion == 1
         && (data.onboarding == null || data.onboarding in ['completed', 'skipped'])
@@ -205,6 +213,8 @@ service cloud.firestore {
         && data.laterQuestions is list && data.laterQuestions.size() <= 5
         && data.validationConsent is bool
         && (data.lastNudgeDay == null || data.lastNudgeDay is string)
+        && (!('lessonsDone' in data)
+          || (data.lessonsDone is list && data.lessonsDone.size() <= 100))
         && data.modifiedAt is int && data.modifiedAt >= 0;
     }
 

@@ -38,6 +38,7 @@ export function filledProfile(now: number): ProducerProfile {
     laterQuestions: ["gear"],
     validationConsent: true,
     lastNudgeDay: "2026-10-10",
+    lessonsDone: ["beat-kick", "beat-play"],
     modifiedAt: now,
   };
 }

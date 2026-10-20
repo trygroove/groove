@@ -1569,3 +1569,58 @@ recommendation naming a pad that is not in the song, and the gateway refusing a
 recommendation for a track that neither the project nor the turn has, which
 are tested at the component and unit layers. That the beat is *audible*: no
 headless browser records audio.
+
+### CF-037 — A new producer makes a beat with Coproducer
+
+**Issue:** GRV-43 · **Suite:** `tests/e2e/emulator/flows/CF-037.spec.ts` · **Entrypoint:**
+the project dashboard
+
+**Preconditions:** signed in as an invited producer who has never been through
+onboarding, with no projects. The assistant is answered by the suite's
+scripted provider (#69): a turn about a lesson gets a short reply that names
+the bite it is about. The library holds a kick the starter project does not
+use.
+
+1. Open the dashboard. At the welcome, pick Hip hop and send, skip how much
+   music you have made, pick "My first track", and skip the last two
+   questions. Coproducer offers a first lesson, "Make a beat".
+2. Choose Open the studio, and OK on the notice about Groove keeping
+   conversations. The offer waits in Coproducer's panel.
+3. Choose "Let's go". The lesson appears in the panel: "Make a beat", its six
+   bites listed with none done, and the first, "Pick a kick", under way. It
+   asks you to put a kick from the Library on BD's pad, offers Show me and
+   Skip, and Coproducer's reply about it follows in the conversation.
+4. Press Show me. A kick from the library lands on BD's pad, and "Pick a
+   kick" is marked done. Coproducer's reply about it follows, and the lesson
+   offers the next bite, "The kick pattern".
+5. Press it. The step asks for the boom bap kick: on beat 1 and on the "and"
+   of beat 3. Press "boom bap" in it: what it means is shown under the step,
+   and the step is still there.
+6. Open the Sequence view and, on BD's row, turn on step 11: the bite is not
+   done yet, because the starter's kicks on steps 5, 9 and 13 are still on.
+   Turn those three off. "The kick pattern" is marked done, with nothing
+   pressed in the lesson, and Coproducer's reply about it follows.
+7. Go on to "Hear it". It asks for boom bap's tempo, 90 BPM: type 90 in the
+   tempo field. Then press Play. It is marked done. Stop. (Playing is
+   asserted in Chromium only, the gap CF-001 names: in other browsers the
+   song never starts, so the bite is skipped there to go on.)
+8. Go on to "The backbeat" and press Show me. A Snare pad joins BD's drum
+   machine with hits on beats 2 and 4, and the bite is marked done.
+9. Go on to "Hats" and press Skip. It is marked skipped.
+10. Go on to "Loop it" and press Show me. The beat's clip now runs for four
+    bars on the arrangement, and the bite is marked done.
+11. That was the chapter's last bite: the lesson leaves the panel, and
+    Coproducer's wrap-up follows in the conversation.
+12. Reload the page. The beat is still there: BD's step 11 is on and step 5
+    off, the tempo is 90 BPM, and the Snare pad is on BD's drum machine.
+
+**Outcome:** a new producer went from the welcome to a beat of their own, one
+bite at a time in their own project, doing some bites themselves and having
+Coproducer show them others, and the beat is saved.
+
+**Out of scope:** what Coproducer says and whether a real model teaches well,
+which the live-model evals judge. Leaving a lesson part-way, asking for a
+lesson in your own words, the quiz question, the daily nudge naming the next
+unfinished bite, the "Shape a sound" and "Tour the studio" chapters, the
+house and trap patterns, and the done state saved on the profile, which are
+tested at the unit and component layers.
