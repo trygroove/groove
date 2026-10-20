@@ -462,6 +462,7 @@ describe("catalog cross-references", () => {
         "assistant_rating",
         "audio_loop",
         "automation",
+        "crash_reload",
         "device_chain",
         "drum_machine",
         "eq_curve",

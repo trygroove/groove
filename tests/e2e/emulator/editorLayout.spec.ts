@@ -236,7 +236,14 @@ test.describe("editor header at narrow widths", () => {
       await expectHeaderWhole(page, width, { failedSave: true });
       // The reason is still there to read, for a screen reader and on hover.
       // Offline, it says so (GRV-55), and the title has the whole of it.
-      await expect(recovery).toContainText("You're offline.");
+      await expect(recovery).toContainText("Offline. Reconnect to save.");
+      if (width > 1000) {
+        // Where the reason shows, the instruction fits its line uncut.
+        const message = recovery.locator(".save-recovery-message");
+        expect(
+          await message.evaluate((element) => element.scrollWidth <= element.clientWidth),
+        ).toBe(true);
+      }
       await expect(recovery).toHaveAttribute(
         "title",
         "You're offline. Your changes are kept here and save when you reconnect.",
