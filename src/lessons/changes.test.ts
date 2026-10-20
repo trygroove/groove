@@ -11,7 +11,12 @@ import {
   lessonContext,
   starterWorld,
 } from "../testing/lessonWorld";
-import { describeChanges, MAX_CHANGE_LINES } from "./changes";
+import {
+  describeChanges,
+  MAX_CHANGE_LINE_LENGTH,
+  MAX_CHANGE_LINES,
+  MAX_LISTED_HITS,
+} from "./changes";
 import { chapter, nextStep } from "./chapters";
 import { beatTrack, kickPad } from "./drums";
 
@@ -109,5 +114,48 @@ describe("what the producer changed (GRV-43)", () => {
     expect(describeChanges(project, without).length).toBeLessThanOrEqual(
       MAX_CHANGE_LINES,
     );
+  });
+
+  it("counts a run of hits rather than listing each, so no line outgrows the cap", () => {
+    const { project } = starterWorld();
+    const track = beatTrack(project);
+    const pad = track && kickPad(track);
+    const clip = project.clips[0];
+    if (!track || !pad || !clip) throw new Error("no beat");
+    const context = lessonContext();
+    // 48 hits: listed one by one, a run like this ran to 697 characters.
+    const many = Array.from({ length: 48 }, (_, index) =>
+      createNoteEvent(context, {
+        startTicks: index * (TICKS_PER_SIXTEENTH / 4) + 1,
+        durationTicks: TICKS_PER_SIXTEENTH / 4,
+        padId: pad.id,
+      }),
+    );
+    const after = applied(project, [addNotes(clip.id, many)]);
+    const lines = describeChanges(project, after);
+    expect(lines).toEqual(["BD's BD: 48 hits added across bar 1."]);
+    expect(describeChanges(after, project)).toEqual([
+      "BD's BD: 48 hits removed across bar 1.",
+    ]);
+    for (const line of [...lines, ...describeChanges(after, project)]) {
+      expect(line.length).toBeLessThanOrEqual(MAX_CHANGE_LINE_LENGTH);
+    }
+    // A handful is still listed.
+    expect(MAX_LISTED_HITS).toBeGreaterThanOrEqual(4);
+  });
+
+  it("cuts a line that is still too long, as one with a very long track name would be", () => {
+    const { project } = starterWorld();
+    const named = {
+      ...project,
+      song: {
+        ...project.song,
+        tracks: project.song.tracks.map((track) => ({ ...track, name: "B".repeat(600) })),
+      },
+    };
+    const without = applied(named, [removeTrack(named.song.tracks[0].id)]);
+    const [line] = describeChanges(named, without);
+    expect(line).toHaveLength(MAX_CHANGE_LINE_LENGTH);
+    expect(line.endsWith("…")).toBe(true);
   });
 });

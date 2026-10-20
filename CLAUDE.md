@@ -52,6 +52,7 @@ src/
 ├── editor/         # The project editor: session, audio wiring, panes and panels
 ├── export/         # Stem export: rendering, batching and archives
 ├── instrument/     # Instrument faceplate parts
+├── lessons/        # Coproducer's lessons (GRV-43): the chapters and bites, each step's predicate and Show me, the glossary, the lesson session; pure, over a Project
 ├── library/        # Read side of the generated factory asset manifest
 ├── memory/         # What Coproducer remembers about the producer (GRV-25): the profile hook, memory proposals and their receipts, the Memory page, the daily nudge
 ├── monitoring/     # Error reporting, scrubbing and replay privacy

@@ -54,6 +54,11 @@ export const GLOSSARY = {
     definition:
       "One count of the bar. A bar of 4/4 has four, and each beat is four steps long.",
   },
+  tempo: {
+    term: "tempo",
+    definition:
+      "How fast the song goes, in beats per minute (BPM). Each style has a home: house around 124, boom bap around 90, trap around 140.",
+  },
   play: {
     term: "Play",
     definition:

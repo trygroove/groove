@@ -33,7 +33,9 @@ describe("what a lesson tells Coproducer (GRV-43)", () => {
   it("gives the quiz and the next bite once a bite is over", () => {
     const world = starterWorld();
     const started = startBite("beat", "beat-play", world, settings).state;
-    const ended = skip(started, world, settings);
+    // Hear it sets the tempo first, then plays: skip both.
+    const tempoSkipped = skip(started, world, settings);
+    const ended = tempoSkipped && skip(tempoSkipped.state, world, settings);
     if (!ended) throw new Error("not skipped");
     const cue = lessonCue(ended.state, ended.event, settings, []);
     expect(cue.moment).toBe("bite_done");
