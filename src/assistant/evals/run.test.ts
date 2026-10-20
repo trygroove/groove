@@ -564,6 +564,7 @@ describe("evaluateTurn for the project-context cases (GRV-150)", () => {
     expect(good.checks).toEqual({
       outcome: expect.objectContaining({ status: "pass" }),
       noAbsentTrack: expect.objectContaining({ status: "pass" }),
+      noDeniedTrack: expect.objectContaining({ status: "pass" }),
     });
     const bad = evaluateTurn(evalCase, 1, {
       ...base,
@@ -571,6 +572,13 @@ describe("evaluateTurn for the project-context cases (GRV-150)", () => {
       proposal: null,
     } as never);
     expect(bad.checks.noAbsentTrack?.status).toBe("fail");
+    // QA's step 5 history said the snare was never added; repeating it fails too.
+    const denied = evaluateTurn(evalCase, 1, {
+      ...base,
+      text: "Nothing is muted. There's still no snare track, though: I never actually added it.",
+      proposal: null,
+    } as never);
+    expect(denied.checks.noDeniedTrack?.status).toBe("fail");
   });
 
   it("judges the reply even when the turn proposed nothing it was asked for", () => {
