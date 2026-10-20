@@ -54,8 +54,20 @@ const TRANSIENT: ReadonlySet<ProviderFailureKind> = new Set([
 ]);
 
 /**
+ * The provider's own reason for refusing a call: the `type` and `message` of
+ * the API's error body, already scrubbed. Only the evals' provider keeps one
+ * (`evals/providerReason.ts`); production never does.
+ */
+export interface ProviderRejection {
+  readonly type: string;
+  readonly message: string;
+}
+
+/**
  * A failed provider call. Carries the HTTP status where there was one, and
- * deliberately not the provider's message, which can quote the request.
+ * deliberately not the provider's message, which can quote the request. The
+ * evals alone attach a scrubbed {@link ProviderRejection}, so a refused run
+ * says why.
  */
 export class ProviderFailure extends Error {
   readonly kind: ProviderFailureKind;
@@ -66,17 +78,23 @@ export class ProviderFailure extends Error {
    * message, which is never kept. The evals stop on it (`evals/run.ts`).
    */
   readonly outOfCredit: boolean;
+  /** Why the provider refused, where the evals kept it; otherwise `null`. */
+  readonly reason: ProviderRejection | null;
 
   constructor(
     kind: ProviderFailureKind,
     status: number | null = null,
-    options: { readonly outOfCredit?: boolean } = {},
+    options: {
+      readonly outOfCredit?: boolean;
+      readonly reason?: ProviderRejection | null;
+    } = {},
   ) {
     super(`provider call failed: ${kind}${status === null ? "" : ` (${status})`}`);
     this.name = "ProviderFailure";
     this.kind = kind;
     this.status = status;
     this.outOfCredit = options.outOfCredit ?? false;
+    this.reason = options.reason ?? null;
   }
 
   get transient(): boolean {

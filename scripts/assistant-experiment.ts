@@ -75,6 +75,7 @@ import {
   runExperiment,
 } from "../src/assistant/evals/experimentRun";
 import { renderMarkdown } from "../src/assistant/evals/markdown";
+import { withProviderReasons } from "../src/assistant/evals/providerReason";
 import { TACTICS } from "../src/assistant/tactics";
 
 function git(...args: string[]): string {
@@ -243,7 +244,9 @@ async function main(): Promise<number> {
     );
     const result = await runExperiment(experiment, {
       runTurn: gatewayTurnRunner({
-        provider: createAnthropicProvider({ apiKey }),
+        provider: withProviderReasons((fetch) =>
+          createAnthropicProvider({ apiKey, fetch }),
+        ),
         model,
         turnTimeoutMs: options.turnTimeoutMs,
       }),
