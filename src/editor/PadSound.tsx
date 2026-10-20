@@ -8,7 +8,6 @@ import type {
 } from "../commands";
 import { setPadParameter } from "../commands";
 import type { Asset, DrumPad, Track } from "../domain/entities";
-import { formatDb, formatPan } from "../domain/faders";
 import {
   PAD_ATTACK,
   PAD_DECAY,
@@ -17,6 +16,7 @@ import {
   TRACK_PAN,
   TRACK_VOLUME,
 } from "../domain/parameters";
+import { formatReadout } from "../domain/valueFormat";
 import ControlGroup from "../instrument/ControlGroup";
 import DragSurface from "../instrument/DragSurface";
 import {
@@ -26,7 +26,6 @@ import {
   stageWidth,
   svgPath,
 } from "../instrument/envelopeGeometry";
-import { formatInstrumentValue } from "../instrument/formatValue";
 import { createPeaks, peakBars, type WatchPeaks } from "../instrument/SampleWell";
 import Well from "../instrument/Well";
 import PadControl from "./PadControl";
@@ -57,12 +56,6 @@ function padValue(pad: DrumPad, definition: ParameterDefinition): number {
   if (definition.id === TRACK_PAN.id) return pad.mixer.pan;
   const key = definition.id.slice("pad.".length);
   return pad.parameters[key] ?? definition.defaultValue;
-}
-
-function formatPadValue(definition: ParameterDefinition, value: number): string {
-  if (definition.id === TRACK_VOLUME.id) return formatDb(TRACK_VOLUME, value);
-  if (definition.id === TRACK_PAN.id) return formatPan(value);
-  return formatInstrumentValue(definition, value);
 }
 
 /**
@@ -117,7 +110,7 @@ export default function PadSound(props: PadSoundProps): JSX.Element {
         idPrefix="pad-sound"
         bipolar={definition.id === TRACK_PAN.id}
         value={padValue(props.pad, definition)}
-        displayValue={formatPadValue(definition, padValue(props.pad, definition))}
+        displayValue={formatReadout(definition, padValue(props.pad, definition))}
         onFirstUse={props.onFirstUse}
         dispatch={props.dispatch}
         beginGesture={props.beginGesture}
@@ -129,7 +122,7 @@ export default function PadSound(props: PadSoundProps): JSX.Element {
     <div class="pad-sound">
       <Well
         title="Attack and decay · drag the corners"
-        value={`${formatPadValue(PAD_ATTACK, attack())} / ${formatPadValue(PAD_DECAY, decay())}`}
+        value={`${formatReadout(PAD_ATTACK, attack())} / ${formatReadout(PAD_DECAY, decay())}`}
         scale={scale()}
         class="pad-sound-well"
       >

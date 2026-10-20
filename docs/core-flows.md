@@ -1504,9 +1504,9 @@ onboarding, with no projects.
 3. Pick "Played around". Coproducer asks whether you have a goal.
 4. Skip that question. Coproducer asks what you would like to learn.
 5. Pick "Drums and beats" and send. Coproducer asks about gear.
-6. Pick "Ableton Move" and send. A "Saved to memory" card lists what you
-   said: House, Techno, Four Tet, Played around, Drums and beats and Ableton
-   Move. Its box to share your answers is unticked. Coproducer offers a first lesson.
+6. Pick "A synth" and send. A "Saved to memory" card lists what you
+   said: House, Techno, Four Tet, Played around, Drums and beats and A
+   synth. Its box to share your answers is unticked. Coproducer offers a first lesson.
 7. Choose Open the studio. A new project opens on the arrangement, with Coproducer's
    panel open. A producer who has not yet answered the notice about Groove
    keeping conversations (GRV-8) sees it first; choose OK. The same

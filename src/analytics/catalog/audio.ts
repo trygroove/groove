@@ -76,6 +76,22 @@ export const AUDIO_EVENTS = {
     },
   },
 
+  /**
+   * A project closed and audio resources it registered were still held
+   * (GRV-55): counted by kind, in buckets, never by name. Sampled, like
+   * `audio_underrun`, so a leaky session cannot flood the stream; the same
+   * sample goes to error monitoring with the `resource_leak` code.
+   */
+  resources_leaked: {
+    phase: 3,
+    owners: ["GRV-55"],
+    params: {
+      node_count_bucket: bucketParam("leak_count"),
+      subscription_count_bucket: bucketParam("leak_count"),
+      other_count_bucket: bucketParam("leak_count"),
+    },
+  },
+
   audio_underrun: {
     phase: 1,
     owners: ["LOOP-003"],

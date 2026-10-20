@@ -15,6 +15,19 @@ export {
   UNKNOWN_BROWSER,
 } from "./browserInfo";
 export type {
+  AudioContextStateKey,
+  ErrorContext,
+  ErrorContextKey,
+  ErrorContextTags,
+} from "./errorContext";
+export {
+  AUDIO_CONTEXT_STATES,
+  audioContextStateKey,
+  browserOnline,
+  contextTags,
+  ERROR_CONTEXT_KEYS,
+} from "./errorContext";
+export type {
   ErrorReport,
   ErrorReporterOptions,
   ErrorSink,
@@ -26,6 +39,7 @@ export {
   ErrorReporter,
   errorReporter,
   reportError,
+  reportTags,
 } from "./errorReporting";
 export type { GlobalHandlerOptions } from "./globalHandlers";
 export { installGlobalErrorHandlers } from "./globalHandlers";

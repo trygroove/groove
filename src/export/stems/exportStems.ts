@@ -11,6 +11,7 @@ import { pcm24, WAV_BITS_PER_SAMPLE, wav24ByteLength } from "../../audio/wavEnco
 import type { Project } from "../../domain/entities";
 import type { TrackId } from "../../domain/ids";
 import { type Clock, systemClock } from "../../shared/clock";
+import { isOutOfMemory } from "../../shared/outOfMemory";
 import { missingSoundsAtStart } from "../missingSounds";
 import {
   buildStemArchive,
@@ -267,11 +268,7 @@ export async function exportStems(
     // A safety net only: the bound above already covers every render.
     refuseOverBudget(Math.max(0, ...encoded.map((stem) => stem.frames)));
 
-    const archive = buildStemArchive(encoded, {
-      sampleRate,
-      bitDepth: STEM_BIT_DEPTH,
-      channels: RENDER_CHANNELS,
-    });
+    const archive = packArchive(encoded, sampleRate);
     report(1);
     if (isLast) {
       analytics?.log("export_completed", {
@@ -292,6 +289,26 @@ export async function exportStems(
   }
 }
 
+/**
+ * Puts the rendered stems into one ZIP. A failure here is the ZIP's own
+ * (GRV-55): out of memory for a large one, or the archive could not be built.
+ */
+function packArchive(encoded: EncodedStem[], sampleRate: number): StemArchive {
+  try {
+    return buildStemArchive(encoded, {
+      sampleRate,
+      bitDepth: STEM_BIT_DEPTH,
+      channels: RENDER_CHANNELS,
+    });
+  } catch (error) {
+    throw new StemExportError(
+      isOutOfMemory(error) ? "out_of_memory" : "zip_batch_failed",
+      "The ZIP could not be built",
+      { cause: error },
+    );
+  }
+}
+
 function asStemExportError(error: unknown, signal?: AbortSignal): StemExportError {
   if (error instanceof StemExportError) return error;
   if (signal?.aborted) {
@@ -299,6 +316,12 @@ function asStemExportError(error: unknown, signal?: AbortSignal): StemExportErro
   }
   if (error instanceof OfflineRenderError) {
     return new StemExportError(error.code, error.message, { cause: error });
+  }
+  // Encoding a stem holds it in memory once more (GRV-55).
+  if (isOutOfMemory(error)) {
+    return new StemExportError("out_of_memory", "The stems ran out of memory", {
+      cause: error,
+    });
   }
   return new StemExportError("internal", "The stem export failed", { cause: error });
 }

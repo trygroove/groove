@@ -30,7 +30,7 @@ const PROFILE: ProducerProfile = {
     experience: "played_around",
     goal: "first_track",
     learn: ["Mixing"],
-    gear: ["Ableton Move"],
+    gear: ["A MIDI keyboard"],
   },
   notes: [
     { id: "n1", text: "Making more trap lately", createdAt: 1 },
@@ -72,7 +72,7 @@ describe("the Memory page (GRV-25)", () => {
     expect(screen.getByLabelText("Music you love")).toHaveValue("Techno");
     expect(screen.getByLabelText("Artists")).toHaveValue("Four Tet");
     expect(screen.getByLabelText("Experience")).toHaveValue("played_around");
-    expect(screen.getByLabelText("Gear")).toHaveValue("Ableton Move");
+    expect(screen.getByLabelText("Gear")).toHaveValue("A MIDI keyboard");
     expect(screen.getByLabelText("Note 1")).toHaveValue("Making more trap lately");
     expect(screen.getByLabelText("Note 2")).toHaveValue("Works late at night");
     expect(screen.getByRole("checkbox")).not.toBeChecked();
@@ -82,7 +82,7 @@ describe("the Memory page (GRV-25)", () => {
     await renderPage();
     fireAndFlush(() =>
       fireEvent.input(screen.getByLabelText("Gear"), {
-        target: { value: "Ableton Move, OP-1" },
+        target: { value: "A MIDI keyboard, OP-1" },
       }),
     );
     fireAndFlush(() =>
@@ -92,7 +92,7 @@ describe("the Memory page (GRV-25)", () => {
     );
     clickAndFlush(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(async () =>
-      expect((await stored()).memory.gear).toEqual(["Ableton Move", "OP-1"]),
+      expect((await stored()).memory.gear).toEqual(["A MIDI keyboard", "OP-1"]),
     );
     expect((await stored()).notes.map((note) => note.text)).toEqual([
       "Making more trap lately",
@@ -134,7 +134,7 @@ describe("the Memory page (GRV-25)", () => {
     await renderPage();
     fireAndFlush(() =>
       fireEvent.input(screen.getByLabelText("Gear"), {
-        target: { value: "Ableton Move, OP-1" },
+        target: { value: "A MIDI keyboard, OP-1" },
       }),
     );
     fireAndFlush(() =>
@@ -149,13 +149,13 @@ describe("the Memory page (GRV-25)", () => {
       expect((await stored()).notes.map((note) => note.id)).toEqual(["n2"]),
     );
     expect(screen.getByLabelText("Artists")).toHaveValue("");
-    expect(screen.getByLabelText("Gear")).toHaveValue("Ableton Move, OP-1");
+    expect(screen.getByLabelText("Gear")).toHaveValue("A MIDI keyboard, OP-1");
     expect(screen.getByLabelText("Note 1")).toHaveValue("Works early now");
     expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
     // Saving the rest does not bring the forgotten field back.
     clickAndFlush(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(async () =>
-      expect((await stored()).memory.gear).toEqual(["Ableton Move", "OP-1"]),
+      expect((await stored()).memory.gear).toEqual(["A MIDI keyboard", "OP-1"]),
     );
     expect((await stored()).memory.artists).toBe("");
     expect((await stored()).notes.map((note) => note.text)).toEqual(["Works early now"]);
@@ -188,7 +188,7 @@ describe("the Memory page (GRV-25)", () => {
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ group: "learn", chip: "mixing" }),
-        expect.objectContaining({ group: "gear", chip: "ableton_move" }),
+        expect.objectContaining({ group: "gear", chip: "midi_keyboard" }),
       ]),
     );
   });

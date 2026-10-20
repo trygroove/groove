@@ -106,6 +106,8 @@ export {
   ACCOUNT_TYPES,
   type AccountType,
   BROWSER_CAPABILITY_IDS,
+  CRASH_SAVE_OUTCOMES,
+  type CrashSaveOutcome,
   SURFACES,
   type Surface,
 } from "./catalog/app";
