@@ -392,6 +392,50 @@ test.describe("Export dialog layout", () => {
     ).toBe(true);
   });
 
+  // GRV-166: at Groove's 768px minimum the fixed readouts and the actions take
+  // the whole footer row, so the note's slot shrank to nothing and the only
+  // explanation of a disabled Export could not be seen.
+  for (const width of [800, 768]) {
+    test(`shows the footer note, enabled and with no tracks on, at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/");
+      await harness(page, "mountExportDialog", "few");
+      const dialog = page.getByRole("dialog", { name: "Export" });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("radio", { name: "Stems (ZIP)" }).check();
+      const note = dialog.locator(".export-note");
+      const seen = () =>
+        page.evaluate(() => {
+          const note = document.querySelector(".export-note") as HTMLElement;
+          const slot = note.parentElement as HTMLElement;
+          const box = note.getBoundingClientRect();
+          const edge = slot.getBoundingClientRect();
+          const shell = document.querySelector(".export-shell") as HTMLElement;
+          return {
+            wide: box.width >= 150,
+            tall: box.height > 0,
+            whole: note.scrollWidth <= note.clientWidth,
+            inSlot: box.top >= edge.top - 0.5 && box.bottom <= edge.bottom + 0.5,
+            inDialog:
+              box.left >= shell.getBoundingClientRect().left &&
+              box.right <= shell.getBoundingClientRect().right,
+          };
+        });
+      const all = { wide: true, tall: true, whole: true, inSlot: true, inDialog: true };
+      await expect(note).not.toHaveText("");
+      expect(await seen(), "enabled note").toEqual(all);
+
+      const options = dialog.getByRole("option");
+      for (let i = 0; i < (await options.count()); i++) {
+        await options.nth(i).click();
+      }
+      await expect(note).toHaveText("Turn on at least one track to export stems.");
+      expect(await seen(), "disabled note").toEqual(all);
+    });
+  }
+
   test("keeps Close and Export reachable in a short or a narrow window (GRV-153)", async ({
     page,
   }) => {
