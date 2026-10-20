@@ -772,6 +772,9 @@ export function useStreamedProposals(
       return;
     }
     state.status = "cancelled";
+    // Parts already applied stay in the song, so the card's outcome stays
+    // `applied`: only a card none of whose parts went in is cancelled
+    // (GRV-150's note tells the model nothing of a cancelled one is in it).
     if (!state.parts.some((part) => part.appliedBy)) {
       const capabilities = capabilitiesOf(state);
       if (capabilities.length > 0) {
@@ -784,8 +787,8 @@ export function useStreamedProposals(
           ),
         });
       }
+      options.onOutcome?.(entryId, "cancelled");
     }
-    options.onOutcome?.(entryId, "cancelled");
     publish();
   }
 

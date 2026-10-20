@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Analytics } from "../../analytics/analytics";
 import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
+import { proposalNote } from "../../assistant/history";
 import type { AssistantProposalPart, AssistantToolCall } from "../../assistant/protocol";
 import {
   ASSISTANT_TOOLSET_VERSION,
@@ -30,6 +31,11 @@ import { EditorSession } from "../EditorSession";
 import type { EditorLocation } from "../editorControls";
 import type { EditorViewName } from "../editorViews";
 import AssistantPanel from "./AssistantPanel";
+import {
+  type ConversationStore,
+  conversationStorageKey,
+  createConversationStore,
+} from "./conversationStore";
 import { useAssistantChat } from "./useAssistantChat";
 import { continueNote, refreshNote } from "./useAssistantConversation";
 import { useAssistantPanel } from "./useAssistantPanel";
@@ -79,7 +85,12 @@ const EXPLAIN: AssistantToolCall = {
   input: { goal: "A bassline under the kick.", technique: "Root notes on the one." },
 };
 
-async function setUp() {
+async function setUp(
+  options: {
+    /** Where the conversation is kept across a reload (GRV-135). */
+    conversationStore?: ConversationStore;
+  } = {},
+) {
   const repository = createInMemoryProjectRepository();
   const project = createSliceFixtureProject();
   const created = await repository.createProject(project);
@@ -128,6 +139,12 @@ async function setUp() {
       client: async () => client,
       analytics: () => analytics,
       clock,
+      ...(options.conversationStore
+        ? {
+            conversationKey: () => conversationStorageKey("u1", project.metadata.id),
+            conversationStore: options.conversationStore,
+          }
+        : {}),
       editor: {
         session: {
           proposalTarget: () => assistantProposalTarget(session),
@@ -215,10 +232,19 @@ async function setUp() {
       ),
     );
 
+  /** Sends `text` as a new turn and ends it at once, with no reply. */
+  async function say(text: string) {
+    fireAndFlush(() => fireEvent.input(composer(), { target: { value: text } }));
+    clickAndFlush(button("Send"));
+    await settle();
+    fireAndFlush(() => client.last().done());
+  }
+
   return {
     session,
     client,
     clock,
+    say,
     track,
     ask,
     part,
@@ -770,5 +796,91 @@ describe("a streamed proposal's analytics, as a whole proposal's (GRV-144)", () 
     finish([volume(-6), SWING]);
     editVolume(-9);
     expect(events("assistant_result_edited")).toHaveLength(0);
+  });
+});
+
+describe("what became of a streamed proposal, for the turns after it (GRV-150)", () => {
+  /** The note the model reads after the first reply, as the latest turn sent it. */
+  const noteSent = (client: FakeAssistantClient) =>
+    client.last().request.messages[1]?.text ?? "";
+
+  it("is pending until a part is applied, then applied, and stays applied when the rest is dismissed", async () => {
+    const { ask, part, finish, client, say, swing } = await setUp();
+    await ask();
+    fireAndFlush(() => client.last().text("Here's a bassline."));
+    part(SWING);
+    part(TRACK);
+    finish([SWING, TRACK]);
+
+    await say("And the drums?");
+    expect(noteSent(client)).toContain(proposalNote("pending"));
+
+    await press(applyOf("Swing 50% to 58%"));
+    await press(cardButton("Cancel"));
+    expect(swing()).toBe(58);
+    await say("Thanks");
+    expect(noteSent(client)).toContain(proposalNote("applied"));
+  });
+
+  it("is cancelled when nothing in it was applied, and undone when every applied part is", async () => {
+    const { ask, part, finish, client, say, session } = await setUp();
+    await ask();
+    fireAndFlush(() => client.last().text("Here's a bassline."));
+    part(SWING);
+    part(TRACK);
+    finish([SWING, TRACK]);
+    await press(applyOf("Swing 50% to 58%"));
+    fireAndFlush(() => session.undo());
+    await say("Hmm");
+    expect(noteSent(client)).toContain(proposalNote("undone"));
+    await press(cardButton("Cancel"));
+    await say("Never mind");
+    expect(noteSent(client)).toContain(proposalNote("cancelled"));
+  });
+});
+
+describe("a streamed proposal across a reload (GRV-135)", () => {
+  it("comes back out of date as a whole proposal, so nothing in it applies twice", async () => {
+    const store = createConversationStore(memoryStorage());
+    const before = await setUp({ conversationStore: store });
+    await before.ask();
+    fireAndFlush(() => before.client.last().text("Here's a bassline."));
+    before.part(SWING);
+    before.part(TRACK);
+    before.finish([SWING, TRACK]);
+    await press(applyOf("Swing 50% to 58%"));
+    expect(before.swing()).toBe(58);
+    cleanup();
+
+    // The reload opens the song as it was saved, with the swing part in it.
+    const { client, session } = await setUp({ conversationStore: store });
+    fireAndFlush(() =>
+      session.dispatch(setParameter({ scope: "song", parameterId: SONG_SWING.id }, 58)),
+    );
+    expect(card()).toHaveAccessibleName("Proposal: Add a bassline");
+    expect(cardStatus()).toHaveTextContent(
+      "Out of date. This was proposed before the page reloaded",
+    );
+    expect(cardButton("Apply")).toBeDisabled();
+    expect(within(card()).queryByRole("button", { name: /^Apply / })).toBeNull();
+    expect(within(card()).queryByRole("button", { name: "Apply all" })).toBeNull();
+
+    // Refresh asks again, and the reply it went with still says a part went in.
+    await press(cardButton("Refresh"));
+    expect(client.turns).toHaveLength(1);
+    expect(client.last().request.messages[1]?.text).toContain(proposalNote("applied"));
+  });
+
+  it("does not come back once every part was applied", async () => {
+    const store = createConversationStore(memoryStorage());
+    const before = await setUp({ conversationStore: store });
+    await before.ask();
+    before.part(SWING);
+    before.finish([SWING]);
+    await press(cardButton("Apply all"));
+    cleanup();
+
+    await setUp({ conversationStore: store });
+    expect(within(panel()).queryByRole("region", { name: /^Proposal\b/ })).toBeNull();
   });
 });
