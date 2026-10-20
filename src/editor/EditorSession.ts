@@ -84,6 +84,9 @@ export interface SessionEdit {
   readonly before: Project;
 }
 
+/** How many committed edits the session remembers the commands of. */
+const EDIT_LOG_LIMIT = 200;
+
 export type SessionEditListener = (edit: SessionEdit) => void;
 
 /**
@@ -207,6 +210,8 @@ export class EditorSession {
   private readonly unwatch: () => void;
   private readonly listeners = new Set<EditorSessionListener>();
   private readonly editListeners = new Set<SessionEditListener>();
+  /** What each committed edit was, by the revisions it moved (GRV-132). */
+  private readonly editLog: { from: number; to: number; types: string[] }[] = [];
   private readonly remoteListeners = new Set<() => void>();
   private readonly noticeListeners = new Set<SessionNoticeListener>();
   private readonly unsubscribeHistory: () => void;
@@ -360,6 +365,25 @@ export class EditorSession {
     options: TransactionOptions = {},
   ): TransactionResult {
     return this.execute(commands, options);
+  }
+
+  /**
+   * The command types this session committed after `revision`, or null when
+   * the chain from `revision` to the committed one is not all known: a change
+   * adopted from another tab, or one older than the log keeps (GRV-132). A
+   * proposal is stale after any change it cannot account for.
+   */
+  commandTypesSince(revision: number): readonly string[] | null {
+    const current = this.history.project.metadata.revision;
+    const types: string[] = [];
+    let at = revision;
+    while (at !== current) {
+      const step = this.editLog.find((entry) => entry.from === at && entry.to !== at);
+      if (!step) return null;
+      types.push(...step.types);
+      at = step.to;
+    }
+    return types;
   }
 
   /** True while a continuous gesture is open on the history. */
@@ -896,6 +920,12 @@ export class EditorSession {
   }
 
   private emitEdit(edit: SessionEdit): void {
+    this.editLog.push({
+      from: edit.before.metadata.revision,
+      to: this.history.project.metadata.revision,
+      types: edit.commands.map((command) => command.type),
+    });
+    if (this.editLog.length > EDIT_LOG_LIMIT) this.editLog.shift();
     for (const listener of [...this.editListeners]) listener(edit);
   }
 
