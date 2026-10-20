@@ -334,6 +334,39 @@ describe("Make a beat (GRV-43)", () => {
       ).toBe(true);
     });
 
+    it("has the producer clear the part first when the song already plays it", () => {
+      const settings = { style: "boom_bap" } as const;
+      const world = starterWorld();
+      const first = stepIn(biteId, world, "boom_bap");
+      const played = applyShowMe(world, first.showMe(world, settings, lessonContext(1)));
+      // Started again in a song that has the part: it is not done at once.
+      let state = startBite("beat", biteId, played, settings).state;
+      expect(observe(state, played, settings)).toBeNull();
+      const clear = stepIn(biteId, played, "boom_bap");
+      expect(clear.id).toBe("clear");
+      expect(clear.instruction(played, settings)).toContain(
+        `${padName} row already plays`,
+      );
+      const cleared = applyShowMe(
+        played,
+        clear.showMe(played, settings, lessonContext(2)),
+      );
+      const done = observe(state, cleared, settings);
+      expect(done?.event).toMatchObject({ kind: "step_done", how: "did_it" });
+      if (!done) throw new Error("not cleared");
+      state = done.state;
+      expect(observe(state, cleared, settings)).toBeNull();
+      const write = stepIn(biteId, cleared, "boom_bap");
+      expect(write.id).toBe(part);
+      const rewritten = applyShowMe(
+        cleared,
+        write.showMe(cleared, settings, lessonContext(3)),
+      );
+      expect(observe(state, rewritten, settings)?.event).toMatchObject({
+        kind: "bite_done",
+      });
+    });
+
     it("writes into a pad already named for the part rather than adding another", () => {
       const world = starterWorld();
       const step = stepIn(biteId, world, "boom_bap");
@@ -362,6 +395,18 @@ describe("Make a beat (GRV-43)", () => {
     });
   });
 
+  it("does not take the hats for a backbeat, though eighths hit 2 and 4", () => {
+    const settings = { style: "boom_bap" } as const;
+    const world = starterWorld();
+    const withHats = applyShowMe(
+      world,
+      stepIn("beat-hats", world).showMe(world, settings, lessonContext(1)),
+    );
+    const state = startBite("beat", "beat-snare", withHats, settings).state;
+    expect(biteNamed("beat-snare").steps[state.step?.index ?? -1]?.id).toBe("snare");
+    expect(observe(state, withHats, settings)).toBeNull();
+  });
+
   describe("Loop it", () => {
     it("is done once the beat plays for four bars, which Show me does by looping its clip", () => {
       const world = starterWorld();
@@ -376,6 +421,36 @@ describe("Make a beat (GRV-43)", () => {
       expect(coveredTicks(after.project, track.id)).toBe(LOOP_BARS * TICKS_PER_BAR);
       expect(after.project.song.placements[0]?.looped).toBe(true);
       expect(step.done(after, world, { style: "trap" })).toBe(true);
+    });
+
+    it("has the producer shorten the beat first when it already runs four bars", () => {
+      const settings = { style: "trap" } as const;
+      const world = starterWorld();
+      const looped = applyShowMe(
+        world,
+        stepIn("beat-loop", world).showMe(world, settings, lessonContext()),
+      );
+      let state = startBite("beat", "beat-loop", looped, settings).state;
+      expect(observe(state, looped, settings)).toBeNull();
+      const shorten = stepIn("beat-loop", looped);
+      expect(shorten.id).toBe("shorten");
+      const short = applyShowMe(
+        looped,
+        shorten.showMe(looped, settings, lessonContext(2)),
+      );
+      const track = beatTrack(short.project);
+      if (!track) throw new Error("no beat");
+      expect(coveredTicks(short.project, track.id)).toBe(TICKS_PER_BAR);
+      const done = observe(state, short, settings);
+      expect(done?.event).toMatchObject({ kind: "step_done", how: "did_it" });
+      if (!done) throw new Error("not shortened");
+      state = done.state;
+      expect(observe(state, short, settings)).toBeNull();
+      const again = applyShowMe(
+        short,
+        stepIn("beat-loop", short).showMe(short, settings, lessonContext(3)),
+      );
+      expect(observe(state, again, settings)?.event).toMatchObject({ kind: "bite_done" });
     });
 
     it("has nothing to show when another clip sits in the way", () => {
