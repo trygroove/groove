@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { executeTransaction } from "../commands/execute";
 import type { Project } from "../domain/entities";
 import {
@@ -19,6 +19,7 @@ import {
   EMULATOR_MISSING_VIDEO_QUERY,
   EMULATOR_REMEMBER,
   EMULATOR_REPLY_CHUNKS,
+  EMULATOR_SKETCH_PAUSE_MS,
   EMULATOR_VIDEO,
   emulatorVideoFinder,
   FIRST_BEAT,
@@ -438,6 +439,36 @@ describe("the emulator's assistant provider", () => {
     ).toBe("missing");
     // The search that found nothing is said to be left out, not left implied.
     expect(reply.text).toMatch(/left it out\.$/);
+  });
+
+  it("answers [sketch] in three steps, each a part, pausing before each later one (GRV-144)", async () => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"],
+    });
+    try {
+      const { chunks, result } = turn(gateway(), "Sketch a bassline [sketch]");
+      const parts = () => chunks.flatMap((chunk) => (chunk.part ? [chunk.part] : []));
+      // The pseudonymous ID is a real digest; let it settle before the first step.
+      await expect.poll(() => parts().length, { interval: 5 }).toBe(1);
+      expect(parts().map((part) => part.call.name)).toEqual(["track_create"]);
+      await vi.advanceTimersByTimeAsync(EMULATOR_SKETCH_PAUSE_MS);
+      expect(parts().map((part) => part.call.name)).toEqual([
+        "track_create",
+        "clip_create",
+      ]);
+      await vi.advanceTimersByTimeAsync(EMULATOR_SKETCH_PAUSE_MS);
+      const reply = await result;
+      expect(parts().map((part) => part.index)).toEqual([0, 1, 2]);
+      expect(reply.proposal?.calls.map((call) => call.name)).toEqual([
+        "track_create",
+        "clip_create",
+        "placement_create",
+        "explain_change",
+      ]);
+      expect(validateProposal(createReferenceProject(), reply.proposal).ok).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("is only chosen in the emulator, and only with no key", () => {

@@ -317,10 +317,32 @@ export const assistantTurnRequestSchema = z.strictObject({
 });
 export type AssistantTurnRequest = z.infer<typeof assistantTurnRequestSchema>;
 
-/** A chunk streamed to the browser while the reply is written. */
+/**
+ * One change call the gateway accepted, streamed as soon as it is (GRV-144):
+ * the proposal card shows it as a line of its own and the producer can apply
+ * it while the turn goes on. A call the gateway refuses is never one.
+ */
+export interface AssistantProposalPart {
+  /** Its place among the turn's parts, counting from 0, in call order. */
+  readonly index: number;
+  /** The `ASSISTANT_TOOLSET_VERSION` of the tools the model was offered. */
+  readonly toolsetVersion: number;
+  readonly call: AssistantToolCall;
+}
+
+/**
+ * A chunk streamed to the browser while the reply is written.
+ *
+ * A part (GRV-144) rides on an empty text chunk, so a tab still on a bundle
+ * from before it reads it as the gateway's heartbeat and waits for the whole
+ * proposal as it always has; and the request needs no new field, which a
+ * gateway from before it would refuse.
+ */
 export interface AssistantStreamChunk {
   readonly type: "text";
   readonly text: string;
+  /** A change call accepted just now; only ever on an empty `text`. */
+  readonly part?: AssistantProposalPart;
 }
 
 /**

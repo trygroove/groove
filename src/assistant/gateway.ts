@@ -51,6 +51,12 @@
  * proposal, searched for here, and returned as the turn's `videos`, with
  * every search that finds nothing YouTube vouches for dropped.
  *
+ * Each change call the turn accepts, in call order, is also streamed to the
+ * browser as a proposal part the moment the step that made it is answered
+ * (GRV-144), so the card fills in part by part while the turn goes on. A
+ * refused call is never streamed. The completed turn still returns the
+ * whole proposal.
+ *
  * Under the `toolBundles` tactic at `bundled` (GRV-143), a turn is offered
  * one fixed bundle of the command tools instead of all of them, picked by a
  * pure rule over the request (`toolBundleRule.ts`). A bundle short of every
@@ -114,6 +120,7 @@ import {
   expandCalls,
   goesOnToRefuse,
   isChangeCall,
+  isProposalPart,
   MAX_CHANGE_STEPS,
   misaimedIn,
   refusedIn,
@@ -969,6 +976,17 @@ export async function runAssistantTurn(
     // What a recommendation may be aimed at: the project's tracks and pads,
     // and those the turn's kept change calls make (GRV-129).
     let targets = contextTargets(turn.context);
+    // Each change call the turn accepts goes to the browser as it is
+    // accepted, so the card can show it and the producer apply it (GRV-144).
+    let parts = 0;
+    const streamParts = async (accepted: readonly AssistantToolCall[]) => {
+      for (const call of accepted) {
+        if (!isProposalPart(call)) continue;
+        const part = { index: parts, toolsetVersion: ASSISTANT_TOOLSET_VERSION, call };
+        parts += 1;
+        await options.onChunk({ type: "text", text: "", part });
+      }
+    };
     for (let step = 1; ; step += 1) {
       const said = texts.some((text) => text.trim().length > 0);
       const { outcome, remaining } = await callProvider(
@@ -1020,7 +1038,9 @@ export async function runAssistantTurn(
         const handed = overLimit
           ? outcome.toolCalls.filter((entry) => !isChangeCall(entry))
           : outcome.toolCalls;
-        calls.push(...expandCalls(handed, notes));
+        const expanded = expandCalls(handed, notes);
+        calls.push(...expanded);
+        await streamParts(expanded);
         // A turn whose steps made calls stopped for them, as one call's would.
         stopReason = calls.length > 0 ? "tool_use" : outcome.stopReason;
         break;
@@ -1033,6 +1053,7 @@ export async function runAssistantTurn(
       );
       targets = answered.targets;
       calls.push(...answered.kept);
+      await streamParts(answered.kept);
       if (changes && !fixing && !overLimit) changeSteps += 1;
       // The next step fixes this one's refusals; one told the limit is spent
       // has nothing to fix.
