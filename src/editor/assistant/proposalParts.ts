@@ -198,11 +198,12 @@ function spokenRow(row: ProposalRow): string {
 
 /** Every ID in `after` that is not in `before`. */
 function createdIds(before: Project, after: Project): ReadonlySet<string> {
-  const had = new Set(idsOf(before));
-  return new Set(idsOf(after).filter((id) => !had.has(id)));
+  const had = new Set(projectIds(before));
+  return new Set(projectIds(after).filter((id) => !had.has(id)));
 }
 
-function idsOf(project: Project): string[] {
+/** Every ID in `project`: its tracks, pads, devices, returns, placements, sections, clips and notes. */
+export function projectIds(project: Project): string[] {
   const { song } = project;
   const devices = (owner: { readonly devices: readonly { readonly id: string }[] }) =>
     owner.devices.map((device) => device.id);
