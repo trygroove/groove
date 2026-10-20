@@ -3,18 +3,22 @@ import {
   arrangement,
   assistantButton,
   composer,
+  goToView,
   newProject,
   panel,
   proposal,
   proposalButton,
+  volume,
 } from "./support/assistant";
 import { expect, type Page, test } from "./support/test";
 
 /**
  * The assistant's proposal going out of date (GRV-5) against the real
- * gateway and its scripted provider: an edit here, or one made in another tab
- * and saved through the emulator, moves the song under a proposal. Its card
- * says so, Apply is off, and Refresh asks for a new one in the same scope.
+ * gateway and its scripted provider: an edit here to what it changes, or any
+ * change made in another tab and saved through the emulator, moves the song
+ * under a proposal (GRV-144: an edit here to something else leaves its parts
+ * as they are). Its card says so, Apply all is off, and Refresh asks for a
+ * new one in the same scope.
  * CF-027 covers the proposal that stays current; this is what it leaves out.
  */
 
@@ -23,11 +27,21 @@ async function askToLoosen(page: Page): Promise<void> {
   await answerDisclosure(page);
   await composer(page).fill("Loosen the beat");
   await page.keyboard.press("Enter");
-  await expect(proposalButton(page, "Apply")).toBeEnabled({ timeout: 15_000 });
+  await expect(proposalButton(page, "Apply all")).toBeEnabled({ timeout: 15_000 });
 }
 
 const muteBd = (page: Page) =>
   page.getByRole("button", { name: "Mute BD", exact: true }).first();
+
+/**
+ * Moves BD's volume on the mixer, which the proposal changes too: an edit to
+ * what one of its parts touches (GRV-144).
+ */
+async function nudgeBdVolume(page: Page): Promise<void> {
+  await goToView(page, "Mixer");
+  await volume(page, "BD").focus();
+  await page.keyboard.press("ArrowDown");
+}
 
 test.describe("an assistant proposal's explanation", () => {
   test("names the assistant's goal and technique, and links the changed controls", async ({
@@ -52,14 +66,16 @@ test.describe("an assistant proposal's explanation", () => {
 });
 
 test.describe("an assistant proposal that goes out of date", () => {
-  test("after an edit here: Apply is off, and Refresh asks again", async ({ page }) => {
+  test("after an edit here to what it changes: Apply all is off, and Refresh asks again", async ({
+    page,
+  }) => {
     await newProject(page);
     await askToLoosen(page);
 
-    await muteBd(page).click();
+    await nudgeBdVolume(page);
 
     await expect(proposal(page)).toContainText("Out of date");
-    await expect(proposalButton(page, "Apply")).toBeDisabled();
+    await expect(proposalButton(page, "Apply all")).toBeDisabled();
     await proposal(page).getByRole("button", { name: "Refresh" }).click();
     // The new proposal, for the song as it is now, can be applied.
     await expect(panel(page).getByRole("region", { name: /^Proposal\b/ })).toHaveCount(
@@ -68,7 +84,7 @@ test.describe("an assistant proposal that goes out of date", () => {
         timeout: 15_000,
       },
     );
-    await expect(proposalButton(page, "Apply")).toBeEnabled({ timeout: 15_000 });
+    await expect(proposalButton(page, "Apply all")).toBeEnabled({ timeout: 15_000 });
   });
 
   test("after a change saved in another tab", async ({ page }) => {
@@ -85,7 +101,7 @@ test.describe("an assistant proposal that goes out of date", () => {
       });
 
       await expect(proposal(page)).toContainText("Out of date", { timeout: 10_000 });
-      await expect(proposalButton(page, "Apply")).toBeDisabled();
+      await expect(proposalButton(page, "Apply all")).toBeDisabled();
     } finally {
       await other.close();
     }
@@ -122,8 +138,9 @@ test.describe("an assistant proposal across a reload", () => {
       2,
       { timeout: 15_000 },
     );
-    await expect(proposalButton(page, "Apply")).toBeEnabled({ timeout: 15_000 });
-    await proposalButton(page, "Apply").click();
+    // The new one streams (GRV-144): a card whose parts apply one by one or all at once.
+    await expect(proposalButton(page, "Apply all")).toBeEnabled({ timeout: 15_000 });
+    await proposalButton(page, "Apply all").click();
     await expect(proposal(page)).toContainText("Applied as one undo step");
   });
 });
