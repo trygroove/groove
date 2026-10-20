@@ -21,7 +21,8 @@
  *                         card that has sat in In Progress for an hour with no ship,
  *                         rework, mention or claude.yml run on it, and no PR of it
  *                         queued, auto-merging with CI green or running, or running
- *                         an assistant experiment, to Blocked (or to Ready For Review
+ *                         an assistant experiment, and no red PR CI run still waiting
+ *                         on its re-run or @claude hand-over, to Blocked (or to Ready For Review
  *                         when its PRs are healthy and only wait for approval), with
  *                         a comment naming its PRs and their state (GRV-197).
  *   node board.mjs pr     On a pull_request event: a PR that closes a card
@@ -414,6 +415,9 @@ async function pollHandoffs() {
 
 // ---------------------------------------------------------------- sweep
 
+/** How long a re-run's own completion gets to start ci-failure.yml before the poll steps in. */
+const RETRY_GRACE_MS = 10 * 60 * 1000;
+
 /**
  * In Progress means an agent is working on the card. One left there with
  * nothing happening for this long, and nothing running for it, goes to Blocked.
@@ -516,7 +520,7 @@ export function prActivity(p) {
  * open PRs that refer to it, with their checks; `runs` the watched
  * workflows' runs still going.
  */
-export function sweepVerdict(card, { now, prs, runs, idleMs = IDLE_MS }) {
+export function sweepVerdict(card, { now, prs, runs, ciRuns = [], idleMs = IDLE_MS }) {
   const times = [
     enteredInProgress(card)?.createdAt,
     ...card.comments.flatMap((c) => [c.createdAt, c.updatedAt]),
@@ -535,6 +539,14 @@ export function sweepVerdict(card, { now, prs, runs, idleMs = IDLE_MS }) {
   const run = runs.find((r) => runFor(r, card, prs));
   if (run)
     return { action: "leave", reason: `a ${run.workflow} run is on it (${run.url})` };
+  for (const p of prs) {
+    const due = ciFailureDue(p, ciRuns, now);
+    if (due)
+      return {
+        action: "leave",
+        reason: `CI failure handling is still due on #${p.number} (run ${due.id}, attempt ${due.attempt})`,
+      };
+  }
   const states = prs.map((p) => ({ p, ...prActivity(p) }));
   const moving = states.find((s) => s.inFlight);
   if (moving)
@@ -564,6 +576,39 @@ Say what should happen next here. To send an agent back to it, move it to In Pro
 
 ${footer}`,
   };
+}
+
+/**
+ * How long after a PR's CI run fails the sweep leaves the PR to the
+ * CI-failure handling: the re-run (attempt 1), or the hand-over to @claude
+ * that ci-failure.yml or, after RETRY_GRACE_MS, the poll makes (a later
+ * attempt), with one poll interval to spare. Bounded, because ci-failure.sh
+ * may decide to do nothing (only non-gate jobs failed, the line is stopped,
+ * an @claude run already has it) and leaves no mark when it does.
+ */
+const CI_FAILURE_WINDOW_MS = RETRY_GRACE_MS + 20 * 60 * 1000;
+
+/**
+ * The failed PR CI run whose handling is still due on the PR's head, if any:
+ * a run of its head commit that failed within CI_FAILURE_WINDOW_MS, which the
+ * PR has no `<!-- ci-failure:run:<id> -->` comment for yet. A failed first
+ * attempt is waiting for its re-run (a re-run in progress is not listed as
+ * failed, and its checks show as running); a failed later attempt is waiting
+ * to be handed to @claude. Either way the spec's order is re-run, then
+ * @claude, then Blocked only if the fix is red, so the sweep must not jump it.
+ */
+export function ciFailureDue(p, ciRuns, now) {
+  if (!p.headRefOid) return null;
+  return (
+    ciRuns.find(
+      (r) =>
+        r.sha === p.headRefOid &&
+        now - Date.parse(r.updatedAt) < CI_FAILURE_WINDOW_MS &&
+        !(p.comments ?? []).some((c) =>
+          c.body.includes(`<!-- ci-failure:run:${r.id} -->`),
+        ),
+    ) ?? null
+  );
 }
 
 /** Every status GitHub gives a workflow run that has not finished. */
@@ -629,7 +674,7 @@ const prChecks = (number) =>
  * is swept while the line is stopped (every PR is out of the queue then, and
  * rejoins it on its own) or when GitHub cannot say what is running.
  */
-async function pollSweep(index, skip) {
+async function pollSweep(index, skip, ciRuns) {
   if (lineStatus().stopped) return console.log("The line is stopped; not sweeping");
   let runs;
   try {
@@ -653,7 +698,7 @@ async function pollSweep(index, skip) {
       console.warn(`${card.identifier}: could not read its PRs' checks; leaving it`);
       continue;
     }
-    const verdict = sweepVerdict(card, { now, prs, runs });
+    const verdict = sweepVerdict(card, { now, prs, runs, ciRuns });
     if (verdict.action === "leave") {
       console.log(`${card.identifier}: In Progress; ${verdict.reason}`);
       continue;
@@ -677,46 +722,64 @@ async function pollSweep(index, skip) {
 
 // ---------------------------------------------------------------- retried CI
 
-/** How long a re-run's own completion gets to start ci-failure.yml before the poll steps in. */
-const RETRY_GRACE_MS = 10 * 60 * 1000;
 const CI_FAILURE = new URL("./ci-failure.sh", import.meta.url).pathname;
 
 /**
  * The PR CI runs (pull_request) the poll hands to `ci-failure.sh pr`: failed
- * again on a re-run, finished more than RETRY_GRACE_MS ago, from the branch
- * of an open PR. ci-failure.sh re-runs a failed PR run with GITHUB_TOKEN,
- * and GitHub may start no workflow for that re-run's completion, so without
- * this the PR would never be handed to a Claude run. The script acts on a
- * run once, so a run its workflow did handle is left alone there.
+ * again on a re-run, finished more than RETRY_GRACE_MS ago, on the head
+ * commit of an open PR. ci-failure.sh re-runs a failed PR run with
+ * GITHUB_TOKEN, and GitHub may start no workflow for that re-run's
+ * completion, so without this the PR would never be handed to a Claude run.
+ * The script acts on a run once, so a run its workflow did handle is left
+ * alone there; a run of a commit the PR has moved past is not passed at all.
  */
 export function retriedRuns(runs, prs, now) {
-  const branches = new Set(prs.map((p) => p.headRefName));
+  const heads = new Map(prs.map((p) => [p.headRefName, p.headRefOid]));
   return runs.filter(
     (r) =>
       r.attempt > 1 &&
-      branches.has(r.branch) &&
+      heads.has(r.branch) &&
+      (!heads.get(r.branch) || heads.get(r.branch) === r.sha) &&
       now - Date.parse(r.updatedAt) > RETRY_GRACE_MS,
   );
 }
 
-/** Hand each retried red PR run to ci-failure.sh. Returns the cards of the PRs it looked at. */
-function pollRetriedRuns(index) {
-  const now = Date.now();
+/** The cards `ci-failure.sh` output says it handed over or blocked (`ci-failure:acted <pr>`). */
+export function actedOn(output, prs) {
+  const cards = new Set();
+  for (const [, number] of output.matchAll(/^ci-failure:acted (\d+)$/gm)) {
+    const p = prs.find((x) => x.number === Number(number));
+    for (const id of issuesIn(p?.body ?? "")) cards.add(id);
+  }
+  return cards;
+}
+
+/** Every pull_request CI run that failed in the last day. */
+function failedPrRuns(now) {
   const since = new Date(now - 24 * 3600 * 1000).toISOString();
-  const runs = ghLines(
+  return ghLines(
     `repos/${REPO}/actions/workflows/ci.yml/runs?event=pull_request&status=failure&created=${encodeURIComponent(`>=${since}`)}&per_page=100`,
     ".workflow_runs[] | {id, branch: .head_branch, sha: .head_sha, attempt: .run_attempt, updatedAt: .updated_at}",
   );
+}
+
+/**
+ * Hand each retried red PR run to ci-failure.sh. Returns the cards it handed
+ * to @claude or moved to Blocked in this poll, which the sweep (reading PR
+ * comments from before them) must not move.
+ */
+function pollRetriedRuns(index, runs, now) {
   const cards = new Set();
   for (const r of retriedRuns(runs, index.prs, now)) {
     const p = index.prs.find((x) => x.headRefName === r.branch);
-    for (const id of issuesIn(p.body)) cards.add(id);
     try {
-      execFileSync(
+      const output = execFileSync(
         "bash",
         [CI_FAILURE, "pr", String(r.id), r.branch, r.sha, String(r.attempt)],
-        { stdio: ["ignore", "inherit", "inherit"] },
+        { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8" },
       );
+      process.stdout.write(output);
+      for (const id of actedOn(output, index.prs)) cards.add(id);
     } catch {
       console.warn(`#${p.number}: ci-failure.sh could not handle run ${r.id}`);
     }
@@ -743,9 +806,12 @@ async function poll() {
       : "false",
   );
   // After the outputs: the runs this poll starts must start even if these fail.
+  const now = Date.now();
+  let ciRuns = [];
   let retried = new Set();
   try {
-    retried = pollRetriedRuns(index);
+    ciRuns = failedPrRuns(now);
+    retried = pollRetriedRuns(index, ciRuns, now);
   } catch (error) {
     console.warn(`Could not check the re-run PR CI runs: ${error.message}`);
   }
@@ -757,7 +823,7 @@ async function poll() {
     ...mentions.map((m) => m.issue),
   ]);
   try {
-    await pollSweep(index, skip);
+    await pollSweep(index, skip, ciRuns);
   } catch (error) {
     console.warn(`The idle sweep failed: ${error.message}`);
   }

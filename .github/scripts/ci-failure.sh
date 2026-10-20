@@ -27,7 +27,10 @@
 #                                  (GRV-197). Each run is acted on once, so the
 #                                  board's poll can call this as a backstop for a
 #                                  re-run whose completion never reached the
-#                                  workflow (board.mjs, pollRetriedRuns).
+#                                  workflow (board.mjs, pollRetriedRuns). When
+#                                  it hands the PR over or blocks the card, it
+#                                  prints `ci-failure:acted <pr>` on stdout,
+#                                  which tells that poll not to sweep the card.
 #
 # Needs LINEAR_API_KEY, and `linear.mjs` and `merge.mjs` beside this script.
 #
@@ -263,6 +266,7 @@ $(sed 's/^/- /' <<<"$failed")
 **Unblocked by:** someone finding the cause (a flaky test, or a problem outside this PR, can look like this). Mention Claude in a comment on the PR saying what to do, or push a fix yourself; then move this card back to In Progress.
 EOF
 		fi
+		echo "ci-failure:acted $pr"
 		log "#$pr: red again after the fix; ${issue:-no card} to Blocked"
 		exit 0
 	fi
@@ -277,6 +281,7 @@ $(sed 's/^/- /' <<<"$failed")
 Find the cause in that run's failing job. Bring this branch up to date with \`main\` (\`git merge origin/main\`; never a rebase or force-push), reproduce the failure, fix it, run the checks it touches, and push. If the cause is a flaky test rather than this change, fix the flake rather than retrying.
 $footer
 EOF
+	echo "ci-failure:acted $pr"
 	log "#$pr handed to @claude"
 	;;
 *)

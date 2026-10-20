@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  actedOn,
   activeRuns,
+  ciFailureDue,
   handoffAwaiting,
   mentionRequest,
   PICKUP,
@@ -410,7 +412,14 @@ describe("activeRuns", () => {
 describe("retriedRuns", () => {
   const now = Date.parse("2026-10-20T12:00:00Z");
   const minutesAgo = (m) => new Date(now - m * 60_000).toISOString();
-  const prs = [{ number: 41, headRefName: "claude/grv-7-x", body: "Completes GRV-7" }];
+  const prs = [
+    {
+      number: 41,
+      headRefName: "claude/grv-7-x",
+      headRefOid: "abc",
+      body: "Completes GRV-7",
+    },
+  ];
   const run = (extra) => ({
     id: 1,
     branch: "claude/grv-7-x",
@@ -431,10 +440,108 @@ describe("retriedRuns", () => {
           run({ attempt: 1 }),
           run({ updatedAt: minutesAgo(2) }),
           run({ branch: "claude/grv-8-y" }),
+          run({ sha: "older" }),
         ],
         prs,
         now,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("CI failure handling still due (GRV-197)", () => {
+  const now = Date.parse("2026-10-20T12:00:00Z");
+  const minutesAgo = (m) => new Date(now - m * 60_000).toISOString();
+  const run = (extra) => ({
+    id: 9,
+    branch: "claude/grv-7-x",
+    sha: "abc",
+    attempt: 1,
+    updatedAt: minutesAgo(3),
+    ...extra,
+  });
+  const redPr = (extra = {}) => ({
+    number: 41,
+    title: "Fix GRV-7: Something",
+    url: "https://github.com/trygroove/groove/pull/41",
+    body: "Completes GRV-7",
+    headRefName: "claude/grv-7-x",
+    headRefOid: "abc",
+    isDraft: false,
+    labels: [],
+    comments: [],
+    autoMergeRequest: { enabledAt: minutesAgo(300) },
+    mergeStateStatus: "BLOCKED",
+    statusCheckRollup: [
+      {
+        name: "typecheck, check, unit + component tests",
+        status: "COMPLETED",
+        conclusion: "FAILURE",
+      },
+    ],
+    ...extra,
+  });
+  const staleCard = {
+    identifier: "GRV-7",
+    state: { name: "In Progress" },
+    history: [
+      {
+        createdAt: minutesAgo(300),
+        fromState: { name: "Ready" },
+        toState: { name: "In Progress" },
+      },
+    ],
+    comments: [],
+  };
+
+  it("is due for a failed first attempt waiting for its re-run, and a re-run waiting for @claude", () => {
+    expect(ciFailureDue(redPr(), [run()], now)?.id).toBe(9);
+    expect(
+      ciFailureDue(redPr(), [run({ attempt: 2, updatedAt: minutesAgo(12) })], now)?.id,
+    ).toBe(9);
+  });
+
+  it("is not due once ci-failure.sh commented on the run, for another commit, or past the window", () => {
+    const handled = redPr({
+      comments: [
+        {
+          body: "@claude CI failed\n<!-- ci-failure:run:9 -->",
+          createdAt: minutesAgo(1),
+        },
+      ],
+    });
+    expect(ciFailureDue(handled, [run()], now)).toBeNull();
+    expect(ciFailureDue(redPr(), [run({ sha: "older" })], now)).toBeNull();
+    // ci-failure.sh may decide to do nothing and leave no marker: that cannot
+    // protect the card for ever.
+    expect(
+      ciFailureDue(redPr(), [run({ attempt: 2, updatedAt: minutesAgo(31) })], now),
+    ).toBeNull();
+  });
+
+  it("keeps the sweep off a red PR until its re-run and hand-over have had their turn", () => {
+    const leave = sweepVerdict(staleCard, {
+      now,
+      prs: [redPr()],
+      runs: [],
+      ciRuns: [run()],
+    });
+    expect(leave.action).toBe("leave");
+    expect(leave.reason).toContain("#41");
+    const late = sweepVerdict(staleCard, {
+      now,
+      prs: [redPr()],
+      runs: [],
+      ciRuns: [run({ attempt: 2, updatedAt: minutesAgo(45) })],
+    });
+    expect(late.action).toBe("block");
+  });
+
+  it("reads which PRs ci-failure.sh acted on from its output", () => {
+    const prs = [redPr(), redPr({ number: 42, body: "Refs GRV-8" })];
+    const output =
+      "https://github.com/trygroove/groove/pull/41#issuecomment-1\nci-failure:acted 41\n";
+    expect([...actedOn(output, prs)]).toEqual(["GRV-7"]);
+    expect([...actedOn("https://github.com/x\n", prs)]).toEqual([]);
   });
 });

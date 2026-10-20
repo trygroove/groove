@@ -45,7 +45,11 @@ jobs:
       )
     runs-on: ubuntu-latest
     concurrency:
-      group: ci-failure
+      # A group keeps one run going and one pending, and a newer pending run
+      # cancels the older one. PR failures are frequent, so each PR branch gets
+      # its own group: one can never cancel a pending queue or main hand-back,
+      # or the line's `resume` below, which share `ci-failure`.
+      group: ${{ github.event.workflow_run.event == 'pull_request' && format('ci-failure-pr-{0}', github.event.workflow_run.head_branch) || 'ci-failure' }}
       cancel-in-progress: false
     env:
       # RESTACK_TOKEN so the @claude comment starts claude.yml, and the revert PR
@@ -55,7 +59,11 @@ jobs:
       # (`actions: write` above). Its completion may then never start this
       # workflow (GitHub starts nothing for most events GITHUB_TOKEN causes), so
       # the board's poll also hands over a PR whose re-run failed
-      # (board.mjs, pollRetriedRuns); main's resume has the same gap.
+      # (board.mjs, pollRetriedRuns). main has the same gap with no backstop
+      # yet: a re-run of main that fails again may never come back here as
+      # attempt 2 (no revert), and one that goes green may never start
+      # `resume` (the line stays stopped until the next push to main). That is
+      # how it was before GRV-197; a poll backstop for main is a follow-up.
       RERUN_TOKEN: ${{ github.token }}
       LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
     steps:
