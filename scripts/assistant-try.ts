@@ -31,6 +31,7 @@ import { createAnthropicProvider } from "../functions/src/anthropicProvider";
 import { EVAL_CASES, jsonCasesDir } from "../src/assistant/evals/cases";
 import { EvalUsageError } from "../src/assistant/evals/cli";
 import { jsonFixturesDir } from "../src/assistant/evals/namedFixtures";
+import { withProviderReasons } from "../src/assistant/evals/providerReason";
 import {
   runTryCommand,
   splitCommandLine,
@@ -80,7 +81,8 @@ const io: TryIo = {
     spawnSync("bunx", ["biome", "format", "--write", path], { stdio: "ignore" });
   },
   exists: existsSync,
-  createProvider: (apiKey) => createAnthropicProvider({ apiKey }),
+  createProvider: (apiKey) =>
+    withProviderReasons((fetch) => createAnthropicProvider({ apiKey, fetch })),
   casesDir: relative(process.cwd(), jsonCasesDir()),
   fixturesDir: relative(process.cwd(), jsonFixturesDir()),
   existingCaseIds: () => [...EVAL_CASES.map((entry) => entry.id), ...savedNow],

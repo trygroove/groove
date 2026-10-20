@@ -308,7 +308,7 @@ describe("a question answered by doing, against the editor session (GRV-42)", ()
     const { session, client, send, reply, tempoCall } = await setUp();
     await send("Slow it down?");
     reply({ ask: RICH, proposal: tempoCall(90) });
-    await press(within(proposalCard()).getByRole("button", { name: "Preview" }));
+    // The preview opened by itself as the proposal arrived (GRV-193).
     expect(session.project.song.tempo).toBe(90);
     await press(within(proposalCard()).getByRole("button", { name: "Cancel" }));
     await settle();
@@ -447,7 +447,7 @@ describe("an option's sound beside a proposal's preview (GRV-42 with GRV-5)", ()
     const { session, send, reply, tempoCall } = await setUp();
     await send("Slow it down?");
     reply({ ask: RICH, proposal: tempoCall(90) });
-    await press(within(proposalCard()).getByRole("button", { name: "Preview" }));
+    // The preview opened by itself as the proposal arrived (GRV-193).
     const proposalPreview = session.activePreview;
     expect(proposalPreview).not.toBeNull();
 

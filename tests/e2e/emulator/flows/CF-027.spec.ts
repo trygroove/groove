@@ -100,8 +100,7 @@ test.describe("CF-027", () => {
     await step("Send a message, and a reply follows");
 
     // 4. The reply ends with a proposal that lists both changes, each from its
-    //    current value to the new one. Nothing in the song has changed yet:
-    //    swing reads what it did before.
+    //    current value to the new one.
     await expect(proposal(page)).toBeVisible({ timeout: 15_000 });
     await expect(proposal(page)).toContainText(/Swing/);
     await expect(proposal(page)).toContainText(`${startingSwing}%`);
@@ -109,20 +108,20 @@ test.describe("CF-027", () => {
     await expect(proposal(page)).toContainText(
       new RegExp(`${TRACK}\\b.*volume|volume.*\\b${TRACK}\\b`, "i"),
     );
-    expect(await swingPercent(page)).toBe(startingSwing);
     await step("A proposal: two changes, old to new");
 
-    // 5. Press Preview. The editor goes to the mixer, where the change can be
-    //    seen. BD's volume fader sits at the proposed level, and swing reads
-    //    58%.
-    await proposalButton(page, "Preview").click();
+    // 5. Without a click, the proposal is previewing. The editor goes to the
+    //    mixer, where the change can be seen. BD's volume fader sits at the
+    //    proposed level, and swing reads 58%. Nothing is saved yet.
     await expect(page).toHaveURL(/\/projects\/prj_[^/]+\/mixer$/);
     await expect.poll(() => swingPercent(page)).toBe(PROPOSED_SWING);
     await expect
       .poll(async () => Number(await volume(page, TRACK).inputValue()))
       .toBeLessThan(startingVolume);
     const proposedVolume = Number(await volume(page, TRACK).inputValue());
-    await step("Preview it on the mixer");
+    // Previewing commits nothing: there is no step to undo.
+    await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
+    await step("It previews on the mixer by itself");
 
     // 6. Press Cancel. The editor goes back to the arrangement. Swing reads
     //    what it did before, and BD's volume is where it was. There is nothing

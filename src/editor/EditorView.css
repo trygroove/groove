@@ -491,6 +491,15 @@
   right: var(--assistant-dock-space);
 }
 
+/* The notices between the header and the views stop short of the docked
+   assistant as well, so their Dismiss buttons are never under the column
+   (GRV-55). */
+.editor > .compatibility-notice,
+.editor > .load-recovery-notice,
+.editor > .missing-sounds {
+  margin-right: var(--assistant-dock-space);
+}
+
 /* The Instrument and Mixer views (UI-001). Only one view is on the page at a
    time, so each takes the whole body rather than a band of it — the room the
    instrument controls exist to be given. Both scroll inside themselves. */
@@ -499,10 +508,11 @@
   background-color: var(--color-background-secondary);
 }
 
-/* The mixer scrolls as a whole; the instrument view keeps its rail fixed and
-   scrolls only the instrument beside it (`EditorInstrument.css`). */
+/* The mixer scrolls as a whole, in the desk itself (`.editor-mixer .mixer`
+   below); the instrument view keeps its rail fixed and scrolls only the
+   instrument beside it (`EditorInstrument.css`). */
 .mixer-view {
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 /* The arrangement's new-track unit (UI-001): a thin strip above the timeline,
@@ -517,15 +527,16 @@
 }
 
 /*
- * The Instrument and Mixer views scroll the document (#447): one scroller, so
- * a wheel or a swipe always moves the same thing. Their content runs as long
- * as it needs; the header stays pinned above it, the dock floats over it, and
- * the view's own background runs to the bottom of the window, with room left
- * under the last control so the dock never covers it. The arrangement keeps
- * the bounded shell above: its timeline is a viewport that scrolls itself.
+ * The Instrument view scrolls the document (#447): one scroller, so a wheel or
+ * a swipe always moves the same thing. Its content runs as long as it needs;
+ * the header stays pinned above it, the dock floats over it, and the view's
+ * own background runs to the bottom of the window, with room left under the
+ * last control so the dock never covers it. The arrangement and the Mixer keep
+ * the bounded shell above: the Mixer scrolls inside its own pane (GRV-188), so
+ * the page never grows a vertical scrollbar of its own. That scrollbar took
+ * 8px off the Mixer's right edge in WebKit, which draws a classic one.
  */
-.editor.editor-instrument,
-.editor.editor-mixer {
+.editor.editor-instrument {
   height: auto;
   min-height: var(--editor-height);
   padding-bottom: 0;
@@ -534,26 +545,28 @@
 
 /* With no padding at the foot here there is nothing to reach out over, and
    reaching anyway would scroll the document by the overhang. */
-.editor-instrument .editor-body,
-.editor-mixer .editor-body {
+.editor-instrument .editor-body {
   margin-bottom: 0;
 }
 
 /* Anything the page scrolls to here (the master's effects when the Master
    strip is selected, a control a reveal or Tab moves focus to) stops clear of
    the sticky header above and the floating dock below, not at the window's
-   edges under them. Scrolled to the window's foot, the Delay's lower Division
+   edges under them. The Mixer's pane starts under the header, so only the
+   dock is in its way. Scrolled to the window's foot, the Delay's lower Division
    options sat under the dock, and a click meant for them switched views
    (GRV-62). It is a margin on every element rather than padding on the
    document's scroller because only the editor knows these sizes. */
+.editor-instrument .editor-body * {
+  scroll-margin-top: calc(var(--editor-header-height) + 2 * var(--size-divider));
+}
+
 .editor-instrument .editor-body *,
 .editor-mixer .editor-body * {
-  scroll-margin-top: calc(var(--editor-header-height) + 2 * var(--size-divider));
   scroll-margin-bottom: var(--view-dock-clearance);
 }
 
-.editor-instrument .editor-header,
-.editor-mixer .editor-header {
+.editor-instrument .editor-header {
   position: sticky;
   top: 0;
   z-index: 50;
@@ -569,14 +582,20 @@
   background-color: var(--color-background);
 }
 
-.editor-instrument .instrument-view,
-.editor-mixer .mixer-view {
+.editor-instrument .instrument-view {
   display: flex;
   flex-direction: column;
   /* The document runs to the window's foot here, so there is no clearance to
      take back. */
   margin-bottom: 0;
   overflow: visible;
+}
+
+/* The Mixer is a column that scrolls itself: the pane is bounded by the
+   editor's height, and the strips and the master's rack scroll inside it. */
+.editor-mixer .mixer-view {
+  display: flex;
+  flex-direction: column;
 }
 
 .editor-instrument .instrument-view {
@@ -592,7 +611,17 @@
 
 .editor-mixer .mixer {
   flex: 1 1 auto;
+  /* The pane the Mixer scrolls in (GRV-188). The scroller is the desk, not
+     the view around it, so a classic scrollbar sits inside the desk's box and
+     the desk still runs the view's whole width. */
+  min-height: 0;
+  overflow-y: auto;
   padding-bottom: 0;
+}
+
+/* Nothing in the desk gives up its height to fit the pane; the pane scrolls. */
+.editor-mixer .mixer > * {
+  flex-shrink: 0;
 }
 
 .editor-mixer .mixer-master {

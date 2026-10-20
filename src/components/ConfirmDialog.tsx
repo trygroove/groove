@@ -5,7 +5,7 @@ import type { JSX } from "@solidjs/web";
 import { onSettled } from "solid-js";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 import type { ShortcutContext, ShortcutHandlers } from "../shortcuts";
-import { useShortcuts } from "../shortcuts";
+import { useShortcutScope } from "../shortcuts";
 import "./ConfirmDialog.css";
 import { holdModal } from "./modalInert";
 
@@ -56,7 +56,9 @@ export default function ConfirmDialog(props: ConfirmDialogProps): JSX.Element {
     };
   });
 
-  useShortcuts({
+  // A modal scope: while it is open, no surface under it hears a key.
+  useShortcutScope({
+    modal: true,
     handlers: (): ShortcutHandlers => ({
       "view.close_surface": {
         run: () => props.onCancel(),

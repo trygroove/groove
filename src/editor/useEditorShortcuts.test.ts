@@ -76,9 +76,7 @@ function setup(
       song,
       surfaces,
       openPlacement: vi.fn(),
-      guideOpen: () => false,
       setGuideOpen: vi.fn(),
-      exportOpen: () => false,
       assistant: panel ?? {
         toggle: vi.fn(),
         resizeBy: vi.fn(),

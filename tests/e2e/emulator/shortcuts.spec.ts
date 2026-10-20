@@ -97,9 +97,10 @@ test.describe("keyboard shortcuts", () => {
     await expect(page.getByRole("button", { name: "Start playback" })).toBeVisible();
   });
 
-  // Not a text-entry test: `useShortcuts` attaches to the window for the
-  // lifetime of the editor, so this is what proves the listener is detached on
-  // unmount and editor mappings do not follow the user to the dashboard.
+  // Not a text-entry test: the editor registers its shortcut scope on the
+  // app's one controller for its own lifetime, so this is what proves the
+  // scope goes on unmount and editor mappings do not follow the user to the
+  // dashboard.
   test("editor shortcuts stop working after leaving the editor", async ({ page }) => {
     await page.goto("/projects");
     await page.getByRole("button", { name: "New Project" }).click();

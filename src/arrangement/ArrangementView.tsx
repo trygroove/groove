@@ -71,6 +71,7 @@ import {
   buildArrangementProjection,
   type PlacementGeometry,
 } from "./projection";
+import { rulerSeekTicks } from "./rulerSeek";
 import { describeArrangementSelection } from "./selectionAnnouncement";
 import { useArrangementCanvas, visibleViewportSize } from "./useArrangementCanvas";
 import { ZoomControls } from "./ZoomControls";
@@ -266,6 +267,12 @@ export interface ArrangementViewProps {
    * is selected by it.
    */
   readonly highlight?: Accessor<readonly ArrangementBand[]>;
+  /**
+   * Called with the tick a click on the ruler (clear of the loop brace) puts
+   * the playhead at (GRV-189). The arrangement holds no playhead of its own;
+   * without this the ruler away from the brace is inert.
+   */
+  readonly onSeekTicks?: (ticks: number) => void;
 }
 
 export default function ArrangementView(props: ArrangementViewProps) {
@@ -350,8 +357,14 @@ export default function ArrangementView(props: ArrangementViewProps) {
   let loopDrag: LoopBraceDrag | null = null;
   // A press in empty space, while its pointer is down: where it was pressed,
   // so a jitter of a pixel or two stays a click rather than a sliver of band.
-  let bandPress: { pointerId: number; x: number; y: number; moved: boolean } | null =
-    null;
+  let bandPress: {
+    pointerId: number;
+    x: number;
+    y: number;
+    moved: boolean;
+    /** Pressed below the last track: a click there clears, it sets no point. */
+    belowTracks: boolean;
+  } | null = null;
   // While a clip-body drag runs, the browser is kept off the copy modifier's
   // own key (ARR-011); this ends that, passing whether it is still held. It is
   // kept after the drop, since a modifier still held then is guarded until its
@@ -863,15 +876,28 @@ export default function ArrangementView(props: ArrangementViewProps) {
     return handle === "body" ? "grab" : "";
   }
 
-  /** A press on the ruler grabs the loop brace, or does nothing at all. */
+  /** A press on the ruler grabs the loop brace, or else puts the playhead there. */
   function handleRulerPointerDown(event: PointerEvent, x: number): void {
-    if (!shell || !loopDrag || (event.button ?? 0) !== 0) return;
+    if (!shell || (event.button ?? 0) !== 0) return;
     const handle = loopHandleAt(x);
-    if (!handle) return;
+    if (!handle) {
+      seekFromRuler(event, x);
+      return;
+    }
+    if (!loopDrag) return;
     if (!loopDrag.begin(handle, shell.pointToArrangement(x, 0).tick)) return;
     activePointerId = event.pointerId;
     (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
     noteFirstUse();
+  }
+
+  function seekFromRuler(event: PointerEvent, x: number): void {
+    if (!shell || !props.onSeekTicks) return;
+    const { tick } = shell.pointToArrangement(x, 0);
+    analytics().logFeatureFirstUse("playhead_seek");
+    props.onSeekTicks(
+      rulerSeekTicks(tick, shell.getViewport().pixelsPerTick, event.altKey),
+    );
   }
 
   function handlePointerDown(event: PointerEvent): void {
@@ -920,12 +946,17 @@ export default function ArrangementView(props: ArrangementViewProps) {
 
     // A press in empty space is a click or the start of a drag band (#292),
     // which the pointer's release decides.
-    if (!trackId) {
+    // Below the last track there is no row, but a drag from there sweeps a
+    // band all the same (GRV-191), from the nearest row; a click only clears.
+    const start = trackId
+      ? { trackId, ticks: shell.pointToArrangement(x, y).tick }
+      : positionAt(x, y);
+    if (!start) {
       editing.clearSelection();
       return;
     }
-    editing.beginBand({ trackId, ticks: shell.pointToArrangement(x, y).tick });
-    bandPress = { pointerId: event.pointerId, x, y, moved: false };
+    editing.beginBand(start);
+    bandPress = { pointerId: event.pointerId, x, y, moved: false, belowTracks: !trackId };
     target.setPointerCapture?.(event.pointerId);
     noteFirstUse();
   }
@@ -934,9 +965,13 @@ export default function ArrangementView(props: ArrangementViewProps) {
    * a click sets the point at the start of the bar it landed in. */
   function endBandPress(): void {
     if (!bandPress || !editing) return;
-    const { x, y } = bandPress;
+    const { x, y, belowTracks } = bandPress;
     bandPress = null;
     if (editing.endBand()) return;
+    if (belowTracks) {
+      editing.clearSelection();
+      return;
+    }
     const position = positionAt(x, y);
     if (position) editing.placePoint(position);
   }

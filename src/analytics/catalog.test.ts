@@ -91,6 +91,7 @@ describe("event names", () => {
         "assistant_proposal_applied",
         "assistant_proposal_first_part_shown",
         "assistant_proposal_part_applied",
+        "assistant_proposal_previewed",
         "assistant_proposal_cancelled",
         "assistant_proposal_rejected",
         "assistant_proposal_shown",

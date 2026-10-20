@@ -7,7 +7,7 @@ import {
   type ShortcutContext,
   type ShortcutHandlers,
   shortcutLabel,
-  useShortcuts,
+  useShortcutScope,
 } from "../shortcuts";
 import { ASK_OPTION_SHORTCUT_IDS } from "../shortcuts/registry/assistant";
 import { isTextEntry } from "../shortcuts/textEntry";
@@ -43,10 +43,10 @@ export interface UseEditorShortcutsOptions {
   readonly surfaces: EditingSurfaces;
   /** Selects a placement's clip and goes to the sequence view with it. */
   readonly openPlacement: (placementId: PlacementId) => void;
-  readonly guideOpen: Accessor<boolean>;
+  /** Opens the `?` guide. It is a modal shortcut scope, so while it is open
+   * none of the editor's keys reach here and none needs to know (GRV-186);
+   * the Export dialog is one too. */
   readonly setGuideOpen: (open: boolean) => void;
-  /** Whether the Export dialog is open (`EXP-004`): a modal, so it takes the keyboard. */
-  readonly exportOpen: Accessor<boolean>;
   /** The assistant panel (#849): Cmd/Ctrl+K, Escape inside it, its
    * resize edge's arrows, Enter in its composer (GRV-26), and the keys of a
    * question it asks (GRV-42). */
@@ -91,31 +91,15 @@ const focusKeepsArrows = (): boolean =>
  * editor's own hooks (#1035): its navigation, track selection, Library
  * target, song controls and editing surfaces, taken whole rather than as
  * loose callbacks, so the rules a key follows (which track the arrows step
- * to, which track Delete may remove) live here — not a registration seam a
- * panel contributes to. The issue's suggested "panel
- * registers its own context/handlers" seam would need each panel to publish
- * handlers the shortcut controller aggregates, which is a real architecture
- * change (today nothing but `EditorView` calls `useShortcuts`, and every
- * handler here reaches into state — `pianoRollActions`, `selectedNoteIds` —
- * that is lifted to this level for exactly that reason). Building that
- * speculatively, with only one consumer, risks the "growing inline ladder"
- * this refactor exists to avoid in a different way. This module is still the
- * complete answer to "touches the parent only at a small seam": a future
- * panel's shortcut needs land here, in one file, instead of inside
- * `EditorView.tsx` itself.
+ * to, which track Delete may remove) live here. It registers one shortcut
+ * scope on the app's controller (GRV-186); a surface the editor renders
+ * (the Mixer, a device chain, a name field) registers its own scope, which is
+ * newer, so it gets a key first when it has an enabled handler and this one
+ * gets it otherwise. Handlers that reach into state lifted to this level
+ * (`pianoRollActions`, `selectedNoteIds`) stay here.
  */
 export function useEditorShortcuts(options: UseEditorShortcutsOptions) {
-  const {
-    view,
-    project,
-    audio,
-    session,
-    selection,
-    guideOpen,
-    setGuideOpen,
-    exportOpen,
-    assistant,
-  } = options;
+  const { view, project, audio, session, selection, setGuideOpen, assistant } = options;
   const {
     showPianoRoll,
     pianoRollActions,
@@ -423,8 +407,7 @@ export function useEditorShortcuts(options: UseEditorShortcutsOptions) {
     ),
     "library.audition": onSelectedSound((a) => a.press("library.audition")),
     "library.back": inLibrary((a) => a.back()),
-    // Escape closes the innermost surface: the guide, then the library's keys
-    // sheet (#813), then its genre menu (#874), then a query typed in the
+    // Escape closes the innermost surface: the library's keys sheet (#813), then its genre menu (#874), then a query typed in the
     // library's search field (#877, only while that field has focus). Nothing
     // here compares a key — this is the registry's `view.close_surface`, like
     // every other close. A clip drag in flight is innermost of all: Escape cancels it (ARR-011). The
@@ -441,7 +424,6 @@ export function useEditorShortcuts(options: UseEditorShortcutsOptions) {
         const dismissAssistant = assistant.dismissAction();
         if (collapseVideo) collapseVideo();
         else if (arrangementDragging()) arrangementEditingActions()?.cancelDrag();
-        else if (guideOpen()) setGuideOpen(false);
         else if (dismissAssistant) dismissAssistant();
         else if (libraryOpen()) {
           const actions = libraryActions();
@@ -454,16 +436,15 @@ export function useEditorShortcuts(options: UseEditorShortcutsOptions) {
           dropTrackChoice()?.();
         }
       },
-      // The Export dialog closes itself on Escape, and nothing beneath it should.
+      // The guide and the Export dialog close themselves on Escape: they are
+      // modal scopes over this one, so it never hears that press (GRV-186).
       isEnabled: () =>
-        !exportOpen() &&
-        (assistant.collapseVideo() !== undefined ||
-          arrangementDragging() ||
-          guideOpen() ||
-          assistant.dismissAction() !== undefined ||
-          libraryOpen() ||
-          arrangementClearable() ||
-          trackChoiceDroppable()),
+        assistant.collapseVideo() !== undefined ||
+        arrangementDragging() ||
+        assistant.dismissAction() !== undefined ||
+        libraryOpen() ||
+        arrangementClearable() ||
+        trackChoiceDroppable(),
     },
     // The assistant (#849): Cmd/Ctrl+K opens it where it was or closes it, and
     // the arrows on its focused resize edge step its size.
@@ -693,16 +674,16 @@ export function useEditorShortcuts(options: UseEditorShortcutsOptions) {
     return base;
   };
 
-  // While a modal is open it is the only active context, so nothing behind it
-  // can fire — including playback and selection (PRD KEY-02).
+  // While a modal is open nothing behind it can fire, playback and selection
+  // included (PRD KEY-02): the guide and the Export dialog register modal
+  // scopes, which hide this one (GRV-186).
   const contexts = (): readonly ShortcutContext[] => {
-    if (guideOpen() || exportOpen()) return ["dialog"];
     // The Library view has keys of its own, and the view keys and undo with
     // them; the editor's transport and edits stand down while it is up.
     return withComposer(libraryOpen() ? ["library"] : editorContexts());
   };
 
-  const shortcuts = useShortcuts({ handlers, contexts });
+  const shortcuts = useShortcutScope({ handlers, contexts });
   const keyHint = (action: Parameters<typeof shortcutLabel>[0]) =>
     shortcutLabel(action, shortcuts.platform);
 

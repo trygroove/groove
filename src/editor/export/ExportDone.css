@@ -3,6 +3,7 @@
 .export-done {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: var(--done-height);
   background: var(--color-background);
 }
 
@@ -158,5 +159,27 @@
 @media (prefers-reduced-motion: reduce) {
   .export-out > * {
     animation: none;
+  }
+}
+
+/* A phone-width window (GRV-156): the sleeve gives way to the message, which
+   takes the dialog's width and its natural height. */
+@media (max-width: 640px) {
+  .export-done {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .export-sleeve {
+    display: none;
+  }
+
+  .export-out {
+    justify-content: flex-start;
+    padding: 56px 16px 24px;
+  }
+
+  .export-out h3 {
+    font-size: 36px;
   }
 }

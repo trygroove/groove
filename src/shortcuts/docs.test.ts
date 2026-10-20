@@ -151,7 +151,7 @@ describe("key handling lives only in src/shortcuts", () => {
 
     expect(
       offenders,
-      "register a handler with useShortcuts instead of reading KeyboardEvent directly",
+      "register a handler with useShortcutScope instead of reading KeyboardEvent directly",
     ).toEqual([]);
   });
 

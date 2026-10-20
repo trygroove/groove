@@ -337,9 +337,11 @@ describe("a turn's cards, one at a time (GRV-129)", () => {
   it("after Decline, skips the cards for the declined track and says so", async () => {
     const { firstBeat } = await setUp();
     await firstBeat();
-    await press(
-      within(proposals()[0] as HTMLElement).getByRole("button", { name: "Cancel" }),
-    );
+    // The first Cancel ends the preview that opened by itself (GRV-193).
+    const cancel = () =>
+      within(proposals()[0] as HTMLElement).getByRole("button", { name: "Cancel" });
+    await press(cancel());
+    await press(cancel());
     // The kick's pad is in the song: its card is shown, and nothing follows it.
     await vi.waitFor(() => expect(cards()).toHaveLength(1));
     expect(newest()).toHaveTextContent("BD · BD");
@@ -451,9 +453,11 @@ describe("a turn's cards across a reload (GRV-135)", () => {
     const store = createConversationStore(memoryStorage());
     const before = await setUp({ conversationStore: store });
     await before.firstBeat();
-    await press(
-      within(proposals()[0] as HTMLElement).getByRole("button", { name: "Cancel" }),
-    );
+    // The first Cancel ends the preview that opened by itself (GRV-193).
+    const cancel = () =>
+      within(proposals()[0] as HTMLElement).getByRole("button", { name: "Cancel" });
+    await press(cancel());
+    await press(cancel());
     await vi.waitFor(() => expect(cards()).toHaveLength(1));
     const song = before.session.committedProject;
     cleanup();
