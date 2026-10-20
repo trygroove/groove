@@ -24,11 +24,11 @@ import {
   SYNTH_WAVEFORMS,
   synthWaveform,
 } from "../domain/parameters";
+import { formatReadout } from "../domain/valueFormat";
 import ControlGroup from "./ControlGroup";
 import EnvelopeWell from "./EnvelopeWell";
 import FillSlider from "./FillSlider";
 import FilterWell from "./FilterWell";
-import { formatInstrumentValue } from "./formatValue";
 import "./InstrumentPanel.css";
 import OptionGroup from "./OptionGroup";
 import OscillatorWell from "./OscillatorWell";
@@ -114,7 +114,7 @@ export default function SynthPanel(props: SynthPanelProps): JSX.Element {
         definition={definition}
         control={parameterControl(props.trackId, definition.id)}
         value={read(definition)}
-        displayValue={formatInstrumentValue(definition, read(definition))}
+        displayValue={formatReadout(definition, read(definition))}
         onInput={(next) => control.input(next)}
         onCommit={(next, settle) => {
           control.commit(next, settle);
@@ -161,7 +161,7 @@ export default function SynthPanel(props: SynthPanelProps): JSX.Element {
               cutoff: read(SYNTH_FILTER_CUTOFF),
               resonance: read(SYNTH_FILTER_RESONANCE),
             }}
-            readout={`${formatInstrumentValue(SYNTH_FILTER_CUTOFF, read(SYNTH_FILTER_CUTOFF))} · Q ${formatInstrumentValue(SYNTH_FILTER_RESONANCE, read(SYNTH_FILTER_RESONANCE))}`}
+            readout={`${formatReadout(SYNTH_FILTER_CUTOFF, read(SYNTH_FILTER_CUTOFF))} · Q ${formatReadout(SYNTH_FILTER_RESONANCE, read(SYNTH_FILTER_RESONANCE))}`}
             {...wellEdits}
           />
           <ControlGroup title="Low-pass filter">

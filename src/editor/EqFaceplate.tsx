@@ -17,6 +17,7 @@ import {
 } from "../domain/devices";
 import type { Device } from "../domain/entities";
 import { bareParameterId, type ParameterDefinition } from "../domain/parameters";
+import { formatReadout } from "../domain/valueFormat";
 import DragSurface, {
   type SurfaceBox,
   type SurfacePoint,
@@ -24,11 +25,7 @@ import DragSurface, {
 import { frequencyAt, positionOf } from "../instrument/filterResponse";
 import Well from "../instrument/Well";
 import DeviceControls from "./DeviceControls";
-import {
-  deviceParameterTarget,
-  formatDeviceValue,
-  readDeviceParameter,
-} from "./deviceControlModel";
+import { deviceParameterTarget, readDeviceParameter } from "./deviceControlModel";
 import { useDeviceSpectrum } from "./deviceSpectrum";
 import EqSpectrum, { type FrameScheduler } from "./EqSpectrum";
 import {
@@ -111,7 +108,7 @@ export default function EqFaceplate(props: EqFaceplateProps): JSX.Element {
   /** "Peak 1 · 500 Hz · +3.0 dB · Q 1.00" — the band being edited, in words. */
   const readout = () => {
     const b = band();
-    const show = (id: string) => formatDeviceValue(definition(id), value(id));
+    const show = (id: string) => formatReadout(definition(id), value(id));
     const parts = [b.label, show(`${b.id}Freq`)];
     if (eqBandHasGain(b.kind)) parts.push(show(`${b.id}Gain`));
     parts.push(`Q ${show(`${b.id}Q`)}`);
