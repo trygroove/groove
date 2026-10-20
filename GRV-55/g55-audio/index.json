@@ -7,8 +7,8 @@
       "caption": "A sound couldn't load: the notice says it stays silent and what to do"
     },
     {
-      "file": "02-play-when-the-audio-output-has-gone-chec.png",
-      "caption": "Play when the audio output has gone: check the speakers, press Play, or reload"
+      "file": "02-the-audio-output-went-away-the-notice-sa.png",
+      "caption": "The audio output went away: the notice says to reload the page"
     }
   ]
 }
