@@ -1,0 +1,10 @@
+{
+  "id": "gear",
+  "title": "Onboarding gear question",
+  "steps": [
+    {
+      "file": "01-gear-choices-are-generic-only.png",
+      "caption": "Gear choices are generic only"
+    }
+  ]
+}
