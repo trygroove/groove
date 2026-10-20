@@ -4,7 +4,9 @@ import {
   createReferenceProject,
   createSliceFixtureProject,
 } from "../domain/fixtures";
+import { TICKS_PER_BAR } from "../domain/time";
 import { selectOnly } from "../selection/selection";
+import { createBdOnlyProject } from "./evals/fixtures";
 import { buildAssistantPayload } from "./payload";
 import {
   assistantContextPayloadSchema,
@@ -67,6 +69,40 @@ describe("buildAssistantPayload", () => {
     expect(starts).toEqual([...starts].sort((a, b) => a - b));
     expect(
       assistantContextPayloadSchema.safeParse(buildAssistantPayload(project)).success,
+    ).toBe(true);
+  });
+
+  // GRV-116: on a kick-only project the BD's one-bar clip loops for four
+  // bars. Told only the placement's length, the model rewrote the kick as four
+  // bars of notes in the one-bar clip, and the proposal could not be applied.
+  it("says how long each placed clip is, apart from how long it plays", () => {
+    const project = createBdOnlyProject();
+    const [bd] = buildAssistantPayload(project).tracks;
+    const [clip] = project.clips;
+    expect(bd.placements).toEqual([
+      expect.objectContaining({
+        clipId: clip.id,
+        durationTicks: 4 * TICKS_PER_BAR,
+        looped: true,
+        clipLengthTicks: TICKS_PER_BAR,
+      }),
+    ]);
+    expect(
+      assistantContextPayloadSchema.safeParse(buildAssistantPayload(project)).success,
+    ).toBe(true);
+  });
+
+  it("still accepts a placement with no clip length, as a tab on an earlier bundle sends", () => {
+    const payload = buildAssistantPayload(createBdOnlyProject());
+    const legacyTracks = payload.tracks.map((track) => ({
+      ...track,
+      placements: track.placements.map(
+        ({ clipLengthTicks: _length, ...placement }) => placement,
+      ),
+    }));
+    expect(
+      assistantContextPayloadSchema.safeParse({ ...payload, tracks: legacyTracks })
+        .success,
     ).toBe(true);
   });
 

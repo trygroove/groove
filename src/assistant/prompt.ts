@@ -124,7 +124,19 @@
  * waited with, in `earlier`) and the lesson as JSON. The fixed prompt
  * is unchanged, so a turn outside a lesson reads what it did.
  *
- * 2026-10-20.2 (GRV-43 QA): after a chapter was finished, asking for another
+ * 2026-10-20.2 (GRV-116): on a kick-only project, a request to rework the
+ * kick came back as a proposal that could not be applied: the BD's one-bar
+ * clip loops for four bars, and the model, told only the placement's length,
+ * wrote four bars of notes into it. Each placement in the description now
+ * gives its clip's length, and the time rule says a clip's notes start
+ * before it, lengthened with clip_update to hold more.
+ *
+ * 2026-10-20.3 (GRV-116): after a proposal that could not be applied, the
+ * reply said "That's a proper D&B groove now", as if it had happened. The
+ * rule on saying what is proposed now says to speak of it as yet to apply,
+ * never as done.
+ *
+ * 2026-10-20.4 (GRV-43 QA): after a chapter was finished, asking for another
  * lesson got "Starting it now" and no card. The history resent the earlier
  * replies that started one as their sentence alone, so the model copied the
  * sentence without the call. A reply that started a lesson is now followed
@@ -162,7 +174,7 @@ import type { AssistantContextPayload, AssistantLibraryContext } from "./protoco
 import type { ProviderTextBlock } from "./providerRequest";
 import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-20.2";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-20.4";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",
@@ -333,9 +345,9 @@ const MISSING: PromptPassage = {
 
 /** Before how a proposal is built (the `oneResponseProposal` tactic's text). */
 const PROPOSE_HEAD: PromptPassage = {
-  full: `When the producer asks you to change the song, propose the change with your tools, in the same turn: a change you only describe in words cannot be applied, so never say you are proposing something without calling the tools that make it. Nothing you propose happens by itself: the producer sees what it would change and applies it or not, so say in a sentence what you are proposing. Put every change for one request into one proposal; together they apply in order, or not at all.`,
-  moderate: `When the producer asks for a change, propose it with your tools in the same turn: words alone cannot be applied, so never say you are proposing something without the calls that make it. Nothing happens until the producer sees what it would change and applies it; say in a sentence what you propose. One request is one proposal, its changes applied in order or not at all.`,
-  aggressive: `To change the song, call the tools in the same turn: words apply nothing, so never claim a proposal without its calls. Say in a sentence what you propose; the producer sees it and it happens only if they apply it. One request is one proposal, applied in order or not at all.`,
+  full: `When the producer asks you to change the song, propose the change with your tools, in the same turn: a change you only describe in words cannot be applied, so never say you are proposing something without calling the tools that make it. Nothing you propose happens by itself: the producer sees what it would change and applies it or not, so say in a sentence what you are proposing, as something they have yet to apply ("This rebuilds the kick into a busy four-bar groove"), never as done ("That's a proper groove now"): it may not apply, and it changes nothing until they apply it. Put every change for one request into one proposal; together they apply in order, or not at all.`,
+  moderate: `When the producer asks for a change, propose it with your tools in the same turn: words alone cannot be applied, so never say you are proposing something without the calls that make it. Nothing happens until the producer sees what it would change and applies it; say in a sentence what you propose, as yet to apply ("This rebuilds the kick"), never as done ("That's a groove now"), since it may not apply. One request is one proposal, its changes applied in order or not at all.`,
+  aggressive: `To change the song, call the tools in the same turn: words apply nothing, so never claim a proposal without its calls. Say in a sentence what you propose, as yet to apply, never as done (not "That's a groove now"); the producer sees it and it happens only if they apply it. One request is one proposal, applied in order or not at all.`,
 };
 
 /** After how a proposal is built. */
@@ -391,13 +403,13 @@ const ADDRESSING_IDS_AND_NOTES: PromptPassage = {
 /** Drop group `toolAddressing`: the bullets after the tactics' added lines. */
 const ADDRESSING_PARAMETERS_AND_TIME: PromptPassage = {
   full: `- parameter_set takes the full parameter ID at song, track, master, send and return scope: ${SONG_TEMPO.id} (${SONG_TEMPO.min} to ${SONG_TEMPO.max}) and ${SONG_SWING.id} (${SONG_SWING.min} straight to ${SONG_SWING.max}) on the song; ${TRACK_VOLUME.id} (${TRACK_VOLUME.min} to ${TRACK_VOLUME.max} dB) and ${TRACK_PAN.id} on a track; ${MASTER_VOLUME.id} on the master; ${TRACK_SEND_LEVEL.id} (0 to 1) on a send; ${RETURN_VOLUME.id} and ${RETURN_PAN.id} on a return. At instrument and device scope it takes the bare key listed below (cutoff, threshold).
-- A bar of 4/4 is ${TICKS_PER_BAR} ticks and a sixteenth ${TICKS_PER_SIXTEENTH}. A clip's notes sit at ticks inside the clip; a clip is at most ${MAX_CLIP_LENGTH_BARS} bars long. A placement puts a clip on its track's timeline at startTicks for durationTicks, and looped: true repeats the clip to fill it. Placements on one track may not overlap: each track's placements are in the description, so put a new one where nothing on its track is playing, or shorten or move the one in the way with placement_update in the same call.
+- A bar of 4/4 is ${TICKS_PER_BAR} ticks and a sixteenth ${TICKS_PER_SIXTEENTH}. A clip's notes sit at ticks inside the clip; a clip is at most ${MAX_CLIP_LENGTH_BARS} bars long. A placement puts a clip on its track's timeline at startTicks for durationTicks, and looped: true repeats the clip to fill it. Each placement in the description gives its clip's own length, clipLengthTicks, which a looped placement plays for longer: every note of a clip starts before its clip's length, so to write more bars into a clip that exists, lengthen it with clip_update first in the same proposal, or write one clip's worth and let the loop repeat it. Placements on one track may not overlap: each track's placements are in the description, so put a new one where nothing on its track is playing, or shorten or move the one in the way with placement_update in the same call.
 - A track's order runs from 0 and a new one goes at the end, at the number of tracks the description lists. A device's order is its place in its chain; 0 puts it first, which is always valid.`,
   moderate: `- parameter_set takes the full parameter ID at song, track, master, send and return scope: ${SONG_TEMPO.id} (${SONG_TEMPO.min} to ${SONG_TEMPO.max}) and ${SONG_SWING.id} (${SONG_SWING.min} straight to ${SONG_SWING.max}); ${TRACK_VOLUME.id} (${TRACK_VOLUME.min} to ${TRACK_VOLUME.max} dB) and ${TRACK_PAN.id}; ${MASTER_VOLUME.id}; ${TRACK_SEND_LEVEL.id} (0 to 1) on a send; ${RETURN_VOLUME.id} and ${RETURN_PAN.id}. At instrument and device scope it takes the bare key listed below (cutoff, threshold).
-- A 4/4 bar is ${TICKS_PER_BAR} ticks, a sixteenth ${TICKS_PER_SIXTEENTH}; notes sit at ticks inside their clip, which is at most ${MAX_CLIP_LENGTH_BARS} bars. A placement puts a clip on its track at startTicks for durationTicks, and looped: true repeats it to fill that. Placements on a track may not overlap: put a new one where its track is silent (the description lists each track's placements), or move or shorten the one in the way with placement_update in the same call.
+- A 4/4 bar is ${TICKS_PER_BAR} ticks, a sixteenth ${TICKS_PER_SIXTEENTH}; notes sit at ticks inside their clip, which is at most ${MAX_CLIP_LENGTH_BARS} bars. A placement puts a clip on its track at startTicks for durationTicks, and looped: true repeats it to fill that. Each placement listed gives its clip's own length (clipLengthTicks): a clip's notes start before it, so lengthen an existing clip with clip_update first to write more bars into it, or write one clip's worth and let the loop repeat it. Placements on a track may not overlap: put a new one where its track is silent (the description lists each track's placements), or move or shorten the one in the way with placement_update in the same call.
 - Track order runs from 0, and a new track's is the number of tracks listed (the end). A device's order is its place in its chain; 0, first, is always valid.`,
   aggressive: `- parameter_set takes full IDs at song, track, master, send and return scope (${SONG_TEMPO.id} ${SONG_TEMPO.min} to ${SONG_TEMPO.max}, ${SONG_SWING.id} ${SONG_SWING.min} to ${SONG_SWING.max}, ${TRACK_VOLUME.id} ${TRACK_VOLUME.min} to ${TRACK_VOLUME.max} dB, ${TRACK_PAN.id}, ${MASTER_VOLUME.id}, ${TRACK_SEND_LEVEL.id} 0 to 1, ${RETURN_VOLUME.id}, ${RETURN_PAN.id}), and the bare keys below (cutoff) at instrument and device scope.
-- A 4/4 bar is ${TICKS_PER_BAR} ticks, a sixteenth ${TICKS_PER_SIXTEENTH}; notes are clip-relative; a clip is at most ${MAX_CLIP_LENGTH_BARS} bars; a placement plays a clip at startTicks for durationTicks, and looped: true fills it. A track's placements may not overlap (the description lists them): use free space, or move or shorten the one in the way (placement_update) in the same call.
+- A 4/4 bar is ${TICKS_PER_BAR} ticks, a sixteenth ${TICKS_PER_SIXTEENTH}; notes are clip-relative; a clip is at most ${MAX_CLIP_LENGTH_BARS} bars; a placement plays a clip at startTicks for durationTicks, and looped: true fills it. A clip's notes start before its clipLengthTicks (listed on each placement): lengthen it (clip_update) first to write more bars. A track's placements may not overlap (the description lists them): use free space, or move or shorten the one in the way (placement_update) in the same call.
 - Track order runs from 0, a new one's is the track count; device order is the chain position, and 0 is always valid.`,
 };
 
