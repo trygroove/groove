@@ -51,6 +51,12 @@ jobs:
       # RESTACK_TOKEN so the @claude comment starts claude.yml, and the revert PR
       # gets CI and its label starts merge.yml (GITHUB_TOKEN triggers neither).
       GH_TOKEN: ${{ secrets.RESTACK_TOKEN || github.token }}
+      # The PAT has no Actions permission, so a re-run goes through GITHUB_TOKEN
+      # (`actions: write` above). Its completion may then never start this
+      # workflow (GitHub starts nothing for most events GITHUB_TOKEN causes), so
+      # the board's poll also hands over a PR whose re-run failed
+      # (board.mjs, pollRetriedRuns); main's resume has the same gap.
+      RERUN_TOKEN: ${{ github.token }}
       LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
     steps:
       - uses: actions/checkout@v4

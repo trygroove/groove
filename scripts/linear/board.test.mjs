@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeRuns,
   handoffAwaiting,
+  mentionRequest,
   PICKUP,
   prActivity,
+  retriedRuns,
   sweepVerdict,
 } from "../../.github/scripts/board.mjs";
 import {
@@ -200,6 +203,49 @@ describe("the idle sweep (GRV-197)", () => {
     expect(sweepVerdict(card(), { now, prs: [running], runs: [] }).action).toBe("leave");
   });
 
+  it("never asks for a Claude run in the comments it posts", () => {
+    const blocked = sweepVerdict(card(), { now, prs: [pr()], runs: [] });
+    expect(blocked.comment).not.toMatch(/@claude/i);
+    expect(mentionRequest(blocked.comment)).toBe(false);
+    const gated = pr({
+      labels: [{ name: "needs-approval" }],
+      autoMergeRequest: null,
+      statusCheckRollup: [gate("SUCCESS")],
+    });
+    const review = sweepVerdict(card(), { now, prs: [gated], runs: [] });
+    expect(review.comment).not.toMatch(/@claude/i);
+    expect(mentionRequest(review.comment)).toBe(false);
+  });
+
+  it("moves a stale card whose PRs only wait for approval to Ready For Review", () => {
+    const gated = (extra) =>
+      pr({
+        labels: [{ name: "needs-approval" }],
+        autoMergeRequest: null,
+        statusCheckRollup: [gate("SUCCESS")],
+        ...extra,
+      });
+    const verdict = sweepVerdict(card(), {
+      now,
+      prs: [
+        gated(),
+        gated({ number: 42, statusCheckRollup: [gate(null, "IN_PROGRESS")] }),
+      ],
+      runs: [],
+    });
+    expect(verdict.action).toBe("review");
+    expect(verdict.comment).toContain("#41");
+    expect(verdict.comment).toContain("#42");
+    // Approved already, red, held, or beside a PR that is not gated: someone has to look.
+    for (const prs of [
+      [gated({ labels: [{ name: "needs-approval" }, { name: "status:approved" }] })],
+      [gated({ statusCheckRollup: [gate("FAILURE")] })],
+      [gated({ labels: [{ name: "needs-approval" }, { name: "hold" }] })],
+      [gated(), pr({ number: 43, autoMergeRequest: null })],
+    ])
+      expect(sweepVerdict(card(), { now, prs, runs: [] }).action).toBe("block");
+  });
+
   it("does not count a PR that cannot move on its own", () => {
     const stuck = [
       pr({ autoMergeRequest: null, statusCheckRollup: [gate("SUCCESS")] }),
@@ -229,6 +275,7 @@ describe("prActivity", () => {
     };
     expect(prActivity(p)).toEqual({
       inFlight: false,
+      onlyAwaitingApproval: true,
       state: "waiting for approval (`needs-approval`), not queued",
     });
   });
@@ -246,12 +293,16 @@ describe("handoffAwaiting", () => {
     history,
   });
 
-  it("names the PR a Blocked or Approved card's handoff waits on", () => {
+  it("names the PR a Blocked, Ready For Review or Approved card's handoff waits on", () => {
     const comments = [handoff("**Handoff from /ship.** Waiting on #812 to merge.")];
     expect(handoffAwaiting(blocked(comments))).toBe(812);
     expect(handoffAwaiting({ ...blocked(comments), state: { name: "Approved" } })).toBe(
       812,
     );
+    // A gated PR moves its card to Ready For Review (merge.mjs).
+    expect(
+      handoffAwaiting({ ...blocked(comments), state: { name: "Ready For Review" } }),
+    ).toBe(812);
   });
 
   it("names none when it waits on a decision, the card is elsewhere, or it already resumed", () => {
@@ -296,5 +347,94 @@ describe("handoffAwaiting", () => {
         ]),
       ),
     ).toBe(900);
+  });
+});
+
+describe("mentionRequest", () => {
+  it("is a person's comment that says @claude", () => {
+    expect(mentionRequest("@claude please look at the export")).toBe(true);
+    expect(mentionRequest("Can @Claude check this?")).toBe(true);
+    expect(mentionRequest("No mention here")).toBe(false);
+  });
+
+  it("is never a comment the automation wrote", () => {
+    for (const body of [
+      `${PICKUP}.** ([run](u)) after @claude`,
+      "**Moved to Blocked: CI is still red on https://github.com/o/r/pull/1 after a fix.** handed to @claude",
+      "**Moved to Ready For Review: its PRs wait for approval.** @claude",
+      "**Back to Ready.** #812 merged; @claude",
+    ])
+      expect(mentionRequest(body)).toBe(false);
+  });
+});
+
+describe("activeRuns", () => {
+  it("asks for unfinished runs by status, so a ship job hours old still counts", () => {
+    const calls = [];
+    // GitHub's latest 100 board runs are all finished; the long ship run is
+    // found only by asking for in-progress runs.
+    const list = (path) => {
+      calls.push(path);
+      if (path.includes("/runs/7/jobs")) return ["poll", "ship GRV-7"];
+      if (path.includes("board.yml/runs?status=in_progress"))
+        return [{ id: 7, title: "Board", url: "u7" }];
+      // The same run listed under two statuses is counted once.
+      if (path.includes("board.yml/runs?status=queued"))
+        return [{ id: 7, title: "Board", url: "u7" }];
+      return [];
+    };
+    const runs = activeRuns(list);
+    expect(runs).toEqual([
+      {
+        workflow: "board",
+        id: 7,
+        title: "Board",
+        url: "u7",
+        jobs: ["poll", "ship GRV-7"],
+      },
+    ]);
+    for (const status of ["in_progress", "queued", "waiting", "pending", "requested"])
+      for (const file of ["board.yml", "claude.yml", "assistant-experiments.yml"])
+        expect(calls.some((c) => c.includes(`${file}/runs?status=${status}`))).toBe(true);
+    expect(calls.every((c) => !c.endsWith("runs?per_page=100"))).toBe(true);
+    const stale = {
+      identifier: "GRV-7",
+      state: { name: "In Progress" },
+      history: [],
+      comments: [],
+    };
+    expect(sweepVerdict(stale, { now: Date.now(), prs: [], runs }).action).toBe("leave");
+  });
+});
+
+describe("retriedRuns", () => {
+  const now = Date.parse("2026-10-20T12:00:00Z");
+  const minutesAgo = (m) => new Date(now - m * 60_000).toISOString();
+  const prs = [{ number: 41, headRefName: "claude/grv-7-x", body: "Completes GRV-7" }];
+  const run = (extra) => ({
+    id: 1,
+    branch: "claude/grv-7-x",
+    sha: "abc",
+    attempt: 2,
+    updatedAt: minutesAgo(30),
+    ...extra,
+  });
+
+  it("hands over an open PR's run that failed again on a re-run, after a grace period", () => {
+    expect(retriedRuns([run()], prs, now).map((r) => r.id)).toEqual([1]);
+  });
+
+  it("leaves a first attempt, a fresh failure and a branch with no open PR", () => {
+    expect(
+      retriedRuns(
+        [
+          run({ attempt: 1 }),
+          run({ updatedAt: minutesAgo(2) }),
+          run({ branch: "claude/grv-8-y" }),
+        ],
+        prs,
+        now,
+      ),
+    ).toEqual([]);
   });
 });

@@ -42,7 +42,9 @@ failure moves it to In Progress; a PR's own CI still red after a re-run and an
 `@claude` fix moves it to Blocked; and a PR a /ship handoff waits on merging
 moves the card back to Ready. Every poll also sweeps In Progress: a card there
 for an hour with no agent run on it and no PR of it moving on its own goes to
-Blocked, with a comment saying what the poll found. The QA bot ([`docs/qa-bot.md`](./qa-bot.md))
+Blocked (or to Ready For Review when its PRs only wait for approval), with a
+comment saying what the poll found. A card in Ready For Review or Approved
+whose handoff waits on a PR goes back to Ready the same way. The QA bot ([`docs/qa-bot.md`](./qa-bot.md))
 moves a card out of QA.
 
 Everything that reads or writes Linear goes through

@@ -24,7 +24,10 @@
 #                                  fails is the fix's (this handler handed the PR
 #                                  over in the last day and it has been pushed
 #                                  since), move its card to Blocked instead
-#                                  (GRV-197).
+#                                  (GRV-197). Each run is acted on once, so the
+#                                  board's poll can call this as a backstop for a
+#                                  re-run whose completion never reached the
+#                                  workflow (board.mjs, pollRetriedRuns).
 #
 # Needs LINEAR_API_KEY, and `linear.mjs` and `merge.mjs` beside this script.
 #
@@ -56,6 +59,13 @@ issue_of() {
 # File a Linear issue: $1 title, $2 label, body on stdin. Prints its identifier.
 file_linear() {
 	linear create --title "$1" --label "$2" --body-file - | jq -r .identifier
+}
+
+# Re-run a run's failed jobs. As RERUN_TOKEN (the job's GITHUB_TOKEN, with
+# `actions: write`): GH_TOKEN is the PAT, which has no Actions permission.
+# Fails, rather than exiting the script, when GitHub refuses.
+rerun() {
+	GH_TOKEN="${RERUN_TOKEN:-${GH_TOKEN:-}}" gh run rerun "$1" --repo "$repo" --failed
 }
 
 failed_gates() {
@@ -111,11 +121,14 @@ main)
 	merge stop "$run_url"
 
 	# A flake is not a reason to revert. Re-run the failed jobs once; green resumes
-	# the line, and a second failure comes back here as attempt 2.
+	# the line, and a second failure comes back here as attempt 2. When GitHub
+	# refuses the re-run, decide now rather than leave the line stopped.
 	if [ "$attempt" = 1 ]; then
-		gh run rerun "$run" --repo "$repo" --failed
-		log "re-running the failed jobs of $run before deciding"
-		exit 0
+		if rerun "$run"; then
+			log "re-running the failed jobs of $run before deciding"
+			exit 0
+		fi
+		log "could not re-run $run; deciding now"
 	fi
 
 	git fetch --quiet origin main
@@ -184,12 +197,18 @@ pr)
 	# Hidden in the rendered comment: how a later run knows this handler handed
 	# the PR to @claude, and so that a red run after that is the fix's.
 	marker='<!-- ci-failure:pr -->'
+	# And which run a comment was about: this handler acts on each run once.
+	done_marker="<!-- ci-failure:run:$run -->"
 	pr="$(gh api "repos/$repo/pulls?state=open&head=${repo%%/*}:$branch" --jq '.[0].number // empty')"
 	[ -n "$pr" ] || { log "no open PR from $branch"; exit 0; }
 	[ "$(gh api "repos/$repo/pulls/$pr" --jq .head.sha)" = "$sha" ] || {
 		log "#$pr has been pushed since $sha; the newer run decides"
 		exit 0
 	}
+	if gh api --paginate "repos/$repo/issues/$pr/comments?per_page=100" --jq '.[].body' | grep -qF "$done_marker"; then
+		log "#$pr: run $run has been handled already"
+		exit 0
+	fi
 	failed="$(failed_gates "$run")"
 	[ -n "$failed" ] || { log "#$pr: only non-gate jobs failed"; exit 0; }
 	# With main red, a PR run (which tests the merge with main) fails for main's
@@ -208,10 +227,15 @@ pr)
 		log "#$pr: an @claude run already has it"
 		exit 0
 	fi
+	# Re-run once. When GitHub refuses, hand it over now rather than not at all.
+	retried=" and again on a re-run"
 	if [ "$attempt" = 1 ]; then
-		gh run rerun "$run" --repo "$repo" --failed
-		log "#$pr: re-running the failed jobs of $run before handing it over"
-		exit 0
+		if rerun "$run"; then
+			log "#$pr: re-running the failed jobs of $run before handing it over"
+			exit 0
+		fi
+		log "#$pr: could not re-run $run; handing it over without a re-run"
+		retried=" (it could not be re-run)"
 	fi
 	day_ago="$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)"
 	issue="$(issue_of "$pr")"
@@ -219,7 +243,8 @@ pr)
 		# This handler handed the PR to @claude in the last day, it has been
 		# pushed since, and the fix is red too: someone has to look.
 		gh pr comment "$pr" --repo "$repo" --body-file - <<EOF
-CI failed again on this PR after the fix for its last failure, and again on a re-run: $run_url
+CI failed again on this PR after the fix for its last failure$retried: $run_url
+$done_marker
 
 Failing jobs:
 $(sed 's/^/- /' <<<"$failed")
@@ -228,22 +253,23 @@ ${issue:+Its card $issue is moved to Blocked: }this needs a person to look befor
 $footer
 EOF
 		if [ -n "$issue" ]; then
+			linear state "$issue" Blocked >/dev/null || log "could not move $issue to Blocked"
 			linear comment "$issue" --body-file - >/dev/null <<EOF || log "could not comment on $issue"
-**Moved to Blocked: CI is still red on https://github.com/$repo/pull/$pr after a fix.** The PR's own CI run failed, was re-run once and handed to \`@claude\`, and the fix's run failed as well: $run_url
+**Moved to Blocked: CI is still red on https://github.com/$repo/pull/$pr after a fix.** The PR's own CI run failed and was handed to a Claude run, and the fix's run failed as well: $run_url
 
 Failing jobs:
 $(sed 's/^/- /' <<<"$failed")
 
-**Unblocked by:** someone finding the cause (a flaky test, or a problem outside this PR, can look like this). Comment \`@claude\` on the PR saying what to do, or push a fix yourself; then move this card back to In Progress.
+**Unblocked by:** someone finding the cause (a flaky test, or a problem outside this PR, can look like this). Mention Claude in a comment on the PR saying what to do, or push a fix yourself; then move this card back to In Progress.
 EOF
-			linear state "$issue" Blocked >/dev/null || log "could not move $issue to Blocked"
 		fi
 		log "#$pr: red again after the fix; ${issue:-no card} to Blocked"
 		exit 0
 	fi
 	gh pr comment "$pr" --repo "$repo" --body-file - <<EOF
-@claude CI failed on this PR's head, and again on a re-run, so it cannot merge: $run_url
+@claude CI failed on this PR's head$retried, so it cannot merge: $run_url
 $marker
+$done_marker
 
 Failing jobs:
 $(sed 's/^/- /' <<<"$failed")
