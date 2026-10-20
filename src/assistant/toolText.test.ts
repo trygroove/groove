@@ -7,7 +7,6 @@ import {
 import { askProducerTool } from "./ask";
 import { runAssistantTurn } from "./gateway";
 import { createInMemoryGuardStores } from "./inMemoryGuardStores";
-import { startLessonTool } from "./lessonTool";
 import { rememberTool } from "./memory";
 import { buildAssistantPayload } from "./payload";
 import { ASSISTANT_SYSTEM_PROMPT, buildSystemBlocks, SHARED_TOOL_RULES } from "./prompt";
@@ -43,7 +42,6 @@ function offered(level: ToolTextLevel) {
     withToolText(askProducerTool(), level),
     ...conditional,
     withToolText(rememberTool(), level),
-    withToolText(startLessonTool(), level),
   ];
 }
 
@@ -157,12 +155,7 @@ describe("the toolText tactic", () => {
   });
 
   it("trims the conditional tools at both levels", () => {
-    for (const name of [
-      "recommend_sounds",
-      "recommend_video",
-      "remember_producer",
-      "start_lesson",
-    ]) {
+    for (const name of ["recommend_sounds", "recommend_video", "remember_producer"]) {
       const full = offered("full").find((tool) => tool.name === name);
       for (const level of ["moderate", "aggressive"] as const) {
         const trimmed = offered(level).find((tool) => tool.name === name);
