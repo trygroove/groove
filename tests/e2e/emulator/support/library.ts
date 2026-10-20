@@ -4,6 +4,7 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
+import { reloadPage } from "./reload";
 import { expectView, pressView } from "./views";
 
 /**
@@ -143,7 +144,7 @@ export async function reloadOnInstrumentView(
   projectUrl: string,
 ): Promise<void> {
   await expect(page.locator(".save-status")).toHaveText("Saved", { timeout: 10_000 });
-  await page.reload();
+  await reloadPage(page);
   await expect(page).toHaveURL(`${projectUrl}/instrument`);
   await expect(drumMachine(page)).toBeVisible();
 }

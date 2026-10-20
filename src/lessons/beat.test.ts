@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addNotes } from "../commands/definitions/notes";
+import { setParameter } from "../commands/definitions/parameters";
 import { addPlacement } from "../commands/definitions/placements";
 import { removeTrack } from "../commands/definitions/tracks";
 import { createNoteEvent, createPlacement } from "../domain/factories";
@@ -10,9 +11,10 @@ import {
   lessonContext,
   starterWorld,
 } from "../testing/lessonWorld";
-import { BEAT_CHAPTER, coveredTicks, LOOP_BARS } from "./beat";
+import { BEAT_CHAPTER, coveredTicks, LOOP_BARS, TEMPO_TOLERANCE } from "./beat";
 import { nextStep } from "./chapters";
 import { beatTrack, hitsAll, kickPad, stepsHit } from "./drums";
+import { observe, startBite } from "./session";
 import { BEAT_PATTERNS, BEAT_STYLES, type BeatStyle } from "./style";
 import type { LessonBite, LessonStep, LessonWorld } from "./types";
 
@@ -145,17 +147,84 @@ describe("Make a beat (GRV-43)", () => {
       expect(words).toContain(`(${BEAT_PATTERNS[style].termId})`);
     });
 
-    it("holds once the kick hits every step of the pattern", () => {
+    /** The kick pad's steps in the beat's clip, in order. */
+    const kickSteps = (world: LessonWorld): number[] => {
+      const track = beatTrack(world.project);
+      const pad = track && kickPad(track);
+      if (!track || !pad) throw new Error("no kick");
+      return [...stepsHit(world.project.clips[0], pad.id)].sort((a, b) => a - b);
+    };
+
+    it.each(BEAT_STYLES)(
+      "on the starter project, is not done until %s's kick is the only kick, and Show me makes it so",
+      (style) => {
+        const settings = { style };
+        const world = starterWorld();
+        // The starter's kick: 1, 5, 9 and 13, four on the floor.
+        expect(kickSteps(world)).toEqual([0, 4, 8, 12]);
+        let state = startBite("beat", "beat-kick", world, settings).state;
+        // Nothing is done as the bite starts, whatever the style.
+        expect(observe(state, world, settings)).toBeNull();
+        let now = world;
+        if (style === "four_on_the_floor") {
+          // The starter already plays it: the producer clears the row first.
+          expect(biteNamed("beat-kick").steps[state.step?.index ?? -1]?.id).toBe("clear");
+          const clear = stepIn("beat-kick", now, style);
+          now = applyShowMe(now, clear.showMe(now, settings, lessonContext(1)));
+          expect(kickSteps(now)).toEqual([]);
+          const cleared = observe(state, now, settings);
+          expect(cleared?.event).toMatchObject({ kind: "step_done", how: "did_it" });
+          if (!cleared) throw new Error("not cleared");
+          state = cleared.state;
+          expect(observe(state, now, settings)).toBeNull();
+        }
+        const step = biteNamed("beat-kick").steps[state.step?.index ?? -1];
+        expect(step?.id).toBe("pattern");
+        if (!step) throw new Error("no pattern step");
+        // The pattern's steps alone are not enough while other kicks stay.
+        if (style !== "four_on_the_floor") {
+          const withPattern = withKickAt(
+            now,
+            BEAT_PATTERNS[style].kick.filter((at) => at !== 0),
+          );
+          expect(step.done(withPattern, now, settings)).toBe(false);
+        }
+        const shown = applyShowMe(now, step.showMe(now, settings, lessonContext(2)));
+        expect(kickSteps(shown)).toEqual(BEAT_PATTERNS[style].kick);
+        expect(step.done(shown, now, settings)).toBe(true);
+        expect(observe(state, shown, settings)?.event).toMatchObject({
+          kind: "bite_done",
+        });
+      },
+    );
+
+    it("takes an off-grid kick for one off the pattern", () => {
       const world = starterWorld();
-      const step = stepIn("beat-kick", world);
-      // The starter's four on the floor is house's pattern, not boom bap's.
-      expect(step.done(world, world, { style: "four_on_the_floor" })).toBe(true);
-      expect(step.done(world, world, { style: "boom_bap" })).toBe(false);
-      const after = withKickAt(world, [10]);
-      expect(step.done(after, world, { style: "boom_bap" })).toBe(true);
+      const step = stepIn("beat-kick", world, "boom_bap");
+      const track = beatTrack(world.project);
+      const pad = track && kickPad(track);
+      const clip = world.project.clips[0];
+      if (!track || !pad || !clip) throw new Error("no beat");
+      const exact = applyShowMe(
+        world,
+        step.showMe(world, { style: "boom_bap" }, lessonContext()),
+      );
+      expect(step.done(exact, world, { style: "boom_bap" })).toBe(true);
+      const nudged = applied(exact.project, [
+        addNotes(clip.id, [
+          createNoteEvent(lessonContext(9), {
+            startTicks: 5,
+            durationTicks: TICKS_PER_SIXTEENTH,
+            padId: pad.id,
+          }),
+        ]),
+      ]);
+      expect(step.done({ ...exact, project: nudged }, world, { style: "boom_bap" })).toBe(
+        false,
+      );
     });
 
-    it.each(BEAT_STYLES)("Show me writes %s's kick into the beat's clip", (style) => {
+    it.each(BEAT_STYLES)("Show me writes %s's kick into an empty clip", (style) => {
       const world = starterWorld();
       const blank: LessonWorld = {
         ...world,
@@ -169,35 +238,74 @@ describe("Make a beat (GRV-43)", () => {
         },
       };
       const step = stepIn("beat-kick", blank, style);
+      expect(step.id).toBe("pattern");
       const after = applyShowMe(blank, step.showMe(blank, { style }, lessonContext()));
       expect(step.done(after, blank, { style })).toBe(true);
-      const track = beatTrack(after.project);
-      const pad = track && kickPad(track);
-      if (!track || !pad) throw new Error("no kick");
-      expect([...stepsHit(after.project.clips[0], pad.id)].sort((a, b) => a - b)).toEqual(
-        BEAT_PATTERNS[style].kick,
-      );
+      expect(kickSteps(after)).toEqual(BEAT_PATTERNS[style].kick);
     });
 
-    it("has nothing to show once the kick is there", () => {
+    it("has nothing to show once the kick is the pattern", () => {
       const world = starterWorld();
+      const pattern = biteNamed("beat-kick").steps.find((one) => one.id === "pattern");
       expect(
-        stepIn("beat-kick", world, "four_on_the_floor").showMe(
-          world,
-          { style: "four_on_the_floor" },
-          lessonContext(),
-        ),
+        pattern?.showMe(world, { style: "four_on_the_floor" }, lessonContext()),
       ).toBeNull();
     });
   });
 
-  it("Hear it is done while the song plays, and Show me plays it", () => {
-    const world = starterWorld();
-    const step = stepIn("beat-play", world);
-    expect(step.done(world, world, { style: "trap" })).toBe(false);
-    expect(step.done({ ...world, playing: true }, world, { style: "trap" })).toBe(true);
-    expect(step.showMe(world, { style: "trap" }, lessonContext())).toEqual({
-      kind: "play",
+  describe("Hear it", () => {
+    it.each(BEAT_STYLES)(
+      "first sets %s's tempo, which Show me sets on the song",
+      (style) => {
+        const settings = { style };
+        const world = starterWorld();
+        expect(world.project.song.tempo).toBe(120);
+        const step = stepIn("beat-play", world, style);
+        expect(step.id).toBe("tempo");
+        expect(step.done(world, world, settings)).toBe(false);
+        expect(step.target(world, settings)).toEqual({ entity: "song", param: "tempo" });
+        const after = applyShowMe(world, step.showMe(world, settings, lessonContext()));
+        expect(after.project.song.tempo).toBe(BEAT_PATTERNS[style].tempo);
+        expect(step.done(after, world, settings)).toBe(true);
+      },
+    );
+
+    it("holds near the style's tempo, not only on it, and is passed over once there", () => {
+      const settings = { style: "boom_bap" } as const;
+      const at = (tempo: number): LessonWorld => {
+        const world = starterWorld();
+        return {
+          ...world,
+          project: applied(world.project, [
+            setParameter({ scope: "song", parameterId: "song.tempo" }, tempo),
+          ]),
+        };
+      };
+      const step = stepIn("beat-play", starterWorld(), "boom_bap");
+      expect(step.done(at(90 + TEMPO_TOLERANCE), at(120), settings)).toBe(true);
+      expect(step.done(at(90 - TEMPO_TOLERANCE), at(120), settings)).toBe(true);
+      expect(step.done(at(90 + TEMPO_TOLERANCE + 1), at(120), settings)).toBe(false);
+      expect(step.done(at(80), at(120), settings)).toBe(false);
+      expect(stepIn("beat-play", at(91), "boom_bap").id).toBe("play");
+    });
+
+    it("is done while the song plays, and Show me plays it", () => {
+      const world = starterWorld();
+      const atTempo: LessonWorld = {
+        ...world,
+        project: applied(world.project, [
+          setParameter({ scope: "song", parameterId: "song.tempo" }, 140),
+        ]),
+      };
+      const step = stepIn("beat-play", atTempo, "trap");
+      expect(step.id).toBe("play");
+      expect(step.done(atTempo, atTempo, { style: "trap" })).toBe(false);
+      expect(step.done({ ...atTempo, playing: true }, atTempo, { style: "trap" })).toBe(
+        true,
+      );
+      expect(step.showMe(atTempo, { style: "trap" }, lessonContext())).toEqual({
+        kind: "play",
+      });
     });
   });
 

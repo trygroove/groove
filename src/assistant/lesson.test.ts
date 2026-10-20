@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { addNotes } from "../commands/definitions/notes";
+import { createNoteEvent } from "../domain/factories";
+import { TICKS_PER_SIXTEENTH } from "../domain/time";
 import { lessonCue } from "../lessons/cue";
+import { beatTrack, kickPad } from "../lessons/drums";
 import { skip, startBite } from "../lessons/session";
-import { starterWorld } from "../testing/lessonWorld";
+import { applied, lessonContext, starterWorld } from "../testing/lessonWorld";
 import { MINIMAL_ASSISTANT_CONTEXT } from "../testing/scriptedAssistantProvider";
 import {
   type AssistantLessonContext,
@@ -36,6 +40,38 @@ describe("a lesson as a turn carries it (GRV-43)", () => {
     if (!over) throw new Error("not skipped");
     const wrapUp = lessonCue(over.state, over.event, settings, []);
     expect(assistantLessonContextSchema.safeParse(wrapUp).success).toBe(true);
+  });
+
+  it("takes the cue of a step that changed a great deal", () => {
+    const world = starterWorld();
+    const track = beatTrack(world.project);
+    const pad = track && kickPad(track);
+    const clip = world.project.clips[0];
+    if (!track || !pad || !clip) throw new Error("no beat");
+    const { state } = startBite("beat", "beat-hats", world, settings);
+    const context = lessonContext();
+    // 48 hits on one pad, each its own position: a line listing them all ran
+    // past what a change line may be.
+    const busy = {
+      ...world,
+      project: applied(world.project, [
+        addNotes(
+          clip.id,
+          Array.from({ length: 48 }, (_, index) =>
+            createNoteEvent(context, {
+              startTicks: index * (TICKS_PER_SIXTEENTH / 4) + 1,
+              durationTicks: TICKS_PER_SIXTEENTH / 4,
+              padId: pad.id,
+            }),
+          ),
+        ),
+      ]),
+    };
+    const over = skip(state, busy, settings);
+    if (!over) throw new Error("not skipped");
+    const lesson = lessonCue(over.state, over.event, settings, []);
+    expect(lesson.changes.length).toBeGreaterThan(0);
+    expect(assistantLessonContextSchema.safeParse(lesson).success).toBe(true);
   });
 
   it("refuses a field it does not name, or a bite it does not know", () => {

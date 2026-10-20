@@ -174,24 +174,43 @@ test.describe("CF-037", () => {
       await expect(lessonButton(page, "Show me")).toBeVisible();
       await step("A term, explained without leaving the step");
 
-      // 6. Open the Sequence view and, on BD's row, turn on step 11. "The kick
-      //    pattern" is marked done, with nothing pressed in the lesson, and
-      //    Coproducer's reply about it follows.
+      // 6. Open the Sequence view and, on BD's row, turn on step 11: the bite
+      //    is not done yet, because the starter's kicks on steps 5, 9 and 13
+      //    are still on. Turn those three off. "The kick pattern" is marked
+      //    done, with nothing pressed in the lesson, and Coproducer's reply
+      //    about it follows.
       await dockTile(page, "Sequence").click();
       await expectView(page, "Sequence");
       await sequenceView(page).getByRole("button", { name: "BD, step 11, off" }).click();
+      await expect(
+        sequenceView(page).getByRole("button", { name: "BD, step 11, on" }),
+      ).toBeVisible();
+      await expect(bite(page, BITES[1])).not.toContainText("done");
+      for (const kick of [5, 9, 13]) {
+        await sequenceView(page)
+          .getByRole("button", { name: `BD, step ${kick}, on` })
+          .click();
+      }
       await expect(bite(page, BITES[1])).toContainText("done");
       await expect(lessonButton(page, `Next: ${BITES[2]}`)).toBeVisible({
         timeout: 15_000,
       });
-      await step("Done by hand: the bite sees the kick on step 11");
+      await step("Done by hand: the boom bap kick, and no other");
 
-      // 7. Go on to "Hear it" and press Play. It is marked done. Stop.
+      // 7. Go on to "Hear it". It asks for boom bap's tempo, 90 BPM: type 90
+      //    in the tempo field. Then press Play. It is marked done. Stop.
+      //    (Playing is asserted in Chromium only, the gap CF-001 names: in
+      //    other browsers the song never starts, so the bite is skipped there
+      //    to go on.)
       //
-      // Playing is asserted in Chromium only, the known gap CF-001 names
-      // (HARD-001, issue #43): elsewhere the context never resumes, so the
-      // song never plays and the bite is skipped instead, to go on.
+      // That gap is HARD-001 (issue #43): elsewhere the context never
+      // resumes, so the song never plays.
       await next(page, BITES[2]);
+      await expect(lesson(page)).toContainText(/90 BPM/);
+      const tempo = page.getByRole("spinbutton", { name: "Tempo (BPM)" });
+      await tempo.fill("90");
+      await tempo.press("Enter");
+      await expect(tempo).toHaveValue("90");
       await page.getByRole("button", { name: "Start playback" }).click();
       if (browserName === "chromium") {
         await expect(bite(page, BITES[2])).toContainText("done");
@@ -249,11 +268,15 @@ test.describe("CF-037", () => {
       });
       await step("The chapter's done, and Coproducer wraps it up");
 
-      // 12. Reload the page. The beat is still there: its clip still runs for
-      //     four bars, and opened in the Sequence view, BD's step 11 is on and
-      //     the Snare pad has its hits.
+      // 12. Reload the page. The beat is still there: the tempo is 90 BPM,
+      //     its clip still runs for four bars, and opened in the Sequence
+      //     view, BD's step 11 is on and step 5 off, and the Snare pad has its
+      //     hits.
       await reloadSaved(page);
       await arrangement(page).waitFor();
+      await expect(page.getByRole("spinbutton", { name: "Tempo (BPM)" })).toHaveValue(
+        "90",
+      );
       const clips = page.getByRole("listbox", { name: "Clips" });
       await expect(clips.getByRole("option", { name: /on BD, bars 1 to 4$/ })).toHaveCount(
         1,
@@ -264,6 +287,9 @@ test.describe("CF-037", () => {
       await expectView(page, "Sequence");
       await expect(
         sequenceView(page).getByRole("button", { name: "BD, step 11, on" }),
+      ).toBeVisible();
+      await expect(
+        sequenceView(page).getByRole("button", { name: "BD, step 5, off" }),
       ).toBeVisible();
       await expect(
         sequenceView(page).getByRole("button", { name: "Snare, step 5, on" }),

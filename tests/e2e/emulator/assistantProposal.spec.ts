@@ -1,5 +1,6 @@
 import {
   answerDisclosure,
+  arrangement,
   assistantButton,
   composer,
   newProject,
@@ -88,5 +89,41 @@ test.describe("an assistant proposal that goes out of date", () => {
     } finally {
       await other.close();
     }
+  });
+});
+
+test.describe("an assistant proposal across a reload", () => {
+  test("comes back out of date with the question beside it, and Refresh asks for one that applies (GRV-135)", async ({
+    page,
+  }) => {
+    await newProject(page);
+    await askToLoosen(page);
+    // A question waiting in the same conversation comes back as it did before.
+    await composer(page).fill("Build me a drop [ask]");
+    await page.keyboard.press("Enter");
+    const question = panel(page).getByRole("region", { name: "Coproducer asks" });
+    await expect(question).toContainText("Where should the drop land?");
+
+    await page.reload();
+    await arrangement(page).waitFor();
+    // The panel remembers whether it was open on this device.
+    if (!(await panel(page).isVisible())) await assistantButton(page).click();
+
+    await expect(proposal(page)).toHaveAccessibleName("Proposal: Loosen the beat");
+    await expect(proposal(page)).toContainText("Out of date");
+    await expect(proposal(page).getByRole("list", { name: "Changes" })).toContainText(
+      "Swing",
+    );
+    await expect(proposalButton(page, "Apply")).toBeDisabled();
+    await expect(question).toContainText("Where should the drop land?");
+
+    await proposal(page).getByRole("button", { name: "Refresh" }).click();
+    await expect(panel(page).getByRole("region", { name: /^Proposal\b/ })).toHaveCount(
+      2,
+      { timeout: 15_000 },
+    );
+    await expect(proposalButton(page, "Apply")).toBeEnabled({ timeout: 15_000 });
+    await proposalButton(page, "Apply").click();
+    await expect(proposal(page)).toContainText("Applied as one undo step");
   });
 });

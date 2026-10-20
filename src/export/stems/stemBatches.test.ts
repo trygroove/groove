@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { RENDER_CHANNELS } from "../../audio/offlineRenderer";
 import { songEndSeconds } from "../../audio/renderLength";
 import { wav24ByteLength } from "../../audio/wavEncoder";
+import { createDevice } from "../../domain/devices";
+import type { Project } from "../../domain/entities";
+import type { DeviceId } from "../../domain/ids";
 import { estimateStemExport } from "./exportStems";
 import { stemArchiveBytes } from "./stemArchive";
 import { planStemBatches } from "./stemBatches";
@@ -39,6 +42,40 @@ describe("planStemBatches", () => {
       stemArchiveBytes(batch.paths, wav24ByteLength(RENDER_CHANNELS, frames)),
     );
     expect(batch.expectedBytes).toBeLessThan(batch.bytes);
+  });
+
+  // GRV-162: a reverb on a return keeps ringing past the song, and every stem
+  // is padded to that, so the size shown before exporting must count it.
+  it("expects the tail a return's reverb rings for past the song", () => {
+    const [verb] = project.song.returns.filter((bus) => bus.name === "Verb");
+    const reverb = createDevice("dev_tail" as DeviceId, "reverb", 0);
+    // The fixture's notes all end well before the song does, so the reverb has
+    // to ring past the last placement to show: a long hall does.
+    reverb.parameters.decay = 8;
+    const ringing: Project = {
+      ...project,
+      song: {
+        ...project.song,
+        returns: project.song.returns.map((bus) =>
+          bus.id === verb.id ? { ...bus, devices: [reverb] } : bus,
+        ),
+      },
+    };
+    const [dry] = planStemBatches(project, { sampleRate: RATE });
+    const [wet] = planStemBatches(ringing, { sampleRate: RATE });
+    const songOnly = stemArchiveBytes(
+      wet.paths,
+      wav24ByteLength(
+        RENDER_CHANNELS,
+        Math.round(
+          songEndSeconds(planStems(ringing)[planStems(ringing).length - 1].projection) *
+            RATE,
+        ),
+      ),
+    );
+    expect(wet.expectedBytes).toBeGreaterThan(songOnly);
+    expect(wet.expectedBytes).toBeLessThanOrEqual(wet.bytes);
+    expect(dry.expectedBytes).toBeLessThan(wet.expectedBytes);
   });
 
   it("splits in order: mix first, tracks, then returns, each under budget", () => {

@@ -23,6 +23,7 @@ import {
 } from "../assistantClientProvider";
 import { getAudioRuntime } from "../audio/AudioRuntime";
 import { provideStoredAudio } from "../audio/storedAudio";
+import { ToneAuditionEngine } from "../audio/toneAuditionEngine";
 import { type CapabilityReport, FULLY_CAPABLE } from "../browser/capabilities";
 import { reportMissingCapabilities } from "../browser/reportCapabilities";
 import { renameProject } from "../commands/definitions/project";
@@ -35,7 +36,6 @@ import type { PreviewEngine } from "../library/audition";
 import { withdrawnFactoryPacks } from "../library/factoryAvailability";
 import { type LibraryClient, sharedLibraryClient } from "../library/libraryClient";
 import type { LibraryPackSummary } from "../library/manifest";
-import { ToneAuditionEngine } from "../library/toneAuditionEngine";
 import { useFavourites } from "../library/useFavourites";
 import { useProducerProfile } from "../memory/useProducerProfile";
 import type { FavouritesRepository } from "../persistence/favouritesRepository";

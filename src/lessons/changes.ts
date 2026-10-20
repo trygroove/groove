@@ -20,6 +20,16 @@ import { coveredTicks } from "./beat";
 /** The most lines a description runs to. */
 export const MAX_CHANGE_LINES = 8;
 
+/**
+ * The longest a line may be: what the assistant's lesson context accepts
+ * for each of them (`src/assistant/lesson.ts`), so no diff can make a turn
+ * the gateway refuses.
+ */
+export const MAX_CHANGE_LINE_LENGTH = 400;
+
+/** Past this many hits, a line counts them rather than listing each. */
+export const MAX_LISTED_HITS = 8;
+
 /** Below this velocity a hit is soft: a ghost note. */
 export const GHOST_VELOCITY = 0.5;
 
@@ -50,6 +60,29 @@ function position(note: NoteEvent): string {
 function list(items: readonly string[]): string {
   if (items.length <= 1) return items.join("");
   return `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+}
+
+/** "bar 1" or "bars 1-4", for where `notes` fall. */
+function barSpan(notes: readonly NoteEvent[]): string {
+  const barsOf = notes.map((note) => Math.floor(note.startTicks / TICKS_PER_BAR) + 1);
+  const [first, last] = [Math.min(...barsOf), Math.max(...barsOf)];
+  return first === last ? `bar ${first}` : `bars ${first}-${last}`;
+}
+
+/** Where `sorted` notes fall: each listed, or counted once there are many. */
+function hitPlaces(sorted: readonly NoteEvent[], change: "added" | "removed"): string {
+  if (sorted.length > MAX_LISTED_HITS) {
+    return `${sorted.length} hits ${change} across ${barSpan(sorted)}`;
+  }
+  const where = list(sorted.map(position));
+  return change === "added" ? `hits added on ${where}` : `hits removed from ${where}`;
+}
+
+/** `line`, cut to {@link MAX_CHANGE_LINE_LENGTH} with an ellipsis when longer. */
+function fit(line: string): string {
+  return line.length <= MAX_CHANGE_LINE_LENGTH
+    ? line
+    : `${line.slice(0, MAX_CHANGE_LINE_LENGTH - 1)}…`;
 }
 
 function bars(ticks: number): string {
@@ -97,7 +130,7 @@ function noteLines(before: Project, after: Project, track: Track): string[] {
     const ghosts =
       soft > 0 ? ` (${soft} soft, a ghost note${soft === 1 ? "" : "s"})` : "";
     lines.push(
-      `${track.name}'s ${padName(padId)}: hits added on ${list(sorted.map(position))}${ghosts}.`,
+      `${track.name}'s ${padName(padId)}: ${hitPlaces(sorted, "added")}${ghosts}.`,
     );
   }
   for (const [padId, notes] of byPad(removed)) {
@@ -105,7 +138,7 @@ function noteLines(before: Project, after: Project, track: Track): string[] {
     lines.push(
       padId === ""
         ? `${track.name}: ${notes.length} note${notes.length === 1 ? "" : "s"} removed.`
-        : `${track.name}'s ${padName(padId)}: hits removed from ${list(sorted.map(position))}.`,
+        : `${track.name}'s ${padName(padId)}: ${hitPlaces(sorted, "removed")}.`,
     );
   }
   return lines;
@@ -159,7 +192,8 @@ function parameterLines(before: Track, after: Track): string[] {
 
 /**
  * What changed from `before` to `after`, a line a change, at most
- * {@link MAX_CHANGE_LINES}; empty when nothing did.
+ * {@link MAX_CHANGE_LINES} of at most {@link MAX_CHANGE_LINE_LENGTH}
+ * characters each; empty when nothing did.
  */
 export function describeChanges(before: Project, after: Project): string[] {
   const lines: string[] = [];
@@ -186,5 +220,5 @@ export function describeChanges(before: Project, after: Project): string[] {
       );
     }
   }
-  return lines.slice(0, MAX_CHANGE_LINES);
+  return lines.slice(0, MAX_CHANGE_LINES).map(fit);
 }
