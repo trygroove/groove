@@ -1625,3 +1625,59 @@ lesson in your own words, the quiz question, the daily nudge naming the next
 unfinished bite, the "Shape a sound" and "Tour the studio" chapters, the
 house and trap patterns, and the done state saved on the profile, which are
 tested at the unit and component layers.
+
+### CF-038 — A producer finishes a track with Coproducer and exports its stems
+
+**Issue:** GRV-44 · **Suite:** `tests/e2e/emulator/flows/CF-038.spec.ts` · **Entrypoint:**
+the project dashboard
+
+**Preconditions:** signed in as an invited producer who has been through
+onboarding with nothing in memory (so the beat is four on the floor, in A
+minor), and has met Coproducer's notice about keeping conversations before.
+The assistant is answered by the suite's scripted provider (#69): asking for
+"Finish a track" starts it, and a turn about a lesson gets a short reply that
+names the bite it is about. The library holds a kick the starter project does
+not use.
+
+1. Make a new project, open Coproducer and ask it to teach you to finish a
+   track. The lesson appears in the panel: "Finish a track", chapter 1 of 5,
+   "Make a beat", with "Pick a kick" under way and "The kick pattern" marked
+   as already in your song (the starter's four on the floor is that kick).
+2. Go through "Make a beat" with Show me: Pick a kick, Hear it (in Chromium:
+   Show me sets the tempo and plays; stop it after. Elsewhere it is skipped:
+   the gap CF-001 names), The backbeat, Hats and Loop it, each marked done.
+   The chapter is over: Coproducer wraps it up, and the lesson offers the
+   next chapter, "Bass".
+3. Go on to it and through it with Show me: a Bass track joins the song, the
+   song is in A minor, and the bassline runs four bars under the beat. The
+   lesson offers "Chords and hook".
+4. Go on and through it with Show me: Chords and Hook tracks join, each
+   running four bars. The lesson offers "Arrange, subtractively".
+5. Go on and through it with Show me: the loop is copied out to bar 32; the
+   hook and the chords leave bars 1 to 8; the drums leave bars 9 to 16; the
+   drop is heard (in Chromium the song plays from bar 13 into it, then stop
+   it; elsewhere the listening is skipped); and everything after bar 28 is
+   cut. On the arrangement the Hook plays bars 9 to 28 and BD bars 1 to 8
+   and 17 to 28. The lesson offers "Mix and export".
+6. Go on and through it with Show me: Balance, Pan, and Reverb on the hook (a
+   Reverb return appears in the Mixer, the Hook sent to it). Watch the
+   master: in the Mixer the master strip has its own level meter; in
+   Chromium Show me plays the drop while you watch it for four bars, then
+   stop it; elsewhere it is skipped.
+7. The last bite, "Export the stems", opens the Export dialog by itself with
+   Stems (ZIP) chosen. Press Export. The bite is done and the lesson is over:
+   it leaves the panel. Close the dialog. Coproducer's wrap-up of the whole
+   track follows in the conversation.
+8. Reload the page. The track is still there: the Bass, Chords and Hook
+   tracks, the Hook playing bars 9 to 28 and BD bars 1 to 8 and 17 to 28.
+
+**Outcome:** a producer went from a fresh project to a whole track, arranged
+and mixed, one bite at a time with Coproducer, and pressed Export on its
+stems, and the track is saved.
+
+**Out of scope:** what Coproducer says and whether a real model teaches well,
+which the live-model evals judge. The stems' download, which CF-021 proves.
+Doing the bites by hand, skipping or leaving part-way, picking the lesson up
+again from the daily nudge, the key and patterns of other genres, a song that
+already has a beat passing the whole first chapter over, and the predicates
+themselves, which are tested at the unit and component layers.
