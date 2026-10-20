@@ -1,0 +1,14 @@
+{
+  "id": "fn800",
+  "title": "Export footer at 800px",
+  "steps": [
+    {
+      "file": "01-stems-note-shown-at-800px.png",
+      "caption": "Stems note shown at 800px"
+    },
+    {
+      "file": "02-all-tracks-off-reason-shown-at-800px.png",
+      "caption": "All tracks off: reason shown at 800px"
+    }
+  ]
+}
