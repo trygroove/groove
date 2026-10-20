@@ -212,6 +212,14 @@ export const DEFAULT_RESUME_TIMEOUT_MS = 5_000;
  */
 let firstPlayInSession = true;
 
+/**
+ * How many project graphs this page has built: the second half of each
+ * graph's registry owner (GRV-55). Module-wide, not per hook, so an editor
+ * that remounts on the same project never reuses the owner of the graph still
+ * being disposed.
+ */
+let graphsBuilt = 0;
+
 /** Test-only: reset the session-first-play flag between tests. */
 export function __resetFirstPlayInSessionForTests(): void {
   firstPlayInSession = true;
@@ -283,13 +291,15 @@ export function useProjectAudio(
   let ownerId: string | null = null;
   /**
    * The registry owner of the current graph: the project's ID and which
-   * graph this is for it, so a graph rebuilt for the same project (a new
-   * context, GRV-55) never has its resources counted as the last one's leaks.
+   * graph this is for it, so a graph built again for the same project (the
+   * hook remounting, or the project reopened) never has its resources
+   * counted as the last one's leaks.
    */
   let graphOwner: string | null = null;
-  let graphsBuilt = 0;
-  /** The runtime's context generation the graph was built on. */
-  let graphGeneration: number | undefined;
+  /** Stops listening for the browser closing the context, once listening. */
+  let stopWatchingClose: (() => void) | null = null;
+  /** Whether a closed context has been reported: it is one failure, however many presses of Play meet it. */
+  let closeReported = false;
   let lastProjection: AudioSongProjection | undefined;
   let frameHandle: number | null = null;
   let preview: PreviewOverride | null = null;
@@ -478,79 +488,70 @@ export function useProjectAudio(
   createEffect(
     () => project(),
     (current) => {
-      if (current) wire(current);
+      if (!current) return;
+      if (!audioAvailable) {
+        // No Web Audio, so nothing to build a graph on (#75). The loop is
+        // still song state the transport bar shows, so it is mirrored anyway.
+        setLoopEnabled(current.song.loop.enabled);
+        return;
+      }
+      if (!graph || ownerId !== current.metadata.id) {
+        tearDown();
+        ownerId = current.metadata.id;
+        graphsBuilt += 1;
+        graphOwner = `${ownerId}/${graphsBuilt}`;
+        graph = new ProjectAudioGraph(runtime, graphOwner, {
+          underrunMonitor: underrunMonitor(),
+          onAssetLoadFailure: reportAssetLoadFailure,
+        });
+        stopWatchingClose ??= runtime.onContextClosed?.(handleContextClosed) ?? null;
+        stopGraphTriggers = graph.watchTriggers(triggers.publish);
+        metronome = new TransportMetronome(
+          liveTransportEngine,
+          graph.projectScope,
+          graph.masterInput,
+        );
+        transport = new TransportController({ metronome });
+        setMetronomeEnabled(false);
+        lastProjection = undefined;
+      }
+      lastProjection = buildAudioProjection(current, lastProjection);
+      reconcileGraph();
+      attachPeakWatchers();
+      // Mirror the song tempo and loop onto the transport without restarting
+      // it: a tempo, range, or toggle edit re-times or re-bounds the running
+      // transport in place (PRD AUD-02, LOOP-017).
+      transport?.setTempo(current.song.tempo);
+      transport?.mirrorLoop(current.song.loop);
+      setLoop(transport?.loop ?? null);
+      setLoopEnabled(current.song.loop.enabled);
+
+      // `audio_loop` first-use (PRD OPS-02, INS-02): the first time a project
+      // with a tempo-labelled loop clip is wired onto the audio graph. Fired
+      // via `logFeatureFirstUse`, so it lands at most once per account per
+      // browser even though the effect re-runs on every edit.
+      if (current.clips.some((clip) => clip.content.kind === "audioLoop")) {
+        analytics.logFeatureFirstUse("audio_loop");
+      }
     },
   );
 
   /**
-   * Wires one revision of the project onto the graph, building the graph
-   * first when there is none for this project (or its context has gone).
+   * The browser closed the context under the editor (GRV-55): the output
+   * device went away. Nothing can resume it, so playback stops here and the
+   * producer is told at once, not on the next press of Play.
    */
-  function wire(current: Project): void {
-    if (!audioAvailable) {
-      // No Web Audio, so nothing to build a graph on (#75). The loop is
-      // still song state the transport bar shows, so it is mirrored anyway.
-      setLoopEnabled(current.song.loop.enabled);
-      return;
-    }
-    if (!graph || ownerId !== current.metadata.id) {
-      tearDown();
-      ownerId = current.metadata.id;
-      graphsBuilt += 1;
-      graphOwner = `${ownerId}/${graphsBuilt}`;
-      graph = new ProjectAudioGraph(runtime, graphOwner, {
-        underrunMonitor: underrunMonitor(),
-        onAssetLoadFailure: reportAssetLoadFailure,
-      });
-      graphGeneration = runtime.contextGeneration?.();
-      stopGraphTriggers = graph.watchTriggers(triggers.publish);
-      metronome = new TransportMetronome(
-        liveTransportEngine,
-        graph.projectScope,
-        graph.masterInput,
-      );
-      transport = new TransportController({ metronome });
-      setMetronomeEnabled(false);
-      lastProjection = undefined;
-    }
-    lastProjection = buildAudioProjection(current, lastProjection);
-    reconcileGraph();
-    attachPeakWatchers();
-    // Mirror the song tempo and loop onto the transport without restarting
-    // it: a tempo, range, or toggle edit re-times or re-bounds the running
-    // transport in place (PRD AUD-02, LOOP-017).
-    transport?.setTempo(current.song.tempo);
-    transport?.mirrorLoop(current.song.loop);
-    setLoop(transport?.loop ?? null);
-    setLoopEnabled(current.song.loop.enabled);
-
-    // `audio_loop` first-use (PRD OPS-02, INS-02): the first time a project
-    // with a tempo-labelled loop clip is wired onto the audio graph. Fired
-    // via `logFeatureFirstUse`, so it lands at most once per account per
-    // browser even though the effect re-runs on every edit.
-    if (current.clips.some((clip) => clip.content.kind === "audioLoop")) {
-      analytics.logFeatureFirstUse("audio_loop");
-    }
-  }
-
-  /**
-   * After a resume, rebuilds the graph if the runtime had to install a new
-   * context because the browser closed the one the graph was built on
-   * (GRV-55): its nodes are on a dead context and would never sound. The
-   * metronome keeps its setting; the playhead starts over with the new
-   * transport.
-   */
-  function rebuildOnNewContext(): void {
-    if (!graph || runtime.contextGeneration?.() === graphGeneration) return;
-    const current = project();
-    const metronomeWasOn = metronomeEnabled();
-    tearDown();
-    if (!current) return;
-    wire(current);
-    if (metronomeWasOn) toggleMetronome();
+  function handleContextClosed(): void {
+    stop();
+    const error = new Error("The audio context was closed by the browser.");
+    error.name = "InvalidStateError";
+    reportStartFailure(error);
+    explainStartFailure(error);
   }
 
   onCleanup(() => {
+    stopWatchingClose?.();
+    stopWatchingClose = null;
     tearDown();
     triggers.dispose();
   });
@@ -615,12 +616,7 @@ export function useProjectAudio(
           if (settled) return;
           settled = true;
           clearTimer(timer);
-          try {
-            rebuildOnNewContext();
-            resolve();
-          } catch (error) {
-            reject(error);
-          }
+          resolve();
         },
         (error) => {
           if (settled) return;
@@ -665,6 +661,12 @@ export function useProjectAudio(
   /** One failed start, reported as `audio_start_failed` and to monitoring. */
   function reportStartFailure(error: unknown): void {
     const code = codeFor(error);
+    // A closed context stays closed until the page reloads: one report, not
+    // one per press of Play.
+    if (code === "context_closed") {
+      if (closeReported) return;
+      closeReported = true;
+    }
     analytics.log("audio_start_failed", {
       error_code: code,
       was_browser_blocked: code === "autoplay_blocked",

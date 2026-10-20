@@ -113,12 +113,12 @@ export interface AudioHost {
    */
   ownedResources?(ownerId: string): readonly RegisteredResourceInfo[];
   /**
-   * Which real-time context is installed: a number that changes whenever
-   * the runtime installs a new one, as it does when the browser closed the
-   * last (GRV-55). A graph built on an older generation is on a dead
-   * context and has to be rebuilt. Optional so a fake host need not have one.
+   * Calls `listener` once the browser closes the real-time context under
+   * the runtime (GRV-55): an output device went away. A close the runtime
+   * makes itself is not reported. Returns the unsubscribe. Optional so a
+   * fake host need not have one.
    */
-  contextGeneration?(): number;
+  onContextClosed?(listener: () => void): () => void;
 }
 
 /**
@@ -136,8 +136,6 @@ export class AudioRuntime implements AudioHost {
   private contextsAdopted = 0;
   private contextsClosed = 0;
   private contextsCloseFailed = 0;
-  private generation = 0;
-  private contextHandle: ResourceHandle | null = null;
 
   /** Owners for contexts, graphs, nodes, schedules, buffers, subscriptions, timers, workers, and pending loads. */
   readonly registry = new ResourceRegistry();
@@ -176,15 +174,7 @@ export class AudioRuntime implements AudioHost {
    */
   ensureContext(): Tone.Context {
     if (this.context && this.state !== "closed" && this.state !== "closing") {
-      if (this.context.state !== "closed") return this.context;
-      // The browser closed the context under us (GRV-55): an output device
-      // went away, or the page was frozen. Nothing can resume a closed
-      // context, so it is retired, never adopted again, and a new one is
-      // installed below. Graphs built on it see the new generation and
-      // rebuild; their old nodes are theirs to dispose.
-      closedContexts.add(this.context);
-      this.contextsClosed++;
-      this.context = null;
+      return this.context;
     }
 
     const existing = Tone.getContext();
@@ -205,14 +195,25 @@ export class AudioRuntime implements AudioHost {
     // Registered so diagnostics can report the context itself as a tracked
     // resource; disposal is a no-op here because `close()` owns the actual
     // `context.close()` call.
-    if (this.contextHandle) void this.registry.disposeOne(this.contextHandle);
-    this.contextHandle = this.registry.register(RUNTIME_OWNER, "context", () => {});
-    this.generation++;
+    this.registry.register(RUNTIME_OWNER, "context", () => {});
     return this.context;
   }
 
-  contextGeneration(): number {
-    return this.generation;
+  onContextClosed(listener: () => void): () => void {
+    const context = this.ensureContext();
+    let told = false;
+    const onStateChange = (state: string): void => {
+      // The runtime's own close() is teardown, not a failure.
+      if (this.state === "closing" || this.state === "closed") return;
+      // A context closes once, however many state events say so.
+      if (state !== "closed" || told) return;
+      told = true;
+      listener();
+    };
+    context.on("statechange", onStateChange);
+    return () => {
+      context.off("statechange", onStateChange);
+    };
   }
 
   /** The shared destination node. Ensures the context exists first. */
@@ -235,6 +236,14 @@ export class AudioRuntime implements AudioHost {
   async resume(): Promise<void> {
     if (this.closePromise) await this.closePromise;
     const context = this.ensureContext();
+    if (context.state === "closed") {
+      // The browser closed it (GRV-55): an output device went away. Nothing
+      // can resume a closed context, and the project's graph lives on this
+      // one, so the runtime does not swap in another; the page has to reload.
+      const error = new Error("The audio context was closed by the browser.");
+      error.name = "InvalidStateError";
+      throw error;
+    }
     if (context.state !== "running") {
       await Tone.start();
     }

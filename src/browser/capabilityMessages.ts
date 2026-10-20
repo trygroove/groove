@@ -80,14 +80,17 @@ export function audioStartFailureMessage(code: string): CapabilityMessage {
     case "context_unavailable":
       return CAPABILITY_MESSAGES.web_audio;
     case "context_closed":
-      // The context closed under us: most often the output device went away
-      // (headphones unplugged, an interface switched off) (GRV-55).
+      // The browser closed the context under us: most often the output device
+      // went away (headphones unplugged, an interface switched off) (GRV-55).
+      // A closed context never resumes and the editor does not swap in
+      // another, so reloading is the only advice. The edits are kept because
+      // the editor writes its queued saves as the page unloads, and asks
+      // before leaving while one is still unwritten.
       return {
         title: "Sound stopped",
         detail:
-          "The browser's audio output went away, as it does when headphones or an audio interface are unplugged.",
-        action:
-          "Check your speakers or headphones are connected, then press Play. If it stays silent, reload the page; your edits are kept.",
+          "The audio output went away, as it does when headphones or an audio interface are unplugged.",
+        action: "Reload the page to start sound again; your edits are kept.",
       };
     default:
       return {
