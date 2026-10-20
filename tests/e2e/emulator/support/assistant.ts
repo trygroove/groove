@@ -4,6 +4,7 @@ import {
   ASSISTANT_TRANSCRIPTS_COLLECTION,
   preferenceDocPath,
 } from "../../../../src/assistant/transcripts";
+import { reloadPage } from "./reload";
 
 /**
  * Shared steps and locators for the assistant's core flows (CF-027, CF-028).
@@ -82,7 +83,7 @@ export async function goToView(page: Page, name: "Arrangement" | "Mixer"): Promi
 /** Wait for the last edit to be written, then reload. */
 export async function reloadSaved(page: Page): Promise<void> {
   await expect(page.locator(".save-status")).toHaveText("Saved", { timeout: 10_000 });
-  await page.reload();
+  await reloadPage(page);
 }
 
 // --- The assistant -----------------------------------------------------------

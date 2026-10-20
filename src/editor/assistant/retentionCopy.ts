@@ -58,7 +58,7 @@ export const RETENTION_LABEL = `Keep my conversations with ${ASSISTANT_NAME} for
  * decision 8), so a producer who reads only the setting still reads it.
  */
 export const RETENTION_SCOPE =
-  "This controls what Groove keeps and sends to PostHog from now on. It does not take back anything already sent to Anthropic or PostHog.";
+  "This controls the copies Groove keeps for review and what it sends to PostHog, from now on. The conversation in your project is not affected, and this does not take back anything already sent to Anthropic or PostHog.";
 
 export const DISCLOSURE_CLOSING = `${ASSISTANT_NAME} behaves exactly the same either way, and every other part of Groove works without it — if you would rather nothing was sent, you can simply not use ${ASSISTANT_NAME}.`;
 
@@ -66,7 +66,7 @@ export const DISCLOSURE_CLOSING = `${ASSISTANT_NAME} behaves exactly the same ei
 export const NOTICE_HEADING = `Groove keeps your conversations for ${DAYS}`;
 
 /** Where the answer can be changed later, and what turning it off does. */
-export const NOTICE_CHANGE = `You can change this at any time in ${SETTINGS_TITLE}. Turning it off deletes the conversations Groove itself has kept and stops new ones going to PostHog.`;
+export const NOTICE_CHANGE = `You can change this at any time in ${SETTINGS_TITLE}. Turning it off deletes the copies Groove itself has kept for review and stops new ones going to PostHog. The conversation in each project stays in that project.`;
 
 /** The two answers in the first-run notice, side by side and equal in size. */
 export const ACCEPT_ANSWER = "OK";
@@ -74,7 +74,7 @@ export const DECLINE_ANSWER = "Don't keep them";
 
 /** What turning the setting off does, said as it happens. */
 export const OPTED_OUT_CONFIRMATION =
-  "Groove has stopped keeping your conversations and deleted the ones it kept. This does not take back anything already sent to Anthropic or PostHog.";
+  "Groove has stopped keeping copies of your conversations for review and deleted the ones it kept. The conversation in this project stays here, and this does not take back anything already sent to Anthropic or PostHog.";
 
 /**
  * What turning the setting on does, with the control's scope, so a producer

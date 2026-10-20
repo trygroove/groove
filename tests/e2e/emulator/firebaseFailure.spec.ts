@@ -1,3 +1,4 @@
+import { reloadPage } from "./support/reload";
 import { expect, type Page, test } from "./support/test";
 
 /**
@@ -48,7 +49,7 @@ test.describe("Firebase failure states", () => {
     await expect(saveStatus(page)).toHaveText("Saved", { timeout: 30_000 });
 
     // The edit that was made offline is the one that persisted.
-    await page.reload();
+    await reloadPage(page);
     await page.getByTestId("arrangement-view-ready").waitFor();
     await expect(tempo(page)).toHaveValue("128");
   });

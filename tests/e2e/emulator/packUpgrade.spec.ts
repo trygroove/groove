@@ -1,3 +1,4 @@
+import { reloadPage } from "./support/reload";
 import { expect, type Locator, type Page, test } from "./support/test";
 
 // #892: a project made before the factory packs moved from 1.0.0 to 1.1.0 pins
@@ -118,7 +119,7 @@ test("inserting a 1.1.0 sound into a project pinned to 1.0.0 lands, and survives
 
   // Saved at the new pin: a reload from the emulator still plays it.
   await expect(page.locator(".save-status")).toHaveText("Saved", { timeout: 15_000 });
-  await page.reload();
+  await reloadPage(page);
   await expect(
     page
       .getByRole("region", { name: "Drum machine: BD" })

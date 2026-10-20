@@ -1,4 +1,5 @@
 import { walkthrough } from "../../support/walkthrough";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 
 /**
@@ -233,7 +234,7 @@ test.describe("CF-004", () => {
     });
     await step("Looping back on, and stopped");
 
-    await page.reload();
+    await reloadPage(page);
 
     // 7. The project reopens with the brace still spanning bars 1 and 2, and
     //    looping still on.

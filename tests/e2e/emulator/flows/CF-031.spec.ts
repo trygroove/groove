@@ -1,4 +1,5 @@
 import { walkthrough } from "../../support/walkthrough";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 
 /**
@@ -148,7 +149,7 @@ test.describe("CF-031", { tag: "@sanity" }, () => {
     await expect(page.locator(".save-status")).toHaveText("Saved", {
       timeout: 10_000,
     });
-    await page.reload();
+    await reloadPage(page);
     await expect(page).toHaveURL(mixerUrl);
     await expect(returns(page)).toHaveCount(1);
     await expect(

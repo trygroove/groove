@@ -21,6 +21,7 @@ import {
   slotSound,
   soundList,
 } from "../support/library";
+import { reloadPage } from "../support/reload";
 import { expect, type Page, test } from "../support/test";
 import { expectView, pressView } from "../support/views";
 
@@ -168,7 +169,7 @@ test.describe("CF-024", () => {
     // view keeps its address across a reload (#817), so it reopens there:
     // read the packs first, then press 3 to read the pad.
     await expect(page.locator(".save-status")).toHaveText("Saved", { timeout: 10_000 });
-    await page.reload();
+    await reloadPage(page);
     await expectView(page, "Library");
     await expect(libraryHeader(page)).toContainText("BD");
     await expect(projectPacks(page)).toContainText(NEW_PACK);

@@ -36,8 +36,10 @@
  *
  * The budget is `--budget` (or `EXPERIMENT_BUDGET`) when given, else the
  * file's `budget`, else $25. It exits 1 when the key was refused, the account
- * ran out of credit, every turn errored, or a win's PR failed to open; a
- * "no win" is a finding, not a failure.
+ * ran out of credit, the provider refused every call (`evals/runGuard.ts`),
+ * every turn errored, or a win's PR failed to open; a "no win" is a finding,
+ * not a failure. A run that failed posts its report titled "run failed", not
+ * a verdict, and Blocks the card.
  */
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";

@@ -13,7 +13,8 @@
  *   until the next edit, and the card offers Undo.
  * - A proposal the song moved under (an edit here, an undo, a change from
  *   elsewhere) is **stale**: Apply is off and **Refresh** asks again in the
- *   same scope.
+ *   same scope. So is one still waiting when the page reloaded, which comes
+ *   back with the conversation (GRV-135).
  *
  * Applying records the addresses the proposal touched for the session. A
  * later edit by hand to any of them logs `assistant_result_edited` once for
@@ -24,7 +25,11 @@
  */
 import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
-import { issueCall, type ProposalIssue } from "../../assistant/proposal";
+import {
+  issueCall,
+  type ProposalIssue,
+  validateProposal,
+} from "../../assistant/proposal";
 import {
   createProposalExecutor,
   type ProposalExecutor,
@@ -101,6 +106,8 @@ export interface ProposalCard {
   readonly reason: string | null;
   /** Its changed controls still wear the solid outline (until the next edit). */
   readonly outlined: boolean;
+  /** It was waiting when the page reloaded, and came back out of date (GRV-135). */
+  readonly restored: boolean;
 }
 
 /** What the cards need from the editor session (`useEditorSession`). */
@@ -231,9 +238,14 @@ export function useAssistantProposals(
       notice: null,
       outlined: false,
       reason: null,
+      restored: false,
     };
     const current = session.proposalTarget();
     if (!current) return;
+    if (origin.restored) {
+      restore(entryId, proposal, current.project, base);
+      return;
+    }
     executor ??= createProposalExecutor({ target, analytics: options.analytics() });
     const proposed = executor.propose(proposal);
     if (!proposed.ok) {
@@ -266,6 +278,30 @@ export function useAssistantProposals(
       explanation: explainProposal(handle.proposal, rows),
       previewView: previewTarget(before, rows)?.view ?? null,
     });
+  }
+
+  /**
+   * A proposal from before a reload (GRV-135): shown out of date, with the
+   * changes it would make to the song as it is now when it still fits, so
+   * Refresh is offered and Apply is not. It was shown and logged before the
+   * reload, so nothing is logged or reported again.
+   */
+  function restore(
+    entryId: string,
+    proposal: AssistantProposal,
+    project: Project,
+    base: Omit<ProposalCard, "status">,
+  ) {
+    const validation = validateProposal(project, proposal);
+    const rows = validation.ok
+      ? proposalRows(
+          project,
+          projectAfter(project, validation.proposal),
+          validation.proposal.impact.controls,
+        )
+      : [];
+    entries.set(entryId, blankEntry(null, []));
+    show(entryId, { ...base, status: "stale", rows, restored: true });
   }
 
   function show(entryId: string, card: ProposalCard) {
