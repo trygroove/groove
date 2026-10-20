@@ -1,18 +1,9 @@
 {
   "id": "GRV-128",
-  "title": "Welcome at 768x800",
+  "title": "The summary stays in the middle",
   "steps": [
-    {
-      "file": "01-house-has-focus-after-pagedown.png",
-      "caption": "House has focus after PageDown"
-    },
-    {
-      "file": "02-scrolled-to-the-end-on-the-first-questio.png",
-      "caption": "Scrolled to the end on the first question"
-    },
-    {
-      "file": "03-the-final-step.png",
-      "caption": "The final step"
-    }
+    { "file": "01-before-1282.png", "caption": "Before, 1282x800: the summary drops and Open the studio sits at the bottom edge" },
+    { "file": "02-after-1282.png", "caption": "After, 1282x800: the summary is centred where the questions sat" },
+    { "file": "03-after-768.png", "caption": "After, 768x800" }
   ]
 }
