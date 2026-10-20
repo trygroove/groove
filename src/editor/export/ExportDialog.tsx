@@ -25,7 +25,13 @@ import ExportFooter, { EXPORT_NOTE_ID } from "./ExportFooter";
 import ExportTitleRow from "./ExportTitleRow";
 import { estimateStereoBytes, exportFacts } from "./exportFacts";
 import { exportFailureCode, handOver, reportExportFailure } from "./exportFailure";
-import { missingSoundsNote, stemsNote, stoppedNote, zipFailure } from "./exportNotes";
+import {
+  EMPTY_SONG_NOTE,
+  missingSoundsNote,
+  stemsNote,
+  stoppedNote,
+  zipFailure,
+} from "./exportNotes";
 import FormatCards, { type ExportFormat } from "./FormatCards";
 import { finishedExport } from "./finishedExport";
 import { formatBytes } from "./stemSelection";
@@ -170,7 +176,10 @@ export default function ExportDialog(props: ExportDialogProps): JSX.Element {
       },
     });
   });
-  const noTracks = () => format() === "stems" && list.trackIds().length === 0;
+  /** A song with no tracks renders to silence: there is nothing to export (GRV-151). */
+  const emptySong = () => props.project().song.tracks.length === 0;
+  const noTracks = () =>
+    emptySong() || (format() === "stems" && list.trackIds().length === 0);
   let root!: HTMLDivElement;
   /** Keys reach the list only while it has focus, so a click hands it focus. */
   const focusList = () =>
@@ -326,6 +335,7 @@ export default function ExportDialog(props: ExportDialogProps): JSX.Element {
   /** What the stems are expected to weigh, which the footer shows. */
   const stemsBytes = () => plan().reduce((sum, batch) => sum + batch.expectedBytes, 0);
   const sizeText = () => {
+    if (emptySong()) return "Nothing to export";
     if (format() === "stereo") return `${formatBytes(stereoBytes())} · 1 file`;
     if (plan().length === 0) return "Nothing to export";
     const files = plan().reduce((sum, batch) => sum + batch.paths.length, 0);
@@ -355,6 +365,7 @@ export default function ExportDialog(props: ExportDialogProps): JSX.Element {
     if (stopped()) return stopped();
     if (failed()) return "";
     // Why Export is off comes first; then the sounds the file may lack.
+    if (emptySong()) return EMPTY_SONG_NOTE;
     const tracks = list.trackIds().length;
     if (missing() > 0 && (format() !== "stems" || tracks > 0)) {
       return missingSoundsNote(missing());
