@@ -33,6 +33,7 @@
 import { isAskCall } from "./ask";
 import { isClipCopy } from "./clipReuse";
 import type { ExpandedCall, NoteExpander } from "./compactNotes";
+import { isLessonCall } from "./lessonTool";
 import { isRememberCall } from "./memory";
 import type { AssistantStopReason, AssistantToolCall } from "./protocol";
 import type { ProviderToolResultBlock } from "./providerRequest";
@@ -105,7 +106,8 @@ export function addedResult(
 
 /**
  * Whether `call` changes the song, rather than explaining, asking,
- * recommending or proposing something to remember (GRV-25).
+ * recommending, proposing something to remember (GRV-25) or starting a
+ * lesson (GRV-43).
  */
 export function isChangeCall(call: AssistantToolCall): boolean {
   return (
@@ -113,7 +115,8 @@ export function isChangeCall(call: AssistantToolCall): boolean {
     call.name !== RECOMMEND_SOUNDS_TOOL &&
     !isAskCall(call) &&
     !isVideoCall(call) &&
-    !isRememberCall(call)
+    !isRememberCall(call) &&
+    !isLessonCall(call)
   );
 }
 

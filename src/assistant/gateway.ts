@@ -369,6 +369,7 @@ async function prepare(
     idStem,
     turn.memory,
     tactics,
+    turn.lesson,
   );
   const everything = offeredTools(EVERYTHING_BUNDLE, tactics, turn, videos);
   const bundle = tactics.toolBundles === "bundled" ? toolBundleFor(turn) : null;

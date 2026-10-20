@@ -28,10 +28,14 @@
  */
 import { z } from "zod";
 import { type ControlAddress, uniqueControls } from "../commands/controlAddress";
+import { addAsset, assetAddCommand } from "../commands/definitions/assets";
 import { executeTransaction } from "../commands/execute";
 import { requireCommand } from "../commands/registry";
 import type { CommandIssue, RawCommandInput } from "../commands/types";
-import type { Project } from "../domain/entities";
+import type { Asset, Instrument, Project, Track } from "../domain/entities";
+import { createFactoryContext } from "../domain/factories";
+import { createSeededIdFactory } from "../domain/ids";
+import { loadStarterKit } from "../instrument/instrumentKinds";
 import type { ProposalIssueCode } from "./proposalIssues";
 import {
   ASSISTANT_TOOLSET_VERSION,
@@ -174,7 +178,10 @@ function describeShape(error: z.ZodError): string {
     .join("; ");
 }
 
-function fromCommandIssue(issue: CommandIssue): ProposalIssue {
+function fromCommandIssue(
+  issue: CommandIssue,
+  callIndexOf: readonly number[],
+): ProposalIssue {
   const code: ProposalIssueCode =
     issue.code === "invalid_project"
       ? "invalid_project"
@@ -186,7 +193,7 @@ function fromCommandIssue(issue: CommandIssue): ProposalIssue {
   const domainPath = issue.domainIssues?.[0]?.path;
   return {
     code,
-    callIndex: issue.commandIndex,
+    callIndex: callIndexOf[issue.commandIndex] ?? null,
     message: issue.message,
     ...(domainPath && domainPath.length > 0 ? { path: domainPath.join(".") } : {}),
   };
@@ -299,6 +306,9 @@ export function validateProposal(
 
   const commands: RawCommandInput[] = [];
   const capabilities: AssistantCapability[] = [];
+  /** The call each command came from: a starter kit's sounds join before its call. */
+  const callIndexOf: number[] = [];
+  const kitAssets: Asset[] = [];
   const issues: ProposalIssue[] = [];
   calls.forEach((call, callIndex) => {
     if (call.refusal !== undefined) {
@@ -310,12 +320,25 @@ export function validateProposal(
       issues.push({ code: resolution.code, callIndex, message: resolution.message });
       return;
     }
+    const kit = withStarterKit(
+      project,
+      kitAssets,
+      resolution.commandType,
+      keepExistingPads(project, resolution.commandType, resolution.payload),
+    );
+    kitAssets.push(...kit.assets);
+    for (const asset of kit.assets) {
+      commands.push({ ...addAsset(asset), version: assetAddCommand.version });
+      capabilities.push(resolution.capability);
+      callIndexOf.push(callIndex);
+    }
     commands.push({
       type: resolution.commandType,
       version: resolution.commandVersion,
-      payload: resolution.payload,
+      payload: kit.payload,
     });
     capabilities.push(resolution.capability);
+    callIndexOf.push(callIndex);
   });
   if (issues.length > 0) return invalid(issues);
   if (
@@ -327,7 +350,7 @@ export function validateProposal(
   ) {
     return invalid([staleRevision(baseRevision, project)]);
   }
-  const rangeIssues = valueIssues(project, commands);
+  const rangeIssues = valueIssues(project, commands, callIndexOf);
   if (rangeIssues.length > 0) return invalid(rangeIssues);
 
   // The dry run: the same transaction the apply will run, against the same
@@ -338,7 +361,9 @@ export function validateProposal(
     ...(moved ? {} : { baseRevision }),
     commitRevision: false,
   });
-  if (!dryRun.ok) return invalid(dryRun.issues.map(fromCommandIssue));
+  if (!dryRun.ok) {
+    return invalid(dryRun.issues.map((issue) => fromCommandIssue(issue, callIndexOf)));
+  }
 
   const lines = describeLines(project, commands, capabilities);
   return {
@@ -358,6 +383,121 @@ export function validateProposal(
       },
     },
   };
+}
+
+/**
+ * An `instrument.change` that installs a drum machine on a track that already
+ * has one is, in the model's hands, "these pads": it lists every pad in full,
+ * the old ones with no sound because it was never told theirs. Applied as
+ * written it would clear every sample the producer chose (GRV-138). So the
+ * pads the track already has are kept as they are, matched by id, and only a
+ * sound the proposal names for one replaces its own; new pads and the
+ * proposal's own removals are taken as proposed. Changing an existing pad
+ * (rename, choke group, level) is a job for `drum.setPad*`, not this call.
+ */
+function keepExistingPads(
+  project: Project,
+  commandType: string,
+  payload: unknown,
+): unknown {
+  if (commandType !== "instrument.change") return payload;
+  const { trackId, instrument } = payload as {
+    trackId: string;
+    instrument: Instrument | null;
+  };
+  const current = project.song.tracks.find((track) => track.id === trackId)?.instrument;
+  if (instrument?.kind !== "drumMachine" || current?.kind !== "drumMachine") {
+    return payload;
+  }
+  const existing = new Map(current.pads.map((pad) => [pad.id as string, pad]));
+  const pads = instrument.pads.map((pad) => {
+    const kept = existing.get(pad.id);
+    if (!kept) return pad;
+    return pad.assetId === null ? kept : { ...kept, assetId: pad.assetId };
+  });
+  return {
+    trackId,
+    instrument: {
+      ...instrument,
+      pads,
+      parameters: { ...current.parameters, ...instrument.parameters },
+    },
+  };
+}
+
+/**
+ * A drum machine the proposal creates, on a new track or in place of a
+ * track's other instrument, arrives with the starter kit loaded, as one made
+ * from the UI does (GRV-192): the model writes its pads with no sound, and
+ * without the kit its beat would play nothing. The kit comes from the one
+ * builder both paths share, `loadStarterKit`, so a pad the model named "Kick"
+ * takes the kick and keeps its ID, which its notes name. The kit's sounds the
+ * project does not hold yet are returned, to join the same transaction ahead
+ * of the call; ones it or an earlier call in this proposal already holds are
+ * reused. A drum machine replacing one (GRV-138's "these pads") is left to
+ * {@link keepExistingPads}.
+ *
+ * The IDs it mints are seeded from the track's, so validating the same
+ * proposal twice (the preview, then Apply) builds the same commands.
+ */
+function withStarterKit(
+  project: Project,
+  heldByProposal: readonly Asset[],
+  commandType: string,
+  payload: unknown,
+): { readonly payload: unknown; readonly assets: readonly Asset[] } {
+  const created = newDrumMachine(project, commandType, payload);
+  if (!created) return { payload, assets: [] };
+  const context = createFactoryContext({
+    ids: createSeededIdFactory(`starter-kit:${created.trackId}`),
+    now: 0,
+  });
+  const holding: Project = {
+    ...project,
+    song: { ...project.song, assets: [...project.song.assets, ...heldByProposal] },
+  };
+  const kit = loadStarterKit(context, created.instrument, holding);
+  return { payload: created.withInstrument(kit.instrument), assets: kit.assets };
+}
+
+type DrumMachine = Extract<Instrument, { kind: "drumMachine" }>;
+
+/** The drum machine a `track.create` or `instrument.change` brings into being, if any. */
+function newDrumMachine(
+  project: Project,
+  commandType: string,
+  payload: unknown,
+): {
+  readonly trackId: string;
+  readonly instrument: DrumMachine;
+  withInstrument(instrument: Instrument): unknown;
+} | null {
+  if (commandType === "track.create") {
+    const created = payload as { track: Track };
+    const { instrument } = created.track;
+    if (instrument?.kind !== "drumMachine") return null;
+    return {
+      trackId: created.track.id,
+      instrument,
+      withInstrument: (next) => ({
+        ...created,
+        track: { ...created.track, instrument: next },
+      }),
+    };
+  }
+  if (commandType === "instrument.change") {
+    const change = payload as { trackId: string; instrument: Instrument | null };
+    const { instrument } = change;
+    if (instrument?.kind !== "drumMachine") return null;
+    const current = project.song.tracks.find((track) => track.id === change.trackId);
+    if (current?.instrument?.kind === "drumMachine") return null;
+    return {
+      trackId: change.trackId,
+      instrument,
+      withInstrument: (next) => ({ ...change, instrument: next }),
+    };
+  }
+  return null;
 }
 
 /** The first `explain_change` call that parses, or null. */
@@ -380,12 +520,19 @@ function explanationOf(
 function valueIssues(
   project: Project,
   commands: readonly RawCommandInput[],
+  callIndexOf: readonly number[],
 ): ProposalIssue[] {
   const issues: ProposalIssue[] = [];
   let working = project;
-  for (const [callIndex, command] of commands.entries()) {
+  for (const [index, command] of commands.entries()) {
     const reason = refuseCommandValue(command.type, command.payload, working);
-    if (reason) issues.push({ code: "out_of_range", callIndex, message: reason });
+    if (reason) {
+      issues.push({
+        code: "out_of_range",
+        callIndex: callIndexOf[index],
+        message: reason,
+      });
+    }
     const step = requireCommand(command.type).apply(working, command.payload);
     if (!step.ok) break;
     working = step.project;

@@ -8,7 +8,10 @@ import {
 } from "../domain/fixtures";
 import { SONG_SWING } from "../domain/parameters";
 import { createStarterProject } from "../editor/starterProject";
+import { foldTurns, lessonCue } from "../lessons/cue";
+import { skip, startBite } from "../lessons/session";
 import { buildAssistantLibrary, DRUM_PACK_ID } from "../testing/assistantLibrary";
+import { starterWorld } from "../testing/lessonWorld";
 import {
   createEmulatorAssistantProvider,
   DUSTIER_ROLE,
@@ -23,11 +26,13 @@ import {
   LOOSEN_EXPLANATION,
   LOOSEN_SWING,
   LOOSEN_VOLUME_DROP_DB,
+  lessonReplyText,
   MISFIT_ASSET_ID,
   usesEmulatorProvider,
 } from "./emulatorProvider";
 import { type AssistantGatewayDeps, runAssistantTurn } from "./gateway";
 import { createInMemoryGuardStores } from "./inMemoryGuardStores";
+import type { AssistantLessonContext } from "./lesson";
 import { type AssistantMemoryContext, REMEMBER_TOOL_NAME } from "./memory";
 import { buildAssistantPayload } from "./payload";
 import { validateProposal } from "./proposal";
@@ -212,6 +217,52 @@ describe("the emulator's assistant provider", () => {
     ]);
   });
 
+  it("answers a lesson's turn naming its bite, or the chapter at its end (CF-037)", async () => {
+    const world = starterWorld();
+    const settings = { style: "boom_bap" } as const;
+    const started = startBite("beat", "beat-kick", world, settings);
+    const startedCue = lessonCue(started.state, started.event, settings, []);
+    const project = createStarterProject("owner-1", () => 0.5);
+    const answer = (lesson: AssistantLessonContext) =>
+      runAssistantTurn(
+        gateway(),
+        { uid: "uid-1", signInProvider: "google.com" },
+        {
+          projectRevision: project.metadata.revision,
+          messages: [{ role: "user", text: 'Let\'s do "The kick pattern".' }],
+          context: buildAssistantPayload(project),
+          lesson,
+        },
+        { signal: new AbortController().signal, onChunk: () => {} },
+      );
+    expect((await answer(startedCue)).text).toBe(lessonReplyText(startedCue));
+    expect(lessonReplyText(startedCue)).toContain('"The kick pattern"');
+
+    const last = startBite("beat", "beat-loop", world, settings).state;
+    const over = skip(last, world, settings);
+    if (!over) throw new Error("not skipped");
+    const wrapUp = lessonCue(over.state, over.event, settings, []);
+    expect((await answer(wrapUp)).text).toContain('"Make a beat" finished');
+    // A turn that waited answers what it waited with first.
+    const finished = skip(
+      startBite("beat", "beat-library", world, settings).state,
+      world,
+      settings,
+    );
+    if (!finished) throw new Error("not skipped");
+    const folded = foldTurns([
+      { text: "a", cue: lessonCue(finished.state, finished.event, settings, []) },
+      { text: "b", cue: startedCue },
+    ]).cue;
+    expect((await answer(folded)).text).toBe(
+      `Well done: "Pick a kick" is finished. Here's "The kick pattern": ${startedCue.skill}.`,
+    );
+    // A message the producer wrote mid-lesson is answered as any other.
+    expect((await answer({ ...startedCue, moment: "under_way" })).text).toBe(
+      EMULATOR_REPLY_CHUNKS.join(""),
+    );
+  });
+
   it("ends [ask-rich] in a question about the project's first track, with a preview that applies", async () => {
     const project = createReferenceProject();
     const reply = await turn(gateway(), "Where do I start? [ask-rich]").result;
@@ -329,10 +380,20 @@ describe("the emulator's assistant provider", () => {
     );
     expect(kit?.name).toBe(FIRST_BEAT.trackName);
     if (kit?.instrument?.kind !== "drumMachine") throw new Error("no new kit");
-    expect(kit.instrument.pads.map((pad) => [pad.id, pad.name, pad.assetId])).toEqual([
-      [FIRST_BEAT.snarePadId, "Snare", null],
-      [FIRST_BEAT.hatPadId, "Hat", null],
+    // The proposal's pads have no sounds; applied, the new machine has the
+    // starter kit, its Snare and Hat keeping their IDs (GRV-192), and the
+    // starter project's kick is reused rather than added twice.
+    expect(kit.instrument.pads.map((pad) => [pad.name, pad.assetId !== null])).toEqual([
+      ["BD", true],
+      ["Snare", true],
+      ["Hat", true],
+      ["CP", true],
     ]);
+    expect(kit.instrument.pads.slice(1, 3).map((pad) => pad.id)).toEqual([
+      FIRST_BEAT.snarePadId,
+      FIRST_BEAT.hatPadId,
+    ]);
+    expect(kit.instrument.pads[0].assetId).toBe(bd.instrument.pads[0].assetId);
     expect(
       applied.project.song.placements.some((placement) => placement.trackId === kit.id),
     ).toBe(true);

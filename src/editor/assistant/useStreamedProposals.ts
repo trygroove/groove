@@ -185,6 +185,11 @@ export interface UseStreamedProposalsOptions {
     outcome: ProposalOutcome,
     issues?: readonly TranscriptIssue[],
   ): void;
+  /**
+   * The producer applied some of a card's parts, with Apply on a part or
+   * Apply all (GRV-195); never a redo.
+   */
+  onApplied?(entryId: string): void;
 }
 
 export interface StreamedProposals {
@@ -286,7 +291,7 @@ interface Working {
   /** The song with them applied. */
   readonly project: Project;
   /** Those that applied, in order. */
-  readonly parts: readonly { part: PartState; command: RawCommandInput }[];
+  readonly parts: readonly { part: PartState; commands: readonly RawCommandInput[] }[];
 }
 
 /** A committed edit, and what it touched: what makes another card's parts stale. */
@@ -357,8 +362,8 @@ export function useStreamedProposals(
     const waiting = part.needs.find((index) => !state.parts[index]?.appliedBy);
     if (waiting !== undefined) return { status: "blocked", needs: waiting };
     if (staleUnder(state, part)) return { status: "stale", needs: null };
-    if (!applyCommands(project, [resolution.command])) {
-      const before = neededBefore(state, part, resolution.command, project);
+    if (!applyCommands(project, resolution.commands)) {
+      const before = neededBefore(state, part, resolution.commands, project);
       return before === null
         ? { status: "stale", needs: null }
         : { status: "blocked", needs: before };
@@ -377,26 +382,30 @@ export function useStreamedProposals(
   function neededBefore(
     state: StreamState,
     part: PartState,
-    command: RawCommandInput,
+    commands: readonly RawCommandInput[],
     project: Project,
   ): number | null {
     let next = project;
     for (const earlier of state.parts.slice(0, part.index)) {
       const resolution = resolved(earlier);
       if (!resolution || earlier.appliedBy) continue;
-      const after = applyCommands(next, [resolution.command]);
+      const after = applyCommands(next, resolution.commands);
       if (!after) continue;
       next = after;
-      if (applyCommands(next, [command])) return earlier.index;
+      if (applyCommands(next, commands)) return earlier.index;
     }
     return null;
   }
 
   /** The parts not applied yet that can join a preview or Apply all, in order. */
-  function rest(state: StreamState): { part: PartState; command: RawCommandInput }[] {
+  function rest(
+    state: StreamState,
+  ): { part: PartState; commands: readonly RawCommandInput[] }[] {
     return state.parts.flatMap((part) => {
       const resolution = resolved(part);
-      return resolution && !part.appliedBy ? [{ part, command: resolution.command }] : [];
+      return resolution && !part.appliedBy
+        ? [{ part, commands: resolution.commands }]
+        : [];
     });
   }
 
@@ -407,9 +416,9 @@ export function useStreamedProposals(
    */
   function working(state: StreamState, project: Project): Working {
     let next = project;
-    const applied: { part: PartState; command: RawCommandInput }[] = [];
+    const applied: { part: PartState; commands: readonly RawCommandInput[] }[] = [];
     for (const entry of rest(state)) {
-      const after = applyCommands(next, [entry.command]);
+      const after = applyCommands(next, entry.commands);
       if (!after) continue;
       next = after;
       applied.push(entry);
@@ -433,7 +442,7 @@ export function useStreamedProposals(
     if (remaining.some(({ part }) => staleUnder(state, part))) return "stale";
     return applyCommands(
       project,
-      remaining.map(({ command }) => command),
+      remaining.flatMap(({ commands }) => commands),
     ) === null
       ? "conflict"
       : null;
@@ -534,7 +543,7 @@ export function useStreamedProposals(
       resolution,
       needs: resolution.ok
         ? partNeeds(
-            resolution.command,
+            resolution.commands,
             state.parts.flatMap((earlier) =>
               earlier.resolution.ok
                 ? [{ index: earlier.index, creates: earlier.resolution.creates }]
@@ -679,6 +688,7 @@ export function useStreamedProposals(
       state.location = null;
     }
     options.onOutcome?.(entryId, "applied");
+    options.onApplied?.(entryId);
     noticeAllApplied(state);
     publish();
     return true;
@@ -696,7 +706,7 @@ export function useStreamedProposals(
       return;
     }
     const running = state.turn === "running";
-    if (!run(entryId, state, [index], [resolution.command], false)) return;
+    if (!run(entryId, state, [index], resolution.commands, false)) return;
     const analytics = options.analytics();
     analytics.log("assistant_proposal_part_applied", {
       part_index: index,
@@ -715,7 +725,7 @@ export function useStreamedProposals(
       entryId,
       state,
       remaining.map(({ part }) => part.index),
-      remaining.map(({ command }) => command),
+      remaining.flatMap(({ commands }) => commands),
       true,
     );
     // `run` logged `assistant_proposal_applied`: Apply all applies the last of it.
@@ -734,7 +744,7 @@ export function useStreamedProposals(
     if (!project || withdrawn(state)) return false;
     // Each part in order, those that no longer apply left out.
     const after = working(state, project);
-    const commands = after.parts.map(({ command }) => command);
+    const commands = after.parts.flatMap(({ commands }) => commands);
     const addresses = after.parts.flatMap(({ part }) => part.controls);
     if (commands.length === 0) return false;
     const opened = session.beginPreview(commands);

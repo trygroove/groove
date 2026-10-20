@@ -4,6 +4,7 @@ import {
   EMPTY_MEMORY,
   emptyProfile,
   encodeProfile,
+  MAX_LESSON_BITES_DONE,
   MEMORY_FIELDS,
   PROFILE_SCHEMA_VERSION,
   profileDocumentPath,
@@ -38,5 +39,25 @@ describe("the profile document (GRV-25)", () => {
       decodeProfile({ ...encoded, memory: { ...EMPTY_MEMORY, experience: "expert" } }),
     ).toBeNull();
     expect(decodeProfile(null)).toBeNull();
+  });
+
+  it("reads a profile written before lessons existed as none done (GRV-43)", () => {
+    const { lessonsDone: _none, ...before } = encodeProfile(emptyProfile(3));
+    expect(decodeProfile(before)?.lessonsDone).toEqual([]);
+  });
+
+  it("keeps the lesson bites done, and refuses an ID that is not one or too many", () => {
+    const encoded = encodeProfile({ ...emptyProfile(1), lessonsDone: ["beat-kick"] });
+    expect(decodeProfile(encoded)?.lessonsDone).toEqual(["beat-kick"]);
+    expect(decodeProfile({ ...encoded, lessonsDone: ["Beat Kick"] })).toBeNull();
+    expect(
+      decodeProfile({
+        ...encoded,
+        lessonsDone: Array.from(
+          { length: MAX_LESSON_BITES_DONE + 1 },
+          (_, index) => `bite-${index}`,
+        ),
+      }),
+    ).toBeNull();
   });
 });

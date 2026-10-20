@@ -132,4 +132,20 @@ describe("the profile's security rules (GRV-25)", () => {
       }),
     );
   });
+
+  it("takes the lesson bites done, a profile from before them, and no more than the cap (GRV-43)", async () => {
+    const db = firestoreAs(PROFILE_OWNER);
+    const path = profileDocumentPath(PROFILE_OWNER);
+    const valid = encodeProfile({ ...emptyProfile(1), lessonsDone: ["beat-kick"] });
+    await assertSucceeds(setDoc(doc(db, path), valid));
+    const { lessonsDone: _none, ...before } = valid;
+    await assertSucceeds(setDoc(doc(db, path), before));
+    await assertFails(setDoc(doc(db, path), { ...valid, lessonsDone: "beat-kick" }));
+    await assertFails(
+      setDoc(doc(db, path), {
+        ...valid,
+        lessonsDone: Array.from({ length: 101 }, (_, index) => `bite-${index}`),
+      }),
+    );
+  });
 });

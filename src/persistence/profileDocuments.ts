@@ -25,6 +25,11 @@ import type { JsonObject } from "../domain/serialize";
  * validation event reads it, and only its fixed chips (see
  * `src/onboarding`).
  *
+ * **Lessons** (GRV-43) are the IDs of the lesson bites the producer has
+ * been through (done, shown or skipped), at most {@link MAX_LESSON_BITES_DONE}
+ * of them. An ID is ours (`src/lessons`), never the producer's words. A
+ * profile written before lessons existed has no list, and reads as none done.
+ *
  * Like the project tiers, it carries its own schema version, and every time
  * is integer epoch milliseconds rather than a Firestore `Timestamp`.
  */
@@ -46,6 +51,12 @@ export const MAX_MEMORY_LIST = 20;
 export const MAX_MEMORY_ITEM_CHARS = 80;
 /** The longest the artists answer may be. */
 export const MAX_ARTISTS_CHARS = 300;
+/** The most lesson bites the profile records as done (GRV-43). */
+export const MAX_LESSON_BITES_DONE = 100;
+/** What a lesson bite's ID looks like: lower-case words joined by hyphens. */
+export const LESSON_BITE_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** The longest a lesson bite's ID may be. */
+export const MAX_LESSON_BITE_ID_CHARS = 64;
 
 /** The five onboarding questions, in the order they are asked. */
 export const ONBOARDING_QUESTION_IDS = [
@@ -134,6 +145,11 @@ export interface ProducerProfile {
   readonly validationConsent: boolean;
   /** The local day (`YYYY-MM-DD`) Cue last offered a nudge, if ever. */
   readonly lastNudgeDay: string | null;
+  /**
+   * The lesson bites the producer has been through (GRV-43), by ID, in the
+   * order they finished them: done, shown or skipped.
+   */
+  readonly lessonsDone: readonly string[];
   /** When the profile was last written, epoch milliseconds. */
   readonly modifiedAt: number;
 }
@@ -157,6 +173,7 @@ export function emptyProfile(now: number): ProducerProfile {
     laterQuestions: [],
     validationConsent: false,
     lastNudgeDay: null,
+    lessonsDone: [],
     modifiedAt: now,
   };
 }
@@ -204,6 +221,11 @@ export const producerProfileSchema = z.strictObject({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .nullable(),
+  // Absent from a profile written before lessons existed (GRV-43).
+  lessonsDone: z
+    .array(z.string().max(MAX_LESSON_BITE_ID_CHARS).regex(LESSON_BITE_ID_PATTERN))
+    .max(MAX_LESSON_BITES_DONE)
+    .default([]),
   modifiedAt: time,
 });
 
@@ -233,6 +255,7 @@ export function encodeProfile(profile: ProducerProfile): JsonObject {
     laterQuestions: [...profile.laterQuestions],
     validationConsent: profile.validationConsent,
     lastNudgeDay: profile.lastNudgeDay,
+    lessonsDone: [...profile.lessonsDone],
     modifiedAt: profile.modifiedAt,
   };
 }

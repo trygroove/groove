@@ -116,6 +116,13 @@
  * a reply that proposed a change is now followed by a bracketed line saying
  * whether it was applied, cancelled, undone or never applied
  * (`history.ts`), and the description's head says how to read it.
+ *
+ * 2026-10-20.1 (GRV-43): lessons. A turn during a lesson carries a block of
+ * its own, after memory: how to teach a bite (explain, comment on what the
+ * producer changed, celebrate in words, perhaps one quiz question, a wrap-up
+ * with pointers at a chapter's end, and how to answer the moments a turn
+ * waited with, in `earlier`) and the lesson as JSON. The fixed prompt
+ * is unchanged, so a turn outside a lesson reads what it did.
  */
 import { customAlphabet } from "nanoid";
 import { ASSISTANT_NAME } from "../../site.config.mjs";
@@ -140,12 +147,13 @@ import { TICKS_PER_BAR, TICKS_PER_QUARTER, TICKS_PER_SIXTEENTH } from "../domain
 import { DEFAULT_STEP_TICKS, STEP_VELOCITY_SCALE } from "./drumSteps";
 import { MAX_VARIATION } from "./generators";
 import { HAT_RATES } from "./generators/drums";
+import { type AssistantLessonContext, lessonBlock } from "./lesson";
 import type { AssistantMemoryContext } from "./memory";
 import type { AssistantContextPayload, AssistantLibraryContext } from "./protocol";
 import type { ProviderTextBlock } from "./providerRequest";
 import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-19.2";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-20.1";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",
@@ -738,9 +746,10 @@ export const MEMORY_BLOCK_HEADING = "What you remember about the producer, as JS
 
 /**
  * The system blocks for one turn: the fixed prompt first, then the project,
- * then the library the assistant may recommend from and the producer's
- * memory, when the turn has them, and last the stem the turn's new IDs are
- * made from. The fixed prompt is the one `tactics` asks for.
+ * then the library the assistant may recommend from, the producer's memory
+ * and the lesson under way, when the turn has them, and last the stem the
+ * turn's new IDs are made from. The fixed prompt is the one `tactics` asks
+ * for.
  */
 export function buildSystemBlocks(
   context: AssistantContextPayload,
@@ -748,6 +757,7 @@ export function buildSystemBlocks(
   idStem: string = createIdStem(),
   memory?: AssistantMemoryContext,
   tactics: SystemBlockTactics = TACTIC_DEFAULTS,
+  lesson?: AssistantLessonContext,
 ): ProviderTextBlock[] {
   const prompt = assistantSystemPrompt(tactics);
   const blocks: ProviderTextBlock[] = [
@@ -769,6 +779,7 @@ export function buildSystemBlocks(
       text: `${MEMORY_BLOCK_HEADING}${JSON.stringify(memory)}`,
     });
   }
+  if (lesson) blocks.push({ type: "text", text: lessonBlock(lesson) });
   blocks.push({ type: "text", text: newIdInstructions(idStem) });
   return blocks;
 }

@@ -2,7 +2,12 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { createDevice, defaultDeviceParameters } from "../../domain/devices";
 import type { Device } from "../../domain/entities";
 import type { DeviceId } from "../../domain/ids";
-import { hfEnergy, installWebAudioGlobals, rms } from "../testAudioContext";
+import {
+  hfEnergy,
+  installWebAudioGlobals,
+  renderedChannel,
+  rms,
+} from "../testAudioContext";
 
 // Must run before Tone is imported — see AudioRuntime.test.ts for why.
 installWebAudioGlobals();
@@ -66,7 +71,9 @@ async function render(
     node.output.toDestination();
     osc.start(0);
   }, 0.4);
-  return buffer.getChannelData(0);
+  // A copy: every test here holds one render while it makes the next, and a
+  // bare `getChannelData` view would not survive the first render's GC.
+  return renderedChannel(buffer);
 }
 
 /** A moderate sine — the distortion probe described on `render`. */
