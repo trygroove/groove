@@ -7,7 +7,8 @@
  *   one revision, and undo removes just that part. It applies to the song as
  *   it is at that moment, while the turn goes on.
  * - A part that **needs** an earlier one (clips on a track the proposal
- *   creates) cannot apply until that part has.
+ *   creates, or a new track placed after another new one) cannot apply until
+ *   that part has.
  * - A part goes **stale** once the producer has edited what it touches since
  *   the request was sent, a change made elsewhere has landed, or it no longer
  *   applies; the card then offers Refresh, as a whole proposal does.
@@ -84,6 +85,7 @@ import {
   type PartResolution,
   partLineText,
   partNeeds,
+  projectIds,
   type ResolvedPart,
   resolvePart,
 } from "./proposalParts";
@@ -349,10 +351,40 @@ export function useStreamedProposals(
     if (withdrawn(state)) return { status: "withdrawn", needs: null };
     const waiting = part.needs.find((index) => !state.parts[index]?.appliedBy);
     if (waiting !== undefined) return { status: "blocked", needs: waiting };
-    if (staleUnder(state, part) || !applyCommands(project, [resolution.command])) {
-      return { status: "stale", needs: null };
+    if (staleUnder(state, part)) return { status: "stale", needs: null };
+    if (!applyCommands(project, [resolution.command])) {
+      const before = neededBefore(state, part, resolution.command, project);
+      return before === null
+        ? { status: "stale", needs: null }
+        : { status: "blocked", needs: before };
     }
     return { status: "ready", needs: null };
+  }
+
+  /**
+   * The earlier part not applied yet that `part` waits for when it names
+   * nothing an earlier part makes but still only applies after them: a new
+   * track's place is the track count with the proposal's earlier new tracks
+   * in, so the second new track cannot go in before the first. It is the
+   * last of the earlier parts, applied in order, after which `part` applies,
+   * or null when it applies after none of them (it is out of date).
+   */
+  function neededBefore(
+    state: StreamState,
+    part: PartState,
+    command: RawCommandInput,
+    project: Project,
+  ): number | null {
+    let next = project;
+    for (const earlier of state.parts.slice(0, part.index)) {
+      const resolution = resolved(earlier);
+      if (!resolution || earlier.appliedBy) continue;
+      const after = applyCommands(next, [resolution.command]);
+      if (!after) continue;
+      next = after;
+      if (applyCommands(next, [command])) return earlier.index;
+    }
+    return null;
   }
 
   /** The parts not applied yet that can join a preview or Apply all, in order. */
@@ -812,7 +844,7 @@ export function useStreamedProposals(
   function refresh(entryId: string) {
     const state = states.get(entryId);
     if (!state || state.refreshed) return;
-    if (options.refresh(entryId, shownParts(state))) {
+    if (options.refresh(entryId, shownParts(state, committed()))) {
       state.refreshed = true;
       withdraw(state);
       publish();
@@ -822,7 +854,7 @@ export function useStreamedProposals(
   function continueRest(entryId: string) {
     const state = states.get(entryId);
     if (!state || state.turn !== "failed" || state.continued) return;
-    if (options.continueRest(entryId, shownParts(state))) {
+    if (options.continueRest(entryId, shownParts(state, committed()))) {
       state.continued = true;
       withdraw(state);
       publish();
@@ -1009,13 +1041,22 @@ function newestApplied(state: StreamState): Step | undefined {
   return appliedSteps(state).at(-1);
 }
 
-/** The parts a card showed that fit the song, and whether each was applied. */
-function shownParts(state: StreamState): ShownPart[] {
-  return state.parts.flatMap((part) =>
-    part.resolution.ok
-      ? [{ text: partLineText(part.resolution.line), applied: part.appliedBy !== null }]
-      : [],
-  );
+/**
+ * The parts a card showed that fit the song, whether each was applied, and
+ * whether the producer has since removed what an applied one made (deleted
+ * the track it added), so the model is never told the song has something
+ * its description does not list.
+ */
+function shownParts(state: StreamState, project: Project | null): ShownPart[] {
+  const present = project ? new Set(projectIds(project)) : null;
+  return state.parts.flatMap((part): ShownPart[] => {
+    if (!part.resolution.ok) return [];
+    const text = partLineText(part.resolution.line);
+    if (part.appliedBy === null) return [{ text, applied: false }];
+    const removed =
+      present !== null && [...part.resolution.creates].some((id) => !present.has(id));
+    return [removed ? { text, applied: true, removed } : { text, applied: true }];
+  });
 }
 
 /** What a part needs, as "Needs … first" names it: a track by its name, anything else by its line. */
