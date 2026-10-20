@@ -1,0 +1,10 @@
+{
+  "id": "emptyexp",
+  "title": "Export with no tracks",
+  "steps": [
+    {
+      "file": "01-export-with-no-tracks-is-off-and-says-wh.png",
+      "caption": "Export with no tracks is off and says why"
+    }
+  ]
+}
