@@ -9,6 +9,9 @@ import { formatBytes } from "./stemSelection";
 /** The in-browser budget for one ZIP, as the dialog says it. */
 const LIMIT_TEXT = "2 GiB";
 
+/** What the slot says when the song has no tracks, in either format. */
+export const EMPTY_SONG_NOTE = "Add a track to export.";
+
 export interface StemsNoteInput {
   /** How many tracks are on. */
   readonly tracks: number;
