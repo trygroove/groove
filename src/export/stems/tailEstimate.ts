@@ -32,6 +32,26 @@ function valuesOf(device: Device): Values {
   return { ...defaultDeviceParameters(device.type), ...device.parameters };
 }
 
+/**
+ * The level a track's signal is taken to reach an effect at: -18 dBFS, a
+ * typical mixed source. A tail rings until it falls to the render's silence
+ * threshold, so its length depends on how loud it starts; assuming full scale
+ * counted close to a second of reverb the render had already trimmed as
+ * silence (GRV-162). Measured against Chromium renders, a single synth note
+ * reaches an effect a little under this and a loud chord a little over.
+ */
+const SOURCE_LEVEL = 0.125;
+
+/**
+ * The gain a reverb's convolver gives a sustained source, per square root of
+ * its impulse's length in seconds. Web Audio normalizes every impulse to the
+ * same power (`GainCalibration` 0.00125, at 44.1 kHz), so a longer impulse
+ * spreads that power thinner per sample but sums more of the source: the
+ * tail's level grows with the root of its length. Taken at 48 kHz, the
+ * projects' usual rate; at 44.1 kHz it is 4% louder, a few milliseconds of tail.
+ */
+const CONVOLVER_GAIN = (0.00125 * 44_100) / Math.sqrt(48_000);
+
 /** Seconds a decay of amplitude `exp(-t / timeConstant)` takes from `level` to silence. */
 function secondsToSilence(level: number, timeConstant: number): number {
   return level <= SILENCE_THRESHOLD
@@ -51,7 +71,8 @@ export function deviceTailSeconds(device: Device, tempo: number): number {
       const decay = values.decay * (0.5 + values.size);
       const preDelay = values.predelay + values.size * 0.05;
       const timeConstant = Math.log(decay + 1) / Math.log(200);
-      return Math.min(decay + preDelay, preDelay + secondsToSilence(wet, timeConstant));
+      const level = wet * SOURCE_LEVEL * CONVOLVER_GAIN * Math.sqrt(decay + preDelay);
+      return Math.min(decay + preDelay, preDelay + secondsToSilence(level, timeConstant));
     }
     case "delay": {
       const time =
@@ -59,10 +80,11 @@ export function deviceTailSeconds(device: Device, tempo: number): number {
           ? (240 / (tempo > 0 ? tempo : 120)) * delayDivision(values.division).wholeNotes
           : values.time;
       const feedback = values.feedback;
-      if (wet <= SILENCE_THRESHOLD) return 0;
+      const level = wet * SOURCE_LEVEL;
+      if (level <= SILENCE_THRESHOLD) return 0;
       const repeats =
         feedback > 0 && feedback < 1
-          ? Math.ceil(Math.log(SILENCE_THRESHOLD / wet) / Math.log(feedback))
+          ? Math.ceil(Math.log(SILENCE_THRESHOLD / level) / Math.log(feedback))
           : feedback >= 1
             ? Number.POSITIVE_INFINITY
             : 0;

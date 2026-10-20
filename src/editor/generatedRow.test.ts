@@ -5,6 +5,7 @@ import { createDrumMachineFixtureProject } from "../domain/fixtures";
 import { createSeededIdFactory } from "../domain/ids";
 import { TICKS_PER_SIXTEENTH } from "../domain/time";
 import { previewRow, rowCommands, rowNotes } from "./generatedRow";
+import { createStarterProject } from "./starterProject";
 import { PRESETS, type PresetId, presetHits } from "./stepGenerators";
 
 const preset = (id: PresetId) => {
@@ -72,6 +73,17 @@ describe("writing a generated row (#643)", () => {
     }));
     expect(rowCommands(written, clap, louder, createSeededIdFactory(5)).length).toBe(2);
     expect(history.project.metadata.revision).toBe(revision);
+  });
+
+  it("writes nothing for Four on the floor on a new project's BD row (GRV-154)", () => {
+    const project = createStarterProject("user_1");
+    const clip = project.clips[0] as Clip;
+    const track = project.song.tracks[0];
+    if (track.instrument?.kind !== "drumMachine") throw new Error("no drum machine");
+    const bd: NoteTrigger = { kind: "pad", padId: track.instrument.pads[0].id };
+    const hits = presetHits(preset("four_on_the_floor"), 16);
+
+    expect(rowCommands(clip, bd, hits, createSeededIdFactory(6))).toEqual([]);
   });
 
   it("drops hits past the end of the clip", () => {

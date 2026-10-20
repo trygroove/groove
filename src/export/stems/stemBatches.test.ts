@@ -50,8 +50,9 @@ describe("planStemBatches", () => {
     const [verb] = project.song.returns.filter((bus) => bus.name === "Verb");
     const reverb = createDevice("dev_tail" as DeviceId, "reverb", 0);
     // The fixture's notes all end well before the song does, so the reverb has
-    // to ring past the last placement to show: a long hall does.
-    reverb.parameters.decay = 8;
+    // to ring past the last placement to show: a long, fully wet hall does.
+    reverb.parameters.decay = 20;
+    reverb.parameters.wet = 1;
     const ringing: Project = {
       ...project,
       song: {
