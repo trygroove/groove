@@ -16,6 +16,14 @@ import { assertProject } from "../domain/parse";
 import { TICKS_PER_BAR, TICKS_PER_SIXTEENTH } from "../domain/time";
 import { createFactoryAsset } from "../library/factoryLibrary";
 import { generateProjectName, type RandomSource } from "./projectName";
+import { STEPS_PER_BAR } from "./stepEditorModel";
+import { PRESETS, type Preset, presetHits } from "./stepGenerators";
+
+function fourOnTheFloor(): Preset {
+  const preset = PRESETS.find((candidate) => candidate.id === "four_on_the_floor");
+  if (!preset) throw new Error("The four_on_the_floor preset is missing");
+  return preset;
+}
 
 /**
  * Builds a fresh `FND-009` starter project: one drum-machine track ("BD") with
@@ -54,10 +62,13 @@ export function createStarterProject(
     trackId: track.id,
     name: "Four on the floor",
     lengthTicks: TICKS_PER_BAR,
-    events: [0, 4, 8, 12].map((sixteenth) =>
+    // The Generate panel's own preset, so pressing Four on the floor on this
+    // row finds it already there and writes nothing (GRV-154).
+    events: presetHits(fourOnTheFloor(), STEPS_PER_BAR).map((hit) =>
       createNoteEvent(context, {
-        startTicks: sixteenth * TICKS_PER_SIXTEENTH,
+        startTicks: hit.step * TICKS_PER_SIXTEENTH,
         durationTicks: TICKS_PER_SIXTEENTH,
+        velocity: hit.velocity,
         padId: kickPad.id,
       }),
     ),
