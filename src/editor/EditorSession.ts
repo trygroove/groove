@@ -39,6 +39,7 @@ import {
 } from "../shared/scheduler";
 import { markProjectOpened } from "./deviceProjectRecord";
 import { reportSaveFailures, type SaveFailureReportOptions } from "./saveFailureReport";
+import { retryFailedSaves } from "./saveRetry";
 import {
   type PreviewEndReason,
   type PreviewHost,
@@ -210,6 +211,7 @@ export class EditorSession {
   private readonly noticeListeners = new Set<SessionNoticeListener>();
   private readonly unsubscribeHistory: () => void;
   private readonly unsubscribeSave: () => void;
+  private readonly stopSaveRetry: () => void;
   private readonly unsubscribeSaveFailures: () => void;
   private readonly previewHost: PreviewHost = {
     cancelPreview: (preview) => this.endPreview(preview, "cancelled", "cancelled"),
@@ -257,6 +259,7 @@ export class EditorSession {
     this.remoteRevision = options.project.metadata.revision;
     this.unsubscribeHistory = this.history.subscribe(() => this.onHistoryChange());
     this.unsubscribeSave = this.autosave.subscribe((status) => this.onSaveStatus(status));
+    this.stopSaveRetry = retryFailedSaves(this.autosave, this.scheduler);
     this.unsubscribeSaveFailures = reportSaveFailures(
       this.autosave,
       options.saveFailures,
@@ -571,7 +574,9 @@ export class EditorSession {
     this.cancelReload?.();
     this.cancelReload = null;
     this.unwatch();
+    // A kept autosave keeps retrying its failed write until it lands.
     if (!options.keepUnsavedWrites || this.autosave.status.pending === 0) {
+      this.stopSaveRetry();
       this.autosave.dispose();
     }
     this.history.dispose();
