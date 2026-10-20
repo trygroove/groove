@@ -253,6 +253,11 @@ interface StreamState {
   /** Each step this card applied, oldest first. */
   readonly steps: Step[];
   preview: Preview | null;
+  /**
+   * The preview opens by itself and follows each new part (GRV-193) until
+   * the producer takes over: previewing, cancelling or applying here.
+   */
+  following: boolean;
   location: EditorLocation | null;
   previewView: EditorViewName | null;
   /** The controls wearing the solid outline since its last apply. */
@@ -502,6 +507,7 @@ export function useStreamedProposals(
         continued: false,
         steps: [],
         preview: null,
+        following: true,
         location: null,
         previewView: null,
         marked: [],
@@ -540,8 +546,14 @@ export function useStreamedProposals(
       keys: new Set(controls.map(controlKey)),
       appliedBy: null,
     });
-    // An open preview takes the new part in.
-    if (state.preview) reopenPreview(state);
+    // An open preview takes the new part in; one the producer has not
+    // taken over opens by itself and moves to the newest part (GRV-193).
+    if (state.preview) {
+      reopenPreview(state);
+      if (state.following) revealNewest(state, project);
+    } else if (state.following && state.status === "open") {
+      showPreview(state, true);
+    }
     publish();
   }
 
@@ -677,6 +689,7 @@ export function useStreamedProposals(
     const part = state?.parts[index];
     const project = committed();
     if (!state || !part || !project || state.status === "cancelled") return;
+    state.following = false;
     const resolution = resolved(part);
     if (!resolution || statusOf(state, part, project).status !== "ready") {
       publish();
@@ -696,6 +709,7 @@ export function useStreamedProposals(
     const state = states.get(entryId);
     const project = committed();
     if (!state || !project || !canApplyAll(state, project)) return;
+    state.following = false;
     const remaining = rest(state);
     const applied = run(
       entryId,
@@ -709,7 +723,13 @@ export function useStreamedProposals(
   }
 
   /** Opens the preview of every part not applied yet. */
-  function openPreview(state: StreamState, reveal: boolean): boolean {
+  function openPreview(
+    state: StreamState,
+    reveal: boolean,
+    automatic = false,
+    /** Runs once the session took the preview, before it is marked. */
+    onOpened?: () => void,
+  ): boolean {
     const project = committed();
     if (!project || withdrawn(state)) return false;
     // Each part in order, those that no longer apply left out.
@@ -719,9 +739,11 @@ export function useStreamedProposals(
     if (commands.length === 0) return false;
     const opened = session.beginPreview(commands);
     if (!opened?.ok) {
-      state.notice = BUSY;
+      // A preview nobody asked for says nothing when it cannot open.
+      if (!automatic) state.notice = BUSY;
       return false;
     }
+    onOpened?.();
     state.preview = opened.preview;
     state.status = "previewing";
     const marked = uniqueControls(addresses);
@@ -762,6 +784,8 @@ export function useStreamedProposals(
       if (!state.preview) continue;
       endPreview(state);
       state.status = "open";
+      // Previewing elsewhere is the producer's choice: stop following here.
+      state.following = false;
       changed = true;
     }
     if (changed) publish();
@@ -770,30 +794,55 @@ export function useStreamedProposals(
   function preview(entryId: string) {
     const state = states.get(entryId);
     if (!state || state.status !== "open" || withdrawn(state)) return;
-    // One preview at a time, across every card.
-    let location: EditorLocation | null = null;
-    for (const other of states.values()) {
-      if (other === state || !other.preview) continue;
-      location = other.location;
-      endPreview(other);
-      other.status = "open";
-      other.location = null;
-    }
-    options.onPreviewOpen();
-    state.location = location;
-    state.notice = null;
-    if (!openPreview(state, true)) {
-      state.location = null;
-      publish();
-      return;
-    }
-    options.analytics().logFeatureFirstUse("assistant_proposal");
+    state.following = false;
+    if (showPreview(state, false))
+      options.analytics().logFeatureFirstUse("assistant_proposal");
     publish();
+  }
+
+  /** Reveals where the newest part of a following preview lands. */
+  function revealNewest(state: StreamState, project: Project) {
+    const newest = state.parts.at(-1);
+    if (!state.preview || !newest?.resolution.ok || newest.controls.length === 0) return;
+    const rows = proposalRows(project, working(state, project).project, newest.controls);
+    const shown = previewTarget(project, rows);
+    if (!shown) return;
+    state.previewView = shown.view;
+    controls.revealControl(shown.address, { focus: false });
+  }
+
+  /** Opens the card's preview, ending any other's. `automatic` is the assistant turning it on. */
+  function showPreview(state: StreamState, automatic: boolean): boolean {
+    // One preview at a time, across every card. The others end only once this
+    // one opened (the session supersedes theirs), so a preview that cannot
+    // open leaves the producer's own in place.
+    state.notice = null;
+    const opened = openPreview(state, true, automatic, () => {
+      let location: EditorLocation | null = null;
+      for (const other of states.values()) {
+        if (other === state || !other.preview) continue;
+        location = other.location;
+        endPreview(other);
+        other.status = "open";
+        other.location = null;
+        // Previewing elsewhere is the producer's choice: stop following here.
+        other.following = false;
+      }
+      options.onPreviewOpen();
+      state.location = location;
+    });
+    if (!opened) {
+      state.location = null;
+      return false;
+    }
+    options.analytics().log("assistant_proposal_previewed", { automatic });
+    return true;
   }
 
   function cancel(entryId: string) {
     const state = states.get(entryId);
     if (!state || state.status === "cancelled") return;
+    state.following = false;
     if (state.status === "previewing") {
       const location = state.location;
       endPreview(state);

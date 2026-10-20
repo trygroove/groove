@@ -250,6 +250,18 @@ export const ASSISTANT_EVENTS = {
     },
   },
 
+  /**
+   * A proposal's preview opened on the arrangement (GRV-193): once per
+   * preview shown. `automatic` is true when the assistant turned it on as the
+   * proposal arrived, false when the producer clicked Preview. A preview
+   * that follows a streamed proposal's later parts is the same preview.
+   */
+  assistant_proposal_previewed: {
+    phase: 3,
+    owners: ["GRV-193"],
+    params: { automatic: boolParam() },
+  },
+
   assistant_proposal_cancelled: {
     phase: 3,
     owners: ["AI-003"],
