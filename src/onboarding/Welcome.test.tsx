@@ -92,7 +92,7 @@ function answerEverything() {
   clickAndFlush(within(card()).getByRole("button", { name: "Skip this question" }));
   clickAndFlush(option("Drums and beats"));
   send();
-  clickAndFlush(option("Ableton Move"));
+  clickAndFlush(option("A MIDI keyboard"));
   send();
 }
 
@@ -200,7 +200,7 @@ describe("the welcome (GRV-25)", () => {
       "Four Tet",
       "Played around",
       "Drums and beats",
-      "Ableton Move",
+      "A MIDI keyboard",
     ]) {
       expect(memory).toHaveTextContent(said);
     }
@@ -221,7 +221,7 @@ describe("the welcome (GRV-25)", () => {
         experience: "played_around",
         goal: null,
         learn: ["Drums and beats"],
-        gear: ["Ableton Move"],
+        gear: ["A MIDI keyboard"],
       },
       laterQuestions: ["goal"],
       validationConsent: false,
@@ -346,7 +346,7 @@ describe("what the welcome saves on (GRV-25)", () => {
     clickAndFlush(within(card()).getByRole("button", { name: "Skip this question" }));
     clickAndFlush(option("Drums and beats"));
     send();
-    clickAndFlush(option("Ableton Move"));
+    clickAndFlush(option("A MIDI keyboard"));
     send();
 
     await waitFor(async () => {
@@ -374,7 +374,7 @@ describe("what the welcome saves on (GRV-25)", () => {
     clickAndFlush(option("Drums and beats"));
     send();
     await next(/gear|make music with/i);
-    clickAndFlush(option("Ableton Move"));
+    clickAndFlush(option("A MIDI keyboard"));
     send();
 
     // Coproducer is still writing its last reply, and Skip is already gone.

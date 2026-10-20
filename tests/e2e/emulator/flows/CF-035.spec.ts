@@ -92,11 +92,11 @@ test.describe("CF-035", () => {
       await sendAnswer(page).click();
       await expectQuestion(page, /gear/i);
 
-      // 6. Pick "Ableton Move" and send. A "Saved to memory" card lists what
+      // 6. Pick "A synth" and send. A "Saved to memory" card lists what
       //    you said: House, Techno, Four Tet, Played around, Drums and beats
-      //    and Ableton Move. Its box to share your answers is unticked. Coproducer
+      //    and A synth. Its box to share your answers is unticked. Coproducer
       //    offers a first lesson.
-      await askOption(page, "Ableton Move").click();
+      await askOption(page, "A synth").click();
       await sendAnswer(page).click();
       await expect(memoryCard(page)).toBeVisible();
       for (const said of [
@@ -105,7 +105,7 @@ test.describe("CF-035", () => {
         "Four Tet",
         "Played around",
         "Drums and beats",
-        "Ableton Move",
+        "A synth",
       ]) {
         await expect(memoryCard(page)).toContainText(said);
       }
