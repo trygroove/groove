@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { NoteEvent } from "../domain/entities";
 import { createPianoRollFixtureProject } from "../domain/fixtures";
-import { TICKS_PER_BAR } from "../domain/time";
+import { TICKS_PER_BAR, toTicks } from "../domain/time";
 import { selectOnly } from "../selection/selection";
 import {
   createScriptedAssistantProvider,
@@ -16,6 +16,7 @@ import {
 } from "./clipReuse";
 import {
   createNoteExpander,
+  expandAskPreviews,
   gatewayNoteId,
   type NoteExpander,
   type StepStringOptions,
@@ -383,6 +384,132 @@ describe("clip reuse in a step", () => {
       trackId: project.song.tracks[0].id,
       events: null,
     });
+  });
+
+  it("takes a selection of some notes as only those notes, never the whole clip", () => {
+    const project = createPianoRollFixtureProject();
+    const [clip] = project.clips;
+    if (clip?.content.kind !== "notes") throw new Error("not a note clip");
+    const [first, second] = clip.content.events;
+    const oneNote = contextClips(
+      buildAssistantPayload(project, selectOnly({ kind: "event", id: first.id })),
+    );
+    const firstBeats = contextClips(
+      buildAssistantPayload(
+        project,
+        selectOnly({
+          kind: "barRange",
+          startTicks: toTicks(0),
+          endTicks: toTicks(384),
+          trackIds: [],
+        }),
+      ),
+    );
+    expect(oneNote.get(clip.id)).toMatchObject({
+      partial: true,
+      events: [{ id: first.id }],
+    });
+    expect(firstBeats.get(clip.id)?.events?.map((event) => event.id)).toEqual([
+      first.id,
+      second.id,
+    ]);
+
+    for (const ledger of [oneNote, firstBeats]) {
+      // Every note of the clip is more than the selection lists: refused, not
+      // counted short (the command would refuse four notes with too few IDs).
+      expect(
+        refusal(
+          reuseExpander(ledger).expand(
+            call("notes_duplicate", {
+              clipId: clip.id,
+              eventIds: null,
+              offsetTicks: BAR,
+            }),
+          ),
+        ),
+      ).toMatch(/^clipId: Groove has only the notes of clp_[\w-]+ the selection lists/);
+      // A whole copy would be a silent subset: refused, and told to name the notes.
+      expect(
+        refusal(
+          reuseExpander(ledger).expand(clipCreate({ kind: "copy", clipId: clip.id })),
+        ),
+      ).toMatch(/name the notes with eventIds/);
+      // The notes it has can still be copied by ID.
+      const copied = accepted(
+        reuseExpander(ledger).expand(
+          clipCreate({ kind: "copy", clipId: clip.id, eventIds: [first.id] }),
+        ),
+      );
+      expect(eventsOf(copied.call).map((event) => event.startTicks)).toEqual([
+        first.startTicks,
+      ]);
+    }
+    // A note it was not shown is not one it can copy.
+    expect(
+      refusal(
+        reuseExpander(oneNote).expand(
+          clipCreate({ kind: "copy", clipId: clip.id, eventIds: [second.id] }),
+        ),
+      ),
+    ).toMatch(/not a note the description lists in that clip$/);
+    // And a duplicate of the notes it has keeps the clip partial.
+    const after = withClipCall(
+      oneNote,
+      call("notes_duplicate", {
+        clipId: clip.id,
+        eventIds: [first.id],
+        offsetTicks: BAR,
+        newIds: [newId("evt", STEM, 1)],
+      }),
+    );
+    expect(after.get(clip.id)).toMatchObject({ partial: true });
+    expect(after.get(clip.id)?.events).toHaveLength(2);
+    // Cleared, the clip is known whole again: it has no notes.
+    expect(
+      withClipCall(oneNote, call("notes_clear", { clipId: clip.id })).get(clip.id),
+    ).toEqual({ trackId: clip.trackId, events: [] });
+  });
+
+  it("drops an ask's preview whose short form it cannot write out", () => {
+    const options: StepStringOptions = {
+      targets: new Map(),
+      track: withCreatedTargets,
+      stepStrings: false,
+      generators: false,
+      clipReuse: LEDGER,
+    };
+    const ask = expandAskPreviews(
+      {
+        id: "toolu_ask",
+        question: "Which?",
+        multiSelect: false,
+        options: [
+          {
+            label: "Again",
+            sound: {
+              kind: "preview",
+              calls: [
+                { name: "placement_create", input: { clipId: LISTED, bars: [5, 8] } },
+              ],
+            },
+          },
+          {
+            label: "Nowhere",
+            sound: {
+              kind: "preview",
+              calls: [clipCreate({ kind: "copy", clipId: PLACED })],
+            },
+          },
+        ],
+      } as Parameters<typeof expandAskPreviews>[0],
+      STEM,
+      options,
+    );
+    const [again, nowhere] = ask.options;
+    expect(again?.sound).toMatchObject({
+      calls: [{ input: { clipId: LISTED, startTicks: 4 * BAR, durationTicks: 4 * BAR } }],
+    });
+    expect(nowhere).toEqual({ label: "Nowhere" });
   });
 
   it("refuses a placement with no track for a clip it does not know", () => {

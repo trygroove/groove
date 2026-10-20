@@ -1703,8 +1703,9 @@ describe("runAssistantTurn: compact notes (GRV-131)", () => {
       { signal: new AbortController().signal, onChunk: () => {} },
     );
     const [heard, broken] = (result.ask?.options ?? []).map(
-      (option) => option.sound as Extract<AskSound, { kind: "preview" }>,
+      (option) => option.sound as Extract<AskSound, { kind: "preview" }> | undefined,
     );
+    if (!heard) throw new Error("expected the first option's preview");
     const commands = previewCommands(project, heard);
     expect(commands?.map((command) => command.type)).toEqual(["clip.create", "note.add"]);
     // Numbered apart from the proposal's notes, and unique within the preview.
@@ -1715,9 +1716,9 @@ describe("runAssistantTurn: compact notes (GRV-131)", () => {
       "evt_Stem0000000000000p002",
       "evt_Stem0000000000000p003",
     ]);
-    // A preview whose notes are not notes is refused, as any bad call is.
-    expect(broken.calls).toEqual([notANote]);
-    expect(previewCommands(project, broken)).toBeNull();
+    // A preview whose notes are not notes is dropped: the option has nothing to hear.
+    expect(broken).toBeUndefined();
+    expect(result.ask?.options[1]?.label).toBe("A half note");
   });
 });
 

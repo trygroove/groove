@@ -646,8 +646,10 @@ export function createNoteExpander(
  * ({@link PREVIEW_NOTE_MARK}), counted from 1 and kept clear of the note IDs
  * its calls make themselves: a preview is never applied to the project, and
  * is heard on its own, so its IDs need only be valid and unique within it. A
- * call whose notes are not notes goes on as it came, and the browser refuses
- * that preview as it refuses any call that does not fit its tool.
+ * preview with a call the expander refuses (notes that are not notes, a
+ * short placement or copy it cannot write out) is dropped, leaving the
+ * option with nothing to hear: sent as it came, it would carry a form only
+ * the gateway reads, which the browser could never play.
  */
 export function expandAskPreviews(
   ask: AssistantAsk,
@@ -674,12 +676,15 @@ function expandPreview(
     ...call,
   });
   notes.reserve(sound.calls.map(asCall));
-  const calls = sound.calls.map((call) => {
+  const calls: (typeof sound.calls)[number][] = [];
+  for (const call of sound.calls) {
     const expanded = notes.expand(asCall(call));
-    return expanded.ok
-      ? { name: call.name, input: expanded.call.input as typeof call.input }
-      : call;
-  });
+    if (!expanded.ok) {
+      const { sound: _dropped, ...unheard } = option;
+      return unheard;
+    }
+    calls.push({ name: call.name, input: expanded.call.input as typeof call.input });
+  }
   return { ...option, sound: { ...sound, calls } };
 }
 

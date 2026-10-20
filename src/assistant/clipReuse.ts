@@ -122,20 +122,56 @@ export function copyContentSchema(entry: z.ZodType) {
 export interface KnownClip {
   readonly trackId: string;
   /**
-   * Its notes, as the turn leaves them, or null when the gateway does not
-   * know them all: a clip the description places but whose notes it does not
-   * list, or one a call changed in a way the gateway does not follow.
+   * Its notes the gateway has, as the turn leaves them, or null when it has
+   * none it can trust: a clip the description places but whose notes it does
+   * not list, or one a call changed in a way the gateway does not follow.
    */
   readonly events: readonly NoteEvent[] | null;
+  /**
+   * True when `events` is only some of the clip's notes: the selection picked
+   * single notes, a bar range or a section, or the note cap cut it short. The
+   * notes it has can be copied by ID; the whole clip cannot be copied or
+   * duplicated, since the gateway cannot tell what else it holds.
+   */
+  readonly partial?: boolean;
 }
 
 /** Every clip the gateway knows of, by ID. */
 export type ClipLedger = ReadonlyMap<string, KnownClip>;
 
 /**
+ * The selection kinds that pick a clip's notes all or not at all
+ * (`src/projection/selectedNotes.ts`): a clip, a placement and a track pick
+ * every note of their clips; a project, a device and an automation point
+ * pick none. A note, a bar range and a section pick only some, and a kind
+ * not named here is taken to as well.
+ */
+const WHOLE_CLIP_SELECTION_KINDS = new Set([
+  "clip",
+  "placement",
+  "track",
+  "project",
+  "device",
+  "automationPoint",
+]);
+
+/**
+ * Whether the selection lists each of its clips with every note: no note
+ * left out by the cap, and every scope selected one that picks a clip whole.
+ */
+function listsWholeClips(context: AssistantContextPayload): boolean {
+  const selected = context.selectedNotes;
+  if (!selected || selected.omittedNoteCount > 0 || !context.selection) return false;
+  return Object.entries(context.selection.countByKind).every(
+    ([kind, count]) => count === 0 || WHOLE_CLIP_SELECTION_KINDS.has(kind),
+  );
+}
+
+/**
  * The clips the project context tells of: each placed clip with its track,
- * and the notes of each clip the selection lists. A selection cut short by
- * the note cap lists no clip's notes whole, so then none is known.
+ * and the notes of each clip the selection lists. Those notes are the whole
+ * clip only when the selection picked whole clips and the note cap cut
+ * nothing; otherwise they are some of its notes ({@link KnownClip.partial}).
  */
 export function contextClips(context: AssistantContextPayload): ClipLedger {
   const clips = new Map<string, KnownClip>();
@@ -146,11 +182,12 @@ export function contextClips(context: AssistantContextPayload): ClipLedger {
   }
   const selected = context.selectedNotes;
   if (selected) {
-    const whole = selected.omittedNoteCount === 0;
+    const whole = listsWholeClips(context);
     for (const clip of selected.clips) {
       clips.set(clip.clipId, {
         trackId: clip.trackId,
-        events: whole ? (clip.events as unknown as readonly NoteEvent[]) : null,
+        events: clip.events as unknown as readonly NoteEvent[],
+        ...(whole ? {} : { partial: true }),
       });
     }
   }
@@ -202,10 +239,17 @@ export function withClipCall(
   if (!isRecord(input)) return ledger;
   const clipId = stringOf(input.clipId);
   const known = clipId === null ? undefined : ledger.get(clipId);
-  const withEvents = (events: readonly NoteEvent[] | null): ClipLedger =>
+  const withEvents = (
+    events: readonly NoteEvent[] | null,
+    partial = known?.partial === true,
+  ): ClipLedger =>
     clipId === null || !known
       ? ledger
-      : new Map(ledger).set(clipId, { ...known, events });
+      : new Map(ledger).set(clipId, {
+          trackId: known.trackId,
+          events,
+          ...(partial && events ? { partial: true } : {}),
+        });
   switch (call.name) {
     case "clip_create": {
       const id = stringOf(input.id);
@@ -238,9 +282,9 @@ export function withClipCall(
       );
     }
     case "notes_clear":
-      return withEvents([]);
+      return withEvents([], false);
     case "notes_duplicate":
-      return withEvents(duplicated(known?.events ?? null, input));
+      return withEvents(duplicated(known ?? null, input));
     default:
       return UNFOLLOWED_NOTE_TOOLS.has(call.name) ? withEvents(null) : ledger;
   }
@@ -248,12 +292,15 @@ export function withClipCall(
 
 /** `events` with a `notes_duplicate`'s copies added, as the command adds them. */
 function duplicated(
-  events: readonly NoteEvent[] | null,
+  known: KnownClip | null,
   input: Record<string, unknown>,
 ): NoteEvent[] | null {
+  const events = known?.events;
   const offset = input.offsetTicks;
   const newIds = input.newIds;
   if (!events || typeof offset !== "number" || !Array.isArray(newIds)) return null;
+  // Every note of a clip the gateway has only some of copies notes it has not seen.
+  if (known.partial && !Array.isArray(input.eventIds)) return null;
   const selected = selectedEvents(events, input.eventIds);
   if (typeof selected === "string" || selected.length !== newIds.length) {
     return null;
@@ -273,13 +320,14 @@ function duplicated(
 function selectedEvents(
   events: readonly NoteEvent[],
   eventIds: unknown,
+  partial = false,
 ): readonly NoteEvent[] | string {
   if (eventIds === null || eventIds === undefined) return events;
   if (!Array.isArray(eventIds)) return "eventIds is a list of note IDs";
   const known = new Set<string>(events.map((event) => event.id));
   const missing = eventIds.filter((id) => typeof id !== "string" || !known.has(id));
   if (missing.length > 0) {
-    return `${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` and ${missing.length - 5} more` : ""}: not a note of that clip`;
+    return `${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` and ${missing.length - 5} more` : ""}: ${partial ? "not a note the description lists in that clip" : "not a note of that clip"}`;
   }
   const named = new Set(eventIds);
   return events.filter((event) => named.has(event.id));
@@ -287,9 +335,13 @@ function selectedEvents(
 
 /** Why a clip's notes cannot be copied or counted. */
 function unknownNotes(clipId: string, ledger: ClipLedger): string {
-  return ledger.has(clipId)
-    ? `Groove does not have every note of ${clipId}: only a clip made earlier in this proposal, or one whose notes the description lists, can be copied whole. Name the notes to copy with eventIds, or write them out`
-    : `${clipId} is not a clip made earlier in this proposal or one whose notes the description lists`;
+  const known = ledger.get(clipId);
+  if (!known) {
+    return `${clipId} is not a clip made earlier in this proposal or one whose notes the description lists`;
+  }
+  return known.events && known.partial
+    ? `Groove has only the notes of ${clipId} the selection lists, not every note of it: name the notes with eventIds, or write them out`
+    : `Groove does not have every note of ${clipId}: only a clip made earlier in this proposal, or one whose notes the description lists, can be copied whole. Name the notes to copy with eventIds, or write them out`;
 }
 
 /** One note event as a compact note, which the expander writes out again with a new ID. */
@@ -328,10 +380,10 @@ export function rewriteClipCopy(
   }
   const { clipId, eventIds, events = [] } = parsed.data;
   const source = ledger.get(clipId);
-  if (!source?.events) {
+  if (!source?.events || (source.partial && eventIds === undefined)) {
     return { ok: false, reason: `content.clipId: ${unknownNotes(clipId, ledger)}` };
   }
-  const selected = selectedEvents(source.events, eventIds);
+  const selected = selectedEvents(source.events, eventIds, source.partial);
   if (typeof selected === "string") {
     return { ok: false, reason: `content.eventIds: ${selected}` };
   }
@@ -356,9 +408,9 @@ export function duplicateCount(
   if (Array.isArray(input.eventIds)) return input.eventIds.length;
   const clipId = stringOf(input.clipId);
   if (clipId === null) return "clipId: the clip whose notes are duplicated";
-  const events = ledger.get(clipId)?.events;
-  if (!events) return `clipId: ${unknownNotes(clipId, ledger)}`;
-  return events.length;
+  const known = ledger.get(clipId);
+  if (!known?.events || known.partial) return `clipId: ${unknownNotes(clipId, ledger)}`;
+  return known.events.length;
 }
 
 /**
@@ -389,6 +441,8 @@ export function rewritePlacement(
       };
     }
     const [first, last] = bars;
+    // Bars are 4/4 (TICKS_PER_BAR): the alpha's time signature is fixed at
+    // 4/4 (src/domain/time.ts), so a bar is four quarter notes.
     if (last < first) {
       return {
         ok: false,
