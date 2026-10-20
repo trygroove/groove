@@ -29,6 +29,7 @@ import { type ConsentStore, consentStore } from "../analytics/consent";
 import { type ErrorArea, type ErrorCode, toErrorCode } from "../analytics/errorCodes";
 import { RELEASE_SHA } from "../release";
 import { type BrowserInfo, currentBrowserInfo, UNKNOWN_BROWSER } from "./browserInfo";
+import { contextTags, type ErrorContext, type ErrorContextTags } from "./errorContext";
 import { redactText } from "./scrub";
 
 /**
@@ -56,6 +57,11 @@ export interface ReportOptions {
   readonly fatal: boolean;
   /** Overrides the code derived from the error itself. */
   readonly code?: ErrorCode;
+  /**
+   * What triage needs beyond the code (GRV-55): online, audio context state,
+   * sizes in buckets. Enumerated values only; see `errorContext.ts`.
+   */
+  readonly context?: ErrorContext;
 }
 
 /** The finished, scrubbed report handed to every sink. */
@@ -67,6 +73,8 @@ export interface ErrorReport {
   readonly message: string;
   readonly releaseSha: string;
   readonly browser: BrowserInfo;
+  /** The triage context, already narrowed to declared keys and values. */
+  readonly context: ErrorContextTags;
   /** The original error, for a sink that can symbolicate its stack. */
   readonly error: unknown;
   readonly fingerprint: string;
@@ -168,6 +176,7 @@ export class ErrorReporter {
       message,
       releaseSha: this.releaseSha,
       browser: this.browser,
+      context: contextTags(options.context),
       error,
       fingerprint,
     };
@@ -211,6 +220,26 @@ export class ErrorReporter {
       this.recent.delete(oldest.value);
     }
   }
+}
+
+/**
+ * The tags every transport sends with a report: its classification, the
+ * browser, and its triage context. All of them are enumerated values, never
+ * content, and every key is in `ALLOWED_TAGS` (`scrub.ts`).
+ */
+export function reportTags(
+  report: ErrorReport,
+): Record<string, string | number | boolean> {
+  return {
+    ...report.context,
+    area: report.area,
+    error_code: report.code,
+    fatal: report.fatal,
+    browser_name: report.browser.browserName,
+    browser_version: report.browser.browserVersion,
+    engine_name: report.browser.engineName,
+    engine_version: report.browser.engineVersion,
+  };
 }
 
 // ---------------------------------------------------------------------------
