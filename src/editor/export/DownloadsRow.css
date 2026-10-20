@@ -90,3 +90,22 @@
   font-size: var(--font-size-small);
   color: var(--color-text-secondary);
 }
+
+/* A phone-width window (GRV-156): the cards wrap under their label rather than
+   running past the edge. */
+@media (max-width: 640px) {
+  .downloads {
+    flex-wrap: wrap;
+    padding: 10px 16px 0;
+  }
+
+  .downloads > .export-label {
+    flex: 1 1 100%;
+    margin: 0 0 4px;
+  }
+
+  .download {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+}

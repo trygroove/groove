@@ -53,8 +53,8 @@ describe("ExportFooter", () => {
 
   it("gives its slots fixed widths, so nothing moves when they change", () => {
     renderFooter();
-    expect(slot("Size")).toHaveStyle({ width: "230px" });
-    expect(slot("Downloads")).toHaveStyle({ width: "220px" });
+    expect(slot("Size")).toHaveStyle({ "--slot-width": "230px" });
+    expect(slot("Downloads")).toHaveStyle({ "--slot-width": "220px" });
   });
 
   it("puts the actions it is given in the actions box", () => {
