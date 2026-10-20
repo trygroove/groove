@@ -1,0 +1,14 @@
+{
+  "id": "g188",
+  "title": "GRV-188",
+  "steps": [
+    {
+      "file": "01-mixer-runs-to-the-right-edge.png",
+      "caption": "Mixer runs to the right edge"
+    },
+    {
+      "file": "02-assistant-panel-clear-of-the-header.png",
+      "caption": "Assistant panel clear of the header"
+    }
+  ]
+}
