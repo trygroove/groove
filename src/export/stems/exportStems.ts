@@ -21,6 +21,7 @@ import {
   stemArchiveBytes,
 } from "./stemArchive";
 import { planStems, type StemRender } from "./stemPlan";
+import { estimateTailSeconds } from "./tailEstimate";
 
 /**
  * A stem export, end to end (EXP-003): plan, render each stem offline, encode
@@ -66,7 +67,7 @@ export function maxStemFrames(seconds: number, rate: number, tail = MAX_TAIL_SEC
 
 /** The frames a render whose tails fall silent by the song's end returns: the
  * renderer never trims below the song, and that is the usual length. What the
- * dialog shows, where {@link maxStemFrames} is what the budget checks. */
+ * dialog shows (with a tail estimated, see {@link expectedPlanFrames}), where {@link maxStemFrames} is what the budget checks. */
 export function songFrames(seconds: number, rate: number): number {
   return Math.round(seconds * rate);
 }
@@ -162,12 +163,17 @@ export function planFrames(
   );
 }
 
-/** The frames a stem is expected to be: the song's length, with no tail. */
+/** The frames a stem is expected to be: the song's length plus the tail the
+ * project is expected to ring out for ({@link estimateTailSeconds}), which every
+ * stem is padded to. What the dialog shows; a render is exact, this is close. */
 export function expectedPlanFrames(
   plan: readonly StemRender[],
   sampleRate: number,
+  maxTailSeconds: number = MAX_TAIL_SECONDS,
 ): number {
-  return songFrames(songEndSeconds(plan[plan.length - 1].projection), sampleRate);
+  const mix = plan[plan.length - 1].projection;
+  const tail = estimateTailSeconds(mix, maxTailSeconds);
+  return songFrames(songEndSeconds(mix) + tail, sampleRate);
 }
 
 /** The archive limit: the working-memory budget, never past a plain ZIP. */

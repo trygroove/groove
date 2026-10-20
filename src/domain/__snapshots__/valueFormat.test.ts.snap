@@ -1,0 +1,631 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`parameter value formatting > reads every definition the same way it always has 1`] = `
+"clip.length 1 | readout 1 | summary 1 bars
+clip.length 32 | readout 32 | summary 32 bars
+clip.length 4 | readout 4 | summary 4 bars
+clip.length 9 | readout 9 | summary 9 bars
+clip.length 17 | readout 17 | summary 17 bars
+clip.length 24 | readout 24 | summary 24 bars
+clip.length 29 | readout 29 | summary 29 bars
+compressor.attack 0 | readout 0 ms | summary 0 s
+compressor.attack 0.01 | readout 10 ms | summary 0.01 s
+compressor.attack 1 | readout 1 s | summary 1 s
+compressor.attack 0.1 | readout 100 ms | summary 0.1 s
+compressor.attack 0.25 | readout 250 ms | summary 0.25 s
+compressor.attack 0.5 | readout 500 ms | summary 0.5 s
+compressor.attack 0.75 | readout 750 ms | summary 0.75 s
+compressor.attack 0.9 | readout 900 ms | summary 0.9 s
+compressor.makeup 0 | readout 0 dB | summary 0 dB
+compressor.makeup 3 | readout 3 dB | summary 3 dB
+compressor.makeup 24 | readout 24 dB | summary 24 dB
+compressor.makeup 2.4000000000000004 | readout 2.4 dB | summary 2.4 dB
+compressor.makeup 6 | readout 6 dB | summary 6 dB
+compressor.makeup 12 | readout 12 dB | summary 12 dB
+compressor.makeup 18 | readout 18 dB | summary 18 dB
+compressor.makeup 21.6 | readout 21.6 dB | summary 21.6 dB
+compressor.ratio 1 | readout 1.0:1 | summary 1
+compressor.ratio 3 | readout 3.0:1 | summary 3
+compressor.ratio 20 | readout 20.0:1 | summary 20
+compressor.ratio 2.9000000000000004 | readout 2.9:1 | summary 2.9
+compressor.ratio 5.75 | readout 5.8:1 | summary 5.75
+compressor.ratio 10.5 | readout 10.5:1 | summary 10.5
+compressor.ratio 15.25 | readout 15.3:1 | summary 15.25
+compressor.ratio 18.1 | readout 18.1:1 | summary 18.1
+compressor.ratio 1.5 | readout 1.5:1 | summary 1.5
+compressor.ratio 2 | readout 2.0:1 | summary 2
+compressor.ratio 4 | readout 4.0:1 | summary 4
+compressor.ratio 8.25 | readout 8.3:1 | summary 8.25
+compressor.release 0.01 | readout 10 ms | summary 0.01 s
+compressor.release 0.2 | readout 200 ms | summary 0.2 s
+compressor.release 2 | readout 2 s | summary 2 s
+compressor.release 0.20900000000000002 | readout 209 ms | summary 0.209 s
+compressor.release 0.5075 | readout 507 ms | summary 0.5075 s
+compressor.release 1.005 | readout 1 s | summary 1.005 s
+compressor.release 1.5025 | readout 1.5 s | summary 1.5025 s
+compressor.release 1.801 | readout 1.8 s | summary 1.801 s
+compressor.threshold -60 | readout -60 dB | summary -60 dB
+compressor.threshold -12 | readout -12 dB | summary -12 dB
+compressor.threshold 0 | readout 0 dB | summary 0 dB
+compressor.threshold -54 | readout -54 dB | summary -54 dB
+compressor.threshold -45 | readout -45 dB | summary -45 dB
+compressor.threshold -30 | readout -30 dB | summary -30 dB
+compressor.threshold -15 | readout -15 dB | summary -15 dB
+compressor.threshold -6 | readout -6 dB | summary -6 dB
+compressor.wet 0 | readout 0% | summary 0
+compressor.wet 1 | readout 100% | summary 1
+compressor.wet 0.1 | readout 10% | summary 0.1
+compressor.wet 0.25 | readout 25% | summary 0.25
+compressor.wet 0.5 | readout 50% | summary 0.5
+compressor.wet 0.75 | readout 75% | summary 0.75
+compressor.wet 0.9 | readout 90% | summary 0.9
+delay.division 0 | readout 0 | summary 0
+delay.division 3 | readout 3 | summary 3
+delay.division 6 | readout 6 | summary 6
+delay.division 1 | readout 1 | summary 1
+delay.division 2 | readout 2 | summary 2
+delay.division 5 | readout 5 | summary 5
+delay.feedback 0 | readout 0% | summary 0
+delay.feedback 0.4 | readout 40% | summary 0.4
+delay.feedback 0.99 | readout 99% | summary 0.99
+delay.feedback 0.099 | readout 10% | summary 0.099
+delay.feedback 0.2475 | readout 25% | summary 0.2475
+delay.feedback 0.495 | readout 50% | summary 0.495
+delay.feedback 0.7424999999999999 | readout 74% | summary 0.7425
+delay.feedback 0.891 | readout 89% | summary 0.891
+delay.filter 20 | readout 20 Hz | summary 20 Hz
+delay.filter 8000 | readout 8 kHz | summary 8000 Hz
+delay.filter 20000 | readout 20 kHz | summary 20000 Hz
+delay.filter 2018 | readout 2 kHz | summary 2018 Hz
+delay.filter 5015 | readout 5 kHz | summary 5015 Hz
+delay.filter 10010 | readout 10 kHz | summary 10010 Hz
+delay.filter 15005 | readout 15 kHz | summary 15005 Hz
+delay.filter 18002 | readout 18 kHz | summary 18002 Hz
+delay.output -24 | readout -24 dB | summary -24 dB
+delay.output 0 | readout 0 dB | summary 0 dB
+delay.output 24 | readout 24 dB | summary 24 dB
+delay.output -19.2 | readout -19.2 dB | summary -19.2 dB
+delay.output -12 | readout -12 dB | summary -12 dB
+delay.output 12 | readout 12 dB | summary 12 dB
+delay.output 19.200000000000003 | readout 19.2 dB | summary 19.2 dB
+delay.spread 0 | readout 0% | summary 0
+delay.spread 1 | readout 100% | summary 1
+delay.spread 0.1 | readout 10% | summary 0.1
+delay.spread 0.25 | readout 25% | summary 0.25
+delay.spread 0.5 | readout 50% | summary 0.5
+delay.spread 0.75 | readout 75% | summary 0.75
+delay.spread 0.9 | readout 90% | summary 0.9
+delay.sync 0 | readout 0% | summary 0
+delay.sync 1 | readout 100% | summary 1
+delay.time 0.001 | readout 1 ms | summary 0.001 s
+delay.time 0.25 | readout 250 ms | summary 0.25 s
+delay.time 2 | readout 2 s | summary 2 s
+delay.time 0.20090000000000002 | readout 201 ms | summary 0.2009 s
+delay.time 0.50075 | readout 501 ms | summary 0.5008 s
+delay.time 1.0005 | readout 1 s | summary 1.0005 s
+delay.time 1.5002499999999999 | readout 1.5 s | summary 1.5002 s
+delay.time 1.8001 | readout 1.8 s | summary 1.8001 s
+delay.wet 0 | readout 0% | summary 0
+delay.wet 0.25 | readout 25% | summary 0.25
+delay.wet 1 | readout 100% | summary 1
+delay.wet 0.1 | readout 10% | summary 0.1
+delay.wet 0.5 | readout 50% | summary 0.5
+delay.wet 0.75 | readout 75% | summary 0.75
+delay.wet 0.9 | readout 90% | summary 0.9
+eq.highCutFreq 20 | readout 20 Hz | summary 20 Hz
+eq.highCutFreq 18000 | readout 18 kHz | summary 18000 Hz
+eq.highCutFreq 20000 | readout 20 kHz | summary 20000 Hz
+eq.highCutFreq 2018 | readout 2 kHz | summary 2018 Hz
+eq.highCutFreq 5015 | readout 5 kHz | summary 5015 Hz
+eq.highCutFreq 10010 | readout 10 kHz | summary 10010 Hz
+eq.highCutFreq 15005 | readout 15 kHz | summary 15005 Hz
+eq.highCutFreq 18002 | readout 18 kHz | summary 18002 Hz
+eq.highCutOn 0 | readout 0% | summary 0
+eq.highCutOn 1 | readout 100% | summary 1
+eq.highCutQ 0.3 | readout 0.3 | summary 0.3
+eq.highCutQ 0.71 | readout 0.71 | summary 0.71
+eq.highCutQ 6 | readout 6 | summary 6
+eq.highCutQ 0.8700000000000001 | readout 0.87 | summary 0.87
+eq.highCutQ 1.725 | readout 1.73 | summary 1.725
+eq.highCutQ 3.15 | readout 3.15 | summary 3.15
+eq.highCutQ 4.575 | readout 4.58 | summary 4.575
+eq.highCutQ 5.43 | readout 5.43 | summary 5.43
+eq.highShelfFreq 20 | readout 20 Hz | summary 20 Hz
+eq.highShelfFreq 8000 | readout 8 kHz | summary 8000 Hz
+eq.highShelfFreq 20000 | readout 20 kHz | summary 20000 Hz
+eq.highShelfFreq 2018 | readout 2 kHz | summary 2018 Hz
+eq.highShelfFreq 5015 | readout 5 kHz | summary 5015 Hz
+eq.highShelfFreq 10010 | readout 10 kHz | summary 10010 Hz
+eq.highShelfFreq 15005 | readout 15 kHz | summary 15005 Hz
+eq.highShelfFreq 18002 | readout 18 kHz | summary 18002 Hz
+eq.highShelfGain -18 | readout -18 dB | summary -18 dB
+eq.highShelfGain 0 | readout 0 dB | summary 0 dB
+eq.highShelfGain 18 | readout 18 dB | summary 18 dB
+eq.highShelfGain -14.4 | readout -14.4 dB | summary -14.4 dB
+eq.highShelfGain -9 | readout -9 dB | summary -9 dB
+eq.highShelfGain 9 | readout 9 dB | summary 9 dB
+eq.highShelfGain 14.399999999999999 | readout 14.4 dB | summary 14.4 dB
+eq.highShelfOn 0 | readout 0% | summary 0
+eq.highShelfOn 1 | readout 100% | summary 1
+eq.highShelfQ 0.71 | readout 0.71 | summary 0.71
+eq.highShelfQ 6 | readout 6 | summary 6
+eq.highShelfQ 1.2389999999999999 | readout 1.24 | summary 1.239
+eq.highShelfQ 2.0324999999999998 | readout 2.03 | summary 2.0325
+eq.highShelfQ 3.355 | readout 3.35 | summary 3.355
+eq.highShelfQ 4.6775 | readout 4.68 | summary 4.6775
+eq.highShelfQ 5.471 | readout 5.47 | summary 5.471
+eq.lowCutFreq 20 | readout 20 Hz | summary 20 Hz
+eq.lowCutFreq 30 | readout 30 Hz | summary 30 Hz
+eq.lowCutFreq 20000 | readout 20 kHz | summary 20000 Hz
+eq.lowCutFreq 2018 | readout 2 kHz | summary 2018 Hz
+eq.lowCutFreq 5015 | readout 5 kHz | summary 5015 Hz
+eq.lowCutFreq 10010 | readout 10 kHz | summary 10010 Hz
+eq.lowCutFreq 15005 | readout 15 kHz | summary 15005 Hz
+eq.lowCutFreq 18002 | readout 18 kHz | summary 18002 Hz
+eq.lowCutOn 0 | readout 0% | summary 0
+eq.lowCutOn 1 | readout 100% | summary 1
+eq.lowCutQ 0.3 | readout 0.3 | summary 0.3
+eq.lowCutQ 0.71 | readout 0.71 | summary 0.71
+eq.lowCutQ 6 | readout 6 | summary 6
+eq.lowCutQ 0.8700000000000001 | readout 0.87 | summary 0.87
+eq.lowCutQ 1.725 | readout 1.73 | summary 1.725
+eq.lowCutQ 3.15 | readout 3.15 | summary 3.15
+eq.lowCutQ 4.575 | readout 4.58 | summary 4.575
+eq.lowCutQ 5.43 | readout 5.43 | summary 5.43
+eq.lowShelfFreq 20 | readout 20 Hz | summary 20 Hz
+eq.lowShelfFreq 120 | readout 120 Hz | summary 120 Hz
+eq.lowShelfFreq 20000 | readout 20 kHz | summary 20000 Hz
+eq.lowShelfFreq 2018 | readout 2 kHz | summary 2018 Hz
+eq.lowShelfFreq 5015 | readout 5 kHz | summary 5015 Hz
+eq.lowShelfFreq 10010 | readout 10 kHz | summary 10010 Hz
+eq.lowShelfFreq 15005 | readout 15 kHz | summary 15005 Hz
+eq.lowShelfFreq 18002 | readout 18 kHz | summary 18002 Hz
+eq.lowShelfGain -18 | readout -18 dB | summary -18 dB
+eq.lowShelfGain 0 | readout 0 dB | summary 0 dB
+eq.lowShelfGain 18 | readout 18 dB | summary 18 dB
+eq.lowShelfGain -14.4 | readout -14.4 dB | summary -14.4 dB
+eq.lowShelfGain -9 | readout -9 dB | summary -9 dB
+eq.lowShelfGain 9 | readout 9 dB | summary 9 dB
+eq.lowShelfGain 14.399999999999999 | readout 14.4 dB | summary 14.4 dB
+eq.lowShelfOn 0 | readout 0% | summary 0
+eq.lowShelfOn 1 | readout 100% | summary 1
+eq.lowShelfQ 0.71 | readout 0.71 | summary 0.71
+eq.lowShelfQ 6 | readout 6 | summary 6
+eq.lowShelfQ 1.2389999999999999 | readout 1.24 | summary 1.239
+eq.lowShelfQ 2.0324999999999998 | readout 2.03 | summary 2.0325
+eq.lowShelfQ 3.355 | readout 3.35 | summary 3.355
+eq.lowShelfQ 4.6775 | readout 4.68 | summary 4.6775
+eq.lowShelfQ 5.471 | readout 5.47 | summary 5.471
+eq.output -24 | readout -24 dB | summary -24 dB
+eq.output 0 | readout 0 dB | summary 0 dB
+eq.output 24 | readout 24 dB | summary 24 dB
+eq.output -19.2 | readout -19.2 dB | summary -19.2 dB
+eq.output -12 | readout -12 dB | summary -12 dB
+eq.output 12 | readout 12 dB | summary 12 dB
+eq.output 19.200000000000003 | readout 19.2 dB | summary 19.2 dB
+eq.peak1Freq 20 | readout 20 Hz | summary 20 Hz
+eq.peak1Freq 500 | readout 500 Hz | summary 500 Hz
+eq.peak1Freq 20000 | readout 20 kHz | summary 20000 Hz
+eq.peak1Freq 2018 | readout 2 kHz | summary 2018 Hz
+eq.peak1Freq 5015 | readout 5 kHz | summary 5015 Hz
+eq.peak1Freq 10010 | readout 10 kHz | summary 10010 Hz
+eq.peak1Freq 15005 | readout 15 kHz | summary 15005 Hz
+eq.peak1Freq 18002 | readout 18 kHz | summary 18002 Hz
+eq.peak1Gain -18 | readout -18 dB | summary -18 dB
+eq.peak1Gain 0 | readout 0 dB | summary 0 dB
+eq.peak1Gain 18 | readout 18 dB | summary 18 dB
+eq.peak1Gain -14.4 | readout -14.4 dB | summary -14.4 dB
+eq.peak1Gain -9 | readout -9 dB | summary -9 dB
+eq.peak1Gain 9 | readout 9 dB | summary 9 dB
+eq.peak1Gain 14.399999999999999 | readout 14.4 dB | summary 14.4 dB
+eq.peak1On 0 | readout 0% | summary 0
+eq.peak1On 1 | readout 100% | summary 1
+eq.peak1Q 0.1 | readout 0.1 | summary 0.1
+eq.peak1Q 1 | readout 1 | summary 1
+eq.peak1Q 18 | readout 18 | summary 18
+eq.peak1Q 1.8900000000000001 | readout 1.89 | summary 1.89
+eq.peak1Q 4.574999999999999 | readout 4.57 | summary 4.575
+eq.peak1Q 9.049999999999999 | readout 9.05 | summary 9.05
+eq.peak1Q 13.524999999999999 | readout 13.52 | summary 13.525
+eq.peak1Q 16.21 | readout 16.21 | summary 16.21
+eq.peak2Freq 20 | readout 20 Hz | summary 20 Hz
+eq.peak2Freq 3000 | readout 3 kHz | summary 3000 Hz
+eq.peak2Freq 20000 | readout 20 kHz | summary 20000 Hz
+eq.peak2Freq 2018 | readout 2 kHz | summary 2018 Hz
+eq.peak2Freq 5015 | readout 5 kHz | summary 5015 Hz
+eq.peak2Freq 10010 | readout 10 kHz | summary 10010 Hz
+eq.peak2Freq 15005 | readout 15 kHz | summary 15005 Hz
+eq.peak2Freq 18002 | readout 18 kHz | summary 18002 Hz
+eq.peak2Gain -18 | readout -18 dB | summary -18 dB
+eq.peak2Gain 0 | readout 0 dB | summary 0 dB
+eq.peak2Gain 18 | readout 18 dB | summary 18 dB
+eq.peak2Gain -14.4 | readout -14.4 dB | summary -14.4 dB
+eq.peak2Gain -9 | readout -9 dB | summary -9 dB
+eq.peak2Gain 9 | readout 9 dB | summary 9 dB
+eq.peak2Gain 14.399999999999999 | readout 14.4 dB | summary 14.4 dB
+eq.peak2On 0 | readout 0% | summary 0
+eq.peak2On 1 | readout 100% | summary 1
+eq.peak2Q 0.1 | readout 0.1 | summary 0.1
+eq.peak2Q 1 | readout 1 | summary 1
+eq.peak2Q 18 | readout 18 | summary 18
+eq.peak2Q 1.8900000000000001 | readout 1.89 | summary 1.89
+eq.peak2Q 4.574999999999999 | readout 4.57 | summary 4.575
+eq.peak2Q 9.049999999999999 | readout 9.05 | summary 9.05
+eq.peak2Q 13.524999999999999 | readout 13.52 | summary 13.525
+eq.peak2Q 16.21 | readout 16.21 | summary 16.21
+filter.cutoff 20 | readout 20 Hz | summary 20 Hz
+filter.cutoff 2000 | readout 2 kHz | summary 2000 Hz
+filter.cutoff 20000 | readout 20 kHz | summary 20000 Hz
+filter.cutoff 2018 | readout 2 kHz | summary 2018 Hz
+filter.cutoff 5015 | readout 5 kHz | summary 5015 Hz
+filter.cutoff 10010 | readout 10 kHz | summary 10010 Hz
+filter.cutoff 15005 | readout 15 kHz | summary 15005 Hz
+filter.cutoff 18002 | readout 18 kHz | summary 18002 Hz
+filter.mode 0 | readout 0 | summary 0
+filter.mode 2 | readout 2 | summary 2
+filter.mode 1 | readout 1 | summary 1
+filter.resonance 0 | readout 0 | summary 0
+filter.resonance 1 | readout 1 | summary 1
+filter.resonance 30 | readout 30 | summary 30
+filter.resonance 3 | readout 3 | summary 3
+filter.resonance 7.5 | readout 7.5 | summary 7.5
+filter.resonance 15 | readout 15 | summary 15
+filter.resonance 22.5 | readout 22.5 | summary 22.5
+filter.resonance 27 | readout 27 | summary 27
+filter.wet 0 | readout 0% | summary 0
+filter.wet 1 | readout 100% | summary 1
+filter.wet 0.1 | readout 10% | summary 0.1
+filter.wet 0.25 | readout 25% | summary 0.25
+filter.wet 0.5 | readout 50% | summary 0.5
+filter.wet 0.75 | readout 75% | summary 0.75
+filter.wet 0.9 | readout 90% | summary 0.9
+limiter.ceiling -12 | readout -12 dB | summary -12 dB
+limiter.ceiling -0.3 | readout -0.3 dB | summary -0.3 dB
+limiter.ceiling 0 | readout 0 dB | summary 0 dB
+limiter.ceiling -10.8 | readout -10.8 dB | summary -10.8 dB
+limiter.ceiling -9 | readout -9 dB | summary -9 dB
+limiter.ceiling -6 | readout -6 dB | summary -6 dB
+limiter.ceiling -3 | readout -3 dB | summary -3 dB
+limiter.ceiling -1.1999999999999993 | readout -1.2 dB | summary -1.2 dB
+limiter.drive 0 | readout 0 dB | summary 0 dB
+limiter.drive 24 | readout 24 dB | summary 24 dB
+limiter.drive 2.4000000000000004 | readout 2.4 dB | summary 2.4 dB
+limiter.drive 6 | readout 6 dB | summary 6 dB
+limiter.drive 12 | readout 12 dB | summary 12 dB
+limiter.drive 18 | readout 18 dB | summary 18 dB
+limiter.drive 21.6 | readout 21.6 dB | summary 21.6 dB
+limiter.release 0.01 | readout 10 ms | summary 0.01 s
+limiter.release 0.1 | readout 100 ms | summary 0.1 s
+limiter.release 1 | readout 1 s | summary 1 s
+limiter.release 0.109 | readout 109 ms | summary 0.109 s
+limiter.release 0.2575 | readout 258 ms | summary 0.2575 s
+limiter.release 0.505 | readout 505 ms | summary 0.505 s
+limiter.release 0.7525 | readout 753 ms | summary 0.7525 s
+limiter.release 0.901 | readout 901 ms | summary 0.901 s
+master.volume -60 | readout -60 dB | summary -60 dB
+master.volume 0 | readout 0 dB | summary 0 dB
+master.volume 6 | readout 6 dB | summary 6 dB
+master.volume -53.4 | readout -53.4 dB | summary -53.4 dB
+master.volume -43.5 | readout -43.5 dB | summary -43.5 dB
+master.volume -27 | readout -27 dB | summary -27 dB
+master.volume -10.5 | readout -10.5 dB | summary -10.5 dB
+master.volume -0.6000000000000014 | readout -0.6 dB | summary -0.6 dB
+note.probability 0 | readout 0% | summary 0
+note.probability 1 | readout 100% | summary 1
+note.probability 0.1 | readout 10% | summary 0.1
+note.probability 0.25 | readout 25% | summary 0.25
+note.probability 0.5 | readout 50% | summary 0.5
+note.probability 0.75 | readout 75% | summary 0.75
+note.probability 0.9 | readout 90% | summary 0.9
+note.velocity 0 | readout 0% | summary 0
+note.velocity 0.8 | readout 80% | summary 0.8
+note.velocity 1 | readout 100% | summary 1
+note.velocity 0.1 | readout 10% | summary 0.1
+note.velocity 0.25 | readout 25% | summary 0.25
+note.velocity 0.5 | readout 50% | summary 0.5
+note.velocity 0.75 | readout 75% | summary 0.75
+note.velocity 0.9 | readout 90% | summary 0.9
+overdrive.drive 0 | readout 0% | summary 0
+overdrive.drive 0.2 | readout 20% | summary 0.2
+overdrive.drive 1 | readout 100% | summary 1
+overdrive.drive 0.1 | readout 10% | summary 0.1
+overdrive.drive 0.25 | readout 25% | summary 0.25
+overdrive.drive 0.5 | readout 50% | summary 0.5
+overdrive.drive 0.75 | readout 75% | summary 0.75
+overdrive.drive 0.9 | readout 90% | summary 0.9
+overdrive.output -24 | readout -24 dB | summary -24 dB
+overdrive.output 0 | readout 0 dB | summary 0 dB
+overdrive.output 24 | readout 24 dB | summary 24 dB
+overdrive.output -19.2 | readout -19.2 dB | summary -19.2 dB
+overdrive.output -12 | readout -12 dB | summary -12 dB
+overdrive.output 12 | readout 12 dB | summary 12 dB
+overdrive.output 19.200000000000003 | readout 19.2 dB | summary 19.2 dB
+overdrive.tone 0 | readout 0% | summary 0
+overdrive.tone 0.6 | readout 60% | summary 0.6
+overdrive.tone 1 | readout 100% | summary 1
+overdrive.tone 0.1 | readout 10% | summary 0.1
+overdrive.tone 0.25 | readout 25% | summary 0.25
+overdrive.tone 0.5 | readout 50% | summary 0.5
+overdrive.tone 0.75 | readout 75% | summary 0.75
+overdrive.tone 0.9 | readout 90% | summary 0.9
+overdrive.wet 0 | readout 0% | summary 0
+overdrive.wet 0.5 | readout 50% | summary 0.5
+overdrive.wet 1 | readout 100% | summary 1
+overdrive.wet 0.1 | readout 10% | summary 0.1
+overdrive.wet 0.25 | readout 25% | summary 0.25
+overdrive.wet 0.75 | readout 75% | summary 0.75
+overdrive.wet 0.9 | readout 90% | summary 0.9
+pad.attack 0 | readout 0 ms | summary 0 s
+pad.attack 0.001 | readout 1 ms | summary 0.001 s
+pad.attack 2 | readout 2 s | summary 2 s
+pad.attack 0.2 | readout 200 ms | summary 0.2 s
+pad.attack 0.5 | readout 500 ms | summary 0.5 s
+pad.attack 1 | readout 1 s | summary 1 s
+pad.attack 1.5 | readout 1.5 s | summary 1.5 s
+pad.attack 1.8 | readout 1.8 s | summary 1.8 s
+pad.decay 0.01 | readout 10 ms | summary 0.01 s
+pad.decay 8 | readout 8 s | summary 8 s
+pad.decay 0.809 | readout 809 ms | summary 0.809 s
+pad.decay 2.0075 | readout 2.01 s | summary 2.0075 s
+pad.decay 4.005 | readout 4 s | summary 4.005 s
+pad.decay 6.0024999999999995 | readout 6 s | summary 6.0025 s
+pad.decay 7.2010000000000005 | readout 7.2 s | summary 7.201 s
+pad.pitch -24 | readout -24 st | summary -24 semitones
+pad.pitch 0 | readout 0 st | summary 0 semitones
+pad.pitch 24 | readout +24 st | summary 24 semitones
+pad.pitch -19 | readout -19 st | summary -19 semitones
+pad.pitch -12 | readout -12 st | summary -12 semitones
+pad.pitch 12 | readout +12 st | summary 12 semitones
+pad.pitch 19 | readout +19 st | summary 19 semitones
+return.pan -1 | readout -1 | summary -1
+return.pan 0 | readout 0 | summary 0
+return.pan 1 | readout 1 | summary 1
+return.pan -0.8 | readout -0.8 | summary -0.8
+return.pan -0.5 | readout -0.5 | summary -0.5
+return.pan 0.5 | readout 0.5 | summary 0.5
+return.pan 0.8 | readout 0.8 | summary 0.8
+return.volume -60 | readout -60 dB | summary -60 dB
+return.volume 0 | readout 0 dB | summary 0 dB
+return.volume 6 | readout 6 dB | summary 6 dB
+return.volume -53.4 | readout -53.4 dB | summary -53.4 dB
+return.volume -43.5 | readout -43.5 dB | summary -43.5 dB
+return.volume -27 | readout -27 dB | summary -27 dB
+return.volume -10.5 | readout -10.5 dB | summary -10.5 dB
+return.volume -0.6000000000000014 | readout -0.6 dB | summary -0.6 dB
+reverb.decay 0.1 | readout 100 ms | summary 0.1 s
+reverb.decay 2.5 | readout 2.5 s | summary 2.5 s
+reverb.decay 30 | readout 30 s | summary 30 s
+reverb.decay 3.0900000000000003 | readout 3.09 s | summary 3.09 s
+reverb.decay 7.574999999999999 | readout 7.57 s | summary 7.575 s
+reverb.decay 15.049999999999999 | readout 15.05 s | summary 15.05 s
+reverb.decay 22.525 | readout 22.52 s | summary 22.525 s
+reverb.decay 27.01 | readout 27.01 s | summary 27.01 s
+reverb.filter 20 | readout 20 Hz | summary 20 Hz
+reverb.filter 6000 | readout 6 kHz | summary 6000 Hz
+reverb.filter 20000 | readout 20 kHz | summary 20000 Hz
+reverb.filter 2018 | readout 2 kHz | summary 2018 Hz
+reverb.filter 5015 | readout 5 kHz | summary 5015 Hz
+reverb.filter 10010 | readout 10 kHz | summary 10010 Hz
+reverb.filter 15005 | readout 15 kHz | summary 15005 Hz
+reverb.filter 18002 | readout 18 kHz | summary 18002 Hz
+reverb.output -24 | readout -24 dB | summary -24 dB
+reverb.output 0 | readout 0 dB | summary 0 dB
+reverb.output 24 | readout 24 dB | summary 24 dB
+reverb.output -19.2 | readout -19.2 dB | summary -19.2 dB
+reverb.output -12 | readout -12 dB | summary -12 dB
+reverb.output 12 | readout 12 dB | summary 12 dB
+reverb.output 19.200000000000003 | readout 19.2 dB | summary 19.2 dB
+reverb.predelay 0 | readout 0 ms | summary 0 s
+reverb.predelay 0.01 | readout 10 ms | summary 0.01 s
+reverb.predelay 0.5 | readout 500 ms | summary 0.5 s
+reverb.predelay 0.05 | readout 50 ms | summary 0.05 s
+reverb.predelay 0.125 | readout 125 ms | summary 0.125 s
+reverb.predelay 0.25 | readout 250 ms | summary 0.25 s
+reverb.predelay 0.375 | readout 375 ms | summary 0.375 s
+reverb.predelay 0.45 | readout 450 ms | summary 0.45 s
+reverb.size 0 | readout 0% | summary 0
+reverb.size 0.5 | readout 50% | summary 0.5
+reverb.size 1 | readout 100% | summary 1
+reverb.size 0.1 | readout 10% | summary 0.1
+reverb.size 0.25 | readout 25% | summary 0.25
+reverb.size 0.75 | readout 75% | summary 0.75
+reverb.size 0.9 | readout 90% | summary 0.9
+reverb.wet 0 | readout 0% | summary 0
+reverb.wet 0.25 | readout 25% | summary 0.25
+reverb.wet 1 | readout 100% | summary 1
+reverb.wet 0.1 | readout 10% | summary 0.1
+reverb.wet 0.5 | readout 50% | summary 0.5
+reverb.wet 0.75 | readout 75% | summary 0.75
+reverb.wet 0.9 | readout 90% | summary 0.9
+sampler.ampAttack 0 | readout 0 ms | summary 0 s
+sampler.ampAttack 0.001 | readout 1 ms | summary 0.001 s
+sampler.ampAttack 4 | readout 4 s | summary 4 s
+sampler.ampAttack 0.4 | readout 400 ms | summary 0.4 s
+sampler.ampAttack 1 | readout 1 s | summary 1 s
+sampler.ampAttack 2 | readout 2 s | summary 2 s
+sampler.ampAttack 3 | readout 3 s | summary 3 s
+sampler.ampAttack 3.6 | readout 3.6 s | summary 3.6 s
+sampler.ampDecay 0 | readout 0 ms | summary 0 s
+sampler.ampDecay 0.1 | readout 100 ms | summary 0.1 s
+sampler.ampDecay 4 | readout 4 s | summary 4 s
+sampler.ampDecay 0.4 | readout 400 ms | summary 0.4 s
+sampler.ampDecay 1 | readout 1 s | summary 1 s
+sampler.ampDecay 2 | readout 2 s | summary 2 s
+sampler.ampDecay 3 | readout 3 s | summary 3 s
+sampler.ampDecay 3.6 | readout 3.6 s | summary 3.6 s
+sampler.ampRelease 0 | readout 0 ms | summary 0 s
+sampler.ampRelease 0.2 | readout 200 ms | summary 0.2 s
+sampler.ampRelease 4 | readout 4 s | summary 4 s
+sampler.ampRelease 0.4 | readout 400 ms | summary 0.4 s
+sampler.ampRelease 1 | readout 1 s | summary 1 s
+sampler.ampRelease 2 | readout 2 s | summary 2 s
+sampler.ampRelease 3 | readout 3 s | summary 3 s
+sampler.ampRelease 3.6 | readout 3.6 s | summary 3.6 s
+sampler.ampSustain 0 | readout 0% | summary 0
+sampler.ampSustain 1 | readout 100% | summary 1
+sampler.ampSustain 0.1 | readout 10% | summary 0.1
+sampler.ampSustain 0.25 | readout 25% | summary 0.25
+sampler.ampSustain 0.5 | readout 50% | summary 0.5
+sampler.ampSustain 0.75 | readout 75% | summary 0.75
+sampler.ampSustain 0.9 | readout 90% | summary 0.9
+sampler.pitch -24 | readout -24 st | summary -24 semitones
+sampler.pitch 0 | readout 0 st | summary 0 semitones
+sampler.pitch 24 | readout +24 st | summary 24 semitones
+sampler.pitch -19 | readout -19 st | summary -19 semitones
+sampler.pitch -12 | readout -12 st | summary -12 semitones
+sampler.pitch 12 | readout +12 st | summary 12 semitones
+sampler.pitch 19 | readout +19 st | summary 19 semitones
+sampler.pitch -3 | readout -3 st | summary -3 semitones
+sampler.pitch 7 | readout +7 st | summary 7 semitones
+sampler.sampleEnd 0 | readout 0% | summary 0
+sampler.sampleEnd 1 | readout 100% | summary 1
+sampler.sampleEnd 0.1 | readout 10% | summary 0.1
+sampler.sampleEnd 0.25 | readout 25% | summary 0.25
+sampler.sampleEnd 0.5 | readout 50% | summary 0.5
+sampler.sampleEnd 0.75 | readout 75% | summary 0.75
+sampler.sampleEnd 0.9 | readout 90% | summary 0.9
+sampler.sampleStart 0 | readout 0% | summary 0
+sampler.sampleStart 1 | readout 100% | summary 1
+sampler.sampleStart 0.1 | readout 10% | summary 0.1
+sampler.sampleStart 0.25 | readout 25% | summary 0.25
+sampler.sampleStart 0.5 | readout 50% | summary 0.5
+sampler.sampleStart 0.75 | readout 75% | summary 0.75
+sampler.sampleStart 0.9 | readout 90% | summary 0.9
+sampler.sampleStart 0.333 | readout 33% | summary 0.333
+saturator.character 0 | readout 0% | summary 0
+saturator.character 0.2 | readout 20% | summary 0.2
+saturator.character 1 | readout 100% | summary 1
+saturator.character 0.1 | readout 10% | summary 0.1
+saturator.character 0.25 | readout 25% | summary 0.25
+saturator.character 0.5 | readout 50% | summary 0.5
+saturator.character 0.75 | readout 75% | summary 0.75
+saturator.character 0.9 | readout 90% | summary 0.9
+saturator.drive 0 | readout 0 dB | summary 0 dB
+saturator.drive 4 | readout 4 dB | summary 4 dB
+saturator.drive 48 | readout 48 dB | summary 48 dB
+saturator.drive 4.800000000000001 | readout 4.8 dB | summary 4.8 dB
+saturator.drive 12 | readout 12 dB | summary 12 dB
+saturator.drive 24 | readout 24 dB | summary 24 dB
+saturator.drive 36 | readout 36 dB | summary 36 dB
+saturator.drive 43.2 | readout 43.2 dB | summary 43.2 dB
+saturator.output -24 | readout -24 dB | summary -24 dB
+saturator.output 0 | readout 0 dB | summary 0 dB
+saturator.output 24 | readout 24 dB | summary 24 dB
+saturator.output -19.2 | readout -19.2 dB | summary -19.2 dB
+saturator.output -12 | readout -12 dB | summary -12 dB
+saturator.output 12 | readout 12 dB | summary 12 dB
+saturator.output 19.200000000000003 | readout 19.2 dB | summary 19.2 dB
+saturator.wet 0 | readout 0% | summary 0
+saturator.wet 0.5 | readout 50% | summary 0.5
+saturator.wet 1 | readout 100% | summary 1
+saturator.wet 0.1 | readout 10% | summary 0.1
+saturator.wet 0.25 | readout 25% | summary 0.25
+saturator.wet 0.75 | readout 75% | summary 0.75
+saturator.wet 0.9 | readout 90% | summary 0.9
+song.swing 50 | readout 50 | summary 50%
+song.swing 75 | readout 75 | summary 75%
+song.swing 53 | readout 53 | summary 53%
+song.swing 56 | readout 56 | summary 56%
+song.swing 63 | readout 63 | summary 63%
+song.swing 69 | readout 69 | summary 69%
+song.swing 73 | readout 73 | summary 73%
+song.tempo 20 | readout 20 | summary 20 BPM
+song.tempo 120 | readout 120 | summary 120 BPM
+song.tempo 300 | readout 300 | summary 300 BPM
+song.tempo 48 | readout 48 | summary 48 BPM
+song.tempo 90 | readout 90 | summary 90 BPM
+song.tempo 160 | readout 160 | summary 160 BPM
+song.tempo 230 | readout 230 | summary 230 BPM
+song.tempo 272 | readout 272 | summary 272 BPM
+synth.ampAttack 0 | readout 0 ms | summary 0 s
+synth.ampAttack 0.005 | readout 5 ms | summary 0.005 s
+synth.ampAttack 4 | readout 4 s | summary 4 s
+synth.ampAttack 0.4 | readout 400 ms | summary 0.4 s
+synth.ampAttack 1 | readout 1 s | summary 1 s
+synth.ampAttack 2 | readout 2 s | summary 2 s
+synth.ampAttack 3 | readout 3 s | summary 3 s
+synth.ampAttack 3.6 | readout 3.6 s | summary 3.6 s
+synth.ampAttack 0.006 | readout 6 ms | summary 0.006 s
+synth.ampAttack 0.9996 | readout 1000 ms | summary 0.9996 s
+synth.ampAttack 1.255 | readout 1.25 s | summary 1.255 s
+synth.ampDecay 0 | readout 0 ms | summary 0 s
+synth.ampDecay 0.18 | readout 180 ms | summary 0.18 s
+synth.ampDecay 4 | readout 4 s | summary 4 s
+synth.ampDecay 0.4 | readout 400 ms | summary 0.4 s
+synth.ampDecay 1 | readout 1 s | summary 1 s
+synth.ampDecay 2 | readout 2 s | summary 2 s
+synth.ampDecay 3 | readout 3 s | summary 3 s
+synth.ampDecay 3.6 | readout 3.6 s | summary 3.6 s
+synth.ampRelease 0 | readout 0 ms | summary 0 s
+synth.ampRelease 0.22 | readout 220 ms | summary 0.22 s
+synth.ampRelease 4 | readout 4 s | summary 4 s
+synth.ampRelease 0.4 | readout 400 ms | summary 0.4 s
+synth.ampRelease 1 | readout 1 s | summary 1 s
+synth.ampRelease 2 | readout 2 s | summary 2 s
+synth.ampRelease 3 | readout 3 s | summary 3 s
+synth.ampRelease 3.6 | readout 3.6 s | summary 3.6 s
+synth.ampSustain 0 | readout 0% | summary 0
+synth.ampSustain 0.6 | readout 60% | summary 0.6
+synth.ampSustain 1 | readout 100% | summary 1
+synth.ampSustain 0.1 | readout 10% | summary 0.1
+synth.ampSustain 0.25 | readout 25% | summary 0.25
+synth.ampSustain 0.5 | readout 50% | summary 0.5
+synth.ampSustain 0.75 | readout 75% | summary 0.75
+synth.ampSustain 0.9 | readout 90% | summary 0.9
+synth.filterCutoff 20 | readout 20 Hz | summary 20 Hz
+synth.filterCutoff 4000 | readout 4 kHz | summary 4000 Hz
+synth.filterCutoff 20000 | readout 20 kHz | summary 20000 Hz
+synth.filterCutoff 2018 | readout 2 kHz | summary 2018 Hz
+synth.filterCutoff 5015 | readout 5 kHz | summary 5015 Hz
+synth.filterCutoff 10010 | readout 10 kHz | summary 10010 Hz
+synth.filterCutoff 15005 | readout 15 kHz | summary 15005 Hz
+synth.filterCutoff 18002 | readout 18 kHz | summary 18002 Hz
+synth.filterCutoff 760 | readout 760 Hz | summary 760 Hz
+synth.filterCutoff 999.6 | readout 1000 Hz | summary 999.6 Hz
+synth.filterCutoff 1000 | readout 1 kHz | summary 1000 Hz
+synth.filterCutoff 8400 | readout 8.4 kHz | summary 8400 Hz
+synth.filterResonance 0 | readout 0 | summary 0
+synth.filterResonance 1 | readout 1 | summary 1
+synth.filterResonance 20 | readout 20 | summary 20
+synth.filterResonance 2 | readout 2 | summary 2
+synth.filterResonance 5 | readout 5 | summary 5
+synth.filterResonance 10 | readout 10 | summary 10
+synth.filterResonance 15 | readout 15 | summary 15
+synth.filterResonance 18 | readout 18 | summary 18
+synth.waveform 0 | readout Sine | summary 0
+synth.waveform 2 | readout Sawtooth | summary 2
+synth.waveform 3 | readout Triangle | summary 3
+synth.waveform 1 | readout Square | summary 1
+track.pan -1 | readout L100 | summary -1
+track.pan 0 | readout C | summary 0
+track.pan 1 | readout R100 | summary 1
+track.pan -0.8 | readout L80 | summary -0.8
+track.pan -0.5 | readout L50 | summary -0.5
+track.pan 0.5 | readout R50 | summary 0.5
+track.pan 0.8 | readout R80 | summary 0.8
+track.pan -0.25 | readout L25 | summary -0.25
+track.pan -0.004 | readout C | summary -0.004
+track.pan 0.004 | readout C | summary 0.004
+track.pan 0.25 | readout R25 | summary 0.25
+track.sendLevel 0 | readout 0% | summary 0
+track.sendLevel 1 | readout 100% | summary 1
+track.sendLevel 0.1 | readout 10% | summary 0.1
+track.sendLevel 0.25 | readout 25% | summary 0.25
+track.sendLevel 0.5 | readout 50% | summary 0.5
+track.sendLevel 0.75 | readout 75% | summary 0.75
+track.sendLevel 0.9 | readout 90% | summary 0.9
+track.volume -60 | readout -∞ dB | summary -60 dB
+track.volume 0 | readout 0.0 dB | summary 0 dB
+track.volume 6 | readout +6.0 dB | summary 6 dB
+track.volume -53.4 | readout -53.4 dB | summary -53.4 dB
+track.volume -43.5 | readout -43.5 dB | summary -43.5 dB
+track.volume -27 | readout -27.0 dB | summary -27 dB
+track.volume -10.5 | readout -10.5 dB | summary -10.5 dB
+track.volume -0.6000000000000014 | readout -0.6 dB | summary -0.6 dB
+track.volume -59.96 | readout -60.0 dB | summary -59.96 dB
+track.volume -24 | readout -24.0 dB | summary -24 dB
+track.volume -6 | readout -6.0 dB | summary -6 dB
+track.volume -0.04 | readout 0.0 dB | summary -0.04 dB
+track.volume 0.04 | readout 0.0 dB | summary 0.04 dB
+track.volume 3 | readout +3.0 dB | summary 3 dB"
+`;

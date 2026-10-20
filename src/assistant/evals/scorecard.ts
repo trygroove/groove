@@ -7,6 +7,7 @@
  *   that errored are counted apart and never lower a rate.
  * - The **secondary** numbers are the cost of that score, for the whole run
  *   and per case: turn latency (p50/p95), time to the first streamed text,
+ *   time to the first proposal part (GRV-144),
  *   input, output and cache-read tokens, the estimated cost per turn from the
  *   model's price in `ASSISTANT_MODELS`, how often a turn was cut off at
  *   `max_tokens` or refused, and the model calls a turn made (GRV-142).
@@ -106,6 +107,11 @@ export interface Secondary {
   readonly latencyMs: Percentiles;
   /** Over the turns that streamed any text. */
   readonly firstTextMs: Percentiles;
+  /**
+   * From the request to the first accepted change call, over the turns that
+   * streamed one (GRV-144). Absent from scorecards saved before it existed.
+   */
+  readonly firstPartMs?: Percentiles;
   readonly tokens: TokenTotals;
   /** Mean tokens per recorded turn; null when no turn recorded them. */
   readonly meanTokens: {
@@ -277,6 +283,9 @@ export function secondaryOf(
   const firstText = records
     .map((record) => record.firstTextMs)
     .filter((value): value is number => typeof value === "number");
+  const firstPart = records
+    .map((record) => record.firstPartMs)
+    .filter((value): value is number => typeof value === "number");
   const usages = records.map(usageOf).filter((usage): usage is ProviderUsage => !!usage);
   const tokens: TokenTotals = {
     turns: usages.length,
@@ -301,6 +310,7 @@ export function secondaryOf(
     turns: records.length,
     latencyMs: percentiles(replied.map((record) => record.durationMs)),
     firstTextMs: percentiles(firstText),
+    firstPartMs: percentiles(firstPart),
     tokens,
     meanTokens: {
       input: mean(tokens.input),
@@ -442,6 +452,18 @@ export const SCORECARD_METRICS: readonly Metric[] = [
     value: (c) => c.secondary.firstTextMs.p95,
   },
   {
+    label: "First part p50",
+    kind: "ms",
+    higherIsBetter: false,
+    value: (c) => c.secondary.firstPartMs?.p50 ?? null,
+  },
+  {
+    label: "First part p95",
+    kind: "ms",
+    higherIsBetter: false,
+    value: (c) => c.secondary.firstPartMs?.p95 ?? null,
+  },
+  {
     label: "Input tokens per turn",
     kind: "tokens",
     higherIsBetter: false,
@@ -579,6 +601,10 @@ export interface HeavySet {
   readonly modelCallsMean: number | null;
   /** Each case's p95 of model calls per turn, averaged (GRV-142). */
   readonly modelCallsP95: number | null;
+  /** Each case's time to the first part, p50, averaged (GRV-144). */
+  readonly firstPartP50Ms: number | null;
+  /** Each case's time to the first part, p95, averaged (GRV-144). */
+  readonly firstPartP95Ms: number | null;
 }
 
 function meanOf(values: readonly (number | null)[]): number | null {
@@ -606,6 +632,10 @@ export function heavySetOf(
     costPerTurnUsd: meanOf(cases.map((s) => s.costPerTurnUsd)),
     modelCallsMean: meanOf(cases.map((s) => s.modelCallsMean)),
     modelCallsP95: meanOf(cases.map((s) => s.modelCallsP95)),
+    // A run's first part, not each turn's: a session's is its first turn's
+    // to propose (`session.ts`).
+    firstPartP50Ms: meanOf(ids.map((id) => card.cases[id]?.firstPartMs?.p50 ?? null)),
+    firstPartP95Ms: meanOf(ids.map((id) => card.cases[id]?.firstPartMs?.p95 ?? null)),
   };
 }
 
@@ -614,7 +644,9 @@ export function heavySetOf(
  * kept them (GRV-145), else, for one saved before sessions, from its runs,
  * which were all single turns then.
  */
-function perTurnOf(card: Secondary): Omit<HeavySet, "caseIds"> {
+function perTurnOf(
+  card: Secondary,
+): Omit<HeavySet, "caseIds" | "firstPartP50Ms" | "firstPartP95Ms"> {
   const { byTurn } = card;
   if (byTurn) {
     return {
@@ -664,6 +696,18 @@ export const HEAVY_SET_METRICS: readonly Metric<HeavySet>[] = [
     kind: "calls",
     higherIsBetter: false,
     value: (h) => h.modelCallsP95,
+  },
+  {
+    label: "Mean first part p50",
+    kind: "ms",
+    higherIsBetter: false,
+    value: (h) => h.firstPartP50Ms,
+  },
+  {
+    label: "Mean first part p95",
+    kind: "ms",
+    higherIsBetter: false,
+    value: (h) => h.firstPartP95Ms,
   },
 ];
 

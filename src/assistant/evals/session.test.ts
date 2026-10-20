@@ -177,6 +177,10 @@ describe("the scripted producer (GRV-145)", () => {
     ]);
     expect(turns.seen[1].history?.[1].text).toContain("Step 1.");
     expect(turns.seen[1].history?.[1].text).toContain("[I asked the producer");
+    // The scripted producer applied its proposal, and the next turn says so (GRV-150).
+    expect(turns.seen[1].history?.[1].text).toMatch(
+      /\[The producer applied this proposal\.[^\]]*\]$/,
+    );
     expect(turns.seen[2].history).toHaveLength(4);
     expect(turns.seen.every((seen) => seen.session === undefined)).toBe(true);
 

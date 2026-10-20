@@ -19,6 +19,10 @@
  *   sounds, every one is aimed at a track and pad the song has once the
  *   proposal is applied, and its kick, snare and hat land on different pads.
  *
+ * GRV-150's two reply checks (`noDeniedTrack`, `noAbsentTrack`), which read
+ * the reply's text alone and so judge a turn that proposed nothing too, are
+ * in `caseChecksContext.ts`.
+ *
  * GRV-107's four (`addsTracks`, `endsAt`, `noEmptyClips`, `noNoOps`) and
  * `clipsPlaced` are in `caseChecksQa.ts`; GRV-119's two (`exactEdit`, `nothingElse`), which judge
  * a basic production action, are in `basicActionChecks.ts`.
@@ -40,6 +44,7 @@ import {
   projectTargets,
 } from "../recommendationTargets";
 import { type BasicAction, checkNothingElse } from "./basicActionChecks";
+import { type ProjectFacts, REPLY_CHECK_IDS, runReplyCheck } from "./caseChecksContext";
 import {
   checkAddsTracks,
   checkClipsPlaced,
@@ -80,6 +85,8 @@ export const CASE_CHECK_IDS = [
   "clipsPlaced",
   // GRV-129: where the turn's sound recommendations are aimed.
   "recommendationTargets",
+  // GRV-150: the reply agrees with the project context (`caseChecksContext.ts`).
+  ...REPLY_CHECK_IDS,
 ] as const;
 export type CaseCheckId = (typeof CASE_CHECK_IDS)[number];
 
@@ -569,6 +576,8 @@ export interface CaseCheckInputs {
   readonly recommendations?: readonly AssistantToolCall[];
   /** The library the turn was sent with, which names each sound's part. */
   readonly library?: AssistantLibraryContext | null;
+  /** What the case knows of its project, for the reply checks (GRV-150). */
+  readonly facts?: ProjectFacts;
 }
 
 /** Runs the case check `id` on an applied proposal. */
@@ -614,5 +623,8 @@ export function runCaseCheck(
         inputs.recommendations ?? [],
         inputs.library ?? null,
       );
+    case "noDeniedTrack":
+    case "noAbsentTrack":
+      return runReplyCheck(id, text, inputs.facts);
   }
 }

@@ -265,8 +265,12 @@ class Handle implements ProposalHandle {
   }
 }
 
-/** `assistant_proposal_rejected`: codes, a capability and a bucketed count, nothing else. */
-function logRejection(
+/**
+ * `assistant_proposal_rejected`: codes, a capability and a bucketed count,
+ * nothing else. A streamed proposal's card (GRV-144) logs one for each part
+ * that does not fit.
+ */
+export function logProposalRejection(
   analytics: ProposalAnalytics,
   input: unknown,
   issues: readonly ProposalIssue[],
@@ -294,7 +298,7 @@ export function createProposalExecutor(
     propose(input) {
       const validation = validateProposal(resolved.target.project, input);
       if (!validation.ok) {
-        logRejection(resolved.analytics, input, validation.issues);
+        logProposalRejection(resolved.analytics, input, validation.issues);
         return validation;
       }
       return { ok: true, handle: new Handle(validation.proposal, resolved) };

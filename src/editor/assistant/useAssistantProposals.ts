@@ -13,7 +13,8 @@
  *   until the next edit, and the card offers Undo.
  * - A proposal the song moved under (an edit here, an undo, a change from
  *   elsewhere) is **stale**: Apply is off and **Refresh** asks again in the
- *   same scope.
+ *   same scope. So is one still waiting when the page reloaded, which comes
+ *   back with the conversation (GRV-135).
  *
  * Applying records the addresses the proposal touched for the session. A
  * later edit by hand to any of them logs `assistant_result_edited` once for
@@ -24,20 +25,16 @@
  */
 import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
-import { issueCall, type ProposalIssue } from "../../assistant/proposal";
+import { validateProposal } from "../../assistant/proposal";
 import {
   createProposalExecutor,
   type ProposalExecutor,
   type ProposalHandle,
   type ProposalTarget,
 } from "../../assistant/proposalExecutor";
-import type { AssistantProposal } from "../../assistant/protocol";
+import type { AssistantProposal, AssistantProposalPart } from "../../assistant/protocol";
 import type { ProposalCapability } from "../../assistant/tools";
-import {
-  MAX_TRANSCRIPT_ISSUES,
-  type ProposalOutcome,
-  type TranscriptIssue,
-} from "../../assistant/transcripts";
+import type { ProposalOutcome, TranscriptIssue } from "../../assistant/transcripts";
 import {
   type ControlAddress,
   controlKey,
@@ -46,6 +43,7 @@ import {
 import { controlsTouchedBy } from "../../commands/controls";
 import type { RawCommandInput } from "../../commands/types";
 import type { Project } from "../../domain/entities";
+import type { Clock } from "../../shared/clock";
 import type { PreviewResult, SessionEdit } from "../EditorSession";
 import type { EditorControls, EditorLocation } from "../editorControls";
 import type { EditorViewName } from "../editorViews";
@@ -59,7 +57,13 @@ import {
   proposalRows,
 } from "./proposalCardModel";
 import { rejectionReason } from "./rejectionReason";
-import type { TurnOrigin } from "./useAssistantConversation";
+import { transcriptIssues } from "./transcriptIssues";
+import type { ShownPart, TurnOrigin } from "./useAssistantConversation";
+import {
+  type StreamedProposalCard,
+  type StreamedTurn,
+  useStreamedProposals,
+} from "./useStreamedProposals";
 
 /**
  * - `pending`: shown, nothing changed.
@@ -101,6 +105,8 @@ export interface ProposalCard {
   readonly reason: string | null;
   /** Its changed controls still wear the solid outline (until the next edit). */
   readonly outlined: boolean;
+  /** It was waiting when the page reloaded, and came back out of date (GRV-135). */
+  readonly restored: boolean;
 }
 
 /** What the cards need from the editor session (`useEditorSession`). */
@@ -119,8 +125,18 @@ export interface UseAssistantProposalsOptions {
   /** The project on screen, for working out where a control lives. */
   readonly project: Accessor<Project | null>;
   readonly analytics: () => Analytics;
-  /** Asks again, in the same scope, for the proposal in this entry. */
-  refresh(entryId: string): boolean;
+  /**
+   * Asks again, in the same scope, for the proposal in this entry; for a
+   * streamed one, naming the parts it showed and which were applied.
+   */
+  refresh(entryId: string, shown?: readonly ShownPart[]): boolean;
+  /**
+   * Asks for the rest of a streamed proposal whose turn failed partway
+   * (GRV-144). Without it the card offers no Try again.
+   */
+  continueRest?(entryId: string, shown: readonly ShownPart[]): boolean;
+  /** What times a streamed proposal's first part (GRV-144); the real clock by default. */
+  readonly clock?: Clock;
   /**
    * Hears what became of a proposal: turned down, applied (or redone),
    * undone, or rejected with the issues that rejected it (GRV-98), so a kept
@@ -146,10 +162,33 @@ export interface AssistantProposals {
   decided(entryId: string): boolean;
   /** Whether a card was turned down, or never fitted the song. Reactive. */
   declined(entryId: string): boolean;
-  /** A proposal arrived in a reply: validate it and show its card. */
+  /**
+   * A proposal arrived in a reply: validate it and show its card. For an
+   * entry whose parts streamed (GRV-144), the whole proposal at the end of
+   * the turn, which explains it.
+   */
   receive(entryId: string, proposal: AssistantProposal, origin: TurnOrigin): void;
+  /** A streamed proposal's card, when the entry's parts streamed (GRV-144). Reactive. */
+  streamed(entryId: string): StreamedProposalCard | undefined;
+  /** One part of a proposal, as the gateway accepted it (GRV-144). */
+  receivePart(
+    entryId: string,
+    part: AssistantProposalPart,
+    origin: TurnOrigin,
+    baseRevision: number,
+  ): void;
+  /** How the turn behind a streamed proposal ended (GRV-144). */
+  endStream(entryId: string, ending: Exclude<StreamedTurn, "running">): void;
+  /** Applies one part of a streamed proposal as its own undo step (GRV-144). */
+  applyPart(entryId: string, index: number): void;
+  /** Asks for the rest of a streamed proposal whose turn failed (GRV-144). */
+  continueRest(entryId: string): void;
   preview(entryId: string): void;
   cancel(entryId: string): void;
+  /**
+   * Apply: the whole proposal, or for a streamed one (GRV-144) Apply all,
+   * every part not yet applied as one undo step.
+   */
   apply(entryId: string): void;
   undo(entryId: string): void;
   refresh(entryId: string): void;
@@ -189,6 +228,28 @@ export function useAssistantProposals(
   const entries = new Map<string, Entry>();
   let remoteChanges = 0;
   let executor: ProposalExecutor | null = null;
+  // A proposal whose parts streamed (GRV-144) is a card of its own kind.
+  const streamed = useStreamedProposals({
+    session,
+    controls,
+    project: options.project,
+    analytics: options.analytics,
+    clock: options.clock,
+    refresh: (entryId, shown) => options.refresh(entryId, shown),
+    continueRest: (entryId, shown) => options.continueRest?.(entryId, shown) ?? false,
+    onPreviewOpen: () => endWholePreviews(),
+    onOutcome: (entryId, outcome, issues) =>
+      options.onOutcome?.(entryId, outcome, issues),
+  });
+
+  /** Ends every whole proposal's open preview, as a streamed card's opens. */
+  function endWholePreviews() {
+    for (const [entryId, entry] of entries) {
+      if (!entry.preview) continue;
+      endPreview(entry);
+      update(entryId, { status: "pending", returnView: null });
+    }
+  }
 
   const update = (entryId: string, change: Partial<ProposalCard>) =>
     setCards((current) => {
@@ -220,6 +281,12 @@ export function useAssistantProposals(
   }
 
   function receive(entryId: string, proposal: AssistantProposal, origin: TurnOrigin) {
+    // A streamed card none of whose parts fit becomes the card of a whole
+    // proposal that does not, which says why (GRV-98).
+    if (streamed.has(entryId) && !streamed.releaseRefused(entryId)) {
+      streamed.finish(entryId, proposal);
+      return;
+    }
     const base: Omit<ProposalCard, "status"> = {
       title: origin.text,
       scopeLabel: origin.scope.label,
@@ -231,9 +298,14 @@ export function useAssistantProposals(
       notice: null,
       outlined: false,
       reason: null,
+      restored: false,
     };
     const current = session.proposalTarget();
     if (!current) return;
+    if (origin.restored) {
+      restore(entryId, proposal, current.project, base);
+      return;
+    }
     executor ??= createProposalExecutor({ target, analytics: options.analytics() });
     const proposed = executor.propose(proposal);
     if (!proposed.ok) {
@@ -268,11 +340,39 @@ export function useAssistantProposals(
     });
   }
 
+  /**
+   * A proposal from before a reload (GRV-135): shown out of date, with the
+   * changes it would make to the song as it is now when it still fits, so
+   * Refresh is offered and Apply is not. It was shown and logged before the
+   * reload, so nothing is logged or reported again.
+   */
+  function restore(
+    entryId: string,
+    proposal: AssistantProposal,
+    project: Project,
+    base: Omit<ProposalCard, "status">,
+  ) {
+    const validation = validateProposal(project, proposal);
+    const rows = validation.ok
+      ? proposalRows(
+          project,
+          projectAfter(project, validation.proposal),
+          validation.proposal.impact.controls,
+        )
+      : [];
+    entries.set(entryId, blankEntry(null, []));
+    show(entryId, { ...base, status: "stale", rows, restored: true });
+  }
+
   function show(entryId: string, card: ProposalCard) {
     setCards((current) => new Map(current).set(entryId, card));
   }
 
   function preview(entryId: string) {
+    if (streamed.has(entryId)) {
+      streamed.preview(entryId);
+      return;
+    }
     const entry = entries.get(entryId);
     const card = cards().get(entryId);
     if (!entry?.handle || card?.status !== "pending") return;
@@ -289,6 +389,7 @@ export function useAssistantProposals(
       endPreview(other);
       update(otherId, { status: "pending", returnView: null });
     }
+    streamed.endPreviews();
     const opened = session.beginPreview(entry.handle.proposal.commands);
     if (!opened?.ok) {
       update(entryId, { notice: BUSY });
@@ -316,6 +417,10 @@ export function useAssistantProposals(
   }
 
   function cancel(entryId: string) {
+    if (streamed.has(entryId)) {
+      streamed.cancel(entryId);
+      return;
+    }
     const entry = entries.get(entryId);
     const card = cards().get(entryId);
     if (!entry || !card) return;
@@ -343,6 +448,10 @@ export function useAssistantProposals(
   }
 
   function apply(entryId: string) {
+    if (streamed.has(entryId)) {
+      streamed.applyAll(entryId);
+      return;
+    }
     const entry = entries.get(entryId);
     const card = cards().get(entryId);
     const handle = entry?.handle;
@@ -376,6 +485,10 @@ export function useAssistantProposals(
   }
 
   function undo(entryId: string) {
+    if (streamed.has(entryId)) {
+      streamed.undo(entryId);
+      return;
+    }
     const handle = entries.get(entryId)?.handle;
     if (!handle || cards().get(entryId)?.status !== "applied") return;
     const result = handle.undo();
@@ -385,6 +498,10 @@ export function useAssistantProposals(
   }
 
   function refresh(entryId: string) {
+    if (streamed.has(entryId)) {
+      streamed.refresh(entryId);
+      return;
+    }
     const card = cards().get(entryId);
     if (card?.status !== "stale" || card.refreshed) return;
     if (options.refresh(entryId)) update(entryId, { refreshed: true });
@@ -489,6 +606,7 @@ export function useAssistantProposals(
   );
 
   function decided(entryId: string): boolean {
+    if (streamed.card(entryId)) return streamed.decided(entryId);
     const card = cards().get(entryId);
     switch (card?.status) {
       case "applied":
@@ -504,6 +622,7 @@ export function useAssistantProposals(
   }
 
   function declined(entryId: string): boolean {
+    if (streamed.card(entryId)) return streamed.declined(entryId);
     const status = cards().get(entryId)?.status;
     return status === "cancelled" || status === "invalid";
   }
@@ -512,8 +631,16 @@ export function useAssistantProposals(
     card: (entryId) => cards().get(entryId),
     decided,
     declined,
-    previewing: () => [...cards().values()].some((card) => card.status === "previewing"),
+    previewing: () =>
+      streamed.previewing() ||
+      [...cards().values()].some((card) => card.status === "previewing"),
     receive,
+    streamed: (entryId) => streamed.card(entryId),
+    receivePart: (entryId, part, origin, baseRevision) =>
+      streamed.receivePart(entryId, part, origin, baseRevision),
+    endStream: (entryId, ending) => streamed.end(entryId, ending),
+    applyPart: (entryId, index) => streamed.applyPart(entryId, index),
+    continueRest: (entryId) => streamed.continueRest(entryId),
     preview,
     cancel,
     apply,
@@ -524,27 +651,6 @@ export function useAssistantProposals(
     },
     remoteChanges: () => remoteChanges,
   };
-}
-
-/**
- * A refused proposal's issues as a kept transcript stores them (GRV-98): the
- * code, the call it blames by ID and tool name, and the validator's own path
- * and message, cut to what the transcript holds.
- */
-function transcriptIssues(
-  proposal: AssistantProposal,
-  issues: readonly ProposalIssue[],
-): TranscriptIssue[] {
-  return issues.slice(0, MAX_TRANSCRIPT_ISSUES).map((issue) => {
-    const call = issueCall(proposal, issue);
-    return {
-      code: issue.code,
-      callId: call?.id?.slice(0, 200) ?? null,
-      callName: call?.name.slice(0, 200) ?? null,
-      path: issue.path?.slice(0, 300) ?? null,
-      message: issue.message.slice(0, 500) || null,
-    };
-  });
 }
 
 function blankEntry(
