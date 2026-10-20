@@ -105,6 +105,13 @@ export interface AudioHost {
    * optional so a fake host need not have one.
    */
   contextState?(): string;
+  /**
+   * Which real-time context is installed: a number that changes whenever
+   * the runtime installs a new one, as it does when the browser closed the
+   * last (GRV-55). A graph built on an older generation is on a dead
+   * context and has to be rebuilt. Optional so a fake host need not have one.
+   */
+  contextGeneration?(): number;
 }
 
 /**
@@ -122,6 +129,8 @@ export class AudioRuntime implements AudioHost {
   private contextsAdopted = 0;
   private contextsClosed = 0;
   private contextsCloseFailed = 0;
+  private generation = 0;
+  private contextHandle: ResourceHandle | null = null;
 
   /** Owners for contexts, graphs, nodes, schedules, buffers, subscriptions, timers, workers, and pending loads. */
   readonly registry = new ResourceRegistry();
@@ -156,7 +165,15 @@ export class AudioRuntime implements AudioHost {
    */
   ensureContext(): Tone.Context {
     if (this.context && this.state !== "closed" && this.state !== "closing") {
-      return this.context;
+      if (this.context.state !== "closed") return this.context;
+      // The browser closed the context under us (GRV-55): an output device
+      // went away, or the page was frozen. Nothing can resume a closed
+      // context, so it is retired, never adopted again, and a new one is
+      // installed below. Graphs built on it see the new generation and
+      // rebuild; their old nodes are theirs to dispose.
+      closedContexts.add(this.context);
+      this.contextsClosed++;
+      this.context = null;
     }
 
     const existing = Tone.getContext();
@@ -177,8 +194,14 @@ export class AudioRuntime implements AudioHost {
     // Registered so diagnostics can report the context itself as a tracked
     // resource; disposal is a no-op here because `close()` owns the actual
     // `context.close()` call.
-    this.registry.register(RUNTIME_OWNER, "context", () => {});
+    if (this.contextHandle) void this.registry.disposeOne(this.contextHandle);
+    this.contextHandle = this.registry.register(RUNTIME_OWNER, "context", () => {});
+    this.generation++;
     return this.context;
+  }
+
+  contextGeneration(): number {
+    return this.generation;
   }
 
   /** The shared destination node. Ensures the context exists first. */

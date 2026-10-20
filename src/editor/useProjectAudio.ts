@@ -278,6 +278,8 @@ export function useProjectAudio(
   let transport: TransportController | null = null;
   let metronome: TransportMetronome | null = null;
   let ownerId: string | null = null;
+  /** The runtime's context generation the graph was built on. */
+  let graphGeneration: number | undefined;
   let lastProjection: AudioSongProjection | undefined;
   let frameHandle: number | null = null;
   let preview: PreviewOverride | null = null;
@@ -454,50 +456,75 @@ export function useProjectAudio(
   createEffect(
     () => project(),
     (current) => {
-      if (!current) return;
-      if (!audioAvailable) {
-        // No Web Audio, so nothing to build a graph on (#75). The loop is
-        // still song state the transport bar shows, so it is mirrored anyway.
-        setLoopEnabled(current.song.loop.enabled);
-        return;
-      }
-      if (!graph || ownerId !== current.metadata.id) {
-        tearDown();
-        ownerId = current.metadata.id;
-        graph = new ProjectAudioGraph(runtime, ownerId, {
-          underrunMonitor: underrunMonitor(),
-          onAssetLoadFailure: reportAssetLoadFailure,
-        });
-        stopGraphTriggers = graph.watchTriggers(triggers.publish);
-        metronome = new TransportMetronome(
-          liveTransportEngine,
-          graph.projectScope,
-          graph.masterInput,
-        );
-        transport = new TransportController({ metronome });
-        setMetronomeEnabled(false);
-        lastProjection = undefined;
-      }
-      lastProjection = buildAudioProjection(current, lastProjection);
-      reconcileGraph();
-      attachPeakWatchers();
-      // Mirror the song tempo and loop onto the transport without restarting
-      // it: a tempo, range, or toggle edit re-times or re-bounds the running
-      // transport in place (PRD AUD-02, LOOP-017).
-      transport?.setTempo(current.song.tempo);
-      transport?.mirrorLoop(current.song.loop);
-      setLoop(transport?.loop ?? null);
-      setLoopEnabled(current.song.loop.enabled);
-
-      // `audio_loop` first-use (PRD OPS-02, INS-02): the first time a project
-      // with a tempo-labelled loop clip is wired onto the audio graph. Fired
-      // via `logFeatureFirstUse`, so it lands at most once per account per
-      // browser even though the effect re-runs on every edit.
-      if (current.clips.some((clip) => clip.content.kind === "audioLoop")) {
-        analytics.logFeatureFirstUse("audio_loop");
-      }
+      if (current) wire(current);
     },
   );
+
+  /**
+   * Wires one revision of the project onto the graph, building the graph
+   * first when there is none for this project (or its context has gone).
+   */
+  function wire(current: Project): void {
+    if (!audioAvailable) {
+      // No Web Audio, so nothing to build a graph on (#75). The loop is
+      // still song state the transport bar shows, so it is mirrored anyway.
+      setLoopEnabled(current.song.loop.enabled);
+      return;
+    }
+    if (!graph || ownerId !== current.metadata.id) {
+      tearDown();
+      ownerId = current.metadata.id;
+      graph = new ProjectAudioGraph(runtime, ownerId, {
+        underrunMonitor: underrunMonitor(),
+        onAssetLoadFailure: reportAssetLoadFailure,
+      });
+      graphGeneration = runtime.contextGeneration?.();
+      stopGraphTriggers = graph.watchTriggers(triggers.publish);
+      metronome = new TransportMetronome(
+        liveTransportEngine,
+        graph.projectScope,
+        graph.masterInput,
+      );
+      transport = new TransportController({ metronome });
+      setMetronomeEnabled(false);
+      lastProjection = undefined;
+    }
+    lastProjection = buildAudioProjection(current, lastProjection);
+    reconcileGraph();
+    attachPeakWatchers();
+    // Mirror the song tempo and loop onto the transport without restarting
+    // it: a tempo, range, or toggle edit re-times or re-bounds the running
+    // transport in place (PRD AUD-02, LOOP-017).
+    transport?.setTempo(current.song.tempo);
+    transport?.mirrorLoop(current.song.loop);
+    setLoop(transport?.loop ?? null);
+    setLoopEnabled(current.song.loop.enabled);
+
+    // `audio_loop` first-use (PRD OPS-02, INS-02): the first time a project
+    // with a tempo-labelled loop clip is wired onto the audio graph. Fired
+    // via `logFeatureFirstUse`, so it lands at most once per account per
+    // browser even though the effect re-runs on every edit.
+    if (current.clips.some((clip) => clip.content.kind === "audioLoop")) {
+      analytics.logFeatureFirstUse("audio_loop");
+    }
+  }
+
+  /**
+   * After a resume, rebuilds the graph if the runtime had to install a new
+   * context because the browser closed the one the graph was built on
+   * (GRV-55): its nodes are on a dead context and would never sound. The
+   * metronome keeps its setting; the playhead starts over with the new
+   * transport.
+   */
+  function rebuildOnNewContext(): void {
+    if (!graph || runtime.contextGeneration?.() === graphGeneration) return;
+    const current = project();
+    const metronomeWasOn = metronomeEnabled();
+    tearDown();
+    if (!current) return;
+    wire(current);
+    if (metronomeWasOn) toggleMetronome();
+  }
 
   onCleanup(() => {
     tearDown();
@@ -564,7 +591,12 @@ export function useProjectAudio(
           if (settled) return;
           settled = true;
           clearTimer(timer);
-          resolve();
+          try {
+            rebuildOnNewContext();
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
         },
         (error) => {
           if (settled) return;
@@ -613,7 +645,9 @@ export function useProjectAudio(
       error_code: code,
       was_browser_blocked: code === "autoplay_blocked",
     });
-    report(error, {
+    // The code, never the browser's own error: its message can name what
+    // was playing, so monitoring gets a fixed one.
+    report(new CodedError(code, "Audio could not start"), {
       area: "audio",
       fatal: false,
       code,
