@@ -55,7 +55,8 @@
  *   through on a turn that carries the producer's memory.
  * - a turn during a lesson (GRV-43, CF-037), whatever its message: a short
  *   reply that names the bite it is about, or for the chapter's end the
- *   chapter, from the lesson block the turn carries ({@link lessonReply}). A
+ *   chapter, from the lesson block the turn carries ({@link lessonReply}),
+ *   after a line for each moment the turn waited with (`earlier`). A
  *   message the producer wrote mid-lesson is answered as anything else is.
  * - anything else: a short reply, streamed in pieces with a pause between.
  *
@@ -682,6 +683,15 @@ function rememberReply(): Step[] {
  * bite it is about, or the chapter at its end, as a model's reply would.
  */
 export function lessonReplyText(lesson: AssistantLessonContext): string {
+  // What the turn waited with comes first, a line each, as a model would
+  // answer it before the moment itself.
+  const earlier = lesson.earlier.map((moment) =>
+    momentText({ ...lesson, ...moment, next: [] }),
+  );
+  return [...earlier, momentText(lesson)].join(" ");
+}
+
+function momentText(lesson: AssistantLessonContext): string {
   const bite = `"${lesson.bite}"`;
   switch (lesson.moment) {
     case "bite_started":
@@ -693,7 +703,9 @@ export function lessonReplyText(lesson: AssistantLessonContext): string {
         ? `Well done: ${bite} is finished. Next is "${lesson.next[0]}", whenever you're ready.`
         : `Well done: ${bite} is finished.`;
     case "chapter_done":
-      return `That's "${lesson.chapter}" finished. Where next: ${lesson.next.join("; ")}.`;
+      return lesson.next.length > 0
+        ? `That's "${lesson.chapter}" finished. Where next: ${lesson.next.join("; ")}.`
+        : `That's "${lesson.chapter}" finished.`;
     case "under_way":
       return EMULATOR_REPLY_CHUNKS.join("");
   }

@@ -549,6 +549,7 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
       style: "boom_bap",
       quiz: null,
       next: [],
+      earlier: [],
     };
     const h = harness([replyEvents(["Nice kick."])]);
     await run(h, request({ memory, lesson }));

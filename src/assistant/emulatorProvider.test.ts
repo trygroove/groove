@@ -8,7 +8,7 @@ import {
 } from "../domain/fixtures";
 import { SONG_SWING } from "../domain/parameters";
 import { createStarterProject } from "../editor/starterProject";
-import { lessonCue } from "../lessons/cue";
+import { foldTurns, lessonCue } from "../lessons/cue";
 import { skip, startBite } from "../lessons/session";
 import { buildAssistantLibrary, DRUM_PACK_ID } from "../testing/assistantLibrary";
 import { starterWorld } from "../testing/lessonWorld";
@@ -243,6 +243,20 @@ describe("the emulator's assistant provider", () => {
     if (!over) throw new Error("not skipped");
     const wrapUp = lessonCue(over.state, over.event, settings, []);
     expect((await answer(wrapUp)).text).toContain('"Make a beat" finished');
+    // A turn that waited answers what it waited with first.
+    const finished = skip(
+      startBite("beat", "beat-library", world, settings).state,
+      world,
+      settings,
+    );
+    if (!finished) throw new Error("not skipped");
+    const folded = foldTurns([
+      { text: "a", cue: lessonCue(finished.state, finished.event, settings, []) },
+      { text: "b", cue: startedCue },
+    ]).cue;
+    expect((await answer(folded)).text).toBe(
+      `Well done: "Pick a kick" is finished. Here's "The kick pattern": ${startedCue.skill}.`,
+    );
     // A message the producer wrote mid-lesson is answered as any other.
     expect((await answer({ ...startedCue, moment: "under_way" })).text).toBe(
       EMULATOR_REPLY_CHUNKS.join(""),
