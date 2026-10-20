@@ -9,7 +9,7 @@ const MEMORY: ProducerMemory = {
   experience: "finished_a_few",
   goal: "first_track",
   learn: ["Drums and beats", "Something I typed"],
-  gear: ["Ableton Move", "A synth"],
+  gear: ["A MIDI keyboard", "A synth"],
 };
 
 function recorder() {
@@ -46,7 +46,7 @@ describe("the consented validation event (GRV-25)", () => {
       { name: "onboarding_validation_chip", params: { group: "learn", chip: "drums" } },
       {
         name: "onboarding_validation_chip",
-        params: { group: "gear", chip: "ableton_move" },
+        params: { group: "gear", chip: "midi_keyboard" },
       },
       { name: "onboarding_validation_chip", params: { group: "gear", chip: "synth" } },
     ]);

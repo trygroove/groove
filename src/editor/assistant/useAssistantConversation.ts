@@ -413,6 +413,11 @@ export interface ShownPart {
   readonly text: string;
   /** Whether the producer applied it, so the song has it now. */
   readonly applied: boolean;
+  /**
+   * For a part applied: the producer has since removed what it made (deleted
+   * the track it added), so the song no longer has it.
+   */
+  readonly removed?: boolean;
 }
 
 /**
@@ -443,18 +448,24 @@ export function refreshNote(shown: readonly ShownPart[]): string {
 }
 
 function shownNote(lead: string, shown: readonly ShownPart[]): string {
-  const applied = shown.filter((part) => part.applied).map((part) => part.text);
-  const withdrawn = shown.filter((part) => !part.applied).map((part) => part.text);
-  const list = (texts: readonly string[]) => texts.map((text) => `- ${text}`).join("\n");
+  const texts = (keep: (part: ShownPart) => boolean) =>
+    shown.filter(keep).map((part) => part.text);
+  const applied = texts((part) => part.applied && part.removed !== true);
+  const removed = texts((part) => part.applied && part.removed === true);
+  const withdrawn = texts((part) => !part.applied);
+  const list = (items: readonly string[]) => items.map((text) => `- ${text}`).join("\n");
   return [
     lead,
     applied.length > 0
       ? `Applied, so the song has them now; don't propose them again:\n${list(applied)}`
       : null,
+    removed.length > 0
+      ? `Applied, then removed by me, so the song no longer has them:\n${list(removed)}`
+      : null,
     withdrawn.length > 0
       ? `Not applied, and withdrawn; propose them again only if the song still needs them:\n${list(withdrawn)}`
       : null,
-    "Propose only what is still missing for my request.",
+    "The project description is the whole song as it is now, with every track's ID: build on what it lists. Propose only what is still missing for my request.",
   ]
     .filter(Boolean)
     .join("\n");

@@ -19,6 +19,7 @@ import {
   type ConversationEntry,
   continueNote,
   historyOf,
+  refreshNote,
   useAssistantConversation,
 } from "./useAssistantConversation";
 
@@ -466,8 +467,22 @@ describe("the note Try again sends for the rest of a proposal (GRV-144)", () => 
         "- Bass · new track",
         "Not applied, and withdrawn; propose them again only if the song still needs them:",
         "- Bass · 1 bar",
-        "Propose only what is still missing for my request.",
+        "The project description is the whole song as it is now, with every track's ID: build on what it lists. Propose only what is still missing for my request.",
       ].join("\n"),
+    );
+  });
+
+  it("never says the song has a part the producer applied and then removed", () => {
+    const note = refreshNote([
+      { text: "Lead · new track", applied: true },
+      { text: "Shaker · new track", applied: true, removed: true },
+      { text: "Shaker · 2 bars", applied: false },
+    ]);
+    expect(note).toContain(
+      "Applied, so the song has them now; don't propose them again:\n- Lead · new track\nApplied, then removed by me",
+    );
+    expect(note).toContain(
+      "Applied, then removed by me, so the song no longer has them:\n- Shaker · new track\n",
     );
   });
 

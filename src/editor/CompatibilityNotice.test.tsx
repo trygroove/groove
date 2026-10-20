@@ -68,6 +68,12 @@ describe("compatibilityNoticeItems", () => {
     expect(items[1]?.message.title).toBe("The browser blocked sound");
   });
 
+  it("adds the sounds that failed to load, last, keyed by attempt (GRV-55)", () => {
+    const items = compatibilityNoticeItems(capable, null, { count: 2, attempt: 4 });
+    expect(items.map((item) => item.key)).toEqual(["sound-load:4"]);
+    expect(items[0]?.message.title).toBe("2 sounds didn't load");
+  });
+
   it("says nothing when the browser is capable and sound started", () => {
     expect(compatibilityNoticeItems(capable, null)).toEqual([]);
   });

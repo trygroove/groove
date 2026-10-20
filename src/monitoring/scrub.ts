@@ -327,6 +327,19 @@ export const ALLOWED_TAGS = [
   "browser_version",
   "engine_name",
   "engine_version",
+  // The triage context (GRV-55); `errorContext.test.ts` pins these to
+  // `ERROR_CONTEXT_KEYS`.
+  "online",
+  "retry_count",
+  "audio_context_state",
+  "export_type",
+  "file_size_bucket",
+  "duration_bucket",
+  "track_count_bucket",
+  "zip_count",
+  "leaked_node_bucket",
+  "leaked_subscription_bucket",
+  "leaked_other_bucket",
 ] as const;
 
 function allowlist(

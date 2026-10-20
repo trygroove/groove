@@ -76,8 +76,6 @@ export const LEARN_CHOICES: readonly (readonly [string, LearnChipId])[] = [
 
 /** "Any gear to use with Groove?", label to validation chip. */
 export const GEAR_CHOICES: readonly (readonly [string, GearChipId])[] = [
-  ["Ableton Move", "ableton_move"],
-  ["Roland T-8", "roland_t8"],
   ["A MIDI keyboard", "midi_keyboard"],
   ["A drum machine", "drum_machine"],
   ["A synth", "synth"],

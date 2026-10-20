@@ -35,6 +35,7 @@ function report(overrides: Partial<ErrorReport> = {}): ErrorReport {
     message: "redacted message",
     releaseSha: "abc123def456",
     browser: { ...UNKNOWN_BROWSER, browserName: "firefox", browserVersion: "142" },
+    context: {},
     error: new Error("boom"),
     fingerprint: "persistence|unavailable|redacted message|",
     ...overrides,
@@ -105,6 +106,17 @@ describe("PostHogErrorSink", () => {
 
   it("marks a non-fatal report at error level", () => {
     expect(postHogExceptionProperties(report()).$exception_level).toBe("error");
+  });
+
+  it("carries the report's triage context, under its classification (GRV-55)", () => {
+    const properties = postHogExceptionProperties(
+      report({ context: { online: false, retry_count: 2 } }),
+    );
+    expect(properties).toMatchObject({
+      online: false,
+      retry_count: 2,
+      area: "persistence",
+    });
   });
 
   it("never hands PostHog a thrown value that is not an Error", async () => {

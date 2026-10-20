@@ -58,6 +58,7 @@ function report(overrides: Partial<ErrorReport> = {}): ErrorReport {
       browserName: "firefox",
       browserVersion: "142",
     },
+    context: {},
     error: new Error("boom"),
     fingerprint: "shell|unknown|redacted message|",
     ...overrides,
@@ -190,6 +191,21 @@ describe("capture", () => {
       engine_version: "unknown",
     });
     expect(context.level).toBe("error");
+  });
+
+  it("adds the report's triage context as tags (GRV-55)", async () => {
+    const { sentry, sink } = await started();
+    sink.capture(
+      report({ area: "export", context: { export_type: "stems", zip_count: 3 } }),
+    );
+    const context = sentry.captures[0].context.captureContext as {
+      tags: Record<string, unknown>;
+    };
+    expect(context.tags).toMatchObject({
+      area: "export",
+      export_type: "stems",
+      zip_count: 3,
+    });
   });
 
   it("passes the original error so Sentry can symbolicate its stack", async () => {

@@ -9,7 +9,7 @@ import {
   SYNTH_WAVEFORM,
   synthWaveform,
 } from "../domain/parameters";
-import { formatInstrumentValue } from "../instrument/formatValue";
+import { formatReadout } from "../domain/valueFormat";
 import { instrumentKindSpec } from "../instrument/instrumentKinds";
 
 /** One key fact in the header: a small label over its value. */
@@ -75,7 +75,7 @@ export function instrumentHeaderFacts(
   const read = (definition: Parameters<typeof readInstrumentParameter>[0]) =>
     readInstrumentParameter(definition, instrument.parameters);
   const show = (definition: Parameters<typeof readInstrumentParameter>[0]) =>
-    formatInstrumentValue(definition, read(definition));
+    formatReadout(definition, read(definition));
 
   switch (instrument.kind) {
     case "sampler":

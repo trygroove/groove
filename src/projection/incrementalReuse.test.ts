@@ -18,6 +18,15 @@
  * automation lane, return, and asset — so a one-note edit on the 50-track
  * reference project ran thousands of stable-stringify+hash passes it did not
  * need. This guard fails if that regresses.
+ *
+ * Two halves. The audio half (`buildAudioProjection`) takes a `previous`
+ * projection and reuses entries, so it counts fingerprint calls. The live
+ * arrangement builder (`src/arrangement/projection.ts`) has no `previous`
+ * reuse argument: it rebuilds every time and leans on object-identity
+ * `revisionOf` counters for downstream caches. Its guard is therefore a time
+ * budget on the 50-track reference project plus revision stability: untouched
+ * placements keep their revision after a one-placement edit with structural
+ * sharing, and the edited one changes.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,8 +44,12 @@ vi.mock("./fingerprint", async () => {
   };
 });
 
-import type { Project, Track } from "../domain/entities";
+import type { RowMetrics } from "../arrangement/geometry";
+import { buildArrangementProjection } from "../arrangement/projection";
+import { revisionOf } from "../arrangement/revision";
+import type { Placement, Project, Track } from "../domain/entities";
 import { createReferenceProject } from "../domain/fixtures";
+import { toTicks } from "../domain/time";
 import { buildAudioProjection } from "./audioProjection";
 
 beforeEach(() => {
@@ -113,6 +126,73 @@ describe("audio projection incremental rebuild", () => {
     for (const track of edited.song.tracks) {
       if (track.id === editedId) continue;
       expect(after.tracksById.get(track.id)).toBe(before.tracksById.get(track.id));
+    }
+  });
+});
+
+const rowMetrics: RowMetrics = { trackHeightPx: 32, headerHeightPx: 32 };
+
+/** Replaces one placement the way the command layer does: new song, new array, one new element. */
+function replacePlacement(project: Project, next: Placement): Project {
+  return {
+    ...project,
+    metadata: { ...project.metadata, revision: project.metadata.revision + 1 },
+    song: {
+      ...project.song,
+      placements: project.song.placements.map((p) => (p.id === next.id ? next : p)),
+    },
+  };
+}
+
+describe("arrangement projection on the reference project", () => {
+  it("builds inside a generous time budget", () => {
+    const project = referenceProject();
+    expect(project.song.tracks).toHaveLength(50);
+    expect(project.song.placements).toHaveLength(2500);
+
+    // PRD section 10 targets 50 ms for a pointer edit. Wall-clock time on a
+    // shared CI runner is noisy, so warm up, take the best of several runs
+    // (noise only ever adds time), and assert 10x the target. That still
+    // catches an accidental quadratic walk (seconds), not a slow neighbour.
+    buildArrangementProjection(project, rowMetrics);
+    let best = Number.POSITIVE_INFINITY;
+    for (let run = 0; run < 5; run += 1) {
+      const start = performance.now();
+      buildArrangementProjection(project, rowMetrics);
+      best = Math.min(best, performance.now() - start);
+    }
+    expect(best).toBeLessThan(500);
+  });
+
+  it("keeps revisions of untouched placements stable after a one-placement edit", () => {
+    const project = referenceProject();
+    const before = buildArrangementProjection(project, rowMetrics);
+
+    const target = project.song.placements[1200];
+    const edited = replacePlacement(project, {
+      ...target,
+      startTicks: toTicks(target.startTicks + 192),
+    });
+    expect(edited.song.placements[0]).toBe(project.song.placements[0]);
+
+    expect(revisionOf(edited.song.placements[1200])).not.toBe(revisionOf(target));
+    for (let i = 0; i < project.song.placements.length; i += 1) {
+      if (i === 1200) continue;
+      expect(revisionOf(edited.song.placements[i])).toBe(
+        revisionOf(project.song.placements[i]),
+      );
+    }
+    for (let i = 0; i < project.song.tracks.length; i += 1) {
+      expect(revisionOf(edited.song.tracks[i])).toBe(revisionOf(project.song.tracks[i]));
+    }
+
+    const after = buildArrangementProjection(edited, rowMetrics);
+    expect(after.placementsById.get(target.id)?.revision).not.toBe(
+      before.placementsById.get(target.id)?.revision,
+    );
+    for (const [id, geometry] of before.placementsById) {
+      if (id === target.id) continue;
+      expect(after.placementsById.get(id)?.revision).toBe(geometry.revision);
     }
   });
 });
