@@ -752,6 +752,8 @@ function momentText(lesson: AssistantLessonContext): string {
       return lesson.next.length > 0
         ? `That's "${lesson.chapter}" finished. Where next: ${lesson.next.join("; ")}.`
         : `That's "${lesson.chapter}" finished.`;
+    case "track_done":
+      return `That's "${lesson.track?.title ?? lesson.chapter}" finished, stems and all.`;
     case "under_way":
       return EMULATOR_REPLY_CHUNKS.join("");
   }

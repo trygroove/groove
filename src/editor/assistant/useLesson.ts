@@ -20,8 +20,9 @@
  *   however it ended (`lessonsDone`).
  *
  * Analytics: `lesson_bite_started` (where from), `lesson_bite_completed`
- * (how), `lesson_dropped_out` and `feature_first_use` `lessons`, by chapter
- * and bite ID only.
+ * (how), `lesson_chapter_completed` and `lesson_track_completed` (GRV-44),
+ * `lesson_dropped_out` and `feature_first_use` `lessons`, by chapter and bite
+ * ID only.
  */
 import { type Accessor, createEffect, createMemo, createSignal, untrack } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
@@ -149,7 +150,17 @@ export function useLesson(options: UseLessonOptions): Lesson {
 
   function world(): LessonWorld | null {
     const project = options.project();
-    return project ? { project, view: options.view(), playing: options.playing() } : null;
+    return project
+      ? {
+          project,
+          view: options.view(),
+          playing: options.playing(),
+          bar: 0,
+          barsHeard: 0,
+          masterClips: 0,
+          stemExports: 0,
+        }
+      : null;
   }
 
   function queue(next: LessonState, event: LessonEvent): void {
@@ -177,8 +188,13 @@ export function useLesson(options: UseLessonOptions): Lesson {
     const { state: next, event } = transition;
     setNotice(null);
     if (event.kind === "bite_done") {
-      options.analytics().log("lesson_bite_completed", { ...ids(next), how: event.how });
+      const analytics = options.analytics();
+      analytics.log("lesson_bite_completed", { ...ids(next), how: event.how });
       record(biteOf(next).id);
+      if (event.chapterDone) {
+        analytics.log("lesson_chapter_completed", { chapter_id: next.chapter });
+      }
+      if (event.trackDone) analytics.log("lesson_track_completed", {});
     }
     queue(next, event);
     // A chapter's last bite ends the lesson: the wrap-up follows in the

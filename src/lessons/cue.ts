@@ -10,22 +10,29 @@
  * except the track and pad names in `changes`, which the project context
  * already carries to the same provider.
  */
-import { chapter } from "./chapters";
+import { bite as biteById, chapter } from "./chapters";
 import {
   type BeatStyle,
   type BiteEnding,
   type BiteId,
   type ChapterId,
+  isTrackChapterId,
   type LessonMoment,
   MAX_EARLIER,
+  SOLO_CHAPTER_IDS,
+  type SoloChapterId,
+  TRACK_CHAPTER_IDS,
 } from "./ids";
 import {
   biteOf,
   chapterOf,
+  followingBite,
+  followingChapter,
   type LessonEvent,
   type LessonState,
   stepWords,
 } from "./session";
+import { TRACK_SUMMARY, TRACK_TITLE, trackChapterNumber, trackResume } from "./track";
 import type { LessonSettings } from "./types";
 
 export interface LessonCue {
@@ -52,11 +59,28 @@ export interface LessonCue {
   /** The next bite's title after a bite; a few pointers after the chapter. */
   readonly next: string[];
   /**
+   * "Finish a track" (GRV-44), when this is it: its title, and the chapter's
+   * place in it. Null for a chapter taught on its own.
+   */
+  readonly track: LessonTrack | null;
+  /**
+   * The titles of the bites passed over as this one started, the song
+   * already having them (GRV-44).
+   */
+  readonly passed: string[];
+  /**
    * What happened since Coproducer last spoke that it has not answered yet,
    * oldest first: turns that waited while a reply was on its way, folded
    * into this one ({@link foldTurns}). Empty for a turn that did not wait.
    */
   readonly earlier: LessonEarlier[];
+}
+
+/** "Finish a track", as a cue carries it. */
+export interface LessonTrack {
+  readonly title: string;
+  readonly chapterNumber: number;
+  readonly chapterCount: number;
 }
 
 /** One moment a turn waited with, as the turn that took its place carries it. */
@@ -68,12 +92,9 @@ export interface LessonEarlier {
   readonly changes: string[];
 }
 
-/** Where a producer might go after each chapter, besides the other chapters. */
-const POINTERS: Readonly<Record<ChapterId, readonly string[]>> = {
-  beat: [
-    "Add a bassline under the beat",
-    "Roll new hat patterns from the Generate panel under the step grid",
-  ],
+/** Where a producer might go after each chapter taught alone, besides the other chapters. */
+const POINTERS: Readonly<Record<SoloChapterId, readonly string[]>> = {
+  beat: ["Roll new hat patterns from the Generate panel under the step grid"],
   sound: [
     "Write a melody for the pluck in the piano roll",
     "Add a delay to the pluck in the Mixer",
@@ -81,18 +102,54 @@ const POINTERS: Readonly<Record<ChapterId, readonly string[]>> = {
   tour: ["Ask Coproducer for a loop to start from"],
 };
 
+/** Where a producer might go once "Finish a track" is over (GRV-44). */
+const TRACK_POINTERS: readonly string[] = [
+  "Send the stems to a mix engineer, or bring them into a live set",
+  "Start the next track from a loop Coproducer suggests",
+];
+
+/** "Finish a track", as a pointer to it. */
+const TRACK_POINTER = `The "${TRACK_TITLE}" lesson: ${TRACK_SUMMARY}`;
+
 /**
- * The pointers after `chapterId`: the chapters not yet finished (by `done`),
- * then its own related skills, at most three.
+ * The pointers after `chapterId` (GRV-43): "Finish a track" after "Make a
+ * beat", unless it is under way or done, then the chapters taught alone not
+ * yet finished (by `done`), then the chapter's own related skills, at most
+ * three. Inside "Finish a track" (GRV-44), the chapter after it; after its
+ * last, where to take the stems.
  */
-export function wrapUpPointers(chapterId: ChapterId, done: readonly string[]): string[] {
+export function wrapUpPointers(
+  chapterId: ChapterId,
+  done: readonly string[],
+  track = false,
+): string[] {
   const finished = new Set(done);
-  const others = (["beat", "sound", "tour"] as const)
-    .filter((id) => id !== chapterId)
+  if (track && isTrackChapterId(chapterId)) {
+    const next = TRACK_CHAPTER_IDS[trackChapterNumber(chapterId)];
+    if (!next) return [...TRACK_POINTERS, ...soloLeft(chapterId, finished)].slice(0, 3);
+    const following = chapter(next);
+    return [
+      `Chapter ${trackChapterNumber(next)} of "${TRACK_TITLE}", "${following.title}": ${following.summary}`,
+    ];
+  }
+  const trackStarted =
+    trackResume(done) !== null ||
+    TRACK_CHAPTER_IDS.slice(1).some((id) =>
+      chapter(id).bites.some((each) => finished.has(each.id)),
+    );
+  const toTrack = chapterId === "beat" && !trackStarted ? [TRACK_POINTER] : [];
+  const own = (SOLO_CHAPTER_IDS as readonly string[]).includes(chapterId)
+    ? POINTERS[chapterId as SoloChapterId]
+    : [];
+  return [...toTrack, ...soloLeft(chapterId, finished), ...own].slice(0, 3);
+}
+
+/** The chapters taught alone, besides `chapterId`, with a bite not in `finished`. */
+function soloLeft(chapterId: ChapterId, finished: ReadonlySet<string>): string[] {
+  return SOLO_CHAPTER_IDS.filter((id) => id !== chapterId)
     .map((id) => chapter(id))
     .filter((one) => one.bites.some((each) => !finished.has(each.id)))
     .map((one) => `The "${one.title}" chapter: ${one.summary}`);
-  return [...others, ...POINTERS[chapterId]].slice(0, 3);
 }
 
 const HOW_WORDS: Readonly<Record<Exclude<BiteEnding, "skipped">, string>> = {
@@ -116,11 +173,13 @@ export function lessonCue(
   const moment: LessonMoment =
     event === null
       ? "under_way"
-      : event.kind === "bite_done" && event.chapterDone
-        ? "chapter_done"
-        : event.kind;
+      : event.kind === "bite_done" && event.trackDone
+        ? "track_done"
+        : event.kind === "bite_done" && event.chapterDone
+          ? "chapter_done"
+          : event.kind;
   const over = event?.kind === "bite_done";
-  const following = lessonChapter.bites[state.biteIndex + 1];
+  const following = followingBite(state);
   return {
     chapterId: lessonChapter.id,
     chapter: lessonChapter.title,
@@ -136,11 +195,21 @@ export function lessonCue(
     style: lessonChapter.id === "beat" ? settings.style : null,
     quiz: over ? lessonBite.quiz : null,
     next:
-      moment === "chapter_done"
-        ? wrapUpPointers(lessonChapter.id, done)
+      moment === "chapter_done" || moment === "track_done"
+        ? wrapUpPointers(lessonChapter.id, done, state.track)
         : over && following
           ? [following.title]
           : [],
+    track:
+      state.track && isTrackChapterId(lessonChapter.id)
+        ? {
+            title: TRACK_TITLE,
+            chapterNumber: trackChapterNumber(lessonChapter.id),
+            chapterCount: TRACK_CHAPTER_IDS.length,
+          }
+        : null,
+    passed:
+      event?.kind === "bite_started" ? event.passed.map((id) => biteById(id).title) : [],
     earlier: [],
   };
 }
@@ -193,7 +262,9 @@ export function cueMessage(state: LessonState, event: LessonEvent): string {
   const title = `"${lessonBite.title}"`;
   switch (event.kind) {
     case "bite_started":
-      return `Let's do ${title}.`;
+      return event.passed.length > 0
+        ? `Let's do ${title}: the song already has what comes before it.`
+        : `Let's do ${title}.`;
     case "step_done":
       return event.how === "skipped"
         ? `Skipped that step of ${title}.`
@@ -203,9 +274,12 @@ export function cueMessage(state: LessonState, event: LessonEvent): string {
         event.how === "skipped"
           ? `Skipped ${title}`
           : `Finished ${title}: ${HOW_WORDS[event.how]}`;
-      return event.chapterDone
-        ? `${said}. That was the last bite of "${chapterOf(state).title}".`
-        : `${said}.`;
+      if (event.trackDone) return `${said}. That was the last bite of "${TRACK_TITLE}".`;
+      if (!event.chapterDone) return `${said}.`;
+      const next = followingChapter(state);
+      return next
+        ? `${said}. That was the last bite of "${chapterOf(state).title}". Next is chapter ${trackChapterNumber(next)} of "${TRACK_TITLE}".`
+        : `${said}. That was the last bite of "${chapterOf(state).title}".`;
     }
   }
 }

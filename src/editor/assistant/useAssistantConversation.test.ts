@@ -237,6 +237,8 @@ describe("a conversation during a lesson (GRV-43)", () => {
     style: null,
     quiz: null,
     next: [],
+    track: null,
+    passed: [],
     earlier: [],
   };
 

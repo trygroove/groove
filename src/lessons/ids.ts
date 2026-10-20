@@ -9,9 +9,42 @@
  * longer names a bite would quietly be undone.
  */
 
-/** The chapters, in the order they are offered. */
-export const CHAPTER_IDS = ["beat", "sound", "tour"] as const;
+/**
+ * Every chapter: the three taught on their own (GRV-43), then the four only
+ * "Finish a track" teaches (GRV-44), which also starts with "beat".
+ */
+export const CHAPTER_IDS = [
+  "beat",
+  "sound",
+  "tour",
+  "bass",
+  "chords",
+  "arrange",
+  "mix",
+] as const;
 export type ChapterId = (typeof CHAPTER_IDS)[number];
+
+/** The chapters a lesson can be on its own (GRV-43), in the order they are offered. */
+export const SOLO_CHAPTER_IDS = [
+  "beat",
+  "sound",
+  "tour",
+] as const satisfies readonly ChapterId[];
+export type SoloChapterId = (typeof SOLO_CHAPTER_IDS)[number];
+
+/**
+ * "Finish a track" (GRV-44): five chapters, in order, from a beat to stems.
+ * The first is "Make a beat", the chapter taught on its own too; the rest are
+ * taught only here.
+ */
+export const TRACK_CHAPTER_IDS = [
+  "beat",
+  "bass",
+  "chords",
+  "arrange",
+  "mix",
+] as const satisfies readonly ChapterId[];
+export type TrackChapterId = (typeof TRACK_CHAPTER_IDS)[number];
 
 /** Every bite, chapter by chapter, in the order each chapter teaches them. */
 export const BITE_IDS = [
@@ -29,6 +62,22 @@ export const BITE_IDS = [
   "tour-instrument",
   "tour-library",
   "tour-mixer",
+  "bass-key",
+  "bass-line",
+  "bass-sound",
+  "chords-loop",
+  "chords-hook",
+  "chords-pluck",
+  "arrange-copy",
+  "arrange-intro",
+  "arrange-breakdown",
+  "arrange-drop",
+  "arrange-outro",
+  "mix-balance",
+  "mix-pan",
+  "mix-reverb",
+  "mix-master",
+  "mix-export",
 ] as const;
 export type BiteId = (typeof BITE_IDS)[number];
 
@@ -42,6 +91,10 @@ export type LessonSource = (typeof LESSON_SOURCES)[number];
 
 export function isChapterId(value: string): value is ChapterId {
   return (CHAPTER_IDS as readonly string[]).includes(value);
+}
+
+export function isTrackChapterId(value: string): value is TrackChapterId {
+  return (TRACK_CHAPTER_IDS as readonly string[]).includes(value);
 }
 
 export function isBiteId(value: string): value is BiteId {
@@ -58,6 +111,7 @@ export const LESSON_MOMENTS = [
   "step_done",
   "bite_done",
   "chapter_done",
+  "track_done",
   "under_way",
 ] as const;
 export type LessonMoment = (typeof LESSON_MOMENTS)[number];
