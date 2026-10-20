@@ -2,15 +2,19 @@ import { cleanup, render, screen } from "@solidjs/testing-library";
 import { flush } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Analytics } from "../../analytics/analytics";
+import { bucketOf } from "../../analytics/buckets";
 import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
 import { OfflineRenderError } from "../../audio/offlineRenderer";
-import { createSliceFixtureProject } from "../../domain/fixtures";
+import { createReferenceProject, createSliceFixtureProject } from "../../domain/fixtures";
+import { StemExportError } from "../../export/stems/exportStems";
 import { stubCanvasContext } from "../../testing/canvas";
 import { expectNoContent, recordErrorReports } from "../../testing/errorReports";
 import { clickAndFlush } from "../../testing/events";
+import { fakeStemsBatch } from "../../testing/stemsBatchFake";
 import { memoryStorage } from "../../testing/storage";
 import ExportDialog, { failureMessage } from "./ExportDialog";
+import { estimateStereoBytes } from "./exportFacts";
 import type { exportStereoWav, StereoExport } from "./stereoExport";
 
 /**
@@ -131,6 +135,87 @@ describe("a failed export (GRV-55)", () => {
     const [payload] = recorded.payloads();
     expect(payload.tags).toMatchObject({ error_code: "download_blocked" });
     expectNoContent(payload, content);
+  });
+
+  it("says a render ran out of memory and reports it once, scrubbed, with the export's shape", async () => {
+    const exportWav = vi.fn(async () => {
+      throw new OfflineRenderError("out_of_memory", "The render ran out of memory", {
+        cause: new RangeError("Array buffer allocation failed for Midnight Drive"),
+      });
+    }) as unknown as typeof exportStereoWav;
+    const { project, recorded, transport, content } = setUp({ exportWav });
+
+    clickAndFlush(exportButton());
+    await settle();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(failureMessage("out_of_memory"));
+    expect(recorded.reports).toHaveLength(1);
+    const [payload] = recorded.payloads();
+    expect(payload.tags).toMatchObject({
+      area: "export",
+      error_code: "out_of_memory",
+      fatal: false,
+      export_type: "stereo",
+      file_size_bucket: bucketOf("file_bytes", estimateStereoBytes(project)),
+      track_count_bucket: bucketOf("track_count", project.song.tracks.length),
+    });
+    expect(payload.tags).not.toHaveProperty("zip_count");
+    expectNoContent(payload, [...content, "Array buffer allocation failed"]);
+    // The render logs its own export_failed; the dialog adds none.
+    expect(transport.named("export_failed")).toHaveLength(0);
+  });
+
+  it("says a ZIP of a stems export failed and reports that batch once, scrubbed", async () => {
+    const project = createReferenceProject();
+    const recorded = recordErrorReports();
+    const fake = fakeStemsBatch(project.metadata.name);
+    const download = vi.fn();
+    render(() => (
+      <ExportDialog
+        project={() => project}
+        exportStemsBatch={fake.exportStemsBatch}
+        download={download}
+        reportError={recorded.report}
+        onClose={() => {}}
+      />
+    ));
+    clickAndFlush(screen.getByRole("radio", { name: "Stems (ZIP)" }));
+    clickAndFlush(exportButton());
+    await settle();
+    const count = fake.calls[0].request.count;
+    expect(count).toBeGreaterThan(1);
+
+    await fake.calls[0].resolve();
+    expect(download).toHaveBeenCalledTimes(1);
+    const failing = fake.calls[1].request;
+    await fake.calls[1].reject(
+      new StemExportError("zip_batch_failed", "A ZIP could not be built", {
+        cause: new Error(`deflate failed on ${project.song.tracks[0].name}.wav`),
+      }),
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      failureMessage("zip_batch_failed", "stems"),
+    );
+    expect(recorded.reports).toHaveLength(1);
+    const [payload] = recorded.payloads();
+    expect(payload.tags).toMatchObject({
+      area: "export",
+      error_code: "zip_batch_failed",
+      fatal: false,
+      export_type: "stems",
+      file_size_bucket: bucketOf("file_bytes", failing.batch.expectedBytes),
+      track_count_bucket: bucketOf("track_count", failing.trackIds?.length ?? 0),
+      zip_count: count,
+    });
+    expectNoContent(payload, [
+      project.metadata.name,
+      ...project.song.tracks.map((track) => track.name),
+      ...project.song.assets.map((asset) => asset.name),
+      ...project.clips.map((clip) => clip.name),
+      String(download.mock.calls[0][1]),
+      "deflate failed",
+    ]);
   });
 
   it("reports nothing when the producer cancels", async () => {

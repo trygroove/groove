@@ -18,6 +18,13 @@ describe("isOutOfMemory (GRV-55)", () => {
       false,
     );
     expect(isOutOfMemory(new Error("Array buffer allocation failed"))).toBe(false);
+    // A negative or invalid length is a bug in the size asked for, not memory.
+    expect(isOutOfMemory(new RangeError("Invalid typed array length: -1"))).toBe(false);
+    expect(isOutOfMemory(new RangeError("Invalid array buffer length"))).toBe(false);
+    expect(isOutOfMemory(new RangeError("Maximum call stack size exceeded"))).toBe(false);
+    const recursion = new Error("too much recursion");
+    recursion.name = "InternalError";
+    expect(isOutOfMemory(recursion)).toBe(false);
     expect(isOutOfMemory("out of memory")).toBe(false);
     expect(isOutOfMemory(null)).toBe(false);
   });

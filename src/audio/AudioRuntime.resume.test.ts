@@ -101,4 +101,27 @@ describe("AudioRuntime.resume", () => {
     expect(runtime.diagnostics().contextsCreated).toBe(2);
     expect(runtime.diagnostics().contextsClosed).toBe(1);
   });
+
+  it("starts a new context when the browser closed the running one (GRV-55)", async () => {
+    const runtime = new AudioRuntime();
+    await runtime.resume();
+    const closed = runtime.ensureContext() as unknown as { state: string };
+    const generation = runtime.contextGeneration();
+    // Closed by the browser, not by the runtime: its own state still says running.
+    closed.state = "closed";
+    expect(runtime.getState()).toBe("running");
+    vi.mocked(Tone.start).mockClear();
+
+    await runtime.resume();
+
+    expect(Tone.start).toHaveBeenCalledTimes(1);
+    const live = runtime.ensureContext() as unknown as { state: string };
+    expect(live).not.toBe(closed);
+    expect(live.state).toBe("running");
+    expect(runtime.contextGeneration()).toBe(generation + 1);
+    expect(runtime.diagnostics().contextsCreated).toBe(2);
+    expect(runtime.contextState()).toBe("running");
+    // The runtime tracks one context, not the dead one beside it.
+    expect(runtime.registry.counts().byType.context).toBe(1);
+  });
 });

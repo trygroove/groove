@@ -71,7 +71,7 @@ describe("SaveStatus's failure states (GRV-55)", () => {
     ));
 
     const alert = screen.getByRole("alert");
-    expect(alert).toHaveTextContent("You're offline.");
+    expect(alert).toHaveTextContent("Offline. Reconnect to save.");
     expect(alert).toHaveAttribute("title", OFFLINE_DETAIL);
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });

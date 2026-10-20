@@ -138,8 +138,56 @@ describe("useProjectAudio", () => {
       fatal: false,
       audio_context_state: "suspended",
     });
+    expectNoContent(payload, ["My Song"]);
     expect(transport.named("audio_start_failed")).toHaveLength(1);
     expect(result.startFailure()?.code).toBe("autoplay_blocked");
+  });
+
+  it("plays again on a new context after the browser closed the old one (GRV-55)", async () => {
+    const runtime = AudioRuntimeModule.getAudioRuntime();
+    // A real context's resume needs an audio callback this sandbox has no
+    // device to fire (see AudioRuntime.resume.test.ts), so resume only
+    // installs the context, through the runtime's real ensureContext().
+    vi.spyOn(runtime, "resume").mockImplementation(async () => {
+      runtime.ensureContext();
+    });
+    const project = createSliceFixtureProject();
+    const owner = project.metadata.id;
+    const { analytics, transport } = fakeAnalytics();
+    const { result } = renderHook(
+      () => useProjectAudioModule.useProjectAudio(() => project, { runtime, analytics }),
+      {},
+    );
+    void result.isPlaying();
+    await Promise.resolve();
+    await Promise.resolve();
+    const dead = runtime.ensureContext();
+    const generation = runtime.contextGeneration();
+    const ownedIds = () =>
+      runtime.registry
+        .snapshot()
+        .filter((entry) => entry.owner === owner)
+        .map((entry) => entry.id);
+    const oldGraph = ownedIds();
+    expect(oldGraph.length).toBeGreaterThan(0);
+
+    // The browser closes the context under the runtime, as it can when the
+    // output device goes away; nothing can resume it again.
+    await (dead.rawContext as AudioContext).close();
+
+    await result.play();
+
+    expect(transport.named("audio_start_failed")).toHaveLength(0);
+    expect(result.isPlaying()).toBe(true);
+    const live = runtime.ensureContext();
+    expect(live).not.toBe(dead);
+    expect(live.state).not.toBe("closed");
+    expect(runtime.contextGeneration()).toBe(generation + 1);
+    // The project's graph was built again, on the live context.
+    const newGraph = ownedIds();
+    expect(newGraph.length).toBeGreaterThan(0);
+    expect(newGraph.some((id) => oldGraph.includes(id))).toBe(false);
+    result.stop();
   });
 
   it("reports a browser with no Web Audio as unavailable (GRV-55)", async () => {
