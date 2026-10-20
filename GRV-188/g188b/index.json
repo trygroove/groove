@@ -1,0 +1,14 @@
+{
+  "id": "g188b",
+  "title": "Mixer scrolls inside its own pane",
+  "steps": [
+    {
+      "file": "01-mixer-top-page-does-not-scroll.png",
+      "caption": "Mixer top, page does not scroll"
+    },
+    {
+      "file": "02-mixer-scrolled-to-the-master-rack-inside.png",
+      "caption": "Mixer scrolled to the master rack inside its pane"
+    }
+  ]
+}
