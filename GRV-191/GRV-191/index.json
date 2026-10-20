@@ -1,0 +1,14 @@
+{
+  "id": "GRV-191",
+  "title": "Marquee from below the tracks",
+  "steps": [
+    {
+      "file": "01-dragging-from-the-empty-area-below-the-t.png",
+      "caption": "Dragging from the empty area below the tracks draws a band"
+    },
+    {
+      "file": "02-both-clips-are-selected-by-a-band-starte.png",
+      "caption": "Both clips are selected by a band started below the tracks"
+    }
+  ]
+}
