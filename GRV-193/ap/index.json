@@ -1,0 +1,14 @@
+{
+  "id": "ap",
+  "title": "The preview turns on by itself",
+  "steps": [
+    {
+      "file": "01-first-proposal-previewing-without-a-clic.png",
+      "caption": "First proposal: previewing without a click"
+    },
+    {
+      "file": "02-all-three-parts-in-the-preview.png",
+      "caption": "All three parts in the preview"
+    }
+  ]
+}
