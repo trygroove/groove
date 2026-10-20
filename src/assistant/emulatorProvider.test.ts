@@ -408,10 +408,20 @@ describe("the emulator's assistant provider", () => {
     );
     expect(kit?.name).toBe(FIRST_BEAT.trackName);
     if (kit?.instrument?.kind !== "drumMachine") throw new Error("no new kit");
-    expect(kit.instrument.pads.map((pad) => [pad.id, pad.name, pad.assetId])).toEqual([
-      [FIRST_BEAT.snarePadId, "Snare", null],
-      [FIRST_BEAT.hatPadId, "Hat", null],
+    // The proposal's pads have no sounds; applied, the new machine has the
+    // starter kit, its Snare and Hat keeping their IDs (GRV-192), and the
+    // starter project's kick is reused rather than added twice.
+    expect(kit.instrument.pads.map((pad) => [pad.name, pad.assetId !== null])).toEqual([
+      ["BD", true],
+      ["Snare", true],
+      ["Hat", true],
+      ["CP", true],
     ]);
+    expect(kit.instrument.pads.slice(1, 3).map((pad) => pad.id)).toEqual([
+      FIRST_BEAT.snarePadId,
+      FIRST_BEAT.hatPadId,
+    ]);
+    expect(kit.instrument.pads[0].assetId).toBe(bd.instrument.pads[0].assetId);
     expect(
       applied.project.song.placements.some((placement) => placement.trackId === kit.id),
     ).toBe(true);
