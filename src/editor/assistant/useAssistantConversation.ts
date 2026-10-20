@@ -97,6 +97,8 @@ import {
 export interface TurnOrigin {
   /** The producer's words, as the log shows them. */
   readonly text: string;
+  /** For a lesson's own turn (GRV-43): the chapter it is part of. */
+  readonly lesson?: string;
   /** For an answer to a question (GRV-42): the question it answers. */
   readonly answers?: string;
   /** What the turn sent, when it is not {@link text} (an answer's full wording). */
@@ -150,6 +152,11 @@ export type ConversationEntry =
       readonly answers?: string;
       /** What the turn sends, when it is not {@link text}. */
       readonly wire?: string;
+      /**
+       * A lesson's own turn (GRV-43): the chapter it is part of. The log
+       * labels it as the lesson's rather than with a scope.
+       */
+      readonly lesson?: string;
       /** The follow-up after an Apply (GRV-195): sent, kept, never shown. */
       readonly automatic?: true;
     }
@@ -318,6 +325,14 @@ export interface UseAssistantConversationOptions {
   readonly lesson?: () => AssistantLessonContext | null;
   /** Hears that Coproducer started a lesson, and which chapter (GRV-43). */
   readonly onStartLesson?: (chapter: ChapterId) => void;
+  /**
+   * Takes an answer to a question in place of sending it, and says whether it
+   * did; one it does not take is sent as usual. "Let's go" to the offer of a
+   * first lesson starts the lesson (GRV-43), whose own turn follows the
+   * answer in the log; when the lesson cannot start, the answer goes to
+   * Coproducer instead.
+   */
+  readonly takeAnswer?: (ask: AssistantAsk, answer: AskAnswer) => boolean;
   /** Hears each memory proposal as it arrives, under its entry's ID (GRV-25). */
   readonly onMemoryProposal?: (entryId: string, proposal: MemoryProposal) => void;
   /** Hears that Coproducer asked a question skipped in onboarding (GRV-25). */
@@ -376,6 +391,13 @@ export interface AssistantConversation {
    * while a reply streams, with nothing to say, or with no account.
    */
   send(text: string, suggestion?: SuggestionId): boolean;
+  /**
+   * Sends a lesson's own turn (GRV-43): `text` is the line the log shows and
+   * the turn says, `lesson` where the lesson stands, and `chapter` the label.
+   * Not counted as a message the producer sent. Returns whether it went, as
+   * {@link send} does.
+   */
+  sendLesson(text: string, lesson: AssistantLessonContext, chapter: string): boolean;
   /** Stops the reply on its way, at the gateway too. */
   stop(): void;
   /**
@@ -794,15 +816,16 @@ export function useAssistantConversation(
    * it by itself after an Apply (GRV-195), which its analytics say.
    */
   function sendMessage(
-    message: Pick<TurnOrigin, "text" | "answers" | "wire" | "automatic">,
+    message: Pick<TurnOrigin, "text" | "answers" | "wire" | "lesson" | "automatic">,
     scope: AssistantScope,
+    lessonNow?: AssistantLessonContext,
     followingUp = false,
   ): void {
     const project = options.project();
     if (!project) return;
     const said = message.wire ?? message.text;
     const memory = options.memory?.() ?? null;
-    const lesson = options.lesson?.() ?? null;
+    const lesson = lessonNow ?? options.lesson?.() ?? null;
     const where = options.session?.();
     const turnId = where ? newId() : undefined;
     const analytics = options.analytics();
@@ -831,13 +854,16 @@ export function useAssistantConversation(
     };
     append({ kind: "message", id: id(), scopeLabel: scope.label, ...message });
     const sessionTurn = options.health?.messageSent();
-    analytics.log("assistant_message_sent", {
-      scope: scope.catalogScope,
-      automatic: followingUp,
-    });
-    analytics.logFeatureFirstUse(
-      followingUp ? "assistant_follow_up" : "assistant_message",
-    );
+    // A lesson's own turn is not a message the producer wrote.
+    if (!lessonNow) {
+      analytics.log("assistant_message_sent", {
+        scope: scope.catalogScope,
+        automatic: followingUp,
+      });
+      analytics.logFeatureFirstUse(
+        followingUp ? "assistant_follow_up" : "assistant_message",
+      );
+    }
     startTurn(request, {
       ...message,
       scope,
@@ -857,6 +883,16 @@ export function useAssistantConversation(
         .log("assistant_suggestion_clicked", { suggestion_id: suggestion });
     }
     sendMessage({ text: message }, options.scope());
+    return true;
+  }
+
+  function sendLesson(
+    text: string,
+    lesson: AssistantLessonContext,
+    chapter: string,
+  ): boolean {
+    if (!canStart() || text.trim().length === 0) return false;
+    sendMessage({ text, lesson: chapter }, options.scope(), lesson);
     return true;
   }
 
@@ -898,6 +934,7 @@ export function useAssistantConversation(
     sendMessage(
       { text: FOLLOW_UP_TITLE, wire: FOLLOW_UP_MESSAGE, automatic: true },
       options.scope(),
+      undefined,
       true,
     );
     return true;
@@ -928,14 +965,21 @@ export function useAssistantConversation(
       labels.length === 0 ? "text" : answer.byDoing ? "did_it" : "pick";
     logAnswered(ask, how, answer.picked);
     const said = labels.join(", ") + (how === "did_it" ? " (done in the editor)" : "");
-    sendMessage(
-      {
-        text: [said, typed].filter((part) => part.length > 0).join(" · "),
-        answers: ask.question,
-        wire: answerMessage(ask, answer),
-      },
-      options.scope(),
-    );
+    const message = {
+      text: [said, typed].filter((part) => part.length > 0).join(" · "),
+      answers: ask.question,
+      wire: answerMessage(ask, answer),
+    };
+    if (options.takeAnswer?.(ask, answer)) {
+      append({
+        kind: "message",
+        id: id(),
+        scopeLabel: options.scope().label,
+        ...message,
+      });
+      return true;
+    }
+    sendMessage(message, options.scope());
     return true;
   }
 
@@ -1100,6 +1144,7 @@ export function useAssistantConversation(
     entries,
     streaming,
     send,
+    sendLesson,
     stop,
     retry,
     canRetry,

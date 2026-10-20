@@ -54,6 +54,7 @@ const storedEntrySchema = z.discriminatedUnion("kind", [
     scopeLabel: z.string(),
     answers: z.string().optional(),
     wire: z.string().optional(),
+    lesson: z.string().optional(),
     /** The assistant's follow-up after an Apply (GRV-195), which the log hides. */
     automatic: z.literal(true).optional(),
   }),

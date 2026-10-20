@@ -19,8 +19,10 @@ import type { AssistantRetentionClient } from "../../assistant/retentionClient";
 import { createSessionHealth, type SessionTurn } from "../../assistant/sessionHealth";
 import type { ReplyRating } from "../../assistant/transcripts";
 import type { Project } from "../../domain/entities";
+import { chapterForGoal } from "../../lessons/chapters";
 import { memoryContext } from "../../memory/memoryEdits";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
+import { LESSON_OFFER_ASK_ID, LESSON_OFFER_YES } from "../../onboarding/questions";
 import type { Suggestion } from "../../projection/projectAnalysisProjection";
 import { type Clock, systemClock } from "../../shared/clock";
 import type { Scheduler } from "../../shared/scheduler";
@@ -58,6 +60,7 @@ import {
 import { type AssistantRetention, useAssistantRetention } from "./useAssistantRetention";
 import { type CueNudge, useCueNudge } from "./useCueNudge";
 import { useFollowUp } from "./useFollowUp";
+import { type Lesson, type LessonEditorPort, useLesson } from "./useLesson";
 import { type AssistantMemoryProposals, useMemoryProposals } from "./useMemoryProposals";
 
 /** Who is here to talk: a signed-in account, or someone who must sign in. */
@@ -131,6 +134,10 @@ export interface UseAssistantChatOptions {
    * no memory.
    */
   readonly profile?: ProducerProfileStore;
+  /** Whether the song is playing, which a lesson's "Hear it" waits for (GRV-43). */
+  readonly playing?: Accessor<boolean>;
+  /** What a lesson's Show me does in the editor (GRV-43); without it, nothing. */
+  readonly lessonEditor?: LessonEditorPort;
   /**
    * What times the quiet after an Apply before the assistant follows up
    * (GRV-195); the real timers by default.
@@ -166,6 +173,8 @@ export interface AssistantChat {
   readonly memory: AssistantMemoryProposals | null;
   /** Coproducer's one nudge a day, when there is a profile to read it from (GRV-25). */
   readonly nudge: CueNudge | null;
+  /** The lesson under way, if any, and what its card's buttons do (GRV-43). */
+  readonly lesson: Lesson;
   /** The account's answer about keeping conversations, when it is asked for. */
   readonly retention: AssistantRetention | null;
   /**
@@ -401,6 +410,13 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
       ? (entryId, proposal) => memory.receive(entryId, proposal)
       : undefined,
     onMemoryQuestionAsked: memory ? (question) => memory.asked(question) : undefined,
+    // The lesson is made just below; these are only called later.
+    lesson: () => lesson.context(),
+    onStartLesson: (chapter) => lesson.start(chapter, "asked"),
+    takeAnswer: (ask, answer) =>
+      ask.id === LESSON_OFFER_ASK_ID &&
+      answer.picked.includes(LESSON_OFFER_YES) &&
+      lesson.start(chapterForGoal(profile?.profile()?.memory.goal ?? null), "onboarding"),
     persistence: options.conversationKey
       ? {
           key: options.conversationKey,
@@ -414,6 +430,23 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         }
       : undefined,
     health,
+  });
+
+  const lesson = useLesson({
+    // The committed project, never a preview: a step is not done by a change
+    // only being previewed. The committed project is not reactive itself, so
+    // the one on screen, which changes with it, is what is tracked.
+    project: () => {
+      const shown = options.project();
+      return options.committedProject?.() ?? shown;
+    },
+    view: options.view,
+    playing: options.playing ?? (() => false),
+    profile,
+    conversation,
+    editor: options.lessonEditor,
+    registry: editor?.controls.registry,
+    analytics: options.analytics,
   });
 
   // Applying a proposal has the assistant say what next (GRV-195). The cards
@@ -432,6 +465,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         ready: () => (retention ? retention.answered() : true),
         conversation,
         analytics: options.analytics,
+        startLesson: (bite) => lesson.start(bite.chapter, "nudge", bite.id),
       })
     : null;
 
@@ -494,6 +528,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     ask,
     memory,
     nudge,
+    lesson,
     retention,
     rateReply,
     analytics: options.analytics,

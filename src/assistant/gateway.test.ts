@@ -36,6 +36,7 @@ import {
   type InMemoryGuardStores,
 } from "./inMemoryGuardStores";
 import { type AssistantLessonContext, LESSON_BLOCK_HEADING } from "./lesson";
+import { START_LESSON_TOOL_NAME } from "./lessonTool";
 import { type AssistantMemoryContext, REMEMBER_TOOL_NAME } from "./memory";
 import { buildAssistantPayload } from "./payload";
 import {
@@ -523,7 +524,13 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
     expect(sent.system[0].text).toMatch(/You are Coproducer/);
   });
 
-  it("reads the lesson a turn carries, after memory (GRV-43)", async () => {
+  it("offers start_lesson with memory, and reads the lesson a turn carries (GRV-43)", async () => {
+    const without = harness([replyEvents(["ok"])]);
+    await run(without);
+    expect(without.provider.requests[0].tools.map((tool) => tool.name)).not.toContain(
+      START_LESSON_TOOL_NAME,
+    );
+
     const memory: AssistantMemoryContext = {
       taste: ["Hip hop"],
       artists: "",
@@ -554,12 +561,36 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
     const h = harness([replyEvents(["Nice kick."])]);
     await run(h, request({ memory, lesson }));
     const sent = h.provider.requests[0];
-    // start_lesson is not offered until the panel starts a lesson from it.
-    expect(sent.tools.map((tool) => tool.name)).not.toContain("start_lesson");
+    expect(sent.tools.map((tool) => tool.name)).toContain(START_LESSON_TOOL_NAME);
     // The prompt, the project, the memory, the lesson, then the turn's ID stem.
     expect(sent.system).toHaveLength(5);
     expect(sent.system[3].text).toContain(LESSON_BLOCK_HEADING);
     expect(sent.system[3].text).toContain("hits added on step 11");
+  });
+
+  it("returns a start_lesson call among the turn's calls, for the browser to take out", async () => {
+    const start = { name: START_LESSON_TOOL_NAME, input: { chapter: "sound" } };
+    const h = harness([toolUseEvents("Let's shape a sound.", [start])]);
+    const result = await run(
+      h,
+      request({
+        memory: {
+          taste: [],
+          artists: "",
+          experience: null,
+          goal: null,
+          learn: [],
+          gear: [],
+          notes: [],
+          askLater: null,
+        },
+      }),
+    );
+    expect(result.proposal?.calls.map((entry) => entry.name)).toEqual([
+      START_LESSON_TOOL_NAME,
+    ]);
+    // A lesson call is not a change: the turn ends after it.
+    expect(h.provider.requests).toHaveLength(1);
   });
 
   it("returns a memory proposal among the turn's calls, for the browser to take out", async () => {

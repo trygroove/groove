@@ -5,6 +5,7 @@ import { Analytics } from "../../analytics/analytics";
 import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
 import { createSliceFixtureProject } from "../../domain/fixtures";
+import { BITE_IDS } from "../../lessons/ids";
 import { localDay } from "../../memory/nudge";
 import { useProducerProfile } from "../../memory/useProducerProfile";
 import { InMemoryProfileRepository } from "../../persistence/inMemoryProfileRepository";
@@ -20,6 +21,7 @@ import type { EditorViewName } from "../editorViews";
 import { NUDGE_LABEL } from "./AssistantChatView";
 import AssistantPanel from "./AssistantPanel";
 import { DEFAULT_LAYOUT, float, saveLayout } from "./assistantPanelLayout";
+import { LESSON_LABEL } from "./LessonCard";
 import { ACCEPT_ANSWER, NOTICE_HEADING } from "./retentionCopy";
 import { useAssistantChat } from "./useAssistantChat";
 import { useAssistantPanel } from "./useAssistantPanel";
@@ -44,6 +46,7 @@ async function renderEditorChat(
   profile: ProducerProfile,
   open = true,
   retention?: FakeRetentionClient,
+  projectOpen = true,
 ) {
   const client = createFakeAssistantClient();
   const transport = createRecordingTransport();
@@ -65,7 +68,7 @@ async function renderEditorChat(
       repository: async () => profiles,
     });
     const chat = useAssistantChat({
-      project: () => project,
+      project: () => (projectOpen ? project : null),
       view,
       sources: () => ({ selection: null, track: project.song.tracks[0] ?? null }),
       account: () => ({ registered: true }),
@@ -98,26 +101,82 @@ describe("Coproducer's daily nudge (GRV-25)", () => {
       onboarded({ onboardedAt: yesterday }),
     );
     const nudge = await screen.findByRole("region", { name: NUDGE_LABEL });
-    expect(nudge).toHaveTextContent('Want to try "Make your first beat"?');
+    expect(nudge).toHaveTextContent('Want to try "Pick a kick"?');
     expect(transport.named("cue_nudge_shown")).toHaveLength(1);
+    expect(transport.named("lesson_nudge_shown")).toHaveLength(1);
+    expect(transport.named("lesson_nudge_shown")[0]?.params).toMatchObject({
+      chapter_id: "beat",
+      bite_id: "beat-library",
+    });
     await waitFor(async () => {
       const loaded = await profiles.loadProfile(UID);
       expect(loaded.ok && loaded.profile?.lastNudgeDay).toBe(localDay(Date.now()));
     });
   });
 
-  it("asks Coproducer for it on Let's try it", async () => {
+  it("starts the next bite not yet done on Let's try it (GRV-43)", async () => {
     const { client, transport } = await renderEditorChat(
-      onboarded({ onboardedAt: Date.now() - DAY }),
+      onboarded({ onboardedAt: Date.now() - DAY, lessonsDone: ["beat-library"] }),
     );
     const nudge = await screen.findByRole("region", { name: NUDGE_LABEL });
+    expect(nudge).toHaveTextContent('Want to try "The kick pattern"?');
     clickAndFlush(within(nudge).getByRole("button", { name: "Let's try it" }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(client.last().request.messages.at(-1)?.text).toBe(
-      nudgeMessage("Make your first beat"),
+    await waitFor(() =>
+      expect(client.last().request.messages.at(-1)?.text).toBe(
+        'Let\'s do "The kick pattern".',
+      ),
+    );
+    expect(client.last().request.lesson).toMatchObject({
+      biteId: "beat-kick",
+      moment: "bite_started",
+    });
+    const lesson = screen.getByRole("region", { name: LESSON_LABEL });
+    expect(within(lesson).getByRole("listitem", { current: "step" })).toHaveTextContent(
+      "The kick pattern",
     );
     expect(screen.queryByRole("region", { name: NUDGE_LABEL })).not.toBeInTheDocument();
     expect(transport.named("cue_nudge_answered")[0]?.params.how).toBe("tried");
+    expect(transport.named("lesson_nudge_taken")).toHaveLength(1);
+    expect(transport.named("lesson_nudge_taken")[0]?.params).toMatchObject({
+      chapter_id: "beat",
+      bite_id: "beat-kick",
+    });
+    expect(transport.named("lesson_bite_started")).toHaveLength(1);
+    expect(transport.named("lesson_bite_started")[0]?.params).toMatchObject({
+      chapter_id: "beat",
+      bite_id: "beat-kick",
+      source: "nudge",
+    });
+  });
+
+  it("keeps the nudge when there is no project to start the bite in (GRV-43)", async () => {
+    const { client, transport } = await renderEditorChat(
+      onboarded({ onboardedAt: Date.now() - DAY }),
+      true,
+      undefined,
+      false,
+    );
+    const nudge = await screen.findByRole("region", { name: NUDGE_LABEL });
+    clickAndFlush(within(nudge).getByRole("button", { name: "Let's try it" }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Neither the lesson nor the words could go: the offer stands.
+    expect(client.turns).toHaveLength(0);
+    expect(screen.getByRole("region", { name: NUDGE_LABEL })).toBeInTheDocument();
+    expect(transport.named("lesson_nudge_taken")).toHaveLength(0);
+    expect(transport.named("lesson_bite_started")).toHaveLength(0);
+  });
+
+  it("offers nothing once every bite is done (GRV-43)", async () => {
+    const { transport } = await renderEditorChat(
+      onboarded({ onboardedAt: Date.now() - DAY, lessonsDone: [...BITE_IDS] }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(screen.queryByRole("region", { name: NUDGE_LABEL })).not.toBeInTheDocument();
+    expect(transport.named("lesson_nudge_shown")).toHaveLength(0);
+  });
+
+  it("asks in words for the bite, with nothing to start it in", () => {
+    expect(nudgeMessage("Pick a kick")).toBe('I\'d like to try "Pick a kick".');
   });
 
   it("goes away on Not today, and is not offered again that day", async () => {

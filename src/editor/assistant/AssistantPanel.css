@@ -1489,3 +1489,117 @@
   gap: 8px;
   margin: 0 12px 8px;
 }
+
+/* A lesson under way (GRV-43), above the question and the composer: the
+   chapter and its bites, the step with its terms to tap, Show me and Skip.
+   The bite under way is the brightest line; a finished one says so in
+   words, never in colour. */
+.lesson-card {
+  flex: none;
+  gap: 8px;
+  margin: 0 12px 8px;
+}
+
+.lesson-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lesson-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lesson-card h3 {
+  margin: 0;
+  color: var(--color-foreground-bright);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+.lesson-bites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lesson-bite {
+  display: flex;
+  gap: 4px;
+  padding: 2px 6px;
+  box-shadow: inset 0 0 0 1px var(--color-divider);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-tiny);
+}
+
+.lesson-bite-over {
+  color: var(--color-foreground);
+}
+
+.lesson-bite[aria-current="step"] {
+  background: var(--color-accent);
+  box-shadow: none;
+  color: var(--color-on-accent);
+}
+
+/* A bite's title and status take the line's colour: black on the white of
+   the bite under way, never the card's grey. */
+.lesson-card .lesson-bite span {
+  color: inherit;
+  font-size: inherit;
+}
+
+.lesson-card .lesson-bite-status {
+  font-style: italic;
+}
+
+.lesson-step,
+.lesson-definition,
+.lesson-notice {
+  margin: 0;
+  color: var(--color-foreground);
+  font-size: var(--font-size-small);
+  line-height: 1.45;
+}
+
+.lesson-step {
+  color: var(--color-foreground-bright);
+}
+
+/* A term to tap: underlined like a link, it shows its meaning under the step. */
+.lesson-term {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--color-foreground-muted);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+.lesson-term[aria-expanded="true"] {
+  text-decoration-style: solid;
+  text-decoration-color: var(--color-foreground-bright);
+}
+
+.lesson-term:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.lesson-definition {
+  padding: 6px 8px;
+  box-shadow: inset 2px 0 0 var(--color-border);
+}
+
+.lesson-notice {
+  color: var(--color-foreground-muted);
+}

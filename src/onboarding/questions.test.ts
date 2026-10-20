@@ -99,9 +99,11 @@ describe("onboarding's questions (GRV-25)", () => {
     ]);
   });
 
-  it("suggests a first lesson from the goal", () => {
-    expect(suggestedLesson("first_track")).toBe("Make your first beat");
-    expect(suggestedLesson(null)).toBe("A five-minute tour of the studio");
+  it("suggests a first lesson from the goal: a chapter of the lessons (GRV-43)", () => {
+    expect(suggestedLesson("first_track")).toBe("Make a beat");
+    expect(suggestedLesson("video_or_game")).toBe("Make a beat");
+    expect(suggestedLesson("sound_design")).toBe("Shape a sound");
+    expect(suggestedLesson(null)).toBe("Tour the studio");
   });
 
   it("reduces memory to its fixed choices for validation, never artists or typed words", () => {

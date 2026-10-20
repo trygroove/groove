@@ -17,6 +17,7 @@ import {
   UNANSWERED,
 } from "../analytics/catalog/onboarding";
 import { type AskAnswer, type AssistantAsk, pickedLabels } from "../assistant/ask";
+import { chapter, chapterForGoal } from "../lessons/chapters";
 import {
   type ExperienceLevel,
   MAX_ARTISTS_CHARS,
@@ -271,19 +272,15 @@ export const WELCOME_TEXT = `Welcome to Groove! I'm ${ASSISTANT_NAME}, the produ
 export const SAVED_TEXT =
   "That's everything. I've saved it to memory, and you can see or change it any time on the Memory page.";
 
-/** The first lesson Coproducer suggests, from the producer's goal (GRV-43 builds them). */
+/** The chapter Coproducer suggests starting with, by its title, from the producer's goal (GRV-43). */
 export function suggestedLesson(goal: ProducerGoal | null): string {
-  switch (goal) {
-    case "first_track":
-      return "Make your first beat";
-    case "video_or_game":
-      return "Build a loop that sets a mood";
-    case "sound_design":
-      return "Shape a sound from scratch";
-    default:
-      return "A five-minute tour of the studio";
-  }
+  return chapter(chapterForGoal(goal)).title;
 }
+
+/** The offer of a first lesson's question, as the panel knows it (GRV-43). */
+export const LESSON_OFFER_ASK_ID = "onboarding-lesson";
+/** Its "Let's go", which starts the lesson. */
+export const LESSON_OFFER_YES = 0;
 
 /**
  * Coproducer's offer of a first lesson, as it says it: on the welcome, where the
@@ -300,7 +297,7 @@ export function lessonOfferText(
 /** The offer as a question, which waits in the panel once the studio opens. */
 export function lessonOfferAsk(goal: ProducerGoal | null): AssistantAsk {
   return {
-    id: "onboarding-lesson",
+    id: LESSON_OFFER_ASK_ID,
     question: `Start with a first lesson: "${suggestedLesson(goal)}"?`,
     options: [{ label: "Let's go" }, { label: "Not now" }],
     suggested: 0,
