@@ -328,6 +328,45 @@ describe("the cases from GRV-6's QA findings", () => {
   });
 });
 
+describe("the project-context cases (GRV-150)", () => {
+  const byId = (id: string) => {
+    const found = EVAL_CASES.find((entry) => entry.id === id);
+    if (!found) throw new Error(`no case ${id}`);
+    return found;
+  };
+
+  it("ask about the applied SD track, on a project that has it at its quieter level", () => {
+    const snare = byId("context-applied-snare");
+    const project = snare.fixture();
+    expect(project.song.tracks.map((entry) => [entry.name, entry.mixer.volume])).toEqual([
+      ["BD", 0],
+      ["SD", -3],
+    ]);
+    expect(snare.request).toBe("make the snare a little brighter");
+    expect(snare.checks).toEqual(["noDeniedTrack"]);
+    expect(snare.facts).toEqual({ present: ["snare", "SD"] });
+    // Resent as the panel resends it: each applied proposal says it was applied.
+    expect(snare.history?.map((message) => message.text)).toEqual([
+      "add a snare on beats 2 and 4",
+      expect.stringMatching(/SD.*\n\n\[The producer applied this proposal\./s),
+      "make it quieter",
+      expect.stringMatching(/-3\.0 dB.*\n\n\[The producer applied this proposal\./s),
+      "what did you just change?",
+      expect.not.stringContaining("[The producer"),
+    ]);
+  });
+
+  it("ask what is muted after a cancelled Closed Hat, on a project without one", () => {
+    const hat = byId("context-cancelled-hat");
+    expect(hat.fixture().song.tracks.map((entry) => entry.name)).toEqual(["BD", "SD"]);
+    expect(hat.expect).toBe("explain");
+    expect(hat.checks).toEqual(["noAbsentTrack"]);
+    expect(hat.history?.at(-1)?.text).toMatch(
+      /Closed Hat.*\n\n\[The producer cancelled this proposal\. Nothing in it is in the song\.\]$/s,
+    );
+  });
+});
+
 describe("JSON eval cases (GRV-108)", () => {
   const dirs: string[] = [];
   afterEach(() => {

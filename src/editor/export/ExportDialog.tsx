@@ -433,7 +433,17 @@ export default function ExportDialog(props: ExportDialogProps): JSX.Element {
               </>
             }
           >
-            <button type="button" class="export-secondary" onClick={cancel}>
+            <button
+              type="button"
+              class="export-secondary"
+              onClick={(event) => {
+                // Cancel takes Export's place under the pointer, so a double click on
+                // Export lands its second click here (`detail` 2). That is not a choice
+                // to cancel; a deliberate click is a fresh one (`detail` 1).
+                if (event.detail > 1) return;
+                cancel();
+              }}
+            >
               Cancel
             </button>
           </Show>

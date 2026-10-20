@@ -9,6 +9,7 @@ import ReleaseBadge from "./components/ReleaseBadge";
 import TapeLoader from "./components/TapeLoader";
 import { Router } from "./router";
 import { syncInternalTraffic } from "./shared/internalTraffic";
+import { installStaleDeployRecoveryForWindow } from "./staleDeployRecovery";
 import {
   createRouteTracker,
   initTelemetry,
@@ -92,6 +93,10 @@ export default function App() {
   onSettled(() => {
     syncInternalTraffic();
 
+    // GRV-137: a tab left open across a deploy reloads once when a lazy chunk
+    // it asks for no longer exists.
+    const removeStaleDeployRecovery = installStaleDeployRecoveryForWindow();
+
     // PRD `OPS-02`/`OPS-03`: install the global error handlers and the
     // analytics transport. Monitoring itself is scheduled by `setSurface`,
     // which the tracker above drives, so a session that starts on the
@@ -104,6 +109,7 @@ export default function App() {
     setTelemetry(() => instance);
 
     return () => {
+      removeStaleDeployRecovery();
       void instance.dispose();
     };
   });

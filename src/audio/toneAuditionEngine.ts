@@ -1,15 +1,15 @@
 import * as Tone from "tone";
-import type { AudioHost, AudioProjectScope } from "../audio/AudioRuntime";
-import { playAudioLoop } from "../audio/audioLoopPlayer";
-import { StoredAudioUnavailableError } from "../audio/storedAudio";
-import { decodeStoredAudio } from "../audio/toneBufferLoader";
 import {
   AuditionError,
   type PreviewEngine,
   type PreviewStartOptions,
   type PreviewVoice,
-} from "./audition";
-import type { LibraryAsset } from "./manifest";
+} from "../library/audition";
+import type { LibraryAsset } from "../library/manifest";
+import type { AudioHost, AudioProjectScope } from "./AudioRuntime";
+import { playAudioLoop } from "./audioLoopPlayer";
+import { StoredAudioUnavailableError } from "./storedAudio";
+import { decodeStoredAudio } from "./toneBufferLoader";
 
 /**
  * The Tone-backed {@link PreviewEngine} the browser uses in production.
@@ -22,7 +22,7 @@ import type { LibraryAsset } from "./manifest";
  * disposing the engine tears down its scope idempotently without touching the
  * project graph or the shared context (PRD AUD-07/AUD-09).
  *
- * The only place in the browser that touches Tone: like `toneBufferLoader.ts`,
+ * Lives in `src/audio` with the rest of the Tone code: like `toneBufferLoader.ts`,
  * it keeps the audition *policy* (`AuditionController`) Web-Audio-free and
  * testable, and confines the Web Audio calls to this one file.
  */

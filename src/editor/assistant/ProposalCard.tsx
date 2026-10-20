@@ -38,8 +38,9 @@ export function proposalStatusText(card: Card): string {
       case "cancelled":
         return "Cancelled. Nothing changed.";
       case "stale":
-        return card.refreshed
-          ? "Out of date. A new proposal was asked for below."
+        if (card.refreshed) return "Out of date. A new proposal was asked for below.";
+        return card.restored
+          ? "Out of date. This was proposed before the page reloaded, so it can't be applied as it is. Refresh asks for it again."
           : "Out of date. The song changed after this was written, so it can't be applied as it is.";
       case "invalid":
         // Which change did not fit, when the issues say (GRV-98).

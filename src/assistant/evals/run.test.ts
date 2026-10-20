@@ -26,9 +26,7 @@ import {
   validFailureLine,
 } from "./markdown";
 import {
-  AUTH_ABORT_REASON,
   buildReport,
-  CREDIT_ABORT_REASON,
   evalExitCode,
   evaluateRecords,
   evaluateTurn,
@@ -37,6 +35,12 @@ import {
   summaryOf,
   whyNoProposal,
 } from "./run";
+import {
+  AUTH_ABORT_REASON,
+  CREDIT_ABORT_REASON,
+  REFUSAL_STREAK,
+  refusalAbortReason,
+} from "./runGuard";
 
 const glue = EVAL_CASES.find((entry) => entry.id === "process-glue") as EvalCase;
 const crushed = EVAL_CASES.find((entry) => entry.id === "process-crushed") as EvalCase;
@@ -157,7 +161,7 @@ describe("runEvals", () => {
     const markdown = renderMarkdown(report);
     expect(markdown).toContain("**Errored turns: 1 of 2**");
     expect(markdown).toContain(
-      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | 0/0 | - | - | - | 0/0 | - | 1 |",
+      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | 0/0 | - | - | - | 0/0 | - | - | - | 1 |",
     );
     expect(markdown).toContain(
       "**Run 2** (0 s): errored, not judged: provider_error: The assistant could not take that request. (provider: rejected, HTTP 400)",
@@ -269,6 +273,23 @@ describe("runEvals", () => {
     expect(report.records[1].turnError?.outOfCredit).toBe(true);
     expect(report.records[1].error).toContain("The account is out of API credit.");
     expect(report.aborted).toBe(CREDIT_ABORT_REASON);
+    expect(evalExitCode(report)).toBe(1);
+  });
+
+  it("stops starting turns once the provider refuses every call, whatever it said", async () => {
+    const provider = createScriptedAssistantProvider([
+      toolUseEvents("A Compressor on the master.", [compressorCall("a", -18)]),
+      [{ fail: "rejected", status: 400 }],
+    ]);
+    const report = await runEvals({
+      provider,
+      cases: [glue, crushed],
+      runs: 20,
+      now: fixedNow,
+    });
+    // The first turn replied; the next REFUSAL_STREAK were refused, and none came after.
+    expect(report.records).toHaveLength(1 + REFUSAL_STREAK);
+    expect(report.aborted).toBe(refusalAbortReason(400));
     expect(evalExitCode(report)).toBe(1);
   });
 
@@ -526,6 +547,40 @@ describe("evaluateTurn for the basic production actions (GRV-119)", () => {
     const markdown = renderSummaryMarkdown(summaryOf(report));
     expect(markdown).toContain("## By set");
     expect(markdown).toContain("| Basic production actions | 1 | 0.0% (0/1) |");
+  });
+});
+
+describe("evaluateTurn for the project-context cases (GRV-150)", () => {
+  const find = (id: string) => EVAL_CASES.find((entry) => entry.id === id) as EvalCase;
+  const base = { durationMs: 1, error: null, stopReason: null };
+
+  it("judges the reply of a turn that proposed nothing", () => {
+    const evalCase = find("context-cancelled-hat");
+    const good = evaluateTurn(evalCase, 1, {
+      ...base,
+      text: "Nothing is muted: BD and SD are both playing.",
+      proposal: null,
+    } as never);
+    expect(good.checks).toEqual({
+      outcome: expect.objectContaining({ status: "pass" }),
+      noAbsentTrack: expect.objectContaining({ status: "pass" }),
+    });
+    const bad = evaluateTurn(evalCase, 1, {
+      ...base,
+      text: "Nothing is muted: BD, SD and the Closed Hat track I just proposed are playing.",
+      proposal: null,
+    } as never);
+    expect(bad.checks.noAbsentTrack?.status).toBe("fail");
+  });
+
+  it("judges the reply even when the turn proposed nothing it was asked for", () => {
+    const record = evaluateTurn(find("context-applied-snare"), 1, {
+      ...base,
+      text: "There's no snare track in the project yet — I never actually added it.",
+      proposal: null,
+    } as never);
+    expect(record.checks.outcome?.status).toBe("fail");
+    expect(record.checks.noDeniedTrack?.status).toBe("fail");
   });
 });
 

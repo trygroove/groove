@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { requestAccessUrl } from "../../../../site.config.mjs";
 import { walkthrough } from "../../support/walkthrough";
 import { signInWithGoogle, uniqueEmail } from "../support/access";
+import { reloadPage } from "../support/reload";
 
 /**
  * `CF-032` — a visitor who is not on the alpha list is told so and asks for
@@ -65,7 +66,7 @@ test.describe("CF-032", () => {
 
     // 4. Reload the page. You are still not signed in: the page still says
     //    so, and nothing of the app has opened.
-    await page.reload();
+    await reloadPage(page);
     await expect(
       page.getByRole("heading", { name: /not on the alpha list yet/i }),
     ).toBeVisible();

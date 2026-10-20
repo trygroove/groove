@@ -48,6 +48,7 @@ import type {
   AssistantTurnHandle,
 } from "../../assistant/assistantClient";
 import {
+  type HistoryProposal,
   historyOf as historyOfEntries,
   MAX_MESSAGE_CHARS,
 } from "../../assistant/history";
@@ -69,13 +70,19 @@ import {
 } from "../../assistant/protocol";
 import { splitRecommendations } from "../../assistant/recommendation";
 import type { SessionHealth, SessionTurn } from "../../assistant/sessionHealth";
-import type { ReplyRating } from "../../assistant/transcripts";
+import type { ProposalOutcome, ReplyRating } from "../../assistant/transcripts";
 import type { AssistantVideo } from "../../assistant/video";
 import type { Project } from "../../domain/entities";
 import type { SuggestionId } from "../../projection/projectAnalysisProjection";
 import { type Clock, systemClock } from "../../shared/clock";
 import { type AssistantScope, scopedContext } from "./assistantScope";
-import { type ConversationStore, createConversationStore } from "./conversationStore";
+import {
+  type ConversationStore,
+  createConversationStore,
+  restoreOrigin,
+  type StoredConversation,
+  type StoredOrigin,
+} from "./conversationStore";
 
 /** What a turn was asked: the producer's words and the scope they were sent with. */
 export interface TurnOrigin {
@@ -105,6 +112,11 @@ export interface TurnOrigin {
    * detector is counting. A turn restored from before a reload has none.
    */
   readonly sessionTurn?: SessionTurn;
+  /**
+   * The turn was asked before a reload (GRV-135): its cards were kept with
+   * the conversation and handed back, and a proposal of it is out of date.
+   */
+  readonly restored?: boolean;
 }
 
 /** One thing in the conversation's log. */
@@ -145,6 +157,11 @@ export type ConversationEntry =
       readonly sessionTurn?: SessionTurn;
       /** The producer's thumbs up or down on it (GRV-103). */
       readonly rating?: ReplyRating;
+      /**
+       * What became of the proposal it made, when it made one (GRV-150), so
+       * the next turn tells the model whether the change is in the song.
+       */
+      readonly proposal?: HistoryProposal;
     }
   /**
    * A change the reply proposes, as the gateway returned it, and the turn
@@ -155,6 +172,8 @@ export type ConversationEntry =
       readonly id: string;
       readonly proposal: AssistantProposal;
       readonly origin: TurnOrigin;
+      /** The reply that made it, which carries its outcome (GRV-150). */
+      readonly replyId: string;
     }
   /**
    * A pack and sounds the reply recommends (GRV-23), as the model named them,
@@ -297,6 +316,11 @@ export interface UseAssistantConversationOptions {
   readonly persistence?: {
     readonly key: Accessor<string | null>;
     readonly store?: ConversationStore;
+    /**
+     * Whether the proposal or sound card in an entry has been decided, so it
+     * is not kept (GRV-135). Reactive. Without it every card is kept.
+     */
+    readonly decided?: (entryId: string) => boolean;
   };
   /**
    * What the transcript files each turn under (GRV-8): the open project's ID
@@ -350,6 +374,11 @@ export interface AssistantConversation {
   refresh(entryId: string, shown?: readonly ShownPart[]): boolean;
   /** The question waiting for an answer, if there is one (GRV-42). */
   readonly pendingAsk: Accessor<PendingAsk | null>;
+  /**
+   * Records what became of the proposal in entry `entryId` on the reply that
+   * made it (GRV-150), so every later turn resends it beside the reply.
+   */
+  recordProposalOutcome(entryId: string, outcome: ProposalOutcome): void;
   /**
    * Answers the pending question: the options picked and/or the typed text,
    * sent as the next turn. Returns whether it went: not while a reply
@@ -563,7 +592,11 @@ export function useAssistantConversation(
                 calls: [event.part.call],
               },
               origin,
+              replyId,
             });
+            update(replyId, (entry) =>
+              entry.kind === "reply" ? { ...entry, proposal: "pending" } : entry,
+            );
           } else {
             update(entryId, (entry) =>
               entry.kind === "proposal"
@@ -604,7 +637,16 @@ export function useAssistantConversation(
             options.onProposal?.(partsEntryId, whole, origin);
           } else if (split.proposal) {
             const entryId = id();
-            append({ kind: "proposal", id: entryId, proposal: split.proposal, origin });
+            append({
+              kind: "proposal",
+              id: entryId,
+              proposal: split.proposal,
+              origin,
+              replyId,
+            });
+            update(replyId, (entry) =>
+              entry.kind === "reply" ? { ...entry, proposal: "pending" } : entry,
+            );
             options.onProposal?.(entryId, split.proposal, origin);
           }
           for (const call of split.recommendations) {
@@ -837,6 +879,14 @@ export function useAssistantConversation(
     return before;
   }
 
+  function recordProposalOutcome(entryId: string, outcome: ProposalOutcome): void {
+    const card = entries().find((entry) => entry.id === entryId);
+    if (card?.kind !== "proposal") return;
+    update(card.replyId, (entry) =>
+      entry.kind === "reply" ? { ...entry, proposal: outcome } : entry,
+    );
+  }
+
   function canRetry(entry: ConversationEntry): boolean {
     return (
       entry.kind === "error" &&
@@ -860,28 +910,45 @@ export function useAssistantConversation(
 
   /**
    * Restores the conversation kept under the key once the project has loaded
-   * (a question's options are read against it), then keeps every change. A
-   * new key (another project) brings back its own conversation, or none.
+   * (a question's options are read against it, a card's scope is found in
+   * it), then keeps every change. A new key (another project) brings back its
+   * own conversation, or none.
    */
   function keep(
     persistence: NonNullable<UseAssistantConversationOptions["persistence"]>,
   ) {
     const store = persistence.store ?? createConversationStore();
     const loaded = createMemo(() => options.project() !== null);
+    const isDecided = persistence.decided ?? (() => false);
     let restoredKey: string | null = null;
     createEffect(
-      () => ({
-        key: persistence.key(),
-        loaded: loaded(),
-        pending: pendingAsk(),
+      () => {
         // A streaming reply changes with every word: it is kept when the turn
         // starts and when it ends, not word by word.
-        entries: streaming() ? untrack(entries) : entries(),
-      }),
-      ({ key, loaded: ready, pending, entries: current }) => {
+        const current = streaming() ? untrack(entries) : entries();
+        return {
+          key: persistence.key(),
+          loaded: loaded(),
+          pending: pendingAsk(),
+          entries: current,
+          // Deciding a card drops it from what is kept (GRV-135).
+          decided: new Set(
+            current
+              .filter(
+                (entry) =>
+                  (entry.kind === "proposal" || entry.kind === "recommendation") &&
+                  isDecided(entry.id),
+              )
+              .map((entry) => entry.id),
+          ),
+        };
+      },
+      ({ key, loaded: ready, pending, entries: current, decided }) => {
         if (key === null) return;
         if (key === restoredKey) {
-          store.save(key, current, pending?.replyId ?? null);
+          store.save(key, current, pending?.replyId ?? null, (entryId) =>
+            decided.has(entryId),
+          );
           return;
         }
         if (!ready) return;
@@ -895,8 +962,9 @@ export function useAssistantConversation(
         }
         const stored = store.load(key);
         if (!stored && !switching) return;
-        setEntries(stored?.entries ?? []);
-        for (const entry of stored?.entries ?? []) {
+        const restored = stored ? restoredEntries(stored) : [];
+        setEntries(restored);
+        for (const entry of restored) {
           const n = Number(/^entry-(\d+)$/.exec(entry.id)?.[1] ?? 0);
           if (n > nextId) nextId = n;
         }
@@ -910,8 +978,40 @@ export function useAssistantConversation(
               }
             : null,
         );
+        // The cards still waiting go back to their controllers, in order, so
+        // a turn's cards come up one at a time as before (GRV-135).
+        for (const entry of restored) {
+          if (entry.kind === "proposal") {
+            options.onProposal?.(entry.id, entry.proposal, entry.origin);
+          } else if (entry.kind === "recommendation") {
+            options.onRecommendation?.(entry.id, entry.call, entry.library, entry.origin);
+          }
+        }
       },
     );
+  }
+
+  /**
+   * A stored conversation's entries, its cards' turns found again in the
+   * song as it is now: one origin per turn, which its cards share.
+   */
+  function restoredEntries(stored: StoredConversation): ConversationEntry[] {
+    const project = untrack(options.project);
+    const origins = new Map<StoredOrigin, TurnOrigin>();
+    const originOf = (kept: StoredOrigin): TurnOrigin | null => {
+      if (!project) return null;
+      let origin = origins.get(kept);
+      if (!origin) {
+        origin = restoreOrigin(kept, project);
+        origins.set(kept, origin);
+      }
+      return origin;
+    };
+    return stored.entries.flatMap((entry): ConversationEntry[] => {
+      if (entry.kind === "message" || entry.kind === "reply") return [entry];
+      const origin = originOf(entry.origin);
+      return origin ? [{ ...entry, origin }] : [];
+    });
   }
 
   return {
@@ -923,6 +1023,7 @@ export function useAssistantConversation(
     canRetry,
     continueProposal,
     refresh,
+    recordProposalOutcome,
     pendingAsk,
     answerAsk,
     dismissAsk,

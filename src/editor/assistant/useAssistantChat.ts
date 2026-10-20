@@ -236,6 +236,8 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         continueRest: (entryId, shown) => conversation.continueProposal(entryId, shown),
         clock: options.clock,
         onOutcome: (entryId, outcome, issues) => {
+          // The conversation is made just below; an outcome only comes later.
+          conversation.recordProposalOutcome(entryId, outcome);
           const turnId = turnOfEntry.get(entryId);
           if (turnId) retention?.reportOutcome(turnId, outcome, issues);
           const sessionTurn = sessionTurnOfEntry.get(entryId);
@@ -366,7 +368,14 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
       ? (entryId, call, library, origin) =>
           queue.add(origin, {
             entryId,
-            show: () => recommendations.receive(entryId, call, library, origin),
+            show: () => {
+              const receive = () =>
+                recommendations.receive(entryId, call, library, origin);
+              // A card from before a reload (GRV-135) comes up once the
+              // library its sounds are found in has loaded again.
+              if (!origin.restored || recommending?.library.current()) receive();
+              else void recommending?.library.load().then(receive, receive);
+            },
             decided: () => recommendations.decided(entryId),
             hold: () => recommendations.hold(entryId),
             skip: () => forDeclinedProposal(origin, call),
@@ -383,7 +392,16 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
       : undefined,
     onMemoryQuestionAsked: memory ? (question) => memory.asked(question) : undefined,
     persistence: options.conversationKey
-      ? { key: options.conversationKey, store: options.conversationStore }
+      ? {
+          key: options.conversationKey,
+          store: options.conversationStore,
+          // A card still to be decided is kept with the conversation and comes
+          // back after a reload; a decided or skipped one does not (GRV-135).
+          decided: (entryId) =>
+            queue.wasSkipped(entryId) ||
+            (proposals?.decided(entryId) ?? false) ||
+            (recommendations?.decided(entryId) ?? false),
+        }
       : undefined,
     health,
   });
