@@ -42,6 +42,17 @@ import {
 import { durationTickSchema, tickSchema } from "../domain/time";
 import type { AskOption, AssistantAsk } from "./ask";
 import {
+  type ClipLedger,
+  copyContentSchema,
+  duplicateCount,
+  gatewayPlacementId,
+  gatewayPlacementPattern,
+  MAX_TURN_PLACEMENTS,
+  rewriteClipCopy,
+  rewritePlacement,
+  withClipCall,
+} from "./clipReuse";
+import {
   type DrumSteps,
   drumStepsSchema,
   expandDrumSteps,
@@ -97,18 +108,22 @@ export const compactClipSchema = clipSchema.extend({
 export function compactClipWithFormsSchema(forms: {
   readonly stepStrings: boolean;
   readonly generators: boolean;
+  /** Whether content may copy another clip's notes (`clipReuse`, GRV-131). */
+  readonly copies?: boolean;
 }) {
   const entry: [z.ZodType, ...z.ZodType[]] = [
     compactNoteSchema,
     ...(forms.stepStrings ? [drumStepsSchema] : []),
     ...(forms.generators ? [generatorCallSchema] : []),
   ];
+  const note = entry.length === 1 ? compactNoteSchema : z.union(entry);
   return clipSchema.extend({
     content: z.discriminatedUnion("kind", [
       z.strictObject({
         kind: z.literal("notes"),
-        events: z.array(z.union(entry)),
+        events: z.array(note),
       }),
+      ...(forms.copies ? [copyContentSchema(note)] : []),
       ...clipContentSchema.options.filter(
         (option) => option.shape.kind.value !== "notes",
       ),
@@ -201,6 +216,8 @@ export type ExpandedCall =
       readonly call: AssistantToolCall;
       /** The IDs given to the notes it wrote out, in the order it gave them. */
       readonly noteIds: readonly string[];
+      /** The ID given to the placement it made, when the gateway gave it one (`clipReuse`). */
+      readonly placementId?: string;
     }
   | { readonly ok: false; readonly message: string };
 
@@ -291,6 +308,12 @@ export interface NoteExpander {
    * its calls is expanded.
    */
   reserve(calls: readonly AssistantToolCall[]): void;
+  /**
+   * An expander that starts where this one is and goes on apart from it: what
+   * a step's calls would come to, worked out without numbering the turn's
+   * notes.
+   */
+  fork(): NoteExpander;
 }
 
 /**
@@ -311,6 +334,39 @@ export interface StepStringOptions {
   readonly stepStrings?: boolean;
   /** Whether a generator call is written out (`patternGenerators`); false when not said. */
   readonly generators?: boolean;
+  /**
+   * The clips the turn starts knowing, when the `clipReuse` tactic is on
+   * (GRV-131): a short placement, a copied clip and a notes_duplicate with no
+   * newIds are written out (`clipReuse.ts`). Left out, none of them is.
+   */
+  readonly clipReuse?: ClipLedger;
+}
+
+/** Where one turn's expander is: what it has numbered and what it knows. */
+interface ExpanderState {
+  counter: number;
+  targets: RecommendationTargets;
+  /** The calls accepted so far: a generator call's position in the turn, for its seed. */
+  accepted: number;
+  /** Note IDs the turn's calls hold, minted or the model's own. */
+  readonly taken: Set<string>;
+  /** The note IDs the gateway has given out. */
+  readonly minted: Set<string>;
+  /** The clips the turn knows (`clipReuse`). */
+  clips: ClipLedger;
+  /** The placements the gateway has numbered (`clipReuse`). */
+  placements: number;
+  /** Placement IDs the turn's accepted calls make. */
+  readonly placementIds: Set<string>;
+}
+
+function copyState(state: ExpanderState): ExpanderState {
+  return {
+    ...state,
+    taken: new Set(state.taken),
+    minted: new Set(state.minted),
+    placementIds: new Set(state.placementIds),
+  };
 }
 
 /**
@@ -323,25 +379,31 @@ export function createNoteExpander(
   stem: string,
   mark: string = GATEWAY_NOTE_MARK,
   stepStrings?: StepStringOptions,
+  from?: ExpanderState,
 ): NoteExpander {
   const pattern = gatewayNotePattern(stem, mark);
-  let counter = 0;
-  /** The tracks and pads a step string may name, as the accepted calls leave them. */
-  let targets = stepStrings?.targets ?? new Map();
+  const placementPattern = gatewayPlacementPattern(stem, mark);
+  const state: ExpanderState = from ?? {
+    counter: 0,
+    targets: stepStrings?.targets ?? new Map(),
+    accepted: 0,
+    taken: new Set(),
+    minted: new Set(),
+    clips: stepStrings?.clipReuse ?? new Map(),
+    placements: 0,
+    placementIds: new Set(),
+  };
+  const { taken, minted } = state;
   /** Whether the model's step strings, and its generator calls, are written out. */
   const writesSteps = stepStrings !== undefined && stepStrings.stepStrings !== false;
   const writesGenerators = stepStrings?.generators === true;
+  /** Whether short placements, copies and duplicates with no IDs are written out. */
+  const reuses = stepStrings?.clipReuse !== undefined;
   /** Whether `note` is one the gateway writes out. */
   const isCompact = (note: unknown) =>
     Array.isArray(note) ||
     (writesSteps && isStepEntry(note)) ||
     (writesGenerators && isGeneratorEntry(note));
-  /** The calls accepted so far: a generator call's position in the turn, for its seed. */
-  let accepted = 0;
-  /** Note IDs the turn's calls hold, minted or the model's own. */
-  const taken = new Set<string>();
-  /** The note IDs the gateway has given out. */
-  const minted = new Set<string>();
   /** The next free note ID after `from`, and the counter it was minted at. */
   const nextFree = (from: number): { id: string; at: number } | null => {
     for (let at = from + 1; at <= MAX_TURN_NOTES; at += 1) {
@@ -364,17 +426,33 @@ export function createNoteExpander(
     reserve(calls) {
       for (const call of calls) for (const id of modelNoteIds(call)) taken.add(id);
     },
-    expand(call, check) {
+    fork() {
+      return createNoteExpander(stem, mark, stepStrings, copyState(state));
+    },
+    expand(sent, check) {
+      let call = sent;
+      if (reuses && isRecord(sent.input)) {
+        if (sent.name === "placement_create")
+          return expandPlacement(sent, sent.input, check);
+        if (sent.name === "notes_duplicate" && sent.input.newIds === undefined) {
+          return expandDuplicate(sent, sent.input, check);
+        }
+        if (sent.name === "clip_create") {
+          const copy = rewriteClipCopy(sent.input, state.clips);
+          if (!copy.ok) return refusedCall(copy.reason);
+          call = { ...sent, input: copy.input };
+        }
+      }
       const field = isRecord(call.input) ? NOTE_FIELDS[call.name] : undefined;
       const at = field && isRecord(call.input) ? field(call.input) : null;
       if (!at || !Array.isArray(at.notes) || !at.notes.some(isCompact)) {
         const refused = check?.(call) ?? null;
         if (refused !== null) return refusedCall(refused);
-        return accept(call, []);
+        return accept(call, [], sent);
       }
       const events: unknown[] = [];
       const noteIds: string[] = [];
-      let next = counter;
+      let next = state.counter;
       /** Gives `event` (an event awaiting its ID) the next free note ID, or false when none is left. */
       const mint = (event: (id: string) => NoteEvent): boolean => {
         const free = nextFree(next);
@@ -394,7 +472,7 @@ export function createNoteExpander(
           return `lengthTicks: a clip is a whole number of ticks from 1 to ${MAX_CLIP_LENGTH_TICKS} (${MAX_CLIP_LENGTH_BARS} bars); its ${form}s fill it`;
         }
         const trackId = typeof at.clip.trackId === "string" ? at.clip.trackId : "";
-        return { trackId, lengthTicks: length.data, pads: targets.get(trackId) };
+        return { trackId, lengthTicks: length.data, pads: state.targets.get(trackId) };
       };
       /** Writes a step string out into `events`, or says why it is refused. */
       const writeSteps = (
@@ -432,7 +510,7 @@ export function createNoteExpander(
           if (typeof clip === "string") return refusedCall(clip);
           const expansion = expandGenerator(note, {
             ...clip,
-            seed: `${stem}${mark}:${accepted}:${index}`,
+            seed: `${stem}${mark}:${state.accepted}:${index}`,
             maxNotes: MAX_TURN_NOTES - next,
           });
           if (!expansion.ok) {
@@ -464,10 +542,74 @@ export function createNoteExpander(
       const expanded = { ...call, input: at.write(events) };
       const refused = check?.(expanded) ?? null;
       if (refused !== null) return refusedCall(refused);
-      counter = next;
-      return accept(expanded, noteIds, call);
+      state.counter = next;
+      return accept(expanded, noteIds, sent);
     },
   };
+
+  /**
+   * A `placement_create` written out whole (`clipReuse`): a short one given
+   * the next placement ID, its clip's track and the defaults. One that makes
+   * an ID in the gateway's counter is refused, as a note's is.
+   */
+  function expandPlacement(
+    sent: AssistantToolCall,
+    input: Record<string, unknown>,
+    check: ExpandedCheck | undefined,
+  ): ExpandedCall {
+    if (typeof input.id === "string" && placementPattern.test(input.id)) {
+      return refusedCall(
+        `id: a placement ID with "${mark}" before its number is one Groove gives; leave id out, or make it from the stem with a ${NEW_ID_COUNTER_DIGITS}-digit number`,
+      );
+    }
+    let at = state.placements + 1;
+    while (
+      at <= MAX_TURN_PLACEMENTS &&
+      state.placementIds.has(gatewayPlacementId(stem, at, mark))
+    ) {
+      at += 1;
+    }
+    const minted = gatewayPlacementId(stem, at, mark);
+    const rewritten = rewritePlacement(input, state.clips, minted);
+    if (!rewritten.ok) return refusedCall(rewritten.reason);
+    const gave = input.id === undefined && rewritten.input.id === minted;
+    if (gave && at > MAX_TURN_PLACEMENTS) {
+      return refusedCall(
+        `One proposal may place at most ${MAX_TURN_PLACEMENTS} clips without their IDs; give the rest an id`,
+      );
+    }
+    const call = { ...sent, input: rewritten.input };
+    const refused = check?.(call) ?? null;
+    if (refused !== null) return refusedCall(refused);
+    if (gave) state.placements = at;
+    return accept(call, [], sent, gave ? minted : undefined);
+  }
+
+  /**
+   * A `notes_duplicate` with no `newIds` given them (`clipReuse`): one note ID
+   * per note it copies, from the turn's note counter.
+   */
+  function expandDuplicate(
+    sent: AssistantToolCall,
+    input: Record<string, unknown>,
+    check: ExpandedCheck | undefined,
+  ): ExpandedCall {
+    const count = duplicateCount(input, state.clips);
+    if (typeof count === "string") return refusedCall(count);
+    const noteIds: string[] = [];
+    let next = state.counter;
+    for (let index = 0; index < count; index += 1) {
+      const free = nextFree(next);
+      if (free === null) return refusedCall(TOO_MANY_NOTES);
+      next = free.at;
+      noteIds.push(free.id);
+    }
+    const call = { ...sent, input: { ...input, newIds: noteIds } };
+    const refused = check?.(call) ?? null;
+    if (refused !== null) return refusedCall(refused);
+    state.counter = next;
+    return accept(call, noteIds, sent);
+  }
 
   /**
    * `call` accepted: the note IDs it holds, the gateway's and the model's
@@ -477,12 +619,21 @@ export function createNoteExpander(
     call: AssistantToolCall,
     noteIds: readonly string[],
     sent: AssistantToolCall = call,
+    placementId?: string,
   ): ExpandedCall {
     for (const id of noteIds) minted.add(id);
     for (const id of [...noteIds, ...modelNoteIds(sent)]) taken.add(id);
-    if (stepStrings) targets = stepStrings.track(targets, call);
-    accepted += 1;
-    return { ok: true, call, noteIds };
+    if (stepStrings) state.targets = stepStrings.track(state.targets, call);
+    if (reuses) {
+      state.clips = withClipCall(state.clips, call);
+      if (call.name === "placement_create" && isRecord(call.input)) {
+        if (typeof call.input.id === "string") state.placementIds.add(call.input.id);
+      }
+    }
+    state.accepted += 1;
+    return placementId === undefined
+      ? { ok: true, call, noteIds }
+      : { ok: true, call, noteIds, placementId };
   }
 }
 

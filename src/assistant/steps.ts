@@ -31,7 +31,7 @@
  * with refused calls is fixing them and does not count.
  */
 import { isAskCall } from "./ask";
-import { createNoteExpander, type ExpandedCall, type NoteExpander } from "./compactNotes";
+import type { ExpandedCall, NoteExpander } from "./compactNotes";
 import { isRememberCall } from "./memory";
 import type { AssistantStopReason, AssistantToolCall } from "./protocol";
 import type { ProviderToolResultBlock } from "./providerRequest";
@@ -67,17 +67,22 @@ export const CHANGE_STEPS_SPENT = `Refused, not added to the proposal: a proposa
  * What a change call that joined the proposal is told: {@link ADDED_RESULT},
  * and the IDs its new notes were given (GRV-131), so a later step can update,
  * remove or duplicate them. They count up from the first, so the first and
- * the last say them all.
+ * the last say them all. A placement the gateway gave its ID (`clipReuse`)
+ * is told that ID too.
  */
-export function addedResult(noteIds: readonly string[]): string {
+export function addedResult(noteIds: readonly string[], placementId?: string): string {
   const [first] = noteIds;
   const last = noteIds.at(-1);
-  if (first === undefined || last === undefined) return ADDED_RESULT;
-  const ids =
-    noteIds.length === 1
-      ? `Its note's ID is ${first}.`
-      : `Its ${noteIds.length} notes' IDs, in the order you gave them, count up from ${first} to ${last}.`;
-  return `${ADDED_RESULT} ${ids}`;
+  const said = [ADDED_RESULT];
+  if (first !== undefined && last !== undefined) {
+    said.push(
+      noteIds.length === 1
+        ? `Its note's ID is ${first}.`
+        : `Its ${noteIds.length} notes' IDs, in the order you gave them, count up from ${first} to ${last}.`,
+    );
+  }
+  if (placementId !== undefined) said.push(`Its placement's ID is ${placementId}.`);
+  return said.join(" ");
 }
 
 /**
@@ -226,7 +231,7 @@ export function answerStep(
     return {
       type: "tool_result",
       tool_use_id: call.id,
-      content: addedResult(expanded.noteIds),
+      content: addedResult(expanded.noteIds, expanded.placementId),
     };
   });
   return { kept, results, targets: known, misaimed };
@@ -267,15 +272,20 @@ export function goesOnToReaim(
 /**
  * How many of a step's change calls {@link answerStep} would refuse for not
  * fitting their tool, or for a note ID in the gateway's counter, without
- * numbering any of the turn's notes: each is written out by an expander of
- * its own, since whether a call fits does not depend on its notes' IDs.
+ * numbering any of the turn's notes: they are written out in order by a fork
+ * of the turn's expander, so a call that builds on one before it (a
+ * placement of a clip the step makes, a step string on a track it makes) is
+ * judged as {@link answerStep} would judge it.
  */
-export function refusedIn(calls: readonly AssistantToolCall[], stem: string): number {
+export function refusedIn(
+  calls: readonly AssistantToolCall[],
+  notes: NoteExpander,
+): number {
+  const trial = notes.fork();
   return calls.filter((call) => {
     if (!isChangeCall(call)) return false;
-    const notes = createNoteExpander(stem);
-    if (notes.refuseGatewayIds(call) !== null) return true;
-    return !notes.expand(call, (written) => {
+    if (trial.refuseGatewayIds(call) !== null) return true;
+    return !trial.expand(call, (written) => {
       const resolution = resolveToolCall(written.name, written.input);
       return resolution.ok ? null : resolution.message;
     }).ok;

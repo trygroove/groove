@@ -77,6 +77,13 @@ export const TACTICS = {
     default: "off",
     alters: ["prompt", "tools", "expansion"],
   },
+  clipReuse: {
+    description:
+      "Whether the model may reuse a clip rather than write its notes again (GRV-131): placement_create by bars with the rest filled in, clip_create as a copy of a clip's notes plus new ones, and notes_duplicate with no newIds, each written out by the gateway with IDs from the turn's stem.",
+    values: ["off", "on"],
+    default: "off",
+    alters: ["prompt", "tools", "expansion"],
+  },
   guidedBuild: {
     description:
       'Whether a large, open request (a whole track, "develop this") is built over several short proposals, the smallest playable step first and each ending with a question offering the next steps (on), rather than in one (off).',

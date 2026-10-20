@@ -243,9 +243,9 @@ describe("a proposal in one response (GRV-142)", () => {
 
   it("counts the change calls an answer would refuse, numbering no notes", () => {
     const notes = createNoteExpander(STEM);
-    expect(refusedIn([change, other(EXPLAIN_TOOL_NAME)], STEM)).toBe(0);
-    expect(refusedIn([change, wrapped, notesAt([[0, "not a note"]])], STEM)).toBe(2);
-    expect(refusedIn([notesAt([[0, 40, 96, 0.8]])], STEM)).toBe(0);
+    expect(refusedIn([change, other(EXPLAIN_TOOL_NAME)], notes)).toBe(0);
+    expect(refusedIn([change, wrapped, notesAt([[0, "not a note"]])], notes)).toBe(2);
+    expect(refusedIn([notesAt([[0, 40, 96, 0.8]])], notes)).toBe(0);
     // The turn's own counter is untouched: its first note still gets n001.
     const answered = answerStep([notesAt([[0, 40, 96, 0.8]])], new Map(), notes);
     expect(answered.results[0]?.content).toContain(`evt_${STEM}n001`);

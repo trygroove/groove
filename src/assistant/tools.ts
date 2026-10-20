@@ -79,6 +79,7 @@ import {
   TRACK_SEND_LEVEL,
   TRACK_VOLUME,
 } from "../domain/parameters";
+import { reuseNotesDuplicateSchema, reusePlacementSchema } from "./clipReuse";
 import {
   COMPACT_NOTE_DESCRIPTION,
   compactClipSchema,
@@ -518,6 +519,32 @@ const CLIP_CREATE_GENERATORS_TEXT = [
     },
   )}`,
 ].join(" ");
+
+/**
+ * What `clip_create`'s description adds with the `clipReuse` tactic on
+ * (GRV-131): a clip's content may copy another clip's notes.
+ */
+export const CLIP_CREATE_COPY_TEXT = [
+  `For a variation of a clip (a sparser intro, a fill, a second half), content may instead be a copy, {kind: "copy", clipId, eventIds, events}: the notes of a clip made earlier in this reply, or of one whose notes the description lists, all of them or only those eventIds names, plus the new notes in events. Groove gives every note its ID; never write out notes a clip already has.`,
+  `Example content: ${JSON.stringify({ kind: "copy", clipId: "clp_...", events: [[1344, 38, 48, 0.9]] })}`,
+].join(" ");
+
+/**
+ * What `placement_create`'s description adds with the `clipReuse` tactic on
+ * (GRV-131): a placement may be given by bars, its other fields left to Groove.
+ */
+export const PLACEMENT_CREATE_REUSE_TEXT = [
+  "To play a clip again, the input may be short: {clipId, bars: [first, last]}, bars counted from 1 and both included, and Groove fills in the rest: a new ID, the clip's track, clipOffsetTicks 0 and looped: true, so the clip repeats across those bars.",
+  "Give trackId for a clip neither placed in the description nor made in this reply, startTicks and durationTicks in place of bars for a position off the bar, and any other field to change its default.",
+  `Example input: ${JSON.stringify({ clipId: "clp_...", bars: [9, 16] })}`,
+].join(" ");
+
+/**
+ * What `notes_duplicate`'s description adds with the `clipReuse` tactic on
+ * (GRV-131): Groove gives the copies their IDs.
+ */
+export const NOTES_DUPLICATE_REUSE_TEXT =
+  "Leave newIds out and Groove gives the copies their IDs; the answer lists them.";
 
 const NOTE_ADD_DESCRIPTION = [
   "Add notes to a clip.",
@@ -1008,7 +1035,11 @@ function toolDefinition(entry: ToolRule): AssistantToolDefinition {
 function withNoteForms(
   entry: ToolRule,
   level: ToolTextLevel,
-  forms: { readonly stepStrings: boolean; readonly generators: boolean },
+  forms: {
+    readonly stepStrings: boolean;
+    readonly generators: boolean;
+    readonly copies: boolean;
+  },
 ): AssistantToolDefinition {
   const tool = withToolText(
     toolDefinition({ ...entry, offered: compactClipWithFormsSchema(forms) }),
@@ -1017,35 +1048,71 @@ function withNoteForms(
   const added = [
     ...(forms.stepStrings ? [CLIP_CREATE_STEPS_TEXT] : []),
     ...(forms.generators ? [CLIP_CREATE_GENERATORS_TEXT] : []),
+    ...(forms.copies ? [CLIP_CREATE_COPY_TEXT] : []),
   ];
   return { ...tool, description: [tool.description, ...added].join(" ") };
+}
+
+/**
+ * What the `clipReuse` tactic offers in place of a tool's own input (GRV-131),
+ * by command type, and the text it adds to the tool's description.
+ */
+const REUSE_FORMS: Readonly<
+  Record<string, { readonly offered: ZodType<unknown>; readonly text: string }>
+> = {
+  "placement.create": {
+    offered: reusePlacementSchema,
+    text: PLACEMENT_CREATE_REUSE_TEXT,
+  },
+  "notes.duplicate": {
+    offered: reuseNotesDuplicateSchema,
+    text: NOTES_DUPLICATE_REUSE_TEXT,
+  },
+};
+
+/**
+ * A tool as the `clipReuse` tactic offers it (GRV-131): its short form, and
+ * that form's text after the description at whatever level `toolText` leaves it.
+ */
+function withReuseForm(entry: ToolRule, level: ToolTextLevel): AssistantToolDefinition {
+  const form = REUSE_FORMS[entry.commandType];
+  if (!form) return withToolText(toolDefinition(entry), level);
+  const tool = withToolText(toolDefinition({ ...entry, offered: form.offered }), level);
+  return { ...tool, description: `${tool.description} ${form.text}` };
 }
 
 const toolCache = new Map<string, readonly AssistantToolDefinition[]>();
 
 /**
- * Every tool the assistant may call, generated once per level of text,
- * `drumStepStrings` and `patternGenerators` value from the registry. The
- * defaults, `full`, `off` and `off`, are the text and schemas as written in
- * this module.
+ * Every tool the assistant may call, generated once per level of text and
+ * `drumStepStrings`, `patternGenerators` and `clipReuse` value from the
+ * registry. The defaults, `full`, `off`, `off` and `off`, are the text and
+ * schemas as written in this module.
  */
 export function assistantTools(
   level: ToolTextLevel = "full",
   drumStepStrings: TacticValues["drumStepStrings"] = TACTIC_DEFAULTS.drumStepStrings,
   patternGenerators: TacticValues["patternGenerators"] = TACTIC_DEFAULTS.patternGenerators,
+  clipReuse: TacticValues["clipReuse"] = TACTIC_DEFAULTS.clipReuse,
 ): readonly AssistantToolDefinition[] {
-  const key = `${level}:${drumStepStrings}:${patternGenerators}`;
+  const key = `${level}:${drumStepStrings}:${patternGenerators}:${clipReuse}`;
   let tools = toolCache.get(key);
   if (!tools) {
     const forms = {
       stepStrings: drumStepStrings === "on",
       generators: patternGenerators === "on",
+      copies: clipReuse === "on",
     };
-    tools = TOOL_RULES.map((entry) =>
-      (forms.stepStrings || forms.generators) && entry.commandType === "clip.create"
-        ? withNoteForms(entry, level, forms)
-        : withToolText(toolDefinition(entry), level),
-    );
+    tools = TOOL_RULES.map((entry) => {
+      if (entry.commandType === "clip.create") {
+        return forms.stepStrings || forms.generators || forms.copies
+          ? withNoteForms(entry, level, forms)
+          : withToolText(toolDefinition(entry), level);
+      }
+      return forms.copies
+        ? withReuseForm(entry, level)
+        : withToolText(toolDefinition(entry), level);
+    });
     toolCache.set(key, tools);
   }
   return tools;
@@ -1167,10 +1234,11 @@ export function bundleTools(
   level: ToolTextLevel = "full",
   drumStepStrings: TacticValues["drumStepStrings"] = TACTIC_DEFAULTS.drumStepStrings,
   patternGenerators: TacticValues["patternGenerators"] = TACTIC_DEFAULTS.patternGenerators,
+  clipReuse: TacticValues["clipReuse"] = TACTIC_DEFAULTS.clipReuse,
 ): readonly AssistantToolDefinition[] {
-  const all = assistantTools(level, drumStepStrings, patternGenerators);
+  const all = assistantTools(level, drumStepStrings, patternGenerators, clipReuse);
   if (bundle === EVERYTHING_BUNDLE) return all;
-  const key = `${bundle}:${level}:${drumStepStrings}:${patternGenerators}`;
+  const key = `${bundle}:${level}:${drumStepStrings}:${patternGenerators}:${clipReuse}`;
   let tools = bundleCache.get(key);
   if (!tools) {
     const types: readonly string[] = TOOL_BUNDLES[bundle];
