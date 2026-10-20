@@ -36,6 +36,7 @@
  */
 import { z } from "zod";
 import { notesDuplicatePayloadSchema } from "../commands/definitions/transforms";
+import { sortEvents } from "../commands/projectEdits";
 import type { NoteEvent } from "../domain/entities";
 import {
   clipIdSchema,
@@ -93,7 +94,7 @@ export const reusePlacementSchema = z.strictObject({
 export const reuseNotesDuplicateSchema = notesDuplicatePayloadSchema.extend({
   newIds: notesDuplicatePayloadSchema.shape.newIds
     .describe(
-      "Leave out, and Groove gives the copies their IDs. Given, one new note ID per note copied, in order.",
+      "Leave out, and Groove gives the copies their IDs. Given, one new note ID per note copied, in time order of the notes (by start, then ID).",
     )
     .optional(),
 });
@@ -290,7 +291,11 @@ export function withClipCall(
   }
 }
 
-/** `events` with a `notes_duplicate`'s copies added, as the command adds them. */
+/**
+ * `events` with a `notes_duplicate`'s copies added, as the command adds them:
+ * `newIds` pair with the copied notes in the command's own order (start,
+ * then ID; `sortEvents`), not the order the clip or the call lists them.
+ */
 function duplicated(
   known: KnownClip | null,
   input: Record<string, unknown>,
@@ -305,7 +310,7 @@ function duplicated(
   if (typeof selected === "string" || selected.length !== newIds.length) {
     return null;
   }
-  const copies = selected.map((event, index) => ({
+  const copies = sortEvents(selected).map((event, index) => ({
     ...event,
     id: String(newIds[index]) as NoteEvent["id"],
     startTicks: (event.startTicks + offset) as NoteEvent["startTicks"],

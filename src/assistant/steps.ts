@@ -68,17 +68,27 @@ export const CHANGE_STEPS_SPENT = `Refused, not added to the proposal: a proposa
  * and the IDs its new notes were given (GRV-131), so a later step can update,
  * remove or duplicate them. They count up from the first, so the first and
  * the last say them all. A placement the gateway gave its ID (`clipReuse`)
- * is told that ID too.
+ * is told that ID too. The copies of a `notes_duplicate` the gateway gave
+ * IDs (`clipReuse`, the only way such a call has gateway note IDs) take them
+ * in the command's order, by start and then ID, not the order the call named
+ * the notes in.
  */
-export function addedResult(noteIds: readonly string[], placementId?: string): string {
+export function addedResult(
+  noteIds: readonly string[],
+  placementId?: string,
+  duplicate = false,
+): string {
   const [first] = noteIds;
   const last = noteIds.at(-1);
   const said = [ADDED_RESULT];
   if (first !== undefined && last !== undefined) {
+    const order = duplicate
+      ? "in time order of the notes copied (by start, then ID)"
+      : "in the order you gave them";
     said.push(
       noteIds.length === 1
         ? `Its note's ID is ${first}.`
-        : `Its ${noteIds.length} notes' IDs, in the order you gave them, count up from ${first} to ${last}.`,
+        : `Its ${noteIds.length} notes' IDs, ${order}, count up from ${first} to ${last}.`,
     );
   }
   if (placementId !== undefined) said.push(`Its placement's ID is ${placementId}.`);
@@ -231,7 +241,11 @@ export function answerStep(
     return {
       type: "tool_result",
       tool_use_id: call.id,
-      content: addedResult(expanded.noteIds, expanded.placementId),
+      content: addedResult(
+        expanded.noteIds,
+        expanded.placementId,
+        expanded.call.name === "notes_duplicate",
+      ),
     };
   });
   return { kept, results, targets: known, misaimed };

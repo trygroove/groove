@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { executeTransaction } from "../commands/execute";
 import type { NoteEvent } from "../domain/entities";
 import { createPianoRollFixtureProject } from "../domain/fixtures";
 import { TICKS_PER_BAR, toTicks } from "../domain/time";
-import { selectOnly } from "../selection/selection";
+import { addToSelection, selectOnly } from "../selection/selection";
 import {
   createScriptedAssistantProvider,
   toolUseEvents,
@@ -320,6 +321,16 @@ describe("a notes_duplicate with no newIds (GRV-131 clip reuse)", () => {
       notes.expand(call("note_add", { clipId: LISTED, notes: [[0, 50, 48, 0.8]] })),
     );
     expect(next.noteIds).toEqual([gatewayNoteId(STEM, 4)]);
+    // The model is told the copies' IDs follow the notes' time order.
+    const answered = answerStep(
+      [call("notes_duplicate", { clipId: LISTED, eventIds: null, offsetTicks: BAR })],
+      new Map(),
+      reuseExpander(),
+    );
+    expect(answered.results[0]?.content).toContain(
+      `Its 3 notes' IDs, in time order of the notes copied (by start, then ID), count up from ${ids[0]} to ${ids[2]}.`,
+    );
+    expect(addedResult(ids)).toContain("in the order you gave them");
   });
 
   it("counts named notes without knowing the clip, and refuses every note of one it does not know", () => {
@@ -340,6 +351,35 @@ describe("a notes_duplicate with no newIds (GRV-131 clip reuse)", () => {
         ),
       ),
     ).toMatch(/^clipId: Groove does not have every note of/);
+  });
+
+  it("pairs the copies with their IDs in the command's order, start then ID, not the order it was told the notes", () => {
+    // The ledger holds the notes out of time order, and the model names them
+    // out of order too: notes.duplicate pairs newIds with the notes sorted by
+    // start (then ID), so the ledger must as well.
+    const ledger: ClipLedger = new Map([
+      [
+        LISTED,
+        {
+          trackId: TRACK,
+          events: [LISTED_NOTES[2], LISTED_NOTES[0], LISTED_NOTES[1]],
+        },
+      ],
+    ]);
+    const newIds = [1, 2].map((index) => newId("evt", STEM, index));
+    const after = withClipCall(
+      ledger,
+      call("notes_duplicate", {
+        clipId: LISTED,
+        eventIds: [LISTED_NOTES[2].id, LISTED_NOTES[0].id],
+        offsetTicks: BAR,
+        newIds,
+      }),
+    );
+    expect(after.get(LISTED)?.events?.slice(3)).toEqual([
+      { ...LISTED_NOTES[0], id: newIds[0], startTicks: BAR },
+      { ...LISTED_NOTES[2], id: newIds[1], startTicks: 384 + BAR },
+    ]);
   });
 
   it("leaves a duplicate with its own newIds as it is", () => {
@@ -468,6 +508,34 @@ describe("clip reuse in a step", () => {
     expect(
       withClipCall(oneNote, call("notes_clear", { clipId: clip.id })).get(clip.id),
     ).toEqual({ trackId: clip.trackId, events: [] });
+  });
+
+  it("takes a selection the note cap cut short, or one mixing a whole clip with single notes, as only some notes", () => {
+    const project = createPianoRollFixtureProject();
+    const [clip] = project.clips;
+    if (clip?.content.kind !== "notes") throw new Error("not a note clip");
+    const whole = buildAssistantPayload(
+      project,
+      selectOnly({ kind: "clip", id: clip.id }),
+    );
+    const selected = whole.selectedNotes;
+    if (!selected) throw new Error("no selected notes");
+    expect(contextClips(whole).get(clip.id)?.partial).toBeUndefined();
+    const capped = contextClips({
+      ...whole,
+      selectedNotes: { ...selected, omittedNoteCount: 1 },
+    });
+    expect(capped.get(clip.id)).toMatchObject({ partial: true });
+    const mixed = contextClips(
+      buildAssistantPayload(
+        project,
+        addToSelection(selectOnly({ kind: "clip", id: clip.id }), {
+          kind: "event",
+          id: clip.content.events[0].id,
+        }),
+      ),
+    );
+    expect(mixed.get(clip.id)).toMatchObject({ partial: true });
   });
 
   it("drops an ask's preview whose short form it cannot write out", () => {
@@ -686,6 +754,78 @@ describe("the clipReuse tactic", () => {
     expect(JSON.stringify(proposal)).not.toContain('"bars"');
     const validation = validateProposal(project, proposal);
     expect(validation.ok ? null : validation.issues).toBeNull();
+  });
+
+  it("copies a duplicated note as the project has it, with notes written out of time order", async () => {
+    const project = createPianoRollFixtureProject();
+    const [track] = project.song.tracks;
+    const source = newId("clp", STEM, 1);
+    const copyId = newId("clp", STEM, 2);
+    const clip = (id: string, content: unknown) => ({
+      name: "clip_create",
+      input: {
+        ...CREATE_EXAMPLES.clip,
+        id,
+        trackId: track.id,
+        lengthTicks: 2 * BAR,
+        content,
+      },
+    });
+    // The notes come later-first: n001 is pitch 72 at 384, n002 pitch 60 at 0.
+    // notes.duplicate copies them in time order, so n003 is pitch 60 at 768.
+    const duplicateId = gatewayNoteId(STEM, 3);
+    const calls = [
+      clip(source, {
+        kind: "notes",
+        events: [
+          [384, 72, 48, 0.8],
+          [0, 60, 48, 0.8],
+        ],
+      }),
+      {
+        name: "notes_duplicate",
+        input: { clipId: source, eventIds: null, offsetTicks: 768 },
+      },
+      clip(copyId, { kind: "copy", clipId: source, eventIds: [duplicateId] }),
+      { name: EXPLAIN_TOOL_NAME, input: { goal: "A variation", technique: "Reuse" } },
+    ];
+    const provider = createScriptedAssistantProvider([toolUseEvents("Reusing.", calls)]);
+    const result = await runAssistantTurn(
+      {
+        provider,
+        guards: createInMemoryGuardStores(),
+        log: () => {},
+        now: () => 1_000,
+        idStem: () => STEM,
+        tactics: { clipReuse: "on" },
+      },
+      { uid: "uid-1", signInProvider: "google.com" },
+      {
+        projectRevision: project.metadata.revision,
+        messages: [{ role: "user", text: "Copy the echo" }],
+        context: buildAssistantPayload(project),
+      },
+      { signal: new AbortController().signal, onChunk: () => {} },
+    );
+    const validation = validateProposal(project, result.proposal);
+    if (!validation.ok) throw new Error(JSON.stringify(validation.issues));
+    const applied = executeTransaction(project, validation.proposal.commands, {
+      actor: "assistant",
+    });
+    if (!applied.ok) throw new Error("the proposal did not apply");
+    const notesOf = (id: string) => {
+      const found = applied.project.clips.find((entry) => entry.id === id);
+      if (found?.content.kind !== "notes") throw new Error(`${id} has no notes`);
+      return found.content.events;
+    };
+    const duplicate = notesOf(source).find((event) => event.id === duplicateId);
+    expect(duplicate).toMatchObject({ startTicks: 768, trigger: { pitch: 60 } });
+    const [copied] = notesOf(copyId);
+    expect(notesOf(copyId)).toHaveLength(1);
+    expect(copied).toMatchObject({
+      startTicks: duplicate?.startTicks,
+      trigger: duplicate?.trigger,
+    });
   });
 
   it("leaves production's turn as it was with the tactic at its default", () => {
