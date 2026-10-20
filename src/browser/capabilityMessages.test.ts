@@ -39,11 +39,14 @@ describe("audioStartFailureMessage", () => {
     expect(audioStartFailureMessage("unknown").action).toMatch(/Press Play to try again/);
   });
 
-  it("points a closed context at the output device, then Play (GRV-55)", () => {
+  it("gives a closed context one piece of advice, to reload (GRV-55)", () => {
     const message = audioStartFailureMessage("context_closed");
     expect(message.title).toBe("Sound stopped");
-    expect(message.action).toMatch(/speakers or headphones/);
-    expect(message.action).toMatch(/press Play/);
+    expect(message.detail).toMatch(/audio output went away/);
+    expect(message.action).toBe(
+      "Reload the page to start sound again; your edits are kept.",
+    );
+    expect(message.action).not.toMatch(/Play/);
   });
 
   it("says a failed start keeps the edits when it suggests reloading (GRV-55)", () => {
