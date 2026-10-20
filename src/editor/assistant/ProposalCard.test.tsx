@@ -23,6 +23,7 @@ import { createSliceFixtureProject } from "../../domain/fixtures";
 import { SONG_SWING, TRACK_VOLUME } from "../../domain/parameters";
 import { createInMemoryProjectRepository } from "../../persistence/inMemoryProjectRepository";
 import { createManualClock } from "../../shared/clock";
+import { createManualScheduler, type Scheduler } from "../../shared/scheduler";
 import { clickAndFlush, fireAndFlush } from "../../testing/events";
 import {
   createFakeAssistantClient,
@@ -45,6 +46,7 @@ import {
 } from "./conversationStore";
 import { useAssistantChat } from "./useAssistantChat";
 import { useAssistantPanel } from "./useAssistantPanel";
+import { FOLLOW_UP_DELAY_MS } from "./useFollowUp";
 
 /**
  * The assistant's proposal card (GRV-5) against a real editor session: the
@@ -73,6 +75,8 @@ async function setUp(
     retention?: FakeRetentionClient;
     /** Where the conversation is kept across a reload (GRV-135). */
     conversationStore?: ConversationStore;
+    /** What times the follow-up after an Apply (GRV-195). */
+    scheduler?: Scheduler;
   } = {},
 ) {
   const repository = createInMemoryProjectRepository();
@@ -122,6 +126,7 @@ async function setUp(
       expanded: () => panel.layout().mode === "floating",
       client: async () => client,
       analytics: () => analytics,
+      ...(options.scheduler ? { scheduler: options.scheduler } : {}),
       ...(options.conversationStore
         ? {
             conversationKey: () => conversationStorageKey("u1", project.metadata.id),
@@ -946,5 +951,28 @@ describe("the proposal card from the keyboard (GRV-5)", () => {
     within(card()).getAllByRole("link", { name: "Show Swing" })[0]?.focus();
     await keys("{Enter}");
     expect(revealControl).toHaveBeenLastCalledWith(swing);
+  });
+});
+
+describe("the assistant's follow-up after Apply (GRV-195)", () => {
+  it("replies by itself once Apply is pressed, with no message from the producer in the log", async () => {
+    const scheduler = createManualScheduler();
+    const { client, propose } = await setUp({ scheduler });
+    await propose();
+    clickAndFlush(cardButton("Apply"));
+    expect(cardStatus()).toHaveTextContent(/applied/i);
+    fireAndFlush(() => scheduler.advance(FOLLOW_UP_DELAY_MS));
+    await settle();
+    expect(client.turns).toHaveLength(2);
+    fireAndFlush(() => client.last().text("That sits better. Next, a bassline?"));
+    fireAndFlush(() => client.last().done());
+
+    const log = within(panel()).getByRole("log", { name: "Conversation" });
+    expect(log).toHaveTextContent("That sits better. Next, a bassline?");
+    // Only the producer's own message shows: the follow-up is the assistant's.
+    expect(log.querySelectorAll(".assistant-message")).toHaveLength(1);
+    expect(log).not.toHaveTextContent("[Applied]");
+    // The change it followed is still applied.
+    expect(cardStatus()).toHaveTextContent(/applied/i);
   });
 });

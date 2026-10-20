@@ -54,6 +54,8 @@ const storedEntrySchema = z.discriminatedUnion("kind", [
     scopeLabel: z.string(),
     answers: z.string().optional(),
     wire: z.string().optional(),
+    /** The assistant's follow-up after an Apply (GRV-195), which the log hides. */
+    automatic: z.literal(true).optional(),
   }),
   z.object({
     kind: z.literal("reply"),
@@ -90,6 +92,7 @@ const storedOriginSchema = z.object({
   text: z.string(),
   answers: z.string().optional(),
   wire: z.string().optional(),
+  automatic: z.literal(true).optional(),
   turnId: sessionIdSchema.optional(),
   scope: storedScopeSchema,
 });
@@ -262,6 +265,7 @@ export function serializeConversation(
       text: origin.text,
       ...(origin.answers !== undefined ? { answers: origin.answers } : {}),
       ...(origin.wire !== undefined ? { wire: origin.wire } : {}),
+      ...(origin.automatic ? { automatic: true as const } : {}),
       ...(origin.turnId ? { turnId: origin.turnId } : {}),
       scope: storedScope(origin.scope),
     });
@@ -323,6 +327,7 @@ export function restoreOrigin(stored: StoredOrigin, project: Project): TurnOrigi
     text: stored.text,
     ...(stored.answers !== undefined ? { answers: stored.answers } : {}),
     ...(stored.wire !== undefined ? { wire: stored.wire } : {}),
+    ...(stored.automatic ? { automatic: true as const } : {}),
     ...(stored.turnId ? { turnId: stored.turnId } : {}),
     scope: { ...scope, track },
     remoteChanges: 0,
