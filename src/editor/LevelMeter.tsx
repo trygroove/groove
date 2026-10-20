@@ -1,15 +1,16 @@
 import type { JSX } from "@solidjs/web";
-import type { TrackId } from "../domain/ids";
 import "./LevelMeter.css";
 import type { TrackLevel } from "./trackLevels";
 
 export interface LevelMeterProps {
-  readonly trackId: TrackId;
   /**
-   * The track's level, read reactively (`useProjectAudio().trackLevel`): the
-   * editor samples every meter in its one frame loop, so a meter only draws.
+   * The level to show, read reactively (`useProjectAudio().trackLevel` for a
+   * track, `masterLevel` for the master): the editor samples every meter in
+   * its one frame loop, so a meter only draws.
    */
-  trackLevel(trackId: TrackId): TrackLevel | null;
+  level(): TrackLevel | null;
+  /** What the meter is called to assistive tech: "Level" unless given. */
+  readonly label?: string;
   /**
    * A mixer strip's meter stands beside its fader; a track header's lies
    * along the row (#447).
@@ -21,7 +22,7 @@ export interface LevelMeterProps {
 const METER_FLOOR_DB = -60;
 
 export default function LevelMeter(props: LevelMeterProps): JSX.Element {
-  const level = () => props.trackLevel(props.trackId);
+  const level = () => props.level();
   const clamped = () => {
     const db = level()?.db ?? METER_FLOOR_DB;
     return Number.isFinite(db)
@@ -44,7 +45,7 @@ export default function LevelMeter(props: LevelMeterProps): JSX.Element {
     >
       <meter
         class="visually-hidden"
-        aria-label="Level"
+        aria-label={props.label ?? "Level"}
         min={METER_FLOOR_DB}
         max={0}
         low={-18}

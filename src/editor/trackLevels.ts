@@ -1,4 +1,4 @@
-import { createStore } from "solid-js";
+import { createSignal, createStore } from "solid-js";
 import type { LevelReading } from "../audio/levels";
 import type { TrackId } from "../domain/ids";
 
@@ -63,6 +63,35 @@ export function createTrackLevels() {
       setLevels((draft) => {
         for (const id of Object.keys(draft)) delete draft[id];
       });
+    },
+  };
+}
+
+/**
+ * The master's meter (GRV-44): the same frame rule as a track's, for the one
+ * strip that is not a track. `sample` takes the master's reading for a frame,
+ * `clear` rests it, and `level` is what the master meter reads, reactively.
+ */
+export function createMasterLevel() {
+  const [level, setLevel] = createSignal<TrackLevel | null>(null);
+  let hold = 0;
+  // What was last written, so an unchanged frame writes nothing.
+  let shown: TrackLevel | null = null;
+  const show = (next: TrackLevel | null) => {
+    if (next?.db === shown?.db && next?.clipping === shown?.clipping) return;
+    shown = next;
+    setLevel(next);
+  };
+  return {
+    level,
+    sample(reading: LevelReading): void {
+      const next = nextTrackLevel(reading, hold);
+      hold = next.holdLeft;
+      show(next.level);
+    },
+    clear(): void {
+      hold = 0;
+      show(null);
     },
   };
 }

@@ -25,6 +25,7 @@ import { memoryStorage } from "../testing/storage";
 import { dragTrackHandle, stubTrackDragLayout } from "../testing/trackDrag";
 import { chainSummary } from "./MasterStrip";
 import Mixer from "./Mixer";
+import type { TrackLevel } from "./trackLevels";
 
 afterEach(() => {
   cleanup();
@@ -37,7 +38,10 @@ afterEach(() => {
  * a gesture actually collapses into one history entry — the two behaviors the
  * acceptance criteria turn on.
  */
-function renderMixer(initial: Project = createSliceFixtureProject()) {
+function renderMixer(
+  initial: Project = createSliceFixtureProject(),
+  masterLevel?: () => TrackLevel | null,
+) {
   const history = new CommandHistory(initial);
   const [project, setProject] = createSignal(history.project);
 
@@ -91,6 +95,7 @@ function renderMixer(initial: Project = createSliceFixtureProject()) {
       dispatch={dispatch}
       beginGesture={beginGesture}
       trackLevel={() => null}
+      masterLevel={masterLevel}
       analytics={analytics}
       selectedTrackId={selectedTrackId()}
       onSelectTrack={(trackId) => {
@@ -647,10 +652,11 @@ describe("Mixer controls (TRK-02)", () => {
     expect(history.project.song.tracks[0].mixer.pan).toBeCloseTo(-0.5);
   });
 
-  it("renders a level meter per track", () => {
+  it("renders a level meter per track, and one for the master", () => {
     const { history } = renderMixer(createDrumMachineFixtureProject());
-    const meters = screen.getAllByRole("meter");
+    const meters = screen.getAllByRole("meter", { name: "Level" });
     expect(meters).toHaveLength(history.project.song.tracks.length);
+    expect(screen.getAllByRole("meter", { name: "Master level" })).toHaveLength(1);
   });
 });
 
@@ -790,6 +796,24 @@ describe("Mixer master strip", () => {
 });
 
 describe("Mixer desk (#447)", () => {
+  it("meters the mix on the master strip, red when it clips (GRV-44)", () => {
+    const [level, setLevel] = createSignal<TrackLevel | null>(null);
+    renderMixer(createSliceFixtureProject(), level);
+    const meter = screen.getByRole("meter", { name: "Master level" });
+
+    // At rest, nothing plays: the meter sits at its floor.
+    expect(meter).toHaveAttribute("value", "-60");
+    setLevel({ db: -12, clipping: false });
+    flush();
+    expect(meter).toHaveAttribute("value", "-12");
+    expect(meter.parentElement).not.toHaveClass("clipping");
+
+    // A peak over 0 dBFS on the mix lights it, as a track's meter does.
+    setLevel({ db: -2, clipping: true });
+    flush();
+    expect(meter.parentElement).toHaveClass("clipping");
+  });
+
   it("gives the master a volume fader at the end of the desk, one entry per edit", () => {
     const { history } = renderMixer();
     const startRevision = history.project.metadata.revision;

@@ -166,8 +166,7 @@ export default function EditorInstrument(props: EditorInstrumentProps): JSX.Elem
       meter={
         props.trackLevel ? (
           <LevelMeter
-            trackId={track().id}
-            trackLevel={props.trackLevel}
+            level={() => props.trackLevel?.(track().id) ?? null}
             orientation="horizontal"
           />
         ) : undefined

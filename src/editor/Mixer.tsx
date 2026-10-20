@@ -83,6 +83,11 @@ export interface MixerProps {
   /** A track's live level, reactively (`useProjectAudio().trackLevel`). */
   trackLevel(trackId: TrackId): TrackLevel | null;
   /**
+   * The master's live level (`useProjectAudio().masterLevel`, GRV-44).
+   * Without it the master strip's meter rests at the floor.
+   */
+  masterLevel?(): TrackLevel | null;
+  /**
    * The track the editor is showing, marked as selected here (#228). Optional,
    * like `onSelectTrack`: a mixer rendered without them still mixes, it just
    * marks no strip and moves nothing when one is clicked.
@@ -395,6 +400,7 @@ export default function Mixer(props: MixerProps): JSX.Element {
           devices={props.project.song.master.devices}
           selected={selectedReturn() === null}
           onSelect={selectMaster}
+          level={() => props.masterLevel?.() ?? null}
           onFirstUse={() => analytics().logFeatureFirstUse("mixer")}
           dispatch={props.dispatch}
           beginGesture={props.beginGesture}
@@ -622,7 +628,7 @@ function TrackStrip(props: TrackStripProps): JSX.Element {
           <span class="mixer-meter-label" aria-hidden="true">
             Lvl
           </span>
-          <LevelMeter trackId={props.track.id} trackLevel={props.trackLevel} />
+          <LevelMeter level={() => props.trackLevel(props.track.id)} />
         </div>
       </div>
 

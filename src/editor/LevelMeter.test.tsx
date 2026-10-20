@@ -1,7 +1,6 @@
 import { cleanup, render, screen } from "@solidjs/testing-library";
 import { createSignal, flush } from "solid-js";
 import { afterEach, describe, expect, it } from "vitest";
-import type { TrackId } from "../domain/ids";
 import LevelMeter from "./LevelMeter";
 import type { TrackLevel } from "./trackLevels";
 
@@ -12,13 +11,7 @@ function renderMeter(
   initial: TrackLevel | null = { db: -30, clipping: false },
 ) {
   const [level, setLevel] = createSignal(initial);
-  render(() => (
-    <LevelMeter
-      trackId={"trk_a" as TrackId}
-      trackLevel={() => level()}
-      orientation={orientation}
-    />
-  ));
+  render(() => <LevelMeter level={level} orientation={orientation} />);
   const meter = screen.getByRole("meter", { name: "Level" });
   return { meter, fill: meter.nextElementSibling as HTMLElement, setLevel };
 }
