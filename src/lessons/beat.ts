@@ -22,11 +22,14 @@ import {
   anyOtherPadHits,
   beatTrack,
   clearPad,
+  type DrumRole,
   type DrumTrack,
   factorySound,
   hitsExactly,
+  isDrumTrack,
   kickPad,
   noteClips,
+  otherPadsHitting,
   padSilent,
   writePadPart,
   writePattern,
@@ -284,6 +287,47 @@ const play: LessonBite = {
   ],
 };
 
+/**
+ * Run only when some pad already plays the part (`steps`), as when the
+ * chapter is started again in a song that has it: the producer clears that
+ * pad's row so the next step has them write the part themselves, rather than
+ * finding it done. `part` names it in the instruction.
+ */
+function clearPart(
+  part: string,
+  steps: (settings: LessonSettings) => readonly number[],
+  besides: DrumRole,
+): LessonStep {
+  const playing = (world: LessonWorld, settings: LessonSettings) =>
+    otherPadsHitting(world.project, steps(settings), besides);
+  return {
+    id: "clear",
+    applies: (world, settings) => playing(world, settings).length > 0,
+    instruction(world, settings) {
+      const found = playing(world, settings)[0];
+      const where = found ? `${found.track.name}'s ${found.pad.name} row` : "A row";
+      return `${where} already plays ${part}. To write it yourself, clear the row first: turn each of its [steps](step) off in the [Sequence view](sequence).`;
+    },
+    target: (world) => beatNotes(world.project),
+    // Done once every pad that played the part as the step began is silent.
+    done: (world, start, settings) =>
+      playing(start, settings).every(({ track, pad }) => {
+        const now = world.project.song.tracks.find((one) => one.id === track.id);
+        if (!now || !isDrumTrack(now)) return true;
+        return (
+          !now.instrument.pads.some((one) => one.id === pad.id) ||
+          padSilent(world.project, now, pad.id)
+        );
+      }),
+    showMe(world, settings) {
+      const commands = playing(world, settings).flatMap(({ track, pad }) =>
+        clearPad(world.project, track, pad.id),
+      );
+      return commands.length > 0 ? { kind: "commands", commands } : null;
+    },
+  };
+}
+
 const SNARE_WORDS = {
   four_on_the_floor: (steps: string) =>
     `Add a clap on beats 2 and 4, [steps](step) ${steps}, on a pad of its own: that's the [backbeat](backbeat). In house it's usually a clap rather than a [snare](snare).`,
@@ -301,13 +345,18 @@ const snare: LessonBite = {
   quiz: "Which beats does a backbeat usually land on? (2 and 4.)",
   steps: [
     addDrums,
+    clearPart(
+      "the [backbeat](backbeat)",
+      (settings) => BEAT_PATTERNS[settings.style].snare,
+      "hats",
+    ),
     {
       id: "snare",
       instruction: (_world, settings) =>
         SNARE_WORDS[settings.style](stepList(BEAT_PATTERNS[settings.style].snare)),
       target: (world) => beatNotes(world.project),
       done: (world, _start, settings) =>
-        anyOtherPadHits(world.project, BEAT_PATTERNS[settings.style].snare),
+        anyOtherPadHits(world.project, BEAT_PATTERNS[settings.style].snare, "hats"),
       showMe(world, settings, context) {
         const track = beatOf(world);
         if (!track) return null;
@@ -347,13 +396,18 @@ const hats: LessonBite = {
   quiz: 'What do you call the point halfway between two beats? (The off-beat, or the "and".)',
   steps: [
     addDrums,
+    clearPart(
+      "the [hats](hi-hat)",
+      (settings) => BEAT_PATTERNS[settings.style].hats,
+      "snare",
+    ),
     {
       id: "hats",
       instruction: (_world, settings) =>
         HAT_WORDS[settings.style](stepList(BEAT_PATTERNS[settings.style].hats)),
       target: (world) => beatNotes(world.project),
       done: (world, _start, settings) =>
-        anyOtherPadHits(world.project, BEAT_PATTERNS[settings.style].hats),
+        anyOtherPadHits(world.project, BEAT_PATTERNS[settings.style].hats, "snare"),
       showMe(world, settings, context) {
         const track = beatOf(world);
         if (!track) return null;
@@ -393,6 +447,59 @@ export function coveredTicks(project: Project, trackId: string): number {
   return covered;
 }
 
+/** Whether the beat's track already runs for {@link LOOP_BARS} bars. */
+function loopInPlace(world: LessonWorld): boolean {
+  const track = beatOf(world);
+  return (
+    track !== null && coveredTicks(world.project, track.id) >= LOOP_BARS * TICKS_PER_BAR
+  );
+}
+
+/** The beat's placements, in song order. */
+function beatPlacements(world: LessonWorld) {
+  const track = beatOf(world);
+  return track
+    ? world.project.song.placements
+        .filter((placement) => placement.trackId === track.id)
+        .sort((a, b) => a.startTicks - b.startTicks)
+    : [];
+}
+
+/**
+ * Run only when the beat already runs for the bars the bite asks for, as
+ * when the chapter is started again in the same song: the producer shortens
+ * it back to a bar, so the next step has them loop it themselves.
+ */
+const shortenLoop: LessonStep = {
+  id: "shorten",
+  applies: loopInPlace,
+  instruction(world) {
+    const track = beatOf(world);
+    const name = track ? `${track.name}'s` : "The beat's";
+    return `${name} [clip](clip) already runs for ${LOOP_BARS} bars or more. To loop it yourself, first drag its end back to bar 2 on the [arrangement](arrangement).`;
+  },
+  target(world) {
+    const first = beatPlacements(world)[0];
+    return first ? controlAddress(first.id, CONTROL_PARTS.placement) : null;
+  },
+  done: (world) => !loopInPlace(world),
+  showMe(world) {
+    const placements = beatPlacements(world);
+    const only = placements.length === 1 ? placements[0] : undefined;
+    return only
+      ? {
+          kind: "commands",
+          commands: [
+            updatePlacement(only.id, {
+              durationTicks: toTicks(TICKS_PER_BAR),
+              looped: false,
+            }),
+          ],
+        }
+      : null;
+  },
+};
+
 const loop: LessonBite = {
   id: "beat-loop",
   chapter: "beat",
@@ -401,6 +508,7 @@ const loop: LessonBite = {
   quiz: "How do you make one bar play for four on the arrangement? (Loop its clip, and stretch it.)",
   steps: [
     addDrums,
+    shortenLoop,
     {
       id: "loop",
       instruction: (world) => {

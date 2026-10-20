@@ -213,16 +213,35 @@ export function writePattern(
 }
 
 /**
- * Whether some pad of some drum machine, other than its kick pad, hits every
- * one of `steps` in one clip: the backbeat or the hats, whatever the pad is
- * called.
+ * Whether some pad of some drum machine, other than its kick pad and any pad
+ * named for `besides` (the hats, for the backbeat: eighths hit 2 and 4 too),
+ * hits every one of `steps` in one clip: the backbeat or the hats, whatever
+ * the pad is called.
  */
-export function anyOtherPadHits(project: Project, steps: readonly number[]): boolean {
-  return project.song.tracks.filter(isDrumTrack).some((track) => {
+export function anyOtherPadHits(
+  project: Project,
+  steps: readonly number[],
+  besides?: DrumRole,
+): boolean {
+  return otherPadsHitting(project, steps, besides).length > 0;
+}
+
+/** The pads {@link anyOtherPadHits} finds, each with its drum machine. */
+export function otherPadsHitting(
+  project: Project,
+  steps: readonly number[],
+  besides?: DrumRole,
+): { readonly track: DrumTrack; readonly pad: DrumPad }[] {
+  return project.song.tracks.filter(isDrumTrack).flatMap((track) => {
     const kick = kickPad(track);
-    return track.instrument.pads.some(
-      (pad) => pad.id !== kick?.id && hitsAll(project, track, pad.id, steps),
-    );
+    return track.instrument.pads
+      .filter(
+        (pad) =>
+          pad.id !== kick?.id &&
+          !(besides && padPlays(pad, besides)) &&
+          hitsAll(project, track, pad.id, steps),
+      )
+      .map((pad) => ({ track, pad }));
   });
 }
 
