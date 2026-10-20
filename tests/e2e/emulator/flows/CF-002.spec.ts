@@ -1,5 +1,6 @@
 import { walkthrough } from "../../support/walkthrough";
 import { library } from "../support/library";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 import { backToArrangement, expectView, pressView, sequenceView } from "../support/views";
 
@@ -127,7 +128,11 @@ async function addSamplerTrack(
     /^Audition /,
     "",
   );
-  await pick.click();
+  // Act on the row by the name just read: `pick` re-resolves to the first
+  // match on every use, and the list can re-order between the read and click.
+  await library(page)
+    .getByRole("button", { name: `Audition ${picked}`, exact: true })
+    .click();
   await page.keyboard.press("Enter");
   await expectView(page, "Instrument");
 
@@ -257,7 +262,7 @@ test.describe("CF-002", () => {
     // The reload is only meaningful once the edits have been written, which
     // the save status is how the editor reports.
     await expect(page.locator(".save-status")).toHaveText("Saved", { timeout: 10_000 });
-    await page.reload();
+    await reloadPage(page);
     await page.getByTestId("arrangement-view-ready").waitFor();
     await expect(
       page.getByRole("list", { name: "Arrangement tracks" }).getByRole("listitem"),

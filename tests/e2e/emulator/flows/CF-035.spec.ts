@@ -14,6 +14,7 @@ import {
   skipQuestion,
   welcome,
 } from "../support/onboarding";
+import { reloadPage } from "../support/reload";
 
 /**
  * `CF-035`: a new producer meets Coproducer and opens the studio.
@@ -128,7 +129,7 @@ test.describe("CF-035", () => {
       await step("The studio opens, and the conversation carries on in Coproducer's panel");
 
       // 8. Reload the page. The conversation is still in Coproducer's panel.
-      await page.reload();
+      await reloadPage(page);
       await arrangement(page).waitFor();
       await expect(conversationIn(cuePanel(page))).toContainText("Four Tet");
 

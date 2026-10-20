@@ -9,6 +9,7 @@ import {
   panelButton,
   resizeEdge,
 } from "../support/assistant";
+import { reloadPage } from "../support/reload";
 import { expect, test } from "../support/test";
 
 /**
@@ -119,7 +120,7 @@ test.describe("CF-028", () => {
 
     // 8. Reload the page. The assistant is docked at the same width, as you
     //    left it. Press Float. It floats at the height you set in step 3.
-    await page.reload();
+    await reloadPage(page);
     await expect(arrangement(page)).toBeVisible();
     await expect(panel(page)).toBeVisible();
     const reloaded = await boxOf(panel(page), "the docked assistant");

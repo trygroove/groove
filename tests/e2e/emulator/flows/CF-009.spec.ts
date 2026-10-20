@@ -1,4 +1,5 @@
 import { walkthrough } from "../../support/walkthrough";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 
 /**
@@ -178,7 +179,7 @@ test.describe("CF-009", () => {
       /^(pending|saving|failed)$/,
       { timeout: 10_000 },
     );
-    await page.reload();
+    await reloadPage(page);
 
     // 6. The project reopens with nothing selected. Clicking the clip selects
     //    it and announces it exactly as before.

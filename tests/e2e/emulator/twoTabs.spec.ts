@@ -1,6 +1,7 @@
 import type { Route } from "@playwright/test";
 import { walkthrough } from "../support/walkthrough";
 import { newProject, reloadSaved } from "./support/assistant";
+import { reloadPage } from "./support/reload";
 import { expect, type Page, test } from "./support/test";
 
 /**
@@ -59,7 +60,7 @@ test.describe("one project in two tabs", () => {
       await muteBd(page).click();
       await expect(muteBd(page)).toHaveAttribute("aria-pressed", "true");
       await reloadSaved(page);
-      await other.reload();
+      await reloadPage(other);
       for (const tab of [page, other]) {
         await tab.getByTestId("arrangement-view-ready").waitFor();
         await expect(tempo(tab)).toHaveValue("140");
@@ -103,7 +104,7 @@ test.describe("one project in two tabs", () => {
       await expect(saveStatus(page)).toHaveText("Saved", { timeout: 10_000 });
       await step("Tab A dropped its mute of the track tab B deleted, and is saved");
 
-      await other.reload();
+      await reloadPage(other);
       await other.getByTestId("arrangement-view-ready").waitFor();
       await expect(tempo(other)).toHaveValue("90");
       await expect(muteBd(other)).toHaveCount(0);

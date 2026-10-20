@@ -8,13 +8,13 @@ import { installWebAudioGlobals, rms } from "./testAudioContext";
 installWebAudioGlobals();
 
 let Tone: typeof import("tone");
-let engineModule: typeof import("../library/toneAuditionEngine");
+let engineModule: typeof import("./toneAuditionEngine");
 let runtimeModule: typeof import("./AudioRuntime");
 let auditionModule: typeof import("../library/audition");
 
 beforeAll(async () => {
   Tone = await import("tone");
-  engineModule = await import("../library/toneAuditionEngine");
+  engineModule = await import("./toneAuditionEngine");
   runtimeModule = await import("./AudioRuntime");
   auditionModule = await import("../library/audition");
 });

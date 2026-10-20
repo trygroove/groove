@@ -45,6 +45,11 @@
  * - `[video]` (GRV-16): a short reply that searches for {@link EMULATOR_VIDEO},
  *   and for a second video {@link emulatorVideoFinder} finds nothing for, so
  *   the turn shows one card and drops the other.
+ * - `[sketch]` (GRV-144): a proposal in three steps, as a model sketching a
+ *   part takes it, with {@link EMULATOR_SKETCH_PAUSE_MS} before each later
+ *   step: a "Bass" synth track, then a one-bar line on it, then that line
+ *   placed at bar 1 with `explain_change`. Each streams to the card as a part
+ *   while the rest are on their way.
  * - `[remember]`: a short reply that ends in `remember_producer` (GRV-25),
  *   proposing {@link EMULATOR_REMEMBER}'s note. The gateway only lets it
  *   through on a turn that carries the producer's memory.
@@ -62,7 +67,12 @@ import type { AssistantProvider } from "./provider";
 import { ProviderFailure } from "./provider";
 import { continuesTurn, type ProviderMessagesRequest } from "./providerRequest";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
-import { EXPLAIN_TOOL_NAME, toolNameFor } from "./tools";
+import {
+  CREATE_EXAMPLES,
+  EXPLAIN_TOOL_NAME,
+  OFFERED_CLIP_EXAMPLE,
+  toolNameFor,
+} from "./tools";
 import { type FoundVideo, RECOMMEND_VIDEO_TOOL, type VideoFinder } from "./video";
 
 /** The reply every ordinary turn streams, piece by piece. */
@@ -690,14 +700,67 @@ function inProcessFirstTime(): FirstTimeCheck {
   };
 }
 
+/** How long `[sketch]` takes over each step after its first, in milliseconds. */
+export const EMULATOR_SKETCH_PAUSE_MS = 3_000;
+
+/** `[sketch]`'s steps (GRV-144): what each says and the one call it makes. */
+const SKETCH_STEPS: readonly { readonly text: string; readonly call: ScriptedCall }[] = [
+  {
+    text: "First, a bass track.",
+    call: {
+      id: "toolu_sketch_track",
+      name: "track_create",
+      input: CREATE_EXAMPLES.track,
+    },
+  },
+  {
+    text: "Now a one-bar line for it.",
+    call: { id: "toolu_sketch_clip", name: "clip_create", input: OFFERED_CLIP_EXAMPLE },
+  },
+  {
+    text: "And the line on the timeline from bar 1.",
+    call: {
+      id: "toolu_sketch_place",
+      name: "placement_create",
+      input: CREATE_EXAMPLES.placement,
+    },
+  },
+];
+
+/** The `[sketch]` step `request` is for: one per reply the turn has made so far. */
+function sketchStep(request: ProviderMessagesRequest): Step[] {
+  const made = request.messages.filter((message) => message.role === "assistant").length;
+  const step = SKETCH_STEPS[made];
+  if (!step) return finishedReply();
+  const last = made === SKETCH_STEPS.length - 1;
+  const calls: ScriptedCall[] = last
+    ? [
+        step.call,
+        {
+          id: "toolu_sketch_why",
+          name: EXPLAIN_TOOL_NAME,
+          input: {
+            goal: "A bassline under the kick.",
+            technique: "Root notes on the one, so the low end locks to the beat.",
+          },
+        },
+      ]
+    : [step.call];
+  return [
+    ...(made === 0 ? [] : [{ wait: EMULATOR_SKETCH_PAUSE_MS }]),
+    ...proposalReply(step.text, calls),
+  ];
+}
+
 /** A provider that answers from the scripts above. */
 export function createEmulatorAssistantProvider(
   firstTime: FirstTimeCheck = inProcessFirstTime(),
 ): AssistantProvider {
   function scriptFor(request: ProviderMessagesRequest): Step[] {
+    const message = lastUserMessage(request);
+    if (message.includes("[sketch]")) return sketchStep(request);
     // A scripted proposal is whole in one step; the step after it ends the turn.
     if (continuesTurn(request)) return finishedReply();
-    const message = lastUserMessage(request);
     if (message.includes("[hang]")) {
       return [...textReply([EMULATOR_REPLY_CHUNKS[0]]).slice(0, 3), { hang: true }];
     }
