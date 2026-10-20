@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { CAPABILITY_IDS } from "./capabilities";
-import { audioStartFailureMessage, CAPABILITY_MESSAGES } from "./capabilityMessages";
+import {
+  audioStartFailureMessage,
+  CAPABILITY_MESSAGES,
+  soundLoadFailureMessage,
+} from "./capabilityMessages";
 
 describe("CAPABILITY_MESSAGES", () => {
   it.each(CAPABILITY_IDS)(
@@ -33,5 +37,31 @@ describe("audioStartFailureMessage", () => {
 
   it("falls back to a retry for any other failure", () => {
     expect(audioStartFailureMessage("unknown").action).toMatch(/Press Play to try again/);
+  });
+
+  it("gives a closed context one piece of advice, to reload (GRV-55)", () => {
+    const message = audioStartFailureMessage("context_closed");
+    expect(message.title).toBe("Sound stopped");
+    expect(message.detail).toMatch(/audio output went away/);
+    expect(message.action).toBe(
+      "Reload the page to start sound again; your edits are kept.",
+    );
+    expect(message.action).not.toMatch(/Play/);
+  });
+
+  it("says a failed start keeps the edits when it suggests reloading (GRV-55)", () => {
+    expect(audioStartFailureMessage("unknown").action).toMatch(
+      /reload the page; your edits are kept/,
+    );
+  });
+});
+
+describe("soundLoadFailureMessage (GRV-55)", () => {
+  it("says how many sounds are silent and what to do", () => {
+    expect(soundLoadFailureMessage(1).title).toBe("A sound didn't load");
+    const many = soundLoadFailureMessage(3);
+    expect(many.title).toBe("3 sounds didn't load");
+    expect(many.detail).toMatch(/stay silent/);
+    expect(many.action).toMatch(/Check your connection, then reload the page/);
   });
 });

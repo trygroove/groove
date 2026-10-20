@@ -98,6 +98,20 @@ export interface AudioHost {
   getSampleRate(): number;
   resume(): Promise<void>;
   openProjectScope(ownerId: string): AudioProjectScope;
+  /**
+   * The real-time context's state as the browser reports it (`running`,
+   * `suspended`, `closed`, `interrupted`), or `uninitialized` before there is
+   * one. Read only to describe a failure to error monitoring (GRV-55);
+   * optional so a fake host need not have one.
+   */
+  contextState?(): string;
+  /**
+   * Calls `listener` once the browser closes the real-time context under
+   * the runtime (GRV-55): an output device went away. A close the runtime
+   * makes itself is not reported. Returns the unsubscribe. Optional so a
+   * fake host need not have one.
+   */
+  onContextClosed?(listener: () => void): () => void;
 }
 
 /**
@@ -121,6 +135,11 @@ export class AudioRuntime implements AudioHost {
 
   getState(): AudioRuntimeState {
     return this.state;
+  }
+
+  contextState(): string {
+    if (this.context) return this.context.state;
+    return this.state === "closed" ? "closed" : "uninitialized";
   }
 
   /**
@@ -169,6 +188,23 @@ export class AudioRuntime implements AudioHost {
     return this.context;
   }
 
+  onContextClosed(listener: () => void): () => void {
+    const context = this.ensureContext();
+    let told = false;
+    const onStateChange = (state: string): void => {
+      // The runtime's own close() is teardown, not a failure.
+      if (this.state === "closing" || this.state === "closed") return;
+      // A context closes once, however many state events say so.
+      if (state !== "closed" || told) return;
+      told = true;
+      listener();
+    };
+    context.on("statechange", onStateChange);
+    return () => {
+      context.off("statechange", onStateChange);
+    };
+  }
+
   /** The shared destination node. Ensures the context exists first. */
   getDestination(): Tone.ToneAudioNode {
     this.ensureContext();
@@ -189,6 +225,14 @@ export class AudioRuntime implements AudioHost {
   async resume(): Promise<void> {
     if (this.closePromise) await this.closePromise;
     const context = this.ensureContext();
+    if (context.state === "closed") {
+      // The browser closed it (GRV-55): an output device went away. Nothing
+      // can resume a closed context, and the project's graph lives on this
+      // one, so the runtime does not swap in another; the page has to reload.
+      const error = new Error("The audio context was closed by the browser.");
+      error.name = "InvalidStateError";
+      throw error;
+    }
     if (context.state !== "running") {
       await Tone.start();
     }

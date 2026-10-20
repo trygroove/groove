@@ -6,6 +6,7 @@ import { ConsentStore } from "../analytics/consent";
 import { createRecordingTransport } from "../analytics/transport";
 import type { AudioHost, AudioProjectScope } from "../audio/AudioRuntime";
 import { installWebAudioGlobals } from "../audio/testAudioContext";
+import { audioStartFailureMessage } from "../browser/capabilityMessages";
 import { executeTransaction, setLoopEnabled, setLoopRange } from "../commands";
 import { createDevice } from "../domain/devices";
 import type { Project } from "../domain/entities";
@@ -14,6 +15,7 @@ import { createReferenceProject, createSliceFixtureProject } from "../domain/fix
 import { type AssetId, createSeededIdFactory, type TrackId } from "../domain/ids";
 import { TICKS_PER_BAR } from "../domain/time";
 import type { LibraryAsset } from "../library/manifest";
+import { expectNoContent, recordErrorReports } from "../testing/errorReports";
 import { memoryStorage } from "../testing/storage";
 
 installWebAudioGlobals();
@@ -106,6 +108,219 @@ describe("useProjectAudio", () => {
     const events = transport.named("audio_start_failed");
     expect(events).toHaveLength(1);
     expect(events[0]?.params.error_code).toBeDefined();
+  });
+
+  it("reports a failed start to monitoring with the context's state, scrubbed (GRV-55)", async () => {
+    const { analytics, transport } = fakeAnalytics();
+    const recorded = recordErrorReports();
+    const blocked = new Error("The play() request on My Song was blocked");
+    blocked.name = "NotAllowedError";
+    const runtime: AudioHost = {
+      ...unreachableAudioHost(() => Promise.reject(blocked)),
+      contextState: () => "suspended",
+    };
+
+    const { result } = renderHook(
+      () =>
+        useProjectAudioModule.useProjectAudio(() => null, {
+          runtime,
+          analytics,
+          reportError: recorded.report,
+        }),
+      {},
+    );
+    await result.play();
+
+    expect(recorded.reports).toHaveLength(1);
+    const [payload] = recorded.payloads();
+    expect(payload.tags).toMatchObject({
+      area: "audio",
+      error_code: "autoplay_blocked",
+      fatal: false,
+      audio_context_state: "suspended",
+    });
+    expectNoContent(payload, ["My Song"]);
+    expect(transport.named("audio_start_failed")).toHaveLength(1);
+    expect(result.startFailure()?.code).toBe("autoplay_blocked");
+  });
+
+  /**
+   * The reports a closed context made. The fixture's sounds also fail to
+   * load in this sandbox, and report on their own.
+   */
+  const closedReports = (recorded: ReturnType<typeof recordErrorReports>) =>
+    recorded.reports.filter((report) => report.code === "context_closed");
+
+  /** The slice fixture with `count` EQs on the master, each a new node. */
+  function withMasterEqs(base: Project, count: number): Project {
+    const ids = createSeededIdFactory("closed-eq");
+    return {
+      ...base,
+      song: {
+        ...base.song,
+        master: {
+          ...base.song.master,
+          devices: Array.from({ length: count }, (_, order) =>
+            createDevice(ids("device"), "eq", order),
+          ),
+        },
+      },
+    };
+  }
+
+  /** Renders the hook on the real runtime, and closes its context as the browser would. */
+  async function renderOnClosedContext(project: () => Project) {
+    const runtime = AudioRuntimeModule.getAudioRuntime();
+    const { analytics, transport } = fakeAnalytics();
+    const recorded = recordErrorReports();
+    const { result } = renderHook(
+      () =>
+        useProjectAudioModule.useProjectAudio(project, {
+          runtime,
+          analytics,
+          reportError: recorded.report,
+        }),
+      {},
+    );
+    flush();
+    const context = runtime.ensureContext();
+    // The browser closes the context under the runtime, as it does when the
+    // output device goes away; nothing can resume it again.
+    await (context.rawContext as AudioContext).close();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return { runtime, context, result, transport, recorded };
+  }
+
+  it("keeps editing on a context the browser closed, without a second context (GRV-55)", async () => {
+    const base = createSliceFixtureProject();
+    const [project, setProject] = createSignal<Project>(base);
+    const { runtime, context } = await renderOnClosedContext(project);
+
+    // Each edit adds a node to the graph built on the closed context.
+    expect(() => {
+      setProject(withMasterEqs(base, 1));
+      flush();
+      setProject(withMasterEqs(base, 2));
+      flush();
+    }).not.toThrow();
+
+    expect(runtime.ensureContext()).toBe(context);
+    expect(
+      runtime.diagnostics().contextsCreated + runtime.diagnostics().contextsAdopted,
+    ).toBe(1);
+  });
+
+  it("reports a closed context once, and says to reload, however often Play is pressed (GRV-55)", async () => {
+    const project = createSliceFixtureProject();
+    const { result, transport, recorded } = await renderOnClosedContext(() => project);
+
+    await result.play();
+    await result.play();
+
+    expect(result.isPlaying()).toBe(false);
+    expect(result.startFailure()?.code).toBe("context_closed");
+    // The editor's notice for it: reload, and nothing else.
+    expect(audioStartFailureMessage("context_closed").action).toMatch(/^Reload the page/);
+    const events = transport.named("audio_start_failed");
+    expect(events).toHaveLength(1);
+    expect(events[0]?.params).toMatchObject({
+      error_code: "context_closed",
+      was_browser_blocked: false,
+    });
+    expect(closedReports(recorded)).toHaveLength(1);
+    const [payload] = recorded
+      .payloads()
+      .filter((event) => event.tags?.error_code === "context_closed");
+    expect(payload.tags).toMatchObject({
+      area: "audio",
+      error_code: "context_closed",
+      fatal: false,
+      audio_context_state: "closed",
+    });
+    expectNoContent(payload, [project.metadata.name]);
+  });
+
+  it("stops playback and explains when the browser closes the context mid-play (GRV-55)", async () => {
+    const runtime = AudioRuntimeModule.getAudioRuntime();
+    // A real context's resume needs an audio callback this sandbox has no
+    // device to fire (see AudioRuntime.resume.test.ts), so the first resume
+    // only installs the context.
+    vi.spyOn(runtime, "resume").mockImplementationOnce(async () => {
+      runtime.ensureContext();
+    });
+    const project = createSliceFixtureProject();
+    const { analytics, transport } = fakeAnalytics();
+    const recorded = recordErrorReports();
+    const { result } = renderHook(
+      () =>
+        useProjectAudioModule.useProjectAudio(() => project, {
+          runtime,
+          analytics,
+          reportError: recorded.report,
+        }),
+      {},
+    );
+    flush();
+    await result.play();
+    expect(result.isPlaying()).toBe(true);
+
+    await (runtime.ensureContext().rawContext as AudioContext).close();
+    await vi.waitFor(() => expect(result.isPlaying()).toBe(false));
+
+    expect(result.startFailure()?.code).toBe("context_closed");
+    expect(transport.named("audio_start_failed")).toHaveLength(1);
+    expect(closedReports(recorded)).toHaveLength(1);
+
+    // Play meets the same closed context: explained again, not reported again.
+    const explained = result.startFailure()?.attempt ?? 0;
+    await result.play();
+    expect(result.startFailure()?.attempt).toBe(explained + 1);
+    expect(transport.named("audio_start_failed")).toHaveLength(1);
+    expect(closedReports(recorded)).toHaveLength(1);
+  });
+
+  it("does not report the runtime's own close as a failure (GRV-55)", async () => {
+    const runtime = AudioRuntimeModule.getAudioRuntime();
+    const project = createSliceFixtureProject();
+    const { analytics, transport } = fakeAnalytics();
+    const recorded = recordErrorReports();
+    renderHook(
+      () =>
+        useProjectAudioModule.useProjectAudio(() => project, {
+          runtime,
+          analytics,
+          reportError: recorded.report,
+        }),
+      {},
+    );
+    flush();
+
+    await runtime.close();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(transport.named("audio_start_failed")).toHaveLength(0);
+    expect(closedReports(recorded)).toHaveLength(0);
+  });
+
+  it("reports a browser with no Web Audio as unavailable (GRV-55)", async () => {
+    const { analytics } = fakeAnalytics();
+    const recorded = recordErrorReports();
+    const { result } = renderHook(
+      () =>
+        useProjectAudioModule.useProjectAudio(() => null, {
+          runtime: unreachableAudioHost(() => Promise.resolve()),
+          analytics,
+          webAudioAvailable: false,
+          reportError: recorded.report,
+        }),
+      {},
+    );
+    await result.play();
+
+    expect(recorded.payloads()[0]?.tags).toMatchObject({
+      error_code: "not_supported",
+      audio_context_state: "unavailable",
+    });
   });
 
   it("toggle() plays then stops without a runtime that ever rejects", async () => {
@@ -637,6 +852,52 @@ describe("useProjectAudio", () => {
 
       cleanupHook();
     });
+
+    it("reports a sound that cannot load to monitoring, scrubbed, and says how many are silent (GRV-55)", async () => {
+      const { analytics, transport } = fakeAnalytics();
+      const recorded = recordErrorReports();
+      const runtime = AudioRuntimeModule.getAudioRuntime();
+      const base = loopProject();
+      const project: Project = {
+        ...base,
+        song: {
+          ...base.song,
+          assets: base.song.assets.map((asset) =>
+            asset.kind === "loop" ? { ...asset, url: null } : asset,
+          ),
+        },
+      };
+      const loop = project.song.assets.find((asset) => asset.kind === "loop");
+      if (!loop) throw new Error("expected a loop asset");
+
+      const { result, cleanup: cleanupHook } = renderHook(
+        () =>
+          useProjectAudioModule.useProjectAudio(() => project, {
+            runtime,
+            analytics,
+            reportError: recorded.report,
+          }),
+        {},
+      );
+      await vi.waitFor(() => expect(recorded.reports).toHaveLength(1));
+
+      const [payload] = recorded.payloads();
+      expect(payload.tags).toMatchObject({ area: "audio", fatal: false });
+      expect(payload.tags?.error_code).toBe(
+        transport.named("asset_load_failed")[0]?.params.error_code,
+      );
+      expect(payload.tags?.audio_context_state).toBeDefined();
+      expectNoContent(payload, [
+        project.metadata.name,
+        loop.name,
+        loop.storageRef ?? "storage-ref",
+        ...project.song.tracks.map((track) => track.name),
+        ...base.song.assets.flatMap((asset) => (asset.url ? [asset.url] : [])),
+      ]);
+      expect(result.loadFailure()).toEqual({ count: 1, attempt: 1 });
+
+      cleanupHook();
+    });
   });
 
   it("auditionTrack unlocks the context and resolves true on a loaded project", async () => {
@@ -711,8 +972,9 @@ describe("useProjectAudio start failures", () => {
     await result.play();
     const first = result.startFailure();
     expect(first?.attempt).toBe(1);
+    const explained = result.startFailure()?.attempt ?? 0;
     await result.play();
-    expect(result.startFailure()?.attempt).toBe(2);
+    expect(result.startFailure()?.attempt).toBe(explained + 1);
     expect(result.startFailure()?.code).toBe(first?.code);
 
     refuse = false;
