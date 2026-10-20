@@ -28,6 +28,10 @@ async function boxOf(locator: Locator, what: string): Promise<Box> {
 }
 
 interface Frame {
+  /** The width of the classic vertical scrollbar the page draws, 0 when none
+   * (headless Chromium hides it; WebKit and Firefox on Linux draw one beside a
+   * document that scrolls). The page area is the window less this (GRV-57). */
+  scrollbar: number;
   header: Box;
   view: Box;
   dock: Box;
@@ -40,6 +44,9 @@ const viewRoot = (page: Page): Locator => page.locator(".editor-body > *").first
  * The header row's box (inside any padding a view gives it to cover its
  * gutters) and the view's, at the top of the document.
  */
+const scrollbarWidth = (page: Page): Promise<number> =>
+  page.evaluate(() => window.innerWidth - document.documentElement.clientWidth);
+
 async function frame(page: Page, what: string): Promise<Frame> {
   await page.evaluate(() => window.scrollTo(0, 0));
   const header = await page.locator(".editor-header").evaluate((element) => {
@@ -57,6 +64,7 @@ async function frame(page: Page, what: string): Promise<Frame> {
     };
   });
   return {
+    scrollbar: await scrollbarWidth(page),
     header,
     view: await boxOf(viewRoot(page), `${what}'s view`),
     dock: await boxOf(dock(page), "the view dock"),
@@ -66,13 +74,31 @@ async function frame(page: Page, what: string): Promise<Frame> {
 /** A view's frame is the arrangement's: same header, same edges, and its
  * background runs on behind the dock. */
 function expectSameFrame(what: string, actual: Frame, reference: Frame): void {
-  expect.soft(actual.header, `${what}: the header`).toEqual(reference.header);
+  // A view that scrolls the document sits beside its scrollbar: measure it
+  // across the whole window.
   expect
     .soft(
-      { x: actual.view.x, y: actual.view.y, width: actual.view.width },
+      { ...actual.header, width: actual.header.width + actual.scrollbar },
+      `${what}: the header`,
+    )
+    .toEqual({
+      ...reference.header,
+      width: reference.header.width + reference.scrollbar,
+    });
+  expect
+    .soft(
+      {
+        x: actual.view.x,
+        y: actual.view.y,
+        width: actual.view.width + actual.scrollbar,
+      },
       `${what}: the view's top-left corner and width`,
     )
-    .toEqual({ x: reference.view.x, y: reference.view.y, width: reference.view.width });
+    .toEqual({
+      x: reference.view.x,
+      y: reference.view.y,
+      width: reference.view.width + reference.scrollbar,
+    });
   expect
     .soft(
       actual.view.y + actual.view.height,
@@ -152,12 +178,14 @@ test.describe("view layout", () => {
         window.scrollTo(0, document.documentElement.scrollHeight),
       );
       const box = await boxOf(viewRoot(page), `${view}'s view`);
+      // The page area: the window less any scrollbar the document draws.
+      const scrollbar = await scrollbarWidth(page);
       expect
         .soft(
           { left: box.x, right: box.x + box.width, bottom: box.y + box.height },
           `${view}: the view runs to the window's left, right and bottom edges`,
         )
-        .toEqual({ left: 0, right: viewport.width, bottom: viewport.height });
+        .toEqual({ left: 0, right: viewport.width - scrollbar, bottom: viewport.height });
     }
 
     // Docked, the assistant takes the right edge: the arrangement meets it
