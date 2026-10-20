@@ -53,6 +53,9 @@
  * - `[remember]`: a short reply that ends in `remember_producer` (GRV-25),
  *   proposing {@link EMULATOR_REMEMBER}'s note. The gateway only lets it
  *   through on a turn that carries the producer's memory.
+ * - `[lesson]` (GRV-43): a short reply that ends in `start_lesson`, starting
+ *   "Make a beat". Like `remember_producer`, it is offered only on a turn
+ *   that carries memory.
  * - a turn during a lesson (GRV-43, CF-037), whatever its message: a short
  *   reply that names the bite it is about, or for the chapter's end the
  *   chapter, from the lesson block the turn carries ({@link lessonReply}),
@@ -66,6 +69,7 @@ import { setParameter } from "../commands/definitions/parameters";
 import { SONG_TEMPO } from "../domain/parameters";
 import { ASK_PRODUCER_TOOL_NAME, type AskProducerInput } from "./ask";
 import { type AssistantLessonContext, LESSON_BLOCK_HEADING } from "./lesson";
+import { START_LESSON_TOOL_NAME } from "./lessonTool";
 import { REMEMBER_TOOL_NAME } from "./memory";
 import { LIBRARY_BLOCK_HEADING, PROJECT_BLOCK_HEADING } from "./prompt";
 import type { AssistantLibraryContext } from "./protocol";
@@ -678,6 +682,13 @@ function rememberReply(): Step[] {
   ]);
 }
 
+/** `[lesson]`'s reply: one `start_lesson` call, for "Make a beat". */
+function startLessonReply(): Step[] {
+  return proposalReply("Let's make a beat together.", [
+    { id: "toolu_lesson", name: START_LESSON_TOOL_NAME, input: { chapter: "beat" } },
+  ]);
+}
+
 /**
  * What a lesson's turn is answered with (CF-037): one short line naming the
  * bite it is about, or the chapter at its end, as a model's reply would.
@@ -825,6 +836,7 @@ export function createEmulatorAssistantProvider(
     if (message.includes("[ask-multi]")) return askReply(true);
     if (message.includes("[ask]")) return askReply(false);
     if (message.includes("[remember]")) return rememberReply();
+    if (message.includes("[lesson]")) return startLessonReply();
     if (message.includes("[video]")) return videoReply();
     return lessonReply(request) ?? textReply(EMULATOR_REPLY_CHUNKS);
   }

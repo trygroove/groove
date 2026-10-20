@@ -86,6 +86,7 @@ import {
 } from "./config";
 import type { AssistantGuardStores } from "./guards";
 import { type BoundedHistory, boundHistory, estimateTokens } from "./history";
+import { startLessonTool } from "./lessonTool";
 import { rememberTool } from "./memory";
 import { ASSISTANT_PROMPT_VERSION, buildSystemBlocks, createIdStem } from "./prompt";
 import {
@@ -328,7 +329,8 @@ function offeredTools(
 ): ProviderTool[] {
   // A turn that carries the library may also recommend from it (GRV-23), one
   // that can search YouTube may recommend a tutorial (GRV-16), and one that
-  // carries the producer's memory may propose adding to it (GRV-25).
+  // carries the producer's memory may propose adding to it (GRV-25) and start
+  // a lesson (GRV-43), whose done state lives beside it on the profile.
   return [
     ...providerTools([
       ...bundleTools(
@@ -348,7 +350,10 @@ function offeredTools(
       ? [withProviderToolText(videoRecommendationTool(), tactics.toolText)]
       : []),
     ...(turn.memory
-      ? providerTools([withToolText(rememberTool(), tactics.toolText)])
+      ? providerTools([
+          withToolText(rememberTool(), tactics.toolText),
+          withToolText(startLessonTool(), tactics.toolText),
+        ])
       : []),
   ];
 }

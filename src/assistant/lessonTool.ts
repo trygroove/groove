@@ -1,9 +1,7 @@
 /**
- * The one tool that starts a lesson (GRV-43). The gateway does not offer it
- * yet: it is offered once the panel can start the lesson it names. Then a
- * turn that carries the producer's memory is offered `start_lesson`: when
- * they ask to learn something a chapter teaches, the model names the
- * chapter. The gateway
+ * The one tool that starts a lesson (GRV-43). A turn that carries the
+ * producer's memory is offered `start_lesson`: when they ask to learn
+ * something a chapter teaches, the model names the chapter. The gateway
  * passes the call back among the turn's calls (as it does
  * `remember_producer`), and the panel takes it out ({@link splitLessonCalls})
  * and starts the lesson.

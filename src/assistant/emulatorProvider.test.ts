@@ -33,6 +33,7 @@ import {
 import { type AssistantGatewayDeps, runAssistantTurn } from "./gateway";
 import { createInMemoryGuardStores } from "./inMemoryGuardStores";
 import type { AssistantLessonContext } from "./lesson";
+import { START_LESSON_TOOL_NAME } from "./lessonTool";
 import { type AssistantMemoryContext, REMEMBER_TOOL_NAME } from "./memory";
 import { buildAssistantPayload } from "./payload";
 import { validateProposal } from "./proposal";
@@ -214,6 +215,33 @@ describe("the emulator's assistant provider", () => {
     expect(reply.stopReason).toBe("tool_use");
     expect(reply.proposal?.calls).toEqual([
       expect.objectContaining({ name: REMEMBER_TOOL_NAME, input: EMULATOR_REMEMBER }),
+    ]);
+  });
+
+  it("ends [lesson] in start_lesson on a turn that carries memory (GRV-43)", async () => {
+    const memory: AssistantMemoryContext = {
+      taste: [],
+      artists: "",
+      experience: null,
+      goal: null,
+      learn: [],
+      gear: [],
+      notes: [],
+      askLater: null,
+    };
+    const reply = await turn(
+      gateway(),
+      "Teach me to make a beat [lesson]",
+      new AbortController().signal,
+      createReferenceProject(),
+      undefined,
+      memory,
+    ).result;
+    expect(reply.proposal?.calls).toEqual([
+      expect.objectContaining({
+        name: START_LESSON_TOOL_NAME,
+        input: { chapter: "beat" },
+      }),
     ]);
   });
 

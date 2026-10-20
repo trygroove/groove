@@ -107,8 +107,10 @@ import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
  * 9: `clip_create` and `note_add` take each note as a short array with no ID,
  *    which the gateway writes out as a note event (`compactNotes.ts`,
  *    GRV-131).
+ * 10: a turn that carries the producer's memory is offered `start_lesson`
+ *    (`lesson.ts`, GRV-43).
  */
-export const ASSISTANT_TOOLSET_VERSION = 9;
+export const ASSISTANT_TOOLSET_VERSION = 10;
 
 /** The song's own parameters the assistant may set: its tempo and its swing. */
 const SONG_PARAMETER_IDS: readonly string[] = [SONG_TEMPO.id, SONG_SWING.id];
@@ -725,6 +727,12 @@ export const TOOL_TEXT: Readonly<Record<string, TrimmedText>> = {
     aggressive:
       "Recommend a YouTube tutorial: a short technique search, nothing from the project. At most two per reply.",
   },
+  start_lesson: {
+    moderate:
+      "Start a lesson in the producer's project when they ask to learn something a chapter covers (a beat or drums; shaping a synth sound; finding their way around Groove). Call it alone, after one short sentence, and only when they asked to learn. Teach anything else in the conversation.",
+    aggressive:
+      "Start a lesson when they ask to learn what a chapter covers (beat, sound, tour). Alone, after one sentence.",
+  },
   remember_producer: {
     moderate:
       'Propose remembering one lasting thing about the producer: a short note in their words (kind "note"), or a new value for one of their memory\'s fields (kind "field"). Only for what will matter in another session (what they make, their setup, how they like to work), never about the song or what memory already holds. Nothing is saved unless they confirm; say in your reply what you propose.',
@@ -866,6 +874,12 @@ export const SCHEMA_TEXT: Readonly<Record<string, TrimmedText>> = {
     moderate: "One short line on what the producer will learn.",
     aggressive: "One line on what they will learn.",
   },
+  'Which chapter: "beat" (Make a beat: kick, backbeat, hats, a loop), "sound" (Shape a sound: a synth\'s wave, filter and envelope into a pluck) or "tour" (Tour the studio: the five views).':
+    {
+      moderate:
+        'Which chapter: "beat" (a beat: kick, backbeat, hats, loop), "sound" (a synth pluck) or "tour" (the five views).',
+      aggressive: '"beat", "sound" or "tour".',
+    },
   '"note" to remember a note, "field" to set one of memory\'s fields.': {
     moderate: '"note" to remember a note, "field" to set a memory field.',
     aggressive: '"note" or "field".',
@@ -1061,7 +1075,8 @@ export function assistantTools(
  * so a bundle's tool block is the same bytes every time it is sent: the few
  * bundles are a few prompt-cache entries, not one per request. The tools that
  * are not commands (`explain_change`, `ask_producer`, and the conditional
- * `recommend_sounds`, `recommend_video` and `remember_producer`) are offered
+ * `recommend_sounds`, `recommend_video`, `remember_producer` and
+ * `start_lesson`) are offered
  * with every bundle, and every bundle but `everything` adds
  * {@link NEED_MORE_TOOLS_TOOL}.
  *
