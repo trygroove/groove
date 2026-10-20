@@ -119,6 +119,8 @@ test.describe("CF-027", () => {
       .poll(async () => Number(await volume(page, TRACK).inputValue()))
       .toBeLessThan(startingVolume);
     const proposedVolume = Number(await volume(page, TRACK).inputValue());
+    // Previewing commits nothing: there is no step to undo.
+    await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
     await step("It previews on the mixer by itself");
 
     // 6. Press Cancel. The editor goes back to the arrangement. Swing reads

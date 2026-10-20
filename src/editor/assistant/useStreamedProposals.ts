@@ -723,7 +723,13 @@ export function useStreamedProposals(
   }
 
   /** Opens the preview of every part not applied yet. */
-  function openPreview(state: StreamState, reveal: boolean): boolean {
+  function openPreview(
+    state: StreamState,
+    reveal: boolean,
+    automatic = false,
+    /** Runs once the session took the preview, before it is marked. */
+    onOpened?: () => void,
+  ): boolean {
     const project = committed();
     if (!project || withdrawn(state)) return false;
     // Each part in order, those that no longer apply left out.
@@ -733,9 +739,11 @@ export function useStreamedProposals(
     if (commands.length === 0) return false;
     const opened = session.beginPreview(commands);
     if (!opened?.ok) {
-      state.notice = BUSY;
+      // A preview nobody asked for says nothing when it cannot open.
+      if (!automatic) state.notice = BUSY;
       return false;
     }
+    onOpened?.();
     state.preview = opened.preview;
     state.status = "previewing";
     const marked = uniqueControls(addresses);
@@ -803,22 +811,24 @@ export function useStreamedProposals(
 
   /** Opens the card's preview, ending any other's. `automatic` is the assistant turning it on. */
   function showPreview(state: StreamState, automatic: boolean): boolean {
-    // One preview at a time, across every card.
-    let location: EditorLocation | null = null;
-    for (const other of states.values()) {
-      if (other === state || !other.preview) continue;
-      location = other.location;
-      endPreview(other);
-      other.status = "open";
-      other.location = null;
-    }
-    options.onPreviewOpen();
-    state.location = location;
+    // One preview at a time, across every card. The others end only once this
+    // one opened (the session supersedes theirs), so a preview that cannot
+    // open leaves the producer's own in place.
     state.notice = null;
-    if (!openPreview(state, true)) {
+    const opened = openPreview(state, true, automatic, () => {
+      let location: EditorLocation | null = null;
+      for (const other of states.values()) {
+        if (other === state || !other.preview) continue;
+        location = other.location;
+        endPreview(other);
+        other.status = "open";
+        other.location = null;
+      }
+      options.onPreviewOpen();
+      state.location = location;
+    });
+    if (!opened) {
       state.location = null;
-      // A preview nobody asked for says nothing when it cannot open.
-      if (automatic) state.notice = null;
       return false;
     }
     options.analytics().log("assistant_proposal_previewed", { automatic });

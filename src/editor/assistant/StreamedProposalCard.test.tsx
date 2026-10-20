@@ -265,6 +265,7 @@ async function setUp(
     session,
     client,
     clock,
+    revealControl,
     say,
     track,
     ask,
@@ -650,6 +651,61 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     part(CLIP);
     expect(session.activePreview).not.toBeNull();
     expect(session.project.song.tracks.some((t) => t.name === "Bass")).toBe(true);
+  });
+
+  it("follows the stream: each new part reveals where it lands", async () => {
+    const { ask, part, revealControl } = await setUp();
+    await ask();
+    part(SWING);
+    const first = revealControl.mock.calls.at(-1)?.[0];
+    expect(first).toMatchObject({ entity: "song" });
+    part(TRACK);
+    const newest = revealControl.mock.calls.at(-1)?.[0];
+    expect(revealControl.mock.calls.length).toBeGreaterThan(1);
+    expect(newest).toMatchObject({ entity: CREATE_EXAMPLES.track.id });
+    expect(newest).not.toEqual(first);
+    expect(revealControl.mock.calls.at(-1)?.[1]).toEqual({ focus: false });
+  });
+
+  it("stops following once the producer applies a part", async () => {
+    const { ask, part, session, revealControl } = await setUp();
+    await ask();
+    part(SWING);
+    expect(session.activePreview).not.toBeNull();
+    await press(applyAt(0));
+    expect(session.activePreview).toBeNull();
+    const revealed = revealControl.mock.calls.length;
+    part(TRACK);
+    expect(session.activePreview).toBeNull();
+    expect(revealControl.mock.calls.length).toBe(revealed);
+  });
+
+  it("ends the preview with Apply all, and nothing previews again", async () => {
+    // Apply all waits for the turn to end, so no later part can reach the card.
+    const { ask, part, fail, session, swing } = await setUp();
+    await ask();
+    part(SWING);
+    expect(session.activePreview).not.toBeNull();
+    fail();
+    await press(cardButton("Apply all"));
+    expect(session.activePreview).toBeNull();
+    expect(swing()).toBe(58);
+    expect(session.history.canUndo).toBe(true);
+  });
+
+  it("opens nothing, and says nothing, when a gesture keeps the preview from opening", async () => {
+    const { ask, part, session } = await setUp();
+    await ask();
+    const gesture = session.beginGesture();
+    part(SWING);
+    expect(session.activePreview).toBeNull();
+    expect(card()).not.toHaveTextContent("Finish the change");
+    gesture.cancel();
+    // The producer's own click still reports a busy session.
+    const gesture2 = session.beginGesture();
+    await press(cardButton("Preview"));
+    expect(card()).toHaveTextContent("Finish the change");
+    gesture2.cancel();
   });
 
   it("logs each preview shown once, as automatic or as the producer's own", async () => {
