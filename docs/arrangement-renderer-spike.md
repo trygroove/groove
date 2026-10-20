@@ -41,7 +41,7 @@ contracts the production renderer uses today:
 | --- | --- |
 | `src/arrangement/geometry.ts` | Pure viewport/row/zoom math (PRD 9.3 "Viewport and scrolling model"). |
 | `src/arrangement/projection.ts` | Builds the `ArrangementProjection` PRD 9.3 calls for: stable IDs, integer musical bounds, track order, colors, labels, compact preview data, revision counters, viewport culling, hit testing. |
-| `src/arrangement/revision.ts` | Object-identity revision counters — cheap because domain state is edited immutably (the command layer rebuilds with structural sharing), so reference equality already tells you what changed. |
+| `src/projection/revision.ts` | Object-identity revision counters — cheap because domain state is edited immutably (the command layer rebuilds with structural sharing), so reference equality already tells you what changed. |
 | `src/arrangement/waveformCache.ts` | LRU, multi-resolution, keyed by `(assetId, revision)`, budgeted at the PRD's `128 MiB`. `generateSyntheticPeaks` is the one piece a real audio-decode pipeline replaces later. |
 
 ## Retained fixtures

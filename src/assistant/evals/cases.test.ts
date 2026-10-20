@@ -335,35 +335,51 @@ describe("the project-context cases (GRV-150)", () => {
     return found;
   };
 
-  it("ask about the applied SD track, on a project that has it at its quieter level", () => {
+  // QA's session, turn for turn, as the panel resends it: each proposal
+  // says what became of it, and the replies that knew nothing of that are
+  // resent as QA's conversation had them.
+  const QA_SESSION = [
+    "add a snare on beats 2 and 4",
+    expect.stringMatching(/SD.*\n\n\[The producer applied this proposal\./s),
+    "make it quieter",
+    expect.stringMatching(/-6\.0 dB.*\n\n\[The producer applied this proposal\./s),
+    "what did you just change?",
+    expect.stringMatching(/^(?!.*\[The producer).*can't tell from here/s),
+    "add a closed hi-hat on the offbeats",
+    expect.stringMatching(
+      /Closed Hat.*\n\n\[The producer cancelled this proposal\. Nothing in it is in the song\.\]$/s,
+    ),
+  ];
+
+  it("ask about the applied SD track after QA's session, on a project that has it turned down", () => {
     const snare = byId("context-applied-snare");
     const project = snare.fixture();
     expect(project.song.tracks.map((entry) => [entry.name, entry.mixer.volume])).toEqual([
       ["BD", 0],
-      ["SD", -3],
+      ["SD", -6],
     ]);
     expect(snare.request).toBe("make the snare a little brighter");
     expect(snare.checks).toEqual(["noDeniedTrack"]);
     expect(snare.facts).toEqual({ present: ["snare", "SD"] });
-    // Resent as the panel resends it: each applied proposal says it was applied.
-    expect(snare.history?.map((message) => message.text)).toEqual([
-      "add a snare on beats 2 and 4",
-      expect.stringMatching(/SD.*\n\n\[The producer applied this proposal\./s),
-      "make it quieter",
-      expect.stringMatching(/-3\.0 dB.*\n\n\[The producer applied this proposal\./s),
-      "what did you just change?",
-      expect.not.stringContaining("[The producer"),
-    ]);
+    expect(snare.history?.map((message) => message.text)).toEqual(QA_SESSION);
   });
 
-  it("ask what is muted after a cancelled Closed Hat, on a project without one", () => {
+  it("ask what is muted after QA's session and its denied snare, on a project without a hat", () => {
     const hat = byId("context-cancelled-hat");
     expect(hat.fixture().song.tracks.map((entry) => entry.name)).toEqual(["BD", "SD"]);
     expect(hat.expect).toBe("explain");
-    expect(hat.checks).toEqual(["noAbsentTrack"]);
-    expect(hat.history?.at(-1)?.text).toMatch(
-      /Closed Hat.*\n\n\[The producer cancelled this proposal\. Nothing in it is in the song\.\]$/s,
-    );
+    expect(hat.checks).toEqual(["noAbsentTrack", "noDeniedTrack"]);
+    expect(hat.facts).toEqual({
+      present: ["snare", "SD"],
+      absent: ["closed hat", "hi-hat", "hat"],
+    });
+    expect(hat.history?.map((message) => message.text)).toEqual([
+      ...QA_SESSION,
+      "make the snare a little brighter",
+      expect.stringMatching(
+        /^There's no snare track in the project yet — I never actually added it\./,
+      ),
+    ]);
   });
 });
 
