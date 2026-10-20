@@ -103,6 +103,15 @@ describe("firebase.json's security headers", () => {
     expect(directiveSources(csp(), "connect-src")).toContain("https://apis.google.com");
   });
 
+  it("allow where that beacon redirects in connect-src", () => {
+    // apis.google.com/js/gen_204 answers 302 to www.google.com/images/cleardot.gif.
+    // The redirect is checked against connect-src as well, and the report names
+    // only the first URL, so a missing source looks like apis.google.com refused.
+    expect(directiveSources(csp(), "connect-src")).toContain(
+      "https://www.google.com/images/cleardot.gif",
+    );
+  });
+
   it("allow the Firebase services the production project is configured for", () => {
     expect(directiveSources(csp(), "frame-src")).toContain(
       `https://${FIREBASE_PROJECT_ID}.firebaseapp.com`,
