@@ -63,6 +63,8 @@ export interface CardQueue {
    * where the panel says so. Reactive.
    */
   skipped(entryId: string): number;
+  /** Whether this card was skipped rather than shown. Reactive. */
+  wasSkipped(entryId: string): boolean;
 }
 
 interface Turn {
@@ -75,6 +77,8 @@ interface Turn {
   /** The shown cards held again behind one taken back, already told so. */
   readonly rehold: Set<string>;
   skipped: number;
+  /** The cards skipped. */
+  readonly skippedIds: Set<string>;
 }
 
 /**
@@ -108,6 +112,7 @@ export function useCardQueue(): CardQueue {
       if (!card.skip?.()) continue;
       turn.cards.splice(turn.cards.indexOf(card), 1);
       turn.skipped += 1;
+      turn.skippedIds.add(card.entryId);
     }
     if (currentOf(turn) !== -1) return;
     const next = turn.cards[turn.shown];
@@ -169,6 +174,7 @@ export function useCardQueue(): CardQueue {
           shown: 0,
           rehold: new Set(),
           skipped: 0,
+          skippedIds: new Set(),
         };
         turns.set(key, turn);
       }
@@ -194,6 +200,10 @@ export function useCardQueue(): CardQueue {
       version();
       const turn = byEntry.get(entryId);
       return turn?.first === entryId ? turn.skipped : 0;
+    },
+    wasSkipped(entryId) {
+      version();
+      return byEntry.get(entryId)?.skippedIds.has(entryId) ?? false;
     },
   };
 }

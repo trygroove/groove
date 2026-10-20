@@ -1,4 +1,5 @@
 import { seedRegisteredSession } from "./support/authSession";
+import { reloadPage } from "./support/reload";
 import { expect, type Page, test } from "./support/test";
 
 /** Reads the generated name of the project the editor just opened. */
@@ -90,7 +91,7 @@ test.describe("destructive confirmation", () => {
 
     // The deletion is a real write against the emulator, not just local
     // state — a reload still shows it gone.
-    await page.reload();
+    await reloadPage(page);
     await expect(page.getByText("No projects yet")).toBeVisible();
   });
 });

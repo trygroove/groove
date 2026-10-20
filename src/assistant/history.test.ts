@@ -5,7 +5,13 @@ import {
   SMALLEST_CONTEXT_WINDOW_TOKENS,
 } from "./config";
 import { historyBudgetFor } from "./gateway";
-import { boundHistory, estimateTokens } from "./history";
+import {
+  boundHistory,
+  estimateTokens,
+  type HistoryEntry,
+  historyOf,
+  MAX_MESSAGE_CHARS,
+} from "./history";
 import type { AssistantMessage } from "./protocol";
 
 const user = (text: string): AssistantMessage => ({ role: "user", text });
@@ -59,5 +65,58 @@ describe("the history budget", () => {
   it("estimates conservatively: never fewer tokens than characters over four", () => {
     const text = "Push the kick up by two decibels in the chorus.";
     expect(estimateTokens(text)).toBeGreaterThanOrEqual(text.length / 4);
+  });
+});
+
+describe("historyOf: what became of each proposal (GRV-150)", () => {
+  const proposed = (proposal?: Extract<HistoryEntry, { kind: "reply" }>["proposal"]) =>
+    historyOf([
+      { kind: "message", text: "add a closed hi-hat on the offbeats" },
+      {
+        kind: "reply",
+        text: "I'll add a Closed Hat track.",
+        ...(proposal ? { proposal } : {}),
+      },
+      { kind: "proposal" },
+    ]);
+
+  it("says a cancelled proposal changed nothing, after the reply that made it", () => {
+    expect(proposed("cancelled")).toEqual([
+      user("add a closed hi-hat on the offbeats"),
+      assistant(
+        "I'll add a Closed Hat track.\n\n[The producer cancelled this proposal. Nothing in it is in the song.]",
+      ),
+    ]);
+  });
+
+  it("says an applied proposal was applied", () => {
+    expect(proposed("applied").at(-1)?.text).toBe(
+      "I'll add a Closed Hat track.\n\n[The producer applied this proposal. The project description shows the song as it is now.]",
+    );
+  });
+
+  it("says an undone, a refused and an unanswered proposal changed nothing", () => {
+    expect(proposed("undone").at(-1)?.text).toContain(
+      "[The producer applied this proposal, then undid it. Nothing in it is in the song.]",
+    );
+    expect(proposed("rejected").at(-1)?.text).toContain(
+      "[This proposal could not be applied. Nothing in it is in the song.]",
+    );
+    expect(proposed("pending").at(-1)?.text).toContain(
+      "[The producer has not applied this proposal. Nothing in it is in the song.]",
+    );
+  });
+
+  it("says nothing more of a reply that proposed nothing", () => {
+    expect(proposed().at(-1)?.text).toBe("I'll add a Closed Hat track.");
+  });
+
+  it("keeps the note when the reply is as long as a message may be", () => {
+    const [, reply] = historyOf([
+      { kind: "message", text: "go" },
+      { kind: "reply", text: "x".repeat(MAX_MESSAGE_CHARS), proposal: "cancelled" },
+    ]);
+    expect(reply.text).toHaveLength(MAX_MESSAGE_CHARS);
+    expect(reply.text.endsWith("Nothing in it is in the song.]")).toBe(true);
   });
 });

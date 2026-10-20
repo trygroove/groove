@@ -274,3 +274,52 @@ describe("a chat's sad sessions (GRV-103)", () => {
     expect(health()).toEqual(["started", "started"]);
   });
 });
+
+describe("what the next turn resends of a proposal (GRV-150)", () => {
+  /** The assistant's message about the card's turn, as the next turn resends it. */
+  async function resent(
+    chat: AssistantChat,
+    client: ReturnType<typeof createFakeAssistantClient>,
+  ) {
+    expect(chat.conversation.send("is anything muted right now?")).toBe(true);
+    await settle();
+    return client.last().request.messages.find((message) => message.role === "assistant")
+      ?.text;
+  }
+
+  it("says a cancelled proposal changed nothing", async () => {
+    const { chat, client, propose } = await setUp();
+    const card = await propose();
+    chat.proposals?.cancel(card);
+    flush();
+    expect(await resent(chat, client)).toBe(
+      "Some swing.\n\n[The producer cancelled this proposal. Nothing in it is in the song.]",
+    );
+  });
+
+  it("says an applied proposal was applied, and an undone one was undone", async () => {
+    const { chat, client, propose } = await setUp();
+    const card = await propose();
+    chat.proposals?.apply(card);
+    await settle();
+    flush();
+    expect(await resent(chat, client)).toContain("[The producer applied this proposal.");
+    client.last().text("Nothing is muted.");
+    client.last().done();
+    flush();
+    chat.proposals?.undo(card);
+    await settle();
+    flush();
+    expect(await resent(chat, client)).toContain(
+      "[The producer applied this proposal, then undid it.",
+    );
+  });
+
+  it("says a proposal still waiting has not been applied", async () => {
+    const { chat, client, propose } = await setUp();
+    await propose();
+    expect(await resent(chat, client)).toContain(
+      "[The producer has not applied this proposal.",
+    );
+  });
+});

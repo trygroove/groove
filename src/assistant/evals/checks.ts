@@ -95,6 +95,8 @@ export const CHECK_LABELS: Record<CheckId, string> = {
   nothingElse: "19. Nothing else changed",
   clipsPlaced: "20. Every new clip is placed",
   recommendationTargets: "21. Each sound lands on its own pad",
+  noDeniedTrack: "22. Never denies a track the project has",
+  noAbsentTrack: "23. Never mentions a track the project lacks",
 };
 
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });

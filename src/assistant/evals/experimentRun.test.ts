@@ -48,7 +48,8 @@ import {
   judgedOnGuardrailsAlone,
   runExperiment,
 } from "./experimentRun";
-import { AUTH_ABORT_REASON, runCaseTurn } from "./run";
+import { runCaseTurn } from "./run";
+import { AUTH_ABORT_REASON, REFUSAL_STREAK, refusalAbortReason } from "./runGuard";
 
 /** Tactics no production code knows: the scripted model is what reads them. */
 const off = (description: string, alters: TacticDefinition["alters"]) => ({
@@ -618,6 +619,46 @@ describe("an experiment's dry run (GRV-110)", () => {
     expect(calls).toHaveLength(1);
     expect(result.stopped).toBe(AUTH_ABORT_REASON);
     expect(experimentExitCode(result)).toBe(1);
+  });
+
+  it("fails clearly when the provider starts refusing every call mid-run", async () => {
+    let turns = 0;
+    const plantedTurn = plantedTurns();
+    const runTurn: ExperimentTurnRunner = async (evalCase, tactics) => {
+      turns += 1;
+      if (turns <= 4) return plantedTurn(evalCase, tactics);
+      return {
+        durationMs: 0,
+        error: "provider_error: refused",
+        turnError: {
+          code: "provider_error",
+          message: "refused",
+          providerStatus: 400,
+          providerFailures: ["rejected"],
+        },
+        stopReason: null,
+        text: "",
+        proposal: null,
+        usage: null,
+      };
+    };
+    const result = await runExperiment(
+      { ...planted({ terse: { terseNotes: "on" } }), runs: 10 },
+      { runTurn, concurrency: 1 },
+    );
+    expect(turns).toBe(4 + REFUSAL_STREAK);
+    expect(result.stopped).toBe(refusalAbortReason(400));
+    expect(result.failed).toBe(refusalAbortReason(400));
+    expect(result.verdict).toBe("inconclusive");
+    expect(experimentExitCode(result)).toBe(1);
+
+    const { comments, moves, pulls, publisher } = recorder();
+    await concludeExperiment(result, publisher, planOptions(SOURCES));
+    expect(pulls).toEqual([]);
+    expect(moves).toEqual([{ card: "GRV-110", state: "Blocked" }]);
+    expect(comments[0].body).toMatch(/^# Experiment `planted`: run failed\n/);
+    expect(comments[0].body).toContain("**The run failed, so this is not a verdict.**");
+    expect(comments[0].body).not.toContain("**Unfinished.**");
   });
 });
 

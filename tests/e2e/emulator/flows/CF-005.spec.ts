@@ -1,5 +1,6 @@
 import { walkthrough } from "../../support/walkthrough";
 import { library, libraryHeader } from "../support/library";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 import { backToArrangement, expectView, sequenceView } from "../support/views";
 
@@ -211,7 +212,7 @@ test.describe("CF-005", { tag: "@sanity" }, () => {
     await expect(page.locator(".save-status")).toHaveText("Saved", {
       timeout: 10_000,
     });
-    await page.reload();
+    await reloadPage(page);
     await expect(page).toHaveURL(projectUrl);
     await page.getByTestId("arrangement-view-ready").waitFor();
     await expect(trackList(page)).toHaveCount(2);
