@@ -123,6 +123,15 @@
  * with pointers at a chapter's end, and how to answer the moments a turn
  * waited with, in `earlier`) and the lesson as JSON. The fixed prompt
  * is unchanged, so a turn outside a lesson reads what it did.
+ *
+ * 2026-10-20.2 (GRV-43 QA): after a chapter was finished, asking for another
+ * lesson got "Starting it now" and no card. The history resent the earlier
+ * replies that started one as their sentence alone, so the model copied the
+ * sentence without the call. A reply that started a lesson is now followed
+ * by a bracketed line saying the call did it (`history.ts`), and
+ * `start_lesson` says only the call starts one, every time. The lesson rules
+ * name only the bites the block names: a Skip got a reply naming a bite the
+ * chapter does not have.
  */
 import { customAlphabet } from "nanoid";
 import { ASSISTANT_NAME } from "../../site.config.mjs";
@@ -153,7 +162,7 @@ import type { AssistantContextPayload, AssistantLibraryContext } from "./protoco
 import type { ProviderTextBlock } from "./providerRequest";
 import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-20.1";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-20.2";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",

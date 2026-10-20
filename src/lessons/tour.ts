@@ -3,7 +3,8 @@
  * bite is done once the producer has gone to its view; Show me goes there.
  * Being on it already is not going there: a bite that starts on its own view
  * (the editor opens on the arrangement) first asks the producer to step away,
- * so they still learn the way back.
+ * so they still learn the way back. Skipping that step skips the bite: there
+ * is nothing left to open.
  */
 import type { EditorViewName } from "../analytics/catalog";
 import type { BiteId } from "./ids";
@@ -96,6 +97,9 @@ function bite(stop: Stop): LessonBite {
       },
       {
         id: "open",
+        // Only from another view: once "away" is skipped, the producer is
+        // still on this one, and the bite ends with the skip.
+        applies: (world) => world.view !== stop.view,
         instruction: () => `${stop.about} ${stop.open}`,
         target: () => null,
         done: (world, start) => world.view === stop.view && start.view !== stop.view,
