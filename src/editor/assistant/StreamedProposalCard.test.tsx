@@ -573,6 +573,16 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     expect(within(card()).queryByRole("button", { name: "Apply all" })).toBeNull();
   });
 
+  it("stops saying more parts are on the way once the producer stops the turn (GRV-194)", async () => {
+    const { ask, part } = await setUp();
+    await ask();
+    part(TRACK);
+    expect(within(card()).getByText("More parts on the way…")).toBeInTheDocument();
+    clickAndFlush(button("Stop"));
+    expect(within(card()).queryByText("More parts on the way…")).toBeNull();
+    expect(lineTexts()).toEqual(["Bass · new track"]);
+  });
+
   it("keeps what arrived applicable when the turn fails partway, and Try again asks for the rest", async () => {
     const { ask, part, client, session, hasBass } = await setUp();
     await ask();

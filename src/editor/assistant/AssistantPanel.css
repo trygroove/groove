@@ -415,13 +415,14 @@
   font-size: var(--font-size-tiny);
 }
 
-/* While the turn still writes: the quiet line under the parts so far. */
+/* While the turn still writes: the quiet last line of the log (GRV-194). */
 .assistant-still-writing {
   margin: 0;
   color: var(--color-foreground-muted);
   font-size: var(--font-size-tiny);
 }
 
+/* While the turn still writes: the quiet line under the parts so far. */
 .assistant-proposal-arriving {
   margin: 0;
   padding: 0 12px 8px;
