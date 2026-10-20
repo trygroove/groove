@@ -1,0 +1,14 @@
+{
+  "id": "save",
+  "title": "A save the connection dropped",
+  "steps": [
+    {
+      "file": "01-offline-while-the-browser-claims-to-be-o.png",
+      "caption": "Offline, while the browser claims to be online: the failure says to reconnect"
+    },
+    {
+      "file": "02-back-online-it-saves-by-itself-with-no-r.png",
+      "caption": "Back online, it saves by itself with no Retry"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "id": "notice",
+  "title": "Notices beside the docked Coproducer",
+  "steps": [
+    {
+      "file": "01-the-notice-stops-at-the-docked-panel-so-.png",
+      "caption": "The notice stops at the docked panel, so Dismiss is clear of it"
+    }
+  ]
+}
