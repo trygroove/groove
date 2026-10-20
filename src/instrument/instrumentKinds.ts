@@ -67,12 +67,16 @@ export function instrumentTypeKey(
  * from, each loaded with a basic electronic factory sound so the machine plays
  * the moment it exists (#447). More are added from the drum panel's "Add pad"
  * button, and any pad's sound can be swapped from the library.
+ *
+ * `matches` is how a pad someone else named (the assistant's "Kick", "Closed
+ * Hat") is recognised as one of these voices, so it takes the voice's sound
+ * and keeps its own ID, which its notes name (GRV-192).
  */
 const STARTER_KIT = [
-  { name: "BD", sound: "starterKick" },
-  { name: "SD", sound: "starterSnare" },
-  { name: "HH", sound: "starterHat" },
-  { name: "CP", sound: "starterClap" },
+  { name: "BD", sound: "starterKick", matches: /kick|\bbd\b|bass ?drum/i },
+  { name: "SD", sound: "starterSnare", matches: /snare|\bsd\b/i },
+  { name: "HH", sound: "starterHat", matches: /hat|\bhh\b/i },
+  { name: "CP", sound: "starterClap", matches: /clap|\bcp\b/i },
 ] as const;
 
 /**
@@ -105,9 +109,9 @@ export interface NewInstrument {
 }
 
 /**
- * What both surfaces that create an instrument use: `createInstrumentOfKind`,
- * except that a drum machine arrives with its starter kit loaded. A sound the
- * project already carries is reused rather than added twice.
+ * What every path that creates an instrument uses, the UI's surfaces and the
+ * assistant's proposals alike: `createInstrumentOfKind`, except that a drum
+ * machine arrives with its starter kit loaded (see {@link loadStarterKit}).
  */
 export function newInstrumentOfKind(
   context: DomainFactoryContext,
@@ -117,8 +121,30 @@ export function newInstrumentOfKind(
   if (kind !== "drumMachine") {
     return { instrument: createInstrumentOfKind(context, kind), assets: [] };
   }
+  return loadStarterKit(
+    context,
+    { kind: "drumMachine", pads: [], parameters: {} },
+    project,
+  );
+}
+
+/**
+ * `instrument`, a drum machine about to be created, with the starter kit
+ * loaded into it (#447, GRV-192). Every voice of the kit is there, in the
+ * kit's order: a pad `instrument` already has that matches a voice by name
+ * stands in for it, keeping its ID and taking the voice's sound unless it has
+ * one of its own; a voice no pad matches gets a fresh pad. The pads that match
+ * no voice follow, and one with no sound takes a kit sound in turn, so every
+ * pad a beat is written on plays. A kit sound the project already carries is
+ * reused rather than added twice; the rest come back in `assets`.
+ */
+export function loadStarterKit(
+  context: DomainFactoryContext,
+  instrument: Extract<Instrument, { kind: "drumMachine" }>,
+  project: Project,
+): NewInstrument {
   const added: Asset[] = [];
-  const pads = STARTER_KIT.map(({ name, sound }) => {
+  const kitAsset = (sound: (typeof STARTER_KIT)[number]["sound"]) => {
     const { storageRef } = factoryLibraryEntry(sound);
     let asset = [...project.song.assets, ...added].find(
       (candidate) => candidate.storageRef === storageRef,
@@ -127,9 +153,23 @@ export function newInstrumentOfKind(
       asset = createFactoryAsset(context, sound);
       added.push(asset);
     }
-    return createDrumPad(context, { name, assetId: asset.id });
+    return asset.id;
+  };
+  const unmatched = [...instrument.pads];
+  const voices = STARTER_KIT.map(({ name, sound, matches }) => {
+    const index = unmatched.findIndex((pad) => matches.test(pad.name));
+    const [pad] = index < 0 ? [] : unmatched.splice(index, 1);
+    if (pad?.assetId) return pad;
+    const assetId = kitAsset(sound);
+    return pad ? { ...pad, assetId } : createDrumPad(context, { name, assetId });
   });
-  return { instrument: createDrumMachineInstrument(pads), assets: added };
+  let next = 0;
+  const others = unmatched.map((pad) => {
+    if (pad.assetId) return pad;
+    const { sound } = STARTER_KIT[next++ % STARTER_KIT.length];
+    return { ...pad, assetId: kitAsset(sound) };
+  });
+  return { instrument: { ...instrument, pads: [...voices, ...others] }, assets: added };
 }
 
 /** Notes in one clip that trigger a pad rather than a pitch. */
