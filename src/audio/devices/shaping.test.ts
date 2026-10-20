@@ -2,7 +2,12 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { createDevice, defaultDeviceParameters } from "../../domain/devices";
 import type { Device } from "../../domain/entities";
 import type { DeviceId } from "../../domain/ids";
-import { hfEnergy, installWebAudioGlobals, rms } from "../testAudioContext";
+import {
+  hfEnergy,
+  installWebAudioGlobals,
+  renderedChannel,
+  rms,
+} from "../testAudioContext";
 
 // Must run before Tone is imported — see AudioRuntime.test.ts for why.
 installWebAudioGlobals();
@@ -66,7 +71,9 @@ async function render(
     node.output.toDestination();
     osc.start(0);
   }, 0.4);
-  return buffer.getChannelData(0);
+  // A copy: every test here holds one render while it makes the next, and a
+  // bare `getChannelData` view would not survive the first render's GC.
+  return renderedChannel(buffer);
 }
 
 /** A moderate sine — the distortion probe described on `render`. */
@@ -83,26 +90,6 @@ const buildSaturator = (d: Device) =>
  * signal rather than the fade-in every ramped parameter starts with. */
 function settled(data: Float32Array): Float32Array {
   return data.subarray(Math.floor(data.length * 0.5));
-}
-
-/**
- * Harmonic content per unit of level, taken as the median over equal slices of
- * the settled signal rather than over the whole of it.
- *
- * `hfEnergy` is a first-difference measure, so one stray sample (a click, a
- * block the offline renderer produced late) lands in it at full weight and
- * can swing a whole-buffer ratio past the 14-30% gap between drive settings.
- * That happened once in 6,919 CI runs (GRV-198) and never locally. A median
- * of slices ignores a glitch confined to one slice, while a real change in
- * the transfer curve moves every slice, so the property under test is intact.
- */
-function medianBrightness(data: Float32Array, slices = 8): number {
-  const size = Math.floor(data.length / slices);
-  const values = Array.from({ length: slices }, (_, i) => {
-    const slice = data.subarray(i * size, (i + 1) * size);
-    return hfEnergy(slice) / rms(slice);
-  }).sort((a, b) => a - b);
-  return values[Math.floor(slices / 2)];
 }
 
 describe("filter device (FX-01)", () => {
@@ -156,7 +143,7 @@ describe("overdrive and saturator (FX-01, FX-02)", () => {
     // Harmonic content per unit of level rises monotonically with drive —
     // normalising by RMS is what makes this a claim about *distortion* rather
     // than about the device simply getting louder.
-    const brightness = medianBrightness;
+    const brightness = (d: Float32Array) => hfEnergy(d) / rms(d);
     expect(brightness(pushed)).toBeGreaterThan(brightness(clean));
     expect(brightness(destroyed)).toBeGreaterThan(brightness(pushed));
   });

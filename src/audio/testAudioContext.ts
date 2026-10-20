@@ -59,6 +59,26 @@ export function installWebAudioGlobals(): void {
   }
 }
 
+/**
+ * One channel of a rendered buffer, copied out of it.
+ *
+ * `node-web-audio-api`'s `getChannelData` returns a view onto native memory
+ * that does not keep that memory alive: once the buffer (and its offline
+ * context) is garbage-collected, the memory is freed and reused, and the view
+ * silently reads whatever lands there next. A test that keeps one render's
+ * samples while it renders more is reading freed memory as soon as a GC runs,
+ * which only happens under load, so it flakes in CI and never locally
+ * (GRV-198: a clean render measured as near-silence with isolated spikes).
+ * A browser's `getChannelData` is ordinary GC-managed memory, so this is a
+ * test-engine hazard only. Copy before the buffer goes out of scope.
+ */
+export function renderedChannel(
+  buffer: { getChannelData(channel: number): Float32Array },
+  channel = 0,
+): Float32Array {
+  return buffer.getChannelData(channel).slice();
+}
+
 /** Root-mean-square amplitude of a rendered mono channel — a proxy for output energy. */
 export function rms(data: Float32Array): number {
   let sum = 0;
