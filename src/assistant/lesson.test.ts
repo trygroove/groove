@@ -185,6 +185,9 @@ describe("start_lesson (GRV-43)", () => {
       input,
     });
     expect(parseLessonCall(call({ chapter: "sound" }))).toBe("sound");
+    // Finish a track is started whole (GRV-44); its own chapters are not lessons alone.
+    expect(parseLessonCall(call({ chapter: "track" }))).toBe("track");
+    expect(parseLessonCall(call({ chapter: "bass" }))).toBeNull();
     expect(parseLessonCall(call({ chapter: "basslines" }))).toBeNull();
     expect(parseLessonCall(call({ chapter: "beat", bite: "beat-kick" }))).toBeNull();
   });

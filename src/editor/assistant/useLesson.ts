@@ -35,7 +35,14 @@ import { createFactoryContext, type DomainFactoryContext } from "../../domain/fa
 import type { PadId, TrackId } from "../../domain/ids";
 import { chapter as chapterOfId, withBiteDone } from "../../lessons/chapters";
 import { cueMessage, foldTurns, type LessonTurn, lessonCue } from "../../lessons/cue";
-import type { BiteId, ChapterId, LessonSource } from "../../lessons/ids";
+import {
+  type BiteId,
+  type ChapterId,
+  isTrackChapterId,
+  type LessonChoice,
+  type LessonSource,
+  type TrackChapterId,
+} from "../../lessons/ids";
 import {
   biteOf,
   chapterOf,
@@ -47,9 +54,11 @@ import {
   skip as skipStep,
   startBite,
   startNextBite,
+  startTrack,
 } from "../../lessons/session";
 import { beatStyleFor } from "../../lessons/style";
-import type { LessonSettings, LessonWorld } from "../../lessons/types";
+import { trackResume } from "../../lessons/track";
+import type { LessonSettings, LessonWorld, ShowMe } from "../../lessons/types";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import type { EditorViewName } from "../editorViews";
 import type { AssistantConversation } from "./useAssistantConversation";
@@ -64,8 +73,13 @@ export interface LessonEditorPort {
    * the view, so the view the step names opens on it.
    */
   point(address: ControlAddress): void;
-  /** Starts the song; settles once it plays or could not start. */
-  play(): Promise<void>;
+  /**
+   * Starts the song, from `from` ticks when given; settles once it plays or
+   * could not start.
+   */
+  play(from?: number): Promise<void>;
+  /** Opens the Export dialog with stems chosen and every track in them (GRV-44). */
+  openExport(): void;
   /** Puts a library sound of `role` on the pad, as the Library's Insert; whether it did. */
   putSound(role: "kick", trackId: TrackId, padId: PadId): Promise<boolean>;
 }
@@ -75,6 +89,12 @@ export interface UseLessonOptions {
   readonly project: Accessor<Project | null>;
   readonly view: Accessor<EditorViewName>;
   readonly playing: Accessor<boolean>;
+  /**
+   * What "Finish a track" listens for (GRV-44): the bar the playhead is in,
+   * the bars heard and the master's clips since the song last started
+   * playing, and the stem exports started. Each reads 0 without one.
+   */
+  readonly listening?: LessonListening;
   /** Where the bites done are saved, and what the beat style is read from. */
   readonly profile?: ProducerProfileStore;
   readonly conversation: Pick<AssistantConversation, "sendLesson" | "streaming">;
@@ -97,10 +117,12 @@ export interface Lesson {
   /** Whether Show me has an editor to work in. */
   readonly canShowMe: boolean;
   /**
-   * Starts `chapter` at `biteId`, or at its first bite not yet done; whether
-   * it could (not while no project is open).
+   * Starts `lesson` at `biteId`, or at its first bite not yet done; whether
+   * it could (not while no project is open). "track", or one of "Finish a
+   * track"'s own chapters, starts that lesson (GRV-44): where it was left,
+   * passing over what the song already has.
    */
-  start(chapter: ChapterId, source: LessonSource, biteId?: BiteId): boolean;
+  start(lesson: LessonChoice | ChapterId, source: LessonSource, biteId?: BiteId): boolean;
   /** The next bite, once the one before is over. */
   next(): void;
   showMe(): void;
@@ -118,6 +140,25 @@ export const SHOW_ME_FAILED = "That didn't go in. Try it by hand, or press Skip.
 /** What Show me says when the library has no other kick to offer. */
 export const NO_SOUND =
   "I couldn't find another kick in the library. Pick one by hand, or press Skip.";
+
+/** What the editor reports to "Finish a track" (GRV-44), each an accessor. */
+/**
+ * Whether `lesson` starts "Finish a track" (GRV-44): "track" itself, or one of
+ * its own chapters. "Make a beat" is a chapter of its own as well as the
+ * track's first, and alone it is the chapter.
+ */
+function isTrackLesson(
+  lesson: LessonChoice | ChapterId,
+): lesson is "track" | Exclude<TrackChapterId, "beat"> {
+  return lesson === "track" || (isTrackChapterId(lesson) && lesson !== "beat");
+}
+
+export interface LessonListening {
+  readonly bar: Accessor<number>;
+  readonly barsHeard: Accessor<number>;
+  readonly masterClips: Accessor<number>;
+  readonly stemExports: Accessor<number>;
+}
 
 interface PendingTurn extends LessonTurn {
   readonly chapter: string;
@@ -155,10 +196,10 @@ export function useLesson(options: UseLessonOptions): Lesson {
           project,
           view: options.view(),
           playing: options.playing(),
-          bar: 0,
-          barsHeard: 0,
-          masterClips: 0,
-          stemExports: 0,
+          bar: options.listening?.bar() ?? 0,
+          barsHeard: options.listening?.barsHeard() ?? 0,
+          masterClips: options.listening?.masterClips() ?? 0,
+          stemExports: options.listening?.stemExports() ?? 0,
         }
       : null;
   }
@@ -197,18 +238,66 @@ export function useLesson(options: UseLessonOptions): Lesson {
       if (event.trackDone) analytics.log("lesson_track_completed", {});
     }
     queue(next, event);
-    // A chapter's last bite ends the lesson: the wrap-up follows in the
-    // conversation, and the panel has no lesson to show.
-    setState(event.kind === "bite_done" && event.chapterDone ? null : next);
+    // A chapter's last bite ends the lesson, unless "Finish a track" goes on
+    // to its next chapter: the wrap-up follows in the conversation, and the
+    // panel has no lesson to show.
+    const over =
+      event.kind === "bite_done" &&
+      (event.trackDone || (event.chapterDone && !next.track));
+    setState(over ? null : next);
+    arrive(next, event.kind === "step_done");
   }
 
   function begin(transition: LessonTransition, source: LessonSource): void {
     setNotice(null);
     setState(transition.state);
     const analytics = options.analytics();
+    // What the song already had is done as far as the lesson goes (GRV-44):
+    // saved, so picking the lesson up again starts past it, but never logged
+    // as a bite the producer went through.
+    if (transition.event.kind === "bite_started") {
+      for (const id of transition.event.passed) record(id);
+    }
     analytics.log("lesson_bite_started", { ...ids(transition.state), source });
     analytics.logFeatureFirstUse("lessons");
     queue(transition.state, transition.event);
+    arrive(transition.state, true);
+  }
+
+  /**
+   * A step just started: one whose Show me only opens where to act (the
+   * Export dialog, GRV-44) opens it now. It is not the step done, so nothing
+   * is marked shown.
+   */
+  function arrive(next: LessonState, started: boolean): void {
+    if (!started || !next.step) return;
+    const step = biteOf(next).steps[next.step.index];
+    if (!step.showsAtStart) return;
+    const now = world();
+    const shown = now && step.showMe(now, untrack(settings), factory());
+    if (shown) act(shown);
+  }
+
+  /** Has the editor do what Show me says; whether it can tell yet that it did not. */
+  function act(shown: ShowMe): void {
+    const editor = options.editor;
+    if (!editor) return;
+    switch (shown.kind) {
+      case "commands":
+        editor.apply(shown.commands);
+        return;
+      case "view":
+        editor.goTo(shown.view);
+        return;
+      case "play":
+        void editor.play(shown.from);
+        return;
+      case "export":
+        editor.openExport();
+        return;
+      case "sound":
+        void editor.putSound(shown.role, shown.trackId, shown.padId);
+    }
   }
 
   // The step under way is read against the world as it changes: once its
@@ -261,20 +350,56 @@ export function useLesson(options: UseLessonOptions): Lesson {
     },
   );
 
-  function start(chapterId: ChapterId, source: LessonSource, biteId?: BiteId): boolean {
+  /** Where "Finish a track" starts (GRV-44): where it was left, or chapter `from`. */
+  function trackStart(
+    now: LessonWorld,
+    from: TrackChapterId | null,
+    biteId: BiteId | undefined,
+  ): LessonTransition | null {
+    if (from === null) {
+      const resume = trackResume(done());
+      return startTrack(
+        resume?.chapter ?? "beat",
+        resume?.biteId ?? null,
+        now,
+        settings(),
+      );
+    }
+    const finishedIds = new Set(done());
+    const first =
+      biteId ??
+      chapterOfId(from).bites.find((one) => !finishedIds.has(one.id))?.id ??
+      null;
+    return startTrack(from, first, now, settings());
+  }
+
+  function start(
+    lesson: LessonChoice | ChapterId,
+    source: LessonSource,
+    biteId?: BiteId,
+  ): boolean {
     const now = world();
     if (!now) return false;
+    const transition = isTrackLesson(lesson)
+      ? trackStart(now, lesson === "track" ? null : lesson, biteId)
+      : soloStart(now, lesson, biteId);
+    if (!transition) return false;
     const current = state();
     if (current) {
       options.analytics().log("lesson_dropped_out", ids(current));
     }
+    begin(transition, source);
+    return true;
+  }
+
+  /** A chapter taught alone, at `biteId` or its first bite not yet done. */
+  function soloStart(now: LessonWorld, chapterId: ChapterId, biteId?: BiteId) {
     const finishedIds = new Set(done());
     const first =
       biteId ??
       chapterOfId(chapterId).bites.find((one) => !finishedIds.has(one.id))?.id ??
       null;
-    begin(startBite(chapterId, first, now, settings()), source);
-    return true;
+    return startBite(chapterId, first, now, settings());
   }
 
   function next(): void {
@@ -320,9 +445,14 @@ export function useLesson(options: UseLessonOptions): Lesson {
         }, SHOW_ME_SETTLE_MS);
         return;
       case "play":
-        void editor.play().then(() => {
+        void editor.play(shown.from).then(() => {
           if (!untrack(() => options.playing())) unmark();
         });
+        return;
+      case "export":
+        // Opening the dialog is not the step: exporting is still theirs.
+        unmark();
+        editor.openExport();
         return;
       case "sound":
         void editor.putSound(shown.role, shown.trackId, shown.padId).then((put) => {

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { CONTROL_PARTS, controlAddress } from "../../commands/controlAddress";
 import { createControlRegistry } from "../../controls/registry";
 import type { Project } from "../../domain/entities";
+import { TICKS_PER_BAR } from "../../domain/time";
 import { BEAT_PATTERNS, beatStyleFor } from "../../lessons/style";
 import { starterWorld } from "../../testing/lessonWorld";
 import type { EditorViewName } from "../editorViews";
@@ -21,6 +22,7 @@ function setup(editor?: LessonEditorPort, open = true) {
   const [playing, setPlaying] = createSignal(false);
   const [view, setView] = createSignal<EditorViewName>("arrangement");
   const [streaming, setStreaming] = createSignal(false);
+  const [stemExports, setStemExports] = createSignal(0);
   const registry = createControlRegistry();
   const sendLesson = vi.fn(() => true);
   const log = vi.fn();
@@ -29,6 +31,12 @@ function setup(editor?: LessonEditorPort, open = true) {
       project,
       view,
       playing,
+      listening: {
+        bar: () => 0,
+        barsHeard: () => 0,
+        masterClips: () => 0,
+        stemExports,
+      },
       conversation: { sendLesson, streaming },
       registry,
       editor,
@@ -42,9 +50,22 @@ function setup(editor?: LessonEditorPort, open = true) {
     setView,
     setPlaying,
     setStreaming,
+    setStemExports,
     registry,
     sendLesson,
     log,
+  };
+}
+
+/** A Show me port that applies nothing and records what it is asked. */
+function recordingEditor(): LessonEditorPort {
+  return {
+    apply: vi.fn(() => true),
+    goTo: vi.fn(),
+    point: vi.fn(),
+    play: vi.fn(async () => {}),
+    putSound: vi.fn(async () => false),
+    openExport: vi.fn(),
   };
 }
 
@@ -180,6 +201,7 @@ describe("the lesson under way (GRV-43)", () => {
       point: vi.fn(),
       play: vi.fn(async () => {}),
       putSound: vi.fn(async () => false),
+      openExport: vi.fn(),
     };
     const h = setup(editor);
     // The editor refuses the backbeat's commands (a gesture under way, say).
@@ -215,6 +237,7 @@ describe("the lesson under way (GRV-43)", () => {
         // Playback could not start (the browser blocked it, say).
         play: vi.fn(async () => {}),
         putSound: vi.fn(async () => false),
+        openExport: vi.fn(),
       };
       const h = setup(editor);
       h.lesson.start("tour", "asked", "tour-mixer");
@@ -254,6 +277,7 @@ describe("the lesson under way (GRV-43)", () => {
         point: vi.fn(),
         play: vi.fn(async () => {}),
         putSound: vi.fn(async () => false),
+        openExport: vi.fn(),
       };
       const h = setup(editor);
       editor.goTo = vi.fn((view) => h.setView(view));
@@ -281,6 +305,7 @@ describe("the lesson under way (GRV-43)", () => {
       point: vi.fn(),
       play: vi.fn(async () => {}),
       putSound: vi.fn(async () => false),
+      openExport: vi.fn(),
     };
     const h = setup(editor);
     editor.goTo = vi.fn((view) => h.setView(view));
@@ -320,6 +345,7 @@ describe("the lesson under way (GRV-43)", () => {
       point: vi.fn(),
       play: vi.fn(async () => {}),
       putSound: vi.fn(async () => false),
+      openExport: vi.fn(),
     };
     const h = setup(editor);
     editor.goTo = vi.fn((view) => h.setView(view));
@@ -361,5 +387,93 @@ describe("the lesson under way (GRV-43)", () => {
   it("has nothing to show without an editor", () => {
     const h = setup();
     expect(h.lesson.canShowMe).toBe(false);
+  });
+});
+
+describe("Finish a track in the panel (GRV-44)", () => {
+  it("starts on the beat, passing over the starter's kick and saving it as done", () => {
+    const h = setup();
+    expect(h.lesson.start("track", "asked")).toBe(true);
+    flush();
+    const state = h.lesson.state();
+    expect(state?.track).toBe(true);
+    expect(state?.chapter).toBe("beat");
+    expect(state?.passed).toEqual(["beat-kick"]);
+    h.lesson.skip();
+    flush();
+    h.lesson.next();
+    flush();
+    // Pick a kick, then straight on to Hear it: the starter already plays the kick.
+    expect(h.lesson.state()?.biteIndex).toBe(2);
+    expect(h.lesson.done()).toContain("beat-kick");
+    const completed = h.log.mock.calls
+      .filter(([name]) => (name as string) === "lesson_bite_completed")
+      .map((call) => (call as unknown as [string, { bite_id: string }])[1].bite_id);
+    expect(completed).toEqual(["beat-library"]);
+  });
+
+  it("goes on to the next chapter after a chapter's last bite, without leaving the panel", () => {
+    const h = setup();
+    h.lesson.start("bass", "asked", "bass-sound");
+    flush();
+    expect(h.lesson.state()?.track).toBe(true);
+    // The starter has no Bass track: adding one comes first. Skip both steps.
+    h.lesson.skip();
+    flush();
+    h.lesson.skip();
+    flush();
+    // Bass is over, but the lesson goes on.
+    expect(h.lesson.state()).not.toBeNull();
+    expect(h.log).toHaveBeenCalledWith("lesson_chapter_completed", {
+      chapter_id: "bass",
+    });
+    h.lesson.next();
+    flush();
+    expect(h.lesson.state()?.chapter).toBe("chords");
+    expect(h.log).toHaveBeenCalledWith(
+      "lesson_bite_started",
+      expect.objectContaining({
+        chapter_id: "chords",
+        bite_id: "chords-loop",
+        source: "next",
+      }),
+    );
+  });
+
+  it("opens the Export dialog as the last bite starts, and ends the lesson once stems are exported", () => {
+    const editor = recordingEditor();
+    const h = setup(editor);
+    h.lesson.start("mix", "asked", "mix-export");
+    flush();
+    expect(editor.openExport).toHaveBeenCalledTimes(1);
+    expect(h.lesson.state()?.step).not.toBeNull();
+    h.setStemExports(1);
+    flush();
+    expect(h.lesson.state()).toBeNull();
+    expect(h.log).toHaveBeenCalledWith(
+      "lesson_bite_completed",
+      expect.objectContaining({ bite_id: "mix-export", how: "did_it" }),
+    );
+    const ends = h.log.mock.calls.filter(([name]) =>
+      ["lesson_chapter_completed", "lesson_track_completed"].includes(name as string),
+    );
+    expect(ends).toEqual([
+      ["lesson_chapter_completed", { chapter_id: "mix" }],
+      ["lesson_track_completed", {}],
+    ]);
+  });
+
+  it("plays from where Show me says, for the drop", () => {
+    const editor = recordingEditor();
+    const h = setup(editor);
+    h.lesson.start("arrange", "asked", "arrange-drop");
+    flush();
+    // The starter's beat stops after bar 1, so bringing it back for the drop
+    // comes first; skip to the listening.
+    h.lesson.skip();
+    flush();
+    h.lesson.showMe();
+    flush();
+    expect(editor.play).toHaveBeenCalledWith(12 * TICKS_PER_BAR);
   });
 });

@@ -22,6 +22,7 @@ import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 import { ariaBool } from "../shared/aria";
 import type { shortcutLabel } from "../shortcuts";
 import ExportDialog from "./export/ExportDialog";
+import type { ExportFormat } from "./export/FormatCards";
 import PlayheadInput from "./PlayheadInput";
 import ProjectNameInput from "./ProjectNameInput";
 import SaveStatus from "./SaveStatus";
@@ -63,6 +64,11 @@ export type HeaderSession = Pick<
   "state" | "undo" | "redo" | "retry"
 >;
 
+/** A request to open the Export dialog on `format` (GRV-44): a new object each time. */
+export interface ExportRequest {
+  readonly format: ExportFormat;
+}
+
 export interface EditorHeaderProps {
   readonly projectName: string;
   /** Commit a new project name: one `project.rename` through the command layer. */
@@ -83,6 +89,13 @@ export interface EditorHeaderProps {
   readonly onOpenGuide: () => void;
   /** Told whether the Export dialog is open, so the editor's keys can stand down. */
   readonly onExportOpenChange?: (open: boolean) => void;
+  /**
+   * Opens the Export dialog on a format, each time it changes to a new
+   * request: a lesson's last bite opens it on stems (GRV-44).
+   */
+  readonly exportRequest?: Accessor<ExportRequest | null>;
+  /** Told each time Export is pressed in the dialog, and in which format (GRV-44). */
+  readonly onExportStart?: (format: ExportFormat) => void;
   readonly keyHint: (action: Parameters<typeof shortcutLabel>[0]) => string;
   /**
    * The account control at the far end (#951): "Log in" for a guest, "Sign
@@ -118,7 +131,17 @@ export default function EditorHeader(props: EditorHeaderProps) {
   const analytics = () => props.analytics ?? defaultAnalytics;
   const [renaming, setRenaming] = createSignal(false);
   const [exporting, setExporting] = createSignal(false);
+  const [exportFormat, setExportFormat] = createSignal<ExportFormat | undefined>();
   const online = useOnline();
+  // A request opens the dialog on its format; the request is the one read.
+  createEffect(
+    () => props.exportRequest?.() ?? null,
+    (request) => {
+      if (!request || untrack(exporting) || untrack(history).project === null) return;
+      setExportFormat(request.format);
+      setExporting(true);
+    },
+  );
   createEffect(exporting, (open) => {
     props.onExportOpenChange?.(open);
     return () => props.onExportOpenChange?.(false);
@@ -309,7 +332,12 @@ export default function EditorHeader(props: EditorHeaderProps) {
                 project={project}
                 missingAssetIds={props.missingAssetIds}
                 analytics={props.analytics}
-                onClose={() => setExporting(false)}
+                initialFormat={exportFormat()}
+                onExportStart={(format) => props.onExportStart?.(format)}
+                onClose={() => {
+                  setExporting(false);
+                  setExportFormat(undefined);
+                }}
               />
             </Portal>
           )}

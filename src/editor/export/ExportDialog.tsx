@@ -56,6 +56,13 @@ export interface ExportDialogProps {
   readonly download?: typeof downloadFile;
   /** Where a failed export is reported (GRV-55); the app-wide boundary by default. */
   readonly reportError?: typeof reportError;
+  /**
+   * The format the dialog opens on: stereo unless given. A lesson opens it on
+   * stems (GRV-44), every track in them as always.
+   */
+  readonly initialFormat?: ExportFormat;
+  /** Told each time Export is pressed, and in which format (GRV-44). */
+  onExportStart?(format: ExportFormat): void;
   onClose(): void;
 }
 
@@ -121,7 +128,9 @@ export function failureMessage(code: ErrorCode, format: Format = "stereo"): stri
  */
 export default function ExportDialog(props: ExportDialogProps): JSX.Element {
   const [phase, setPhase] = createSignal<Phase>({ kind: "choose" });
-  const [format, setFormat] = createSignal<Format>("stereo");
+  const [format, setFormat] = createSignal<Format>(
+    untrack(() => props.initialFormat) ?? "stereo",
+  );
   const facts = createMemo(() => exportFacts(props.project()));
   const list = useTrackList({
     project: props.project,
@@ -243,6 +252,7 @@ export default function ExportDialog(props: ExportDialogProps): JSX.Element {
     const stems = format() === "stems";
     const batches = plan();
     const count = stems ? batches.length : 1;
+    props.onExportStart?.(format());
     if (resumeFrom() === 0) {
       setGot(0);
       setWritten([]);

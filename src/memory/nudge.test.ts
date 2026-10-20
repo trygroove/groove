@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BITE_IDS } from "../lessons/ids";
 import { emptyProfile, type ProducerProfile } from "../persistence/profileDocuments";
-import { localDay, nudgeBite, nudgeDue } from "./nudge";
+import { localDay, nudgeBite, nudgeDue, nudgeWords } from "./nudge";
 
 const DAY = 86_400_000;
 const NOON = new Date(2026, 9, 11, 12).getTime();
@@ -49,5 +49,25 @@ describe("Coproducer's daily nudge (GRV-25)", () => {
       "Darken it",
     );
     expect(nudgeBite({ ...profile, lessonsDone: [...BITE_IDS] })).toBeNull();
+  });
+});
+
+describe("the nudge for Finish a track (GRV-44)", () => {
+  it("offers to pick it up at the chapter it was left in, while it is under way", () => {
+    const profile = onboarded(NOON - DAY, {
+      lessonsDone: ["bass-key", "bass-line", "bass-sound", "chords-loop"],
+    });
+    const offered = nudgeBite(profile);
+    expect(offered?.id).toBe("chords-hook");
+    if (!offered) throw new Error("nothing offered");
+    expect(nudgeWords(offered)).toBe(
+      'Pick up chapter 3 of "Finish a track", "Chords and hook"?',
+    );
+  });
+
+  it("offers a bite as before when it is not under way", () => {
+    const offered = nudgeBite(onboarded(NOON - DAY));
+    if (!offered) throw new Error("nothing offered");
+    expect(nudgeWords(offered)).toBe(`Want to try "${offered.title}"?`);
   });
 });

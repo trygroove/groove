@@ -163,7 +163,7 @@ async function listen(page: Page, name: string, browserName: string): Promise<vo
 
 test.describe("CF-038", () => {
   // biome-ignore format: unparked by removing only test.fixme, so the frozen body keeps its lines
-  test.fixme(
+  test(
     "a producer finishes a track with Coproducer and exports its stems",
     async ({ page, browserName, invitedProducer }) => {
       // The longest journey there is: five chapters, each bite answered.

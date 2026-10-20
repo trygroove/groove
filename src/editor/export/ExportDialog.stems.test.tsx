@@ -96,3 +96,31 @@ describe("ExportDialog: Stems (ZIP)", () => {
     expect(failureMessage("quota_exceeded", "stems")).toMatch(/2 GiB/);
   });
 });
+
+describe("ExportDialog: opened on stems by a lesson (GRV-44)", () => {
+  it("opens with Stems chosen and every track in it, and says when Export is pressed", () => {
+    const project = createSliceFixtureProject();
+    const fake = fakeStemsBatch();
+    const onExportStart = vi.fn();
+    render(() => (
+      <ExportDialog
+        project={() => project}
+        exportStemsBatch={fake.exportStemsBatch}
+        exportWav={vi.fn() as never}
+        download={vi.fn()}
+        initialFormat="stems"
+        onExportStart={onExportStart}
+        onClose={vi.fn()}
+      />
+    ));
+    expect(radio("Stems (ZIP)")).toBeChecked();
+    expect(onExportStart).not.toHaveBeenCalled();
+    clickAndFlush(screen.getByRole("button", { name: "Export" }));
+    expect(onExportStart).toHaveBeenCalledTimes(1);
+    expect(onExportStart).toHaveBeenCalledWith("stems");
+    // Every track goes into the stems, as an export the producer opens does.
+    expect(fake.calls[0]?.request.trackIds).toEqual(
+      project.song.tracks.map((track) => track.id),
+    );
+  });
+});

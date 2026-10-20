@@ -81,7 +81,7 @@ import type { SessionHealth, SessionTurn } from "../../assistant/sessionHealth";
 import type { ProposalOutcome, ReplyRating } from "../../assistant/transcripts";
 import type { AssistantVideo } from "../../assistant/video";
 import type { Project } from "../../domain/entities";
-import type { ChapterId } from "../../lessons/ids";
+import type { LessonChoice } from "../../lessons/ids";
 import type { SuggestionId } from "../../projection/projectAnalysisProjection";
 import { type Clock, systemClock } from "../../shared/clock";
 import { type AssistantScope, scopedContext } from "./assistantScope";
@@ -324,7 +324,7 @@ export interface UseAssistantConversationOptions {
    */
   readonly lesson?: () => AssistantLessonContext | null;
   /** Hears that Coproducer started a lesson, and which chapter (GRV-43). */
-  readonly onStartLesson?: (chapter: ChapterId) => void;
+  readonly onStartLesson?: (lesson: LessonChoice) => void;
   /**
    * Takes an answer to a question in place of sending it, and says whether it
    * did; one it does not take is sent as usual. "Let's go" to the offer of a

@@ -60,7 +60,12 @@ import {
 import { type AssistantRetention, useAssistantRetention } from "./useAssistantRetention";
 import { type CueNudge, useCueNudge } from "./useCueNudge";
 import { useFollowUp } from "./useFollowUp";
-import { type Lesson, type LessonEditorPort, useLesson } from "./useLesson";
+import {
+  type Lesson,
+  type LessonEditorPort,
+  type LessonListening,
+  useLesson,
+} from "./useLesson";
 import { type AssistantMemoryProposals, useMemoryProposals } from "./useMemoryProposals";
 
 /** Who is here to talk: a signed-in account, or someone who must sign in. */
@@ -138,6 +143,11 @@ export interface UseAssistantChatOptions {
   readonly playing?: Accessor<boolean>;
   /** What a lesson's Show me does in the editor (GRV-43); without it, nothing. */
   readonly lessonEditor?: LessonEditorPort;
+  /**
+   * What "Finish a track" listens for (GRV-44): the playhead's bar, the bars
+   * heard and master clips since playing started, the stem exports.
+   */
+  readonly lessonListening?: LessonListening;
   /**
    * What times the quiet after an Apply before the assistant follows up
    * (GRV-195); the real timers by default.
@@ -442,6 +452,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     },
     view: options.view,
     playing: options.playing ?? (() => false),
+    listening: options.lessonListening,
     profile,
     conversation,
     editor: options.lessonEditor,

@@ -7,7 +7,11 @@ import { createRecordingTransport } from "../analytics/transport";
 import { createSliceFixtureProject } from "../domain/fixtures";
 import { TICKS_PER_BAR, TICKS_PER_QUARTER } from "../domain/time";
 import { memoryStorage } from "../testing/storage";
-import EditorHeader, { type HeaderAudio, type HeaderSession } from "./EditorHeader";
+import EditorHeader, {
+  type ExportRequest,
+  type HeaderAudio,
+  type HeaderSession,
+} from "./EditorHeader";
 import type { EditorSessionState } from "./useEditorSession";
 
 afterEach(cleanup);
@@ -108,6 +112,41 @@ describe("EditorHeader", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close export" }));
     flush();
     expect(screen.queryByRole("dialog", { name: "Export" })).toBeNull();
+  });
+
+  it("opens the Export dialog on stems when asked, as a lesson does (GRV-44)", () => {
+    const [request, setRequest] = createSignal<ExportRequest | null>(null);
+    const { session } = fakeSession();
+    render(() => (
+      <EditorHeader
+        projectName="Untitled"
+        onRename={() => {}}
+        session={session}
+        audio={fakeAudio().audio}
+        onToggleLoop={() => {}}
+        tempo={() => 120}
+        onTempoChange={() => {}}
+        swing={() => 50}
+        onSwingInput={() => {}}
+        onSwingCommit={() => {}}
+        onOpenGuide={() => {}}
+        keyHint={() => "K"}
+        analytics={recordingAnalytics().analytics}
+        exportRequest={request}
+      />
+    ));
+    expect(screen.queryByRole("dialog", { name: "Export" })).toBeNull();
+    setRequest({ format: "stems" });
+    flush();
+    expect(screen.getByRole("dialog", { name: "Export" })).toBeVisible();
+    expect(screen.getByRole("radio", { name: "Stems (ZIP)" })).toBeChecked();
+
+    // Closed, the next time it opens from its button it is the usual stereo.
+    fireEvent.click(screen.getByRole("button", { name: "Close export" }));
+    flush();
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    flush();
+    expect(screen.getByRole("radio", { name: "Stereo WAV" })).toBeChecked();
   });
 
   it("offers no export before a project has loaded", () => {

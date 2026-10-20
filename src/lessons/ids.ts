@@ -93,6 +93,13 @@ export function isChapterId(value: string): value is ChapterId {
   return (CHAPTER_IDS as readonly string[]).includes(value);
 }
 
+/**
+ * What a lesson can be started as (GRV-44): a chapter taught alone, or
+ * "track", "Finish a track" from wherever it was left.
+ */
+export const LESSON_CHOICES = [...SOLO_CHAPTER_IDS, "track"] as const;
+export type LessonChoice = (typeof LESSON_CHOICES)[number];
+
 export function isTrackChapterId(value: string): value is TrackChapterId {
   return (TRACK_CHAPTER_IDS as readonly string[]).includes(value);
 }

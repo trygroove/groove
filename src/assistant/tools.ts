@@ -756,9 +756,9 @@ export const TOOL_TEXT: Readonly<Record<string, TrimmedText>> = {
   },
   start_lesson: {
     moderate:
-      "Start a lesson in the producer's project when they ask to learn something a chapter covers (a beat or drums; shaping a synth sound; finding their way around Groove). Call it alone, after one short sentence, and only when they asked to learn. Teach anything else in the conversation.",
+      "Start a lesson in the producer's project when they ask to learn something a chapter covers (a beat or drums; shaping a synth sound; finding their way around Groove; finishing a whole track to stems). Call it alone, after one short sentence, and only when they asked to learn. Teach anything else in the conversation.",
     aggressive:
-      "Start a lesson when they ask to learn what a chapter covers (beat, sound, tour). Alone, after one sentence.",
+      "Start a lesson when they ask to learn what a chapter covers (beat, sound, tour, a whole track). Alone, after one sentence.",
   },
   remember_producer: {
     moderate:
@@ -901,11 +901,11 @@ export const SCHEMA_TEXT: Readonly<Record<string, TrimmedText>> = {
     moderate: "One short line on what the producer will learn.",
     aggressive: "One line on what they will learn.",
   },
-  'Which chapter: "beat" (Make a beat: kick, backbeat, hats, a loop), "sound" (Shape a sound: a synth\'s wave, filter and envelope into a pluck) or "tour" (Tour the studio: the five views).':
+  'Which lesson: "beat" (Make a beat: kick, backbeat, hats, a loop), "sound" (Shape a sound: a synth\'s wave, filter and envelope into a pluck), "tour" (Tour the studio: the five views) or "track" (Finish a track: the long one, five chapters from a beat through bass, chords and a hook, arranging and mixing to exported stems; it picks up where they left it).':
     {
       moderate:
-        'Which chapter: "beat" (a beat: kick, backbeat, hats, loop), "sound" (a synth pluck) or "tour" (the five views).',
-      aggressive: '"beat", "sound" or "tour".',
+        'Which lesson: "beat" (a beat: kick, backbeat, hats, loop), "sound" (a synth pluck), "tour" (the five views) or "track" (a whole track, beat to stems; picks up where they left it).',
+      aggressive: '"beat", "sound", "tour" or "track".',
     },
   '"note" to remember a note, "field" to set one of memory\'s fields.': {
     moderate: '"note" to remember a note, "field" to set a memory field.',
