@@ -1,0 +1,10 @@
+{
+  "id": "fu-after",
+  "title": "Apply, then the assistant follows up",
+  "steps": [
+    {
+      "file": "01-after-the-assistant-replies-by-itself-wi.png",
+      "caption": "After: the assistant replies by itself with a next step, with no message typed"
+    }
+  ]
+}

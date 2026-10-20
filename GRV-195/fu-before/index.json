@@ -1,0 +1,10 @@
+{
+  "id": "fu-before",
+  "title": "Apply, then the assistant follows up",
+  "steps": [
+    {
+      "file": "01-before-after-apply-the-assistant-stops-a.png",
+      "caption": "Before: after Apply, the assistant stops and nothing comes next"
+    }
+  ]
+}
