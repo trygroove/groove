@@ -1,0 +1,18 @@
+{
+  "id": "CF-038",
+  "title": "A producer finishes a track with Coproducer and exports its stems",
+  "steps": [
+    {
+      "file": "01-finish-a-track-starts-in-coproducer-s-pa.png",
+      "caption": "Finish a track starts in Coproducer's panel"
+    },
+    {
+      "file": "03-arranged-by-taking-parts-away.png",
+      "caption": "Arranged by taking parts away"
+    },
+    {
+      "file": "05-the-export-dialog-on-stems.png",
+      "caption": "The Export dialog, on stems"
+    }
+  ]
+}

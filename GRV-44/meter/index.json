@@ -1,0 +1,10 @@
+{
+  "id": "meter",
+  "title": "The master meter",
+  "steps": [
+    {
+      "file": "01-the-master-strip-meters-the-mix-as-it-pl.png",
+      "caption": "The master strip meters the mix as it plays"
+    }
+  ]
+}
