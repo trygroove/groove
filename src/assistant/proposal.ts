@@ -31,7 +31,7 @@ import { type ControlAddress, uniqueControls } from "../commands/controlAddress"
 import { executeTransaction } from "../commands/execute";
 import { requireCommand } from "../commands/registry";
 import type { CommandIssue, RawCommandInput } from "../commands/types";
-import type { Project } from "../domain/entities";
+import type { Instrument, Project } from "../domain/entities";
 import type { ProposalIssueCode } from "./proposalIssues";
 import {
   ASSISTANT_TOOLSET_VERSION,
@@ -313,7 +313,7 @@ export function validateProposal(
     commands.push({
       type: resolution.commandType,
       version: resolution.commandVersion,
-      payload: resolution.payload,
+      payload: keepExistingPads(project, resolution.commandType, resolution.payload),
     });
     capabilities.push(resolution.capability);
   });
@@ -356,6 +356,46 @@ export function validateProposal(
         controls: uniqueControls(lines.flatMap((line) => line.controls)),
         ...diffProjects(project, dryRun.project),
       },
+    },
+  };
+}
+
+/**
+ * An `instrument.change` that installs a drum machine on a track that already
+ * has one is, in the model's hands, "these pads": it lists every pad in full,
+ * the old ones with no sound because it was never told theirs. Applied as
+ * written it would clear every sample the producer chose (GRV-138). So the
+ * pads the track already has are kept as they are, matched by id, and only a
+ * sound the proposal names for one replaces its own; new pads and the
+ * proposal's own removals are taken as proposed. Changing an existing pad
+ * (rename, choke group, level) is a job for `drum.setPad*`, not this call.
+ */
+function keepExistingPads(
+  project: Project,
+  commandType: string,
+  payload: unknown,
+): unknown {
+  if (commandType !== "instrument.change") return payload;
+  const { trackId, instrument } = payload as {
+    trackId: string;
+    instrument: Instrument | null;
+  };
+  const current = project.song.tracks.find((track) => track.id === trackId)?.instrument;
+  if (instrument?.kind !== "drumMachine" || current?.kind !== "drumMachine") {
+    return payload;
+  }
+  const existing = new Map(current.pads.map((pad) => [pad.id as string, pad]));
+  const pads = instrument.pads.map((pad) => {
+    const kept = existing.get(pad.id);
+    if (!kept) return pad;
+    return pad.assetId === null ? kept : { ...kept, assetId: pad.assetId };
+  });
+  return {
+    trackId,
+    instrument: {
+      ...instrument,
+      pads,
+      parameters: { ...current.parameters, ...instrument.parameters },
     },
   };
 }
