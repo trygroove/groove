@@ -1,0 +1,14 @@
+{
+  "id": "ruler",
+  "title": "Click the ruler to set the playhead",
+  "steps": [
+    {
+      "file": "01-before-playhead-at-the-top.png",
+      "caption": "Before: playhead at the top"
+    },
+    {
+      "file": "02-after-clicked-the-ruler-playhead-on-bar-.png",
+      "caption": "After: clicked the ruler, playhead on bar 3 and not playing"
+    }
+  ]
+}
