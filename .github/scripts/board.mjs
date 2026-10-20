@@ -14,7 +14,14 @@
  *                                                   and /ship continues from its handoff)
  *                           mentions=[{issue,comment,reply}, …]  comments that say @claude
  *                           milestone=["GRV-40", …] new bugs with no milestone
- *                         and approves the open PRs of every card in Approved.
+ *                         and approves the open PRs of every card in Approved. Before
+ *                         that, a card in Blocked whose /ship handoff waits on a PR
+ *                         that has merged goes back to Ready (and joins ship); after
+ *                         it, the idle sweep moves a card that has sat in In Progress
+ *                         for an hour with no ship, rework, mention or claude.yml run
+ *                         on it, and no PR of it queued, auto-merging with CI green or
+ *                         running, or running an assistant experiment, to Blocked,
+ *                         with a comment naming its PRs and their state (GRV-197).
  *   node board.mjs pr     On a pull_request event: a PR that closes a card
  *                         puts it in QA (or Ready For Review when it changes the
  *                         security rules); the PR that completes a card merging
@@ -22,7 +29,8 @@
  *                         assistant experiment (`evals/experiments/<id>.ts`):
  *                         then it starts the experiment and the card stays In
  *                         Progress until the verdict moves it; the PR that
- *                         closes a card merging puts it in Done.
+ *                         closes a card merging puts it in Done. Any merged PR a
+ *                         card's /ship handoff waits on puts that card back in Ready.
  *
  * Nothing here needs a cursor or a webhook. Every rule reads the card's own
  * state and the comments on it, so a poll that runs twice does the work once:
@@ -35,7 +43,15 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import * as linear from "./linear.mjs";
-import { approvalOfIssue, approve, lineStatus, openPrs, refersTo } from "./merge.mjs";
+import {
+  approvalOfIssue,
+  approve,
+  GATE_JOBS,
+  issuesIn,
+  lineStatus,
+  openPrs,
+  refersTo,
+} from "./merge.mjs";
 
 const REPO = process.env.GITHUB_REPOSITORY;
 const RUN_URL = process.env.RUN_URL ?? "";
@@ -304,8 +320,298 @@ async function pollMilestones() {
   return bugs.map((b) => b.identifier);
 }
 
+// ---------------------------------------------------------------- handoff
+
+/** The first line of the comment /ship leaves on a card when a sequence stops part way. */
+export const HANDOFF = "**Handoff from /ship";
+/** The columns a handoff leaves a card in: Blocked, or Approved once the product owner approves the PR it waits for. */
+const HANDOFF_COLUMNS = new Set(["blocked", "approved"]);
+
+/**
+ * The PR a card's /ship handoff waits for, when that is all that holds it
+ * back: the card is in Blocked (or Approved), its latest handoff's first line
+ * says "Waiting on #<n>", and it has not been back to Ready since. A handoff
+ * that waits on a decision (the PR was closed unmerged) names no PR.
+ */
+export function handoffAwaiting(card) {
+  if (!HANDOFF_COLUMNS.has(card.state?.name.toLowerCase())) return null;
+  const note = latest(card.comments, (c) => c.body.startsWith(HANDOFF));
+  if (!note) return null;
+  const resumed = card.history.some(
+    (h) => h.toState?.name.toLowerCase() === "ready" && h.createdAt > note.createdAt,
+  );
+  if (resumed) return null;
+  const pr = note.body.split("\n")[0].match(/waiting on #(\d+)/i);
+  return pr ? Number(pr[1]) : null;
+}
+
+/** Back to Ready, where the poll starts /ship, which continues from the handoff. */
+async function resumeHandoff(card, number) {
+  await linear.setState(card.identifier, "Ready");
+  await linear.comment(
+    card.identifier,
+    `**Back to Ready.** #${number}, which the /ship handoff was waiting on, has merged, so /ship continues from the handoff.`,
+  );
+  console.log(`${card.identifier}: #${number} merged; Blocked → Ready to continue /ship`);
+}
+
+/**
+ * The backstop for the merge event (`board.mjs pr`): a card whose handoff
+ * waits on a PR that has merged goes back to Ready.
+ */
+async function pollHandoffs() {
+  const resumed = [];
+  for (const card of await linear.list({
+    state: ["Blocked", "Approved"],
+    history: true,
+    comments: true,
+  })) {
+    const number = handoffAwaiting(card);
+    if (!number) continue;
+    let merged;
+    try {
+      merged = gh([
+        "api",
+        `repos/${REPO}/pulls/${number}`,
+        "--jq",
+        ".merged_at // empty",
+      ]);
+    } catch {
+      console.warn(`${card.identifier}: could not read #${number}; leaving it`);
+      continue;
+    }
+    if (!merged) continue;
+    await resumeHandoff(card, number);
+    resumed.push(card.identifier);
+  }
+  return resumed;
+}
+
+// ---------------------------------------------------------------- sweep
+
+/**
+ * In Progress means an agent is working on the card. One left there with
+ * nothing happening for this long, and nothing running for it, goes to Blocked.
+ */
+const IDLE_MS = 60 * 60 * 1000;
+/** The workflows whose runs count as an agent on a card. */
+const WATCHED = {
+  board: "board.yml",
+  claude: "claude.yml",
+  experiment: "assistant-experiments.yml",
+};
+const EXPERIMENT_STARTED = "**Experiment started.**";
+const FAILED = new Set([
+  "FAILURE",
+  "TIMED_OUT",
+  "CANCELLED",
+  "STARTUP_FAILURE",
+  "ACTION_REQUIRED",
+  "ERROR",
+]);
+
+const names = (text, identifier) =>
+  new RegExp(`\\b${identifier}(?!\\d)`).test(text ?? "");
+const hasLabel = (p, name) => (p.labels ?? []).some((l) => l.name === name);
+
+/** The experiments the card's "Experiment started" comments name. */
+const experimentsStarted = (card) =>
+  card.comments
+    .filter((c) => c.body.startsWith(EXPERIMENT_STARTED))
+    .map((c) => c.body.match(/`([a-z0-9-]+)`/)?.[1])
+    .filter(Boolean);
+
+/**
+ * True when a running workflow run is an agent on the card: a board.yml run
+ * with a ship, rework or mention job for it still going, a claude.yml run on
+ * one of its PRs (the run is titled after the PR), or the assistant
+ * experiment it started. An experiment run titled only with the workflow's
+ * name (one dispatched before runs carried the experiment's ID) counts as the
+ * card's: never move a card whose experiment may be going.
+ */
+export function runFor(run, card, prs) {
+  if (run.workflow === "board") return run.jobs.some((j) => names(j, card.identifier));
+  if (run.workflow === "claude")
+    return names(run.title, card.identifier) || prs.some((p) => p.title === run.title);
+  if (run.workflow === "experiment") {
+    const ids = experimentsStarted(card);
+    if (!ids.length) return false;
+    return (
+      ids.some((id) => run.title.includes(id)) || !/experiment\s+\S/i.test(run.title)
+    );
+  }
+  return false;
+}
+
+/**
+ * Where an open PR stands, in words, and whether it is still moving on its
+ * own: queued, or auto-merging with its required checks green or still
+ * running. A failed required check, a conflict, a draft or a hold all need
+ * someone.
+ */
+export function prActivity(p) {
+  const gates = (p.statusCheckRollup ?? []).filter((c) =>
+    GATE_JOBS.includes(c.name ?? c.context),
+  );
+  const failed = gates
+    .filter((c) => FAILED.has(c.conclusion ?? c.state))
+    .map((c) => c.name ?? c.context);
+  const running = gates.some(
+    (c) =>
+      (c.status && c.status !== "COMPLETED") || ["PENDING", "EXPECTED"].includes(c.state),
+  );
+  const conflict = p.mergeStateStatus === "DIRTY";
+  const held = hasLabel(p, "hold");
+  const awaitingApproval =
+    hasLabel(p, "needs-approval") && !hasLabel(p, "status:approved");
+  const parts = [];
+  if (p.isDraft) parts.push("a draft");
+  if (held) parts.push("labelled `hold`");
+  if (awaitingApproval) parts.push("waiting for approval (`needs-approval`)");
+  if (conflict) parts.push("conflicts with `main`");
+  if (failed.length) parts.push(`CI failed (${failed.join(", ")})`);
+  else if (running) parts.push("CI running");
+  parts.push(p.autoMergeRequest ? "auto-merge on" : "not queued");
+  return {
+    inFlight: Boolean(
+      p.autoMergeRequest && !p.isDraft && !held && !conflict && !failed.length,
+    ),
+    state: parts.join(", "),
+  };
+}
+
+/**
+ * What the sweep does with one In Progress card: `leave` it (with why), or
+ * `block` it (with the comment to post). `prs` are the open PRs that refer to
+ * it, with their checks; `runs` the watched workflows' runs still going.
+ */
+export function sweepVerdict(card, { now, prs, runs, idleMs = IDLE_MS }) {
+  const times = [
+    enteredInProgress(card)?.createdAt,
+    ...card.comments.flatMap((c) => [c.createdAt, c.updatedAt]),
+    ...prs.flatMap((p) =>
+      (p.comments ?? [])
+        .filter((c) => c.body.includes("@claude"))
+        .map((c) => c.createdAt),
+    ),
+  ]
+    .filter(Boolean)
+    .map(Date.parse);
+  const last = times.length ? Math.max(...times) : 0;
+  const idle = Math.round((now - last) / 60_000);
+  if (now - last < idleMs)
+    return { action: "leave", reason: `last active ${idle} min ago` };
+  const run = runs.find((r) => runFor(r, card, prs));
+  if (run)
+    return { action: "leave", reason: `a ${run.workflow} run is on it (${run.url})` };
+  const states = prs.map((p) => ({ p, ...prActivity(p) }));
+  const moving = states.find((s) => s.inFlight);
+  if (moving)
+    return { action: "leave", reason: `#${moving.p.number} is ${moving.state}` };
+  const found = states.length
+    ? states.map((s) => `- [#${s.p.number}](${s.p.url}): ${s.state}`).join("\n")
+    : "- No open PR refers to it.";
+  return {
+    action: "block",
+    comment: `**Moved to Blocked: no agent is working on this card.** It sat in In Progress for ${idle} minutes with no /ship, rework or \`@claude\` run on it, and no PR of it queued, auto-merging with CI green or running, or running an assistant experiment. What the board found:
+
+${found}
+
+Say what should happen next here. To send an agent back to it, move it to In Progress: a rework run takes on its open PRs, or /ship continues from its handoff when none is open.
+
+---
+_Posted by the board's idle sweep (\`.github/scripts/board.mjs\`)._`,
+  };
+}
+
+/** The watched workflows' runs that are not finished, with each board run's unfinished jobs. */
+function activeRuns() {
+  const runs = [];
+  for (const [workflow, file] of Object.entries(WATCHED)) {
+    const list = JSON.parse(
+      gh([
+        "api",
+        `repos/${REPO}/actions/workflows/${file}/runs?per_page=100`,
+        "--jq",
+        '[.workflow_runs[] | select(.status != "completed") | {id, title: .display_title, url: .html_url}]',
+      ]),
+    );
+    for (const r of list) {
+      const jobs =
+        workflow === "board"
+          ? JSON.parse(
+              gh([
+                "api",
+                `repos/${REPO}/actions/runs/${r.id}/jobs?per_page=100`,
+                "--jq",
+                '[.jobs[] | select(.status != "completed") | .name]',
+              ]),
+            )
+          : [];
+      runs.push({ workflow, ...r, jobs });
+    }
+  }
+  return runs;
+}
+
+const prChecks = (number) =>
+  JSON.parse(
+    gh([
+      "pr",
+      "view",
+      String(number),
+      "--repo",
+      REPO,
+      "--json",
+      "title,url,statusCheckRollup,mergeStateStatus",
+    ]),
+  );
+
+/**
+ * The backstop: a card in In Progress with no agent on it and nothing moving
+ * for it for an hour goes to Blocked, with a comment naming its PRs and where
+ * each stands. Cards this poll just handed to a run are skipped, and nothing
+ * is swept while the line is stopped (every PR is out of the queue then, and
+ * rejoins it on its own) or when GitHub cannot say what is running.
+ */
+async function pollSweep(index, skip) {
+  if (lineStatus().stopped) return console.log("The line is stopped; not sweeping");
+  let runs;
+  try {
+    runs = activeRuns();
+  } catch {
+    return console.warn("Could not list the running workflows; not sweeping");
+  }
+  const now = Date.now();
+  for (const card of await linear.list({
+    state: "In Progress",
+    history: true,
+    comments: true,
+  })) {
+    if (skip.has(card.identifier)) continue;
+    let prs;
+    try {
+      prs = index.prs
+        .filter((p) => refersTo(p.body, card.identifier))
+        .map((p) => ({ ...p, ...prChecks(p.number) }));
+    } catch {
+      console.warn(`${card.identifier}: could not read its PRs' checks; leaving it`);
+      continue;
+    }
+    const verdict = sweepVerdict(card, { now, prs, runs });
+    if (verdict.action === "leave") {
+      console.log(`${card.identifier}: In Progress; ${verdict.reason}`);
+      continue;
+    }
+    await linear.comment(card.identifier, verdict.comment);
+    await linear.setState(card.identifier, "Blocked");
+    console.log(`${card.identifier}: idle in In Progress with no agent on it; → Blocked`);
+  }
+}
+
 async function poll() {
   const index = openPrs();
+  const resumed = await pollHandoffs();
   const ship = await pollReady();
   await pollApproved(index);
   const rework = await pollRework(index, ship);
@@ -321,6 +627,18 @@ async function poll() {
       ? "true"
       : "false",
   );
+  // After the outputs: the runs this poll starts must start even if the sweep fails.
+  const skip = new Set([
+    ...resumed,
+    ...ship.map((s) => s.issue),
+    ...rework.map((r) => r.issue),
+    ...mentions.map((m) => m.issue),
+  ]);
+  try {
+    await pollSweep(index, skip);
+  } catch (error) {
+    console.warn(`The idle sweep failed: ${error.message}`);
+  }
 }
 
 // ---------------------------------------------------------------- pr
@@ -447,6 +765,12 @@ async function pr() {
       if (!experiments.some((e) => e.card === id)) await move(id, "QA");
     }
     for (const id of closedBy(p.body)) await move(id, "Done");
+    // An earlier PR of a sequence merged: a card whose /ship handoff waits on
+    // it goes back to Ready, and /ship continues from the handoff.
+    for (const id of new Set(issuesIn(p.body))) {
+      const card = await linear.issue(id, { history: true });
+      if (card && handoffAwaiting(card) === p.number) await resumeHandoff(card, p.number);
+    }
     return;
   }
   if (event.action === "closed" || p.draft) return;
@@ -457,13 +781,16 @@ async function pr() {
   for (const id of closedBy(p.body)) await move(id, target);
 }
 
-const mode = process.argv[2];
-const run = mode === "poll" ? poll : mode === "pr" ? pr : null;
-if (!run) {
-  console.error("usage: board.mjs poll|pr");
-  process.exit(2);
+// Run only as a script: the tests import the rules above without polling.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const mode = process.argv[2];
+  const run = mode === "poll" ? poll : mode === "pr" ? pr : null;
+  if (!run) {
+    console.error("usage: board.mjs poll|pr");
+    process.exit(2);
+  }
+  run().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
 }
-run().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});

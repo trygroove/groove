@@ -29,6 +29,7 @@ work once.
 | Move a card to **Approved** | Every open PR that refers to it (`Closes`, `Completes`, `Refs GRV-<n>`) is labelled `status:approved` and queued to merge |
 | Move a card with open PRs back to **In Progress** (from QA, Ready For Review or Blocked) | A rework agent fixes those PRs in place, after announcing itself on the card |
 | Move an unfinished card with no open PRs to **In Progress** (none that `Completes` or `Closes` it has merged, as when a sequence stopped at a gated PR) | `/ship` continues it from its handoff, after announcing itself on the card |
+| Leave a card in **Blocked** after a "Handoff from /ship" that waits on a PR (or move it to Approved to approve that PR) | Once the PR merges, the card moves back to Ready by itself and `/ship` continues from the handoff |
 | Comment `@claude …` on a card | A Claude run replies "Picking this up" under your comment and does what it asks |
 | File a bug with no milestone | A short run puts it on the milestone of its area |
 
@@ -37,7 +38,11 @@ GitHub events move cards the other way, at once (`board.mjs pr`, `merge.mjs`,
 QA (Ready For Review if it changes the security rules); a PR that `Completes
 GRV-<n>` merging moves it to QA; a PR that `Closes GRV-<n>` merging moves it
 to Done; a gated PR opening moves it to Ready For Review; a merge-queue
-failure moves it to In Progress. The QA bot ([`docs/qa-bot.md`](./qa-bot.md))
+failure moves it to In Progress; a PR's own CI still red after a re-run and an
+`@claude` fix moves it to Blocked; and a PR a /ship handoff waits on merging
+moves the card back to Ready. Every poll also sweeps In Progress: a card there
+for an hour with no agent run on it and no PR of it moving on its own goes to
+Blocked, with a comment saying what the poll found. The QA bot ([`docs/qa-bot.md`](./qa-bot.md))
 moves a card out of QA.
 
 Everything that reads or writes Linear goes through

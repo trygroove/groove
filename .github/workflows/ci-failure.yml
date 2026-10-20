@@ -13,6 +13,11 @@ name: CI failure
 #                               (or, when the cause is unclear, a bug is filed)
 #  - CI goes green on main    -> the line resumes: every open PR is synced back
 #                               into the queue and the board polls
+#  - a PR's own CI run fails  -> (a pull_request run on the PR's head, outside
+#                               the queue) re-run the failed jobs once; if they
+#                               fail again, the PR goes to @claude to fix; if
+#                               the fix's run ends red too, the card goes to
+#                               Blocked (GRV-197)
 #
 # The daily browser pass is not handled here: browser-pass-report in ci.yml
 # files its own bug.
@@ -20,9 +25,9 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    # Only the runs either job acts on: main and the merge queue. Without this,
-    # every PR branch's CI starts a run that is skipped at once.
-    branches: [main, "gh-readonly-queue/**"]
+    # No branch filter: a PR's head can be any branch. Push runs on a PR
+    # branch are skipped below; only its pull_request run reports the required
+    # checks (ci.yml names a branch push run's gate jobs "branch push / …").
 
 permissions:
   contents: write
@@ -35,6 +40,7 @@ jobs:
     if: >-
       github.event.workflow_run.conclusion == 'failure' && (
         github.event.workflow_run.event == 'merge_group' ||
+        github.event.workflow_run.event == 'pull_request' ||
         (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
       )
     runs-on: ubuntu-latest
@@ -67,6 +73,8 @@ jobs:
           cp .github/scripts/ci-failure.sh .github/scripts/linear.mjs .github/scripts/merge.mjs "$RUNNER_TEMP/"
           if [ "$EVENT" = merge_group ]; then
             bash "$RUNNER_TEMP/ci-failure.sh" queue "$RUN" "$BRANCH"
+          elif [ "$EVENT" = pull_request ]; then
+            bash "$RUNNER_TEMP/ci-failure.sh" pr "$RUN" "$BRANCH" "$SHA" "$ATTEMPT"
           else
             bash "$RUNNER_TEMP/ci-failure.sh" main "$RUN" "$SHA" "$ATTEMPT"
           fi

@@ -15,6 +15,16 @@
 #                                  the queue, hold the card's other open PRs, and
 #                                  file a Linear issue to land it again. Otherwise
 #                                  file a bug.
+#   pr <run-id> <branch> <sha> <attempt>
+#                                  A PR's own CI run (pull_request, outside the
+#                                  queue) failed on the PR's head. Unless a Claude
+#                                  run is already on it, re-run the failed jobs
+#                                  once; if they fail again, hand the PR to
+#                                  @claude with the run link. If the run that
+#                                  fails is the fix's (this handler handed the PR
+#                                  over in the last day and it has been pushed
+#                                  since), move its card to Blocked instead
+#                                  (GRV-197).
 #
 # Needs LINEAR_API_KEY, and `linear.mjs` and `merge.mjs` beside this script.
 #
@@ -167,8 +177,84 @@ EOF
 	gh pr comment "$pr" --repo "$repo" --body "CI failed on \`main\` after this landed ($run_url), so it is being reverted in $revert. Re-landing is tracked in Linear as $reland.$footer" >/dev/null
 	log "reverting #$pr in $revert; re-land in $reland"
 	;;
+pr)
+	branch="$ref"
+	sha="${4:?}"
+	attempt="${5:-1}"
+	# Hidden in the rendered comment: how a later run knows this handler handed
+	# the PR to @claude, and so that a red run after that is the fix's.
+	marker='<!-- ci-failure:pr -->'
+	pr="$(gh api "repos/$repo/pulls?state=open&head=${repo%%/*}:$branch" --jq '.[0].number // empty')"
+	[ -n "$pr" ] || { log "no open PR from $branch"; exit 0; }
+	[ "$(gh api "repos/$repo/pulls/$pr" --jq .head.sha)" = "$sha" ] || {
+		log "#$pr has been pushed since $sha; the newer run decides"
+		exit 0
+	}
+	failed="$(failed_gates "$run")"
+	[ -n "$failed" ] || { log "#$pr: only non-gate jobs failed"; exit 0; }
+	# With main red, a PR run (which tests the merge with main) fails for main's
+	# reason: main is being dealt with, and this PR waits for it.
+	if [ "$(merge status)" = stopped ]; then
+		log "the line is stopped; #$pr waits for main"
+		exit 0
+	fi
+	pushed="$(gh api "repos/$repo/commits/$sha" --jq .commit.committer.date)"
+	# "<created_at> mine|other" for every @claude comment on the PR.
+	mentions="$(gh api --paginate "repos/$repo/issues/$pr/comments?per_page=100" \
+		--jq ".[] | select(.body | contains(\"@claude\")) | \"\(.created_at) \(if (.body | contains(\"$marker\")) then \"mine\" else \"other\" end)\"")"
+	# An @claude comment since this commit: a Claude run is on it already (or
+	# this handler handed it over for an earlier failure of the same commit).
+	if awk -v t="$pushed" '$1 > t { found = 1 } END { exit !found }' <<<"$mentions"; then
+		log "#$pr: an @claude run already has it"
+		exit 0
+	fi
+	if [ "$attempt" = 1 ]; then
+		gh run rerun "$run" --repo "$repo" --failed
+		log "#$pr: re-running the failed jobs of $run before handing it over"
+		exit 0
+	fi
+	day_ago="$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)"
+	issue="$(issue_of "$pr")"
+	if awk -v t="$day_ago" '$2 == "mine" && $1 > t { found = 1 } END { exit !found }' <<<"$mentions"; then
+		# This handler handed the PR to @claude in the last day, it has been
+		# pushed since, and the fix is red too: someone has to look.
+		gh pr comment "$pr" --repo "$repo" --body-file - <<EOF
+CI failed again on this PR after the fix for its last failure, and again on a re-run: $run_url
+
+Failing jobs:
+$(sed 's/^/- /' <<<"$failed")
+
+${issue:+Its card $issue is moved to Blocked: }this needs a person to look before another fix is tried.
+$footer
+EOF
+		if [ -n "$issue" ]; then
+			linear comment "$issue" --body-file - >/dev/null <<EOF || log "could not comment on $issue"
+**Moved to Blocked: CI is still red on https://github.com/$repo/pull/$pr after a fix.** The PR's own CI run failed, was re-run once and handed to \`@claude\`, and the fix's run failed as well: $run_url
+
+Failing jobs:
+$(sed 's/^/- /' <<<"$failed")
+
+**Unblocked by:** someone finding the cause (a flaky test, or a problem outside this PR, can look like this). Comment \`@claude\` on the PR saying what to do, or push a fix yourself; then move this card back to In Progress.
+EOF
+			linear state "$issue" Blocked >/dev/null || log "could not move $issue to Blocked"
+		fi
+		log "#$pr: red again after the fix; ${issue:-no card} to Blocked"
+		exit 0
+	fi
+	gh pr comment "$pr" --repo "$repo" --body-file - <<EOF
+@claude CI failed on this PR's head, and again on a re-run, so it cannot merge: $run_url
+$marker
+
+Failing jobs:
+$(sed 's/^/- /' <<<"$failed")
+
+Find the cause in that run's failing job. Bring this branch up to date with \`main\` (\`git merge origin/main\`; never a rebase or force-push), reproduce the failure, fix it, run the checks it touches, and push. If the cause is a flaky test rather than this change, fix the flake rather than retrying.
+$footer
+EOF
+	log "#$pr handed to @claude"
+	;;
 *)
-	echo "usage: ci-failure.sh queue <run-id> <queue-branch> | main <run-id> <sha> <attempt>" >&2
+	echo "usage: ci-failure.sh queue <run-id> <queue-branch> | main <run-id> <sha> <attempt> | pr <run-id> <branch> <sha> <attempt>" >&2
 	exit 2
 	;;
 esac
