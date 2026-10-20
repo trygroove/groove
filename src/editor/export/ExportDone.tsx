@@ -14,7 +14,7 @@ import Sleeve from "./Sleeve";
 
 export interface ExportDoneProps {
   readonly finished: FinishedExport;
-  /** The dialog's height when the export finished, so the dialog does not resize. */
+  /** The dialog's height when the export finished: the least this screen takes, so the dialog does not shrink. */
   readonly heightPx?: number;
   onBack(): void;
   /** Export the other format of the same song. */
@@ -53,7 +53,10 @@ export default function ExportDone(props: ExportDoneProps): JSX.Element {
         <output class="export-label" aria-live="polite">
           Export complete
         </output>
-        <h3>{props.finished.name} is out.</h3>
+        <h3>
+          <span class="export-name">{props.finished.name}</span>{" "}
+          <span class="export-verb">is out.</span>
+        </h3>
         <p>{whereText(props.finished)}</p>
         <div class="export-stats">
           <ExportReadout label="Length">{props.finished.length}</ExportReadout>

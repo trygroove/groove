@@ -2,16 +2,16 @@ import type { JSX } from "@solidjs/web";
 import "./CueMark.css";
 
 export interface CueMarkProps {
-  /** Whether Cue is speaking: the squares pulse outwards and brighten. */
+  /** Whether Coproducer is speaking: the squares pulse outwards and brighten. */
   readonly active?: boolean;
   /** The mark's size in pixels. */
   readonly size?: number;
 }
 
 /**
- * Cue's mark (GRV-25): concentric squares, square-cornered and monochrome
+ * Coproducer's mark (GRV-25): concentric squares, square-cornered and monochrome
  * like everything else (docs/design.md). They breathe slowly at rest and
- * pulse while Cue speaks, the brightest thing on the welcome's black. It is
+ * pulse while Coproducer speaks, the brightest thing on the welcome's black. It is
  * decoration: the name beside it is what a screen reader reads.
  */
 export default function CueMark(props: CueMarkProps): JSX.Element {

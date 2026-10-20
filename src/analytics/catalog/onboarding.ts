@@ -1,4 +1,4 @@
-// Onboarding with Cue (GRV-25): the welcome's questions, how it ended, and
+// Onboarding with Coproducer (GRV-25): the welcome's questions, how it ended, and
 // the customer-validation event a producer consents to.
 //
 // No parameter carries an answer's text. The validation event carries only
@@ -39,8 +39,6 @@ export type LearnChipId = (typeof LEARN_CHIP_IDS)[number];
 
 /** The gear chips, as the validation event names them. */
 export const GEAR_CHIP_IDS = [
-  "ableton_move",
-  "roland_t8",
   "midi_keyboard",
   "drum_machine",
   "synth",
@@ -103,7 +101,7 @@ export const ONBOARDING_EVENTS = {
     },
   },
 
-  // Memory is never written silently: Cue proposes, the producer confirms,
+  // Memory is never written silently: Coproducer proposes, the producer confirms,
   // and a confirmed change can be undone. Which kind of change, never what.
   memory_note_proposed: {
     phase: 3,
@@ -130,7 +128,7 @@ export const ONBOARDING_EVENTS = {
     params: { what: enumParam(["field", "note", "everything"]) },
   },
 
-  // Cue's one nudge a day (GRV-25), offered as a returning producer opens a
+  // Coproducer's one nudge a day (GRV-25), offered as a returning producer opens a
   // project with its panel open, and what they did with it.
   cue_nudge_shown: {
     phase: 3,

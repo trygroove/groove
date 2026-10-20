@@ -10,6 +10,7 @@ import type { Project } from "../domain/entities";
 import type { ProjectId } from "../domain/ids";
 import type { SaveStatus } from "../persistence/autosave";
 import type { ProjectRepository } from "../persistence/projectRepository";
+import { holdPendingWrites } from "../shared/pendingWrites";
 import { assistantProposalTarget } from "./assistantProposalTarget";
 import {
   EditorSession,
@@ -38,6 +39,8 @@ import { reportProjectLoad } from "./projectLoadReport";
  * `beforeunload` comes first and is the one chance to ask the user to stay
  * (GRV-60): while an edit is still unsaved it shows the browser's "leave
  * site?" prompt and starts the write, which can finish while the prompt is up.
+ *
+ * `online` retries a save the connection dropped (GRV-55).
  */
 function watchNavigationFlush(getSession: () => EditorSession | null): void {
   if (typeof window === "undefined") return;
@@ -64,14 +67,118 @@ function watchNavigationFlush(getSession: () => EditorSession | null): void {
     event.returnValue = "";
   }
 
+  // Back online (GRV-55): a save that failed for want of a connection is
+  // written now, without waiting for Retry.
+  function handleOnline(): void {
+    getSession()?.reconnected();
+  }
+
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("pagehide", flush);
   window.addEventListener("beforeunload", handleBeforeUnload);
+  window.addEventListener("online", handleOnline);
   onCleanup(() => {
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     window.removeEventListener("pagehide", flush);
     window.removeEventListener("beforeunload", handleBeforeUnload);
+    window.removeEventListener("online", handleOnline);
   });
+}
+
+/**
+ * How many of an autosave's queued edits another write could still land
+ * (GRV-55): none once its failure is one no retry clears (a document too
+ * large, a refused permission, a conflict GRV-88 settles), so neither the
+ * connection coming back nor the crash screen keeps trying them.
+ */
+function writablePending(autosave: EditorSession["autosave"]): number {
+  return isStuck(autosave) ? 0 : autosave.status.pending;
+}
+
+/**
+ * How many queued edits no write can land: the rest of `pending`. Never
+ * retried, but still unsaved, so the crash screen warns before a reload
+ * discards them (GRV-55).
+ */
+function stuckPending(autosave: EditorSession["autosave"]): number {
+  return isStuck(autosave) ? autosave.status.pending : 0;
+}
+
+function isStuck(autosave: EditorSession["autosave"]): boolean {
+  const { state, failure } = autosave.status;
+  return state === "failed" && !failure?.retryable;
+}
+
+/**
+ * Keeps `count` edits a closed session could never write on the crash
+ * screen's books for the rest of the page (GRV-55): nothing will try them
+ * again, but a reload would lose them, so Reload says so first.
+ */
+function holdStuckWrites(count: number): void {
+  if (count === 0) return;
+  holdPendingWrites({ pending: () => 0, stuck: () => count, flush: async () => {} });
+}
+
+/**
+ * Holds a session's queued edits where the crash screen can write them
+ * (GRV-55). Returns the release.
+ */
+function holdSessionWrites(session: EditorSession): () => void {
+  return holdPendingWrites({
+    pending: () => writablePending(session.autosave),
+    stuck: () => stuckPending(session.autosave),
+    flush: () => session.autosave.flush(),
+  });
+}
+
+/**
+ * Disposes a closing session once its last write has settled (GRV-55). If
+ * that write left edits unwritten (the connection dropped), the session goes
+ * but its autosave and their queue stay held: written when the browser is back
+ * online, or by the crash screen's Reload, and only then let go. A queued
+ * edit is never dropped because its project closed. One no write can land is
+ * not retried, but stays counted as unsaved for the crash screen.
+ */
+function retireSession(session: EditorSession, release: () => void): void {
+  release();
+  if (writablePending(session.autosave) === 0) {
+    holdStuckWrites(stuckPending(session.autosave));
+    session.dispose();
+    return;
+  }
+  session.dispose({ keepUnsavedWrites: true });
+  const { autosave } = session;
+  let retired = false;
+  // Landed, or failed in a way no further write can clear: let go of the
+  // autosave, keeping count of any edit it could never write.
+  const settle = () => {
+    if (retired || autosave.writing || writablePending(autosave) > 0) return;
+    retired = true;
+    releaseRetired();
+    unsubscribe();
+    holdStuckWrites(stuckPending(autosave));
+    autosave.dispose();
+  };
+  const flush = async () => {
+    await autosave.flush();
+    settle();
+  };
+  const onOnline = () => void flush();
+  // The session's retries keep running on the kept autosave, so a write that
+  // lands by itself lets go of it too.
+  const unsubscribe = autosave.subscribe((status) => {
+    if (status.state === "saved" || status.state === "failed") queueMicrotask(settle);
+  });
+  const releaseHeld = holdPendingWrites({
+    pending: () => writablePending(autosave),
+    stuck: () => stuckPending(autosave),
+    flush,
+  });
+  const releaseRetired = () => {
+    releaseHeld();
+    if (typeof window !== "undefined") window.removeEventListener("online", onOnline);
+  };
+  if (typeof window !== "undefined") window.addEventListener("online", onOnline);
 }
 
 export interface EditorSessionState {
@@ -243,6 +350,7 @@ export function useEditorSession(
       let unsubscribeEdits: (() => void) | null = null;
       let unsubscribeRemote: (() => void) | null = null;
       let unsubscribeNotices: (() => void) | null = null;
+      let releaseWrites: () => void = () => {};
 
       function applySnapshot(snapshot: EditorSessionSnapshot): void {
         setState((draft) => {
@@ -282,6 +390,7 @@ export function useEditorSession(
           draft.droppedPlacements = droppedPlacements;
         });
         session = localSession;
+        releaseWrites = holdSessionWrites(localSession);
         unsubscribeHistory = localSession.subscribe(applySnapshot);
         unsubscribeEdits = localSession.subscribeEdits((edit) => {
           for (const listener of [...editListeners]) listener(edit);
@@ -309,7 +418,11 @@ export function useEditorSession(
         unsubscribeNotices?.();
         if (localSession) {
           const disposing = localSession;
-          void disposing.autosave.flush().finally(() => disposing.dispose());
+          const release = releaseWrites;
+          void disposing.autosave
+            .flush()
+            .catch(() => undefined)
+            .then(() => retireSession(disposing, release));
         }
         if (session === localSession) {
           session = null;

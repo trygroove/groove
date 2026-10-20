@@ -38,6 +38,8 @@ import {
   timeoutScheduler,
 } from "../shared/scheduler";
 import { markProjectOpened } from "./deviceProjectRecord";
+import { reportSaveFailures, type SaveFailureReportOptions } from "./saveFailureReport";
+import { retryFailedSaves } from "./saveRetry";
 import {
   type PreviewEndReason,
   type PreviewHost,
@@ -81,6 +83,9 @@ export interface SessionEdit {
   /** The committed project just before the change. */
   readonly before: Project;
 }
+
+/** How many committed edits the session remembers the commands of. */
+const EDIT_LOG_LIMIT = 200;
 
 export type SessionEditListener = (edit: SessionEdit) => void;
 
@@ -157,6 +162,8 @@ export interface EditorSessionOptions {
    * heals and the next open is clean.
    */
   readonly dropped?: DroppedReferences;
+  /** Where a failed save is reported (GRV-55); the app-wide boundary by default. */
+  readonly saveFailures?: SaveFailureReportOptions;
 }
 
 function isCommandId(value: string): value is CommandId {
@@ -203,10 +210,14 @@ export class EditorSession {
   private readonly unwatch: () => void;
   private readonly listeners = new Set<EditorSessionListener>();
   private readonly editListeners = new Set<SessionEditListener>();
+  /** What each committed edit was, by the revisions it moved (GRV-132). */
+  private readonly editLog: { from: number; to: number; types: string[] }[] = [];
   private readonly remoteListeners = new Set<() => void>();
   private readonly noticeListeners = new Set<SessionNoticeListener>();
   private readonly unsubscribeHistory: () => void;
   private readonly unsubscribeSave: () => void;
+  private readonly stopSaveRetry: () => void;
+  private readonly unsubscribeSaveFailures: () => void;
   private readonly previewHost: PreviewHost = {
     cancelPreview: (preview) => this.endPreview(preview, "cancelled", "cancelled"),
     commitPreview: (preview, actor) => this.commitPreview(preview, actor),
@@ -253,6 +264,11 @@ export class EditorSession {
     this.remoteRevision = options.project.metadata.revision;
     this.unsubscribeHistory = this.history.subscribe(() => this.onHistoryChange());
     this.unsubscribeSave = this.autosave.subscribe((status) => this.onSaveStatus(status));
+    this.stopSaveRetry = retryFailedSaves(this.autosave, this.scheduler);
+    this.unsubscribeSaveFailures = reportSaveFailures(
+      this.autosave,
+      options.saveFailures,
+    );
     this.unwatch = options.repository.watchProject(this.projectId, (event) =>
       this.onRemoteEvent(event),
     );
@@ -349,6 +365,25 @@ export class EditorSession {
     options: TransactionOptions = {},
   ): TransactionResult {
     return this.execute(commands, options);
+  }
+
+  /**
+   * The command types this session committed after `revision`, or null when
+   * the chain from `revision` to the committed one is not all known: a change
+   * adopted from another tab, or one older than the log keeps (GRV-132). A
+   * proposal is stale after any change it cannot account for.
+   */
+  commandTypesSince(revision: number): readonly string[] | null {
+    const current = this.history.project.metadata.revision;
+    const types: string[] = [];
+    let at = revision;
+    while (at !== current) {
+      const step = this.editLog.find((entry) => entry.from === at && entry.to !== at);
+      if (!step) return null;
+      types.push(...step.types);
+      at = step.to;
+    }
+    return types;
   }
 
   /** True while a continuous gesture is open on the history. */
@@ -529,7 +564,27 @@ export class EditorSession {
     return true;
   }
 
-  dispose(): void {
+  /**
+   * The browser is back online (GRV-55): write what is still unsaved now
+   * rather than waiting for the producer to press Retry or edit again. A
+   * failure no retry can clear (a refused document, a project that is gone)
+   * is left as it is, still saying why.
+   */
+  reconnected(): void {
+    if (this.disposed) return;
+    const { pending, state, failure } = this.autosave.status;
+    if (pending === 0) return;
+    if (state === "failed" && !failure?.retryable) return;
+    void this.autosave.flush();
+  }
+
+  /**
+   * Tears the session down. With `keepUnsavedWrites`, an autosave that still
+   * holds unwritten edits is left running (GRV-55): its owner keeps the queue
+   * and disposes it once the edits are written, so closing a project whose
+   * last write failed never drops it.
+   */
+  dispose(options: { readonly keepUnsavedWrites?: boolean } = {}): void {
     if (this.disposed) return;
     this.disposed = true;
     this.endOpenPreview("cancelled", "disposed", false);
@@ -539,10 +594,15 @@ export class EditorSession {
     this.noticeListeners.clear();
     this.unsubscribeHistory();
     this.unsubscribeSave();
+    this.unsubscribeSaveFailures();
     this.cancelReload?.();
     this.cancelReload = null;
     this.unwatch();
-    this.autosave.dispose();
+    // A kept autosave keeps retrying its failed write until it lands.
+    if (!options.keepUnsavedWrites || this.autosave.status.pending === 0) {
+      this.stopSaveRetry();
+      this.autosave.dispose();
+    }
     this.history.dispose();
   }
 
@@ -860,6 +920,12 @@ export class EditorSession {
   }
 
   private emitEdit(edit: SessionEdit): void {
+    this.editLog.push({
+      from: edit.before.metadata.revision,
+      to: this.history.project.metadata.revision,
+      types: edit.commands.map((command) => command.type),
+    });
+    if (this.editLog.length > EDIT_LOG_LIMIT) this.editLog.shift();
     for (const listener of [...this.editListeners]) listener(edit);
   }
 

@@ -18,7 +18,7 @@ import { expect, test } from "../support/test";
 import { expectView } from "../support/views";
 
 /**
- * `CF-036`: a producer builds a first beat with Cue, one card at a time.
+ * `CF-036`: a producer builds a first beat with Coproducer, one card at a time.
  *
  * Read the flow in `docs/core-flows.md`. The numbered comments are its steps,
  * in its words. This is the acceptance contract for GRV-129 (assistant cards
@@ -111,13 +111,13 @@ async function tryAndKeep(
 test.describe("CF-036", () => {
   // biome-ignore format: unparked by removing only test.fixme, so the frozen body keeps its lines
   test(
-    "a producer builds a first beat with Cue, one card at a time",
+    "a producer builds a first beat with Coproducer, one card at a time",
     async ({ page, browserName, invitedProducer }) => {
       // The account met the assistant's disclosure in an earlier session (GRV-8).
       await seedDisclosureAnswered(invitedProducer.uid);
       const step = walkthrough(page, {
         id: "CF-036",
-        title: "A producer builds a first beat with Cue, one card at a time",
+        title: "A producer builds a first beat with Coproducer, one card at a time",
       });
 
       // 1. Create a new project. It opens on the arrangement, with the starter
@@ -125,7 +125,7 @@ test.describe("CF-036", () => {
       await newProject(page);
       await expect(arrangement(page)).toBeVisible();
 
-      // 2. Press the Cue button, type "Let's build my first beat
+      // 2. Press the Coproducer button, type "Let's build my first beat
       //    [first-beat]" and press Enter. Your message appears in the
       //    conversation, and the assistant's reply follows it.
       await assistantButton(page).click();
@@ -147,7 +147,7 @@ test.describe("CF-036", () => {
       //    recommended pack appears, on its own: its header names BD's track
       //    and pad (BD · BD), it offers to try its sound on BD, and it says
       //    there are 2 more after this.
-      await proposalButton(page, "Apply").click();
+      await proposalButton(page, "Apply all").click();
       await expect(proposal(page)).toContainText(/Applied/);
       await expect(recommendations(page)).toHaveCount(1);
       await expect(recommendation(page)).toContainText("BD · BD");

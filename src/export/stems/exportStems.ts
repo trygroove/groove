@@ -11,6 +11,7 @@ import { pcm24, WAV_BITS_PER_SAMPLE, wav24ByteLength } from "../../audio/wavEnco
 import type { Project } from "../../domain/entities";
 import type { TrackId } from "../../domain/ids";
 import { type Clock, systemClock } from "../../shared/clock";
+import { isOutOfMemory } from "../../shared/outOfMemory";
 import { missingSoundsAtStart } from "../missingSounds";
 import {
   buildStemArchive,
@@ -20,6 +21,7 @@ import {
   stemArchiveBytes,
 } from "./stemArchive";
 import { planStems, type StemRender } from "./stemPlan";
+import { estimateTailSeconds } from "./tailEstimate";
 
 /**
  * A stem export, end to end (EXP-003): plan, render each stem offline, encode
@@ -65,7 +67,7 @@ export function maxStemFrames(seconds: number, rate: number, tail = MAX_TAIL_SEC
 
 /** The frames a render whose tails fall silent by the song's end returns: the
  * renderer never trims below the song, and that is the usual length. What the
- * dialog shows, where {@link maxStemFrames} is what the budget checks. */
+ * dialog shows (with a tail estimated, see {@link expectedPlanFrames}), where {@link maxStemFrames} is what the budget checks. */
 export function songFrames(seconds: number, rate: number): number {
   return Math.round(seconds * rate);
 }
@@ -161,12 +163,17 @@ export function planFrames(
   );
 }
 
-/** The frames a stem is expected to be: the song's length, with no tail. */
+/** The frames a stem is expected to be: the song's length plus the tail the
+ * project is expected to ring out for ({@link estimateTailSeconds}), which every
+ * stem is padded to. What the dialog shows; a render is exact, this is close. */
 export function expectedPlanFrames(
   plan: readonly StemRender[],
   sampleRate: number,
+  maxTailSeconds: number = MAX_TAIL_SECONDS,
 ): number {
-  return songFrames(songEndSeconds(plan[plan.length - 1].projection), sampleRate);
+  const mix = plan[plan.length - 1].projection;
+  const tail = estimateTailSeconds(mix, maxTailSeconds);
+  return songFrames(songEndSeconds(mix) + tail, sampleRate);
 }
 
 /** The archive limit: the working-memory budget, never past a plain ZIP. */
@@ -261,11 +268,7 @@ export async function exportStems(
     // A safety net only: the bound above already covers every render.
     refuseOverBudget(Math.max(0, ...encoded.map((stem) => stem.frames)));
 
-    const archive = buildStemArchive(encoded, {
-      sampleRate,
-      bitDepth: STEM_BIT_DEPTH,
-      channels: RENDER_CHANNELS,
-    });
+    const archive = packArchive(encoded, sampleRate);
     report(1);
     if (isLast) {
       analytics?.log("export_completed", {
@@ -286,6 +289,26 @@ export async function exportStems(
   }
 }
 
+/**
+ * Puts the rendered stems into one ZIP. A failure here is the ZIP's own
+ * (GRV-55): out of memory for a large one, or the archive could not be built.
+ */
+function packArchive(encoded: EncodedStem[], sampleRate: number): StemArchive {
+  try {
+    return buildStemArchive(encoded, {
+      sampleRate,
+      bitDepth: STEM_BIT_DEPTH,
+      channels: RENDER_CHANNELS,
+    });
+  } catch (error) {
+    throw new StemExportError(
+      isOutOfMemory(error) ? "out_of_memory" : "zip_batch_failed",
+      "The ZIP could not be built",
+      { cause: error },
+    );
+  }
+}
+
 function asStemExportError(error: unknown, signal?: AbortSignal): StemExportError {
   if (error instanceof StemExportError) return error;
   if (signal?.aborted) {
@@ -293,6 +316,12 @@ function asStemExportError(error: unknown, signal?: AbortSignal): StemExportErro
   }
   if (error instanceof OfflineRenderError) {
     return new StemExportError(error.code, error.message, { cause: error });
+  }
+  // Encoding a stem holds it in memory once more (GRV-55).
+  if (isOutOfMemory(error)) {
+    return new StemExportError("out_of_memory", "The stems ran out of memory", {
+      cause: error,
+    });
   }
   return new StemExportError("internal", "The stem export failed", { cause: error });
 }

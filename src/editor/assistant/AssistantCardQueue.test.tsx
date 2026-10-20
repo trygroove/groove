@@ -32,6 +32,11 @@ import { emptyPadSelection } from "../padSelection";
 import { createStarterProject } from "../starterProject";
 import AssistantPanel from "./AssistantPanel";
 import { createAssistantLibrary } from "./assistantLibrary";
+import {
+  type ConversationStore,
+  conversationStorageKey,
+  createConversationStore,
+} from "./conversationStore";
 import { MISSING_PAD } from "./RecommendationCard";
 import { recommendationSlot } from "./recommendationCardModel";
 import { useAssistantChat } from "./useAssistantChat";
@@ -67,9 +72,16 @@ const emptyPad = (id: string, name: string) => ({
   mixer: { volume: 0, pan: 0, muted: false, soloed: false },
 });
 
-async function setUp() {
+async function setUp(
+  options: {
+    /** Where the conversation is kept across a reload (GRV-135). */
+    readonly conversationStore?: ConversationStore;
+    /** The song as the reload found it; the starter project by default. */
+    readonly project?: Project;
+  } = {},
+) {
   const repository = createInMemoryProjectRepository();
-  const project = createStarterProject("uid-1");
+  const project = options.project ?? createStarterProject("uid-1");
   const created = await repository.createProject(project);
   if (!created.ok) throw new Error("the starter project failed to create");
   const transport = createRecordingTransport();
@@ -145,6 +157,12 @@ async function setUp() {
       expanded: () => panel.layout().mode === "floating",
       client: async () => client,
       analytics: () => analytics,
+      ...(options.conversationStore
+        ? {
+            conversationKey: () => conversationStorageKey("uid-1", project.metadata.id),
+            conversationStore: options.conversationStore,
+          }
+        : {}),
       editor: {
         session: {
           proposalTarget: () => assistantProposalTarget(session),
@@ -237,8 +255,9 @@ async function setUp() {
   return { session, track, kickPad, firstBeat, padAsset, events };
 }
 
-const panel = () => screen.getByRole("region", { name: "Cue" });
-const composer = () => within(panel()).getByRole("textbox", { name: "Message Cue" });
+const panel = () => screen.getByRole("region", { name: "Coproducer" });
+const composer = () =>
+  within(panel()).getByRole("textbox", { name: "Message Coproducer" });
 const button = (name: string | RegExp) => within(panel()).getByRole("button", { name });
 const proposals = () => within(panel()).queryAllByRole("region", { name: /^Proposal\b/ });
 const cards = () =>
@@ -396,5 +415,56 @@ describe("a turn's cards, one at a time (GRV-129)", () => {
     await press(cardButton("Dismiss"));
     await vi.waitFor(() => expect(cards()).toHaveLength(2));
     expect(newest()).toHaveTextContent("Snare & Hat · Snare");
+  });
+});
+
+describe("a turn's cards across a reload (GRV-135)", () => {
+  it("brings back the sound card on screen and the one held behind it, not the decided ones", async () => {
+    const store = createConversationStore(memoryStorage());
+    const before = await setUp({ conversationStore: store });
+    await before.firstBeat();
+    await press(
+      within(proposals()[0] as HTMLElement).getByRole("button", { name: "Apply" }),
+    );
+    await vi.waitFor(() => expect(cards()).toHaveLength(1));
+    await tryAndKeep("BD");
+    await vi.waitFor(() => expect(cards()).toHaveLength(2));
+    expect(newest()).toHaveTextContent("1 more after this");
+    const song = before.session.committedProject;
+    cleanup();
+
+    await setUp({ conversationStore: store, project: song });
+    // The library loads again before the sound card resolves its sounds.
+    await vi.waitFor(() => expect(cards()).toHaveLength(1));
+    // The applied proposal and the kept kick were decided: they stay gone.
+    expect(proposals()).toHaveLength(0);
+    expect(newest()).toHaveTextContent("Snare & Hat · Snare");
+    expect(newest()).toHaveTextContent("1 more after this");
+    expect(cardButton("Try on Snare")).toBeEnabled();
+
+    await press(cardButton("Dismiss"));
+    await vi.waitFor(() => expect(cards()).toHaveLength(2));
+    expect(newest()).toHaveTextContent("Snare & Hat · Hat");
+  });
+
+  it("does not bring back the cards skipped for a declined proposal", async () => {
+    const store = createConversationStore(memoryStorage());
+    const before = await setUp({ conversationStore: store });
+    await before.firstBeat();
+    await press(
+      within(proposals()[0] as HTMLElement).getByRole("button", { name: "Cancel" }),
+    );
+    await vi.waitFor(() => expect(cards()).toHaveLength(1));
+    const song = before.session.committedProject;
+    cleanup();
+
+    await setUp({ conversationStore: store, project: song });
+    await vi.waitFor(() => expect(cards()).toHaveLength(1));
+    expect(proposals()).toHaveLength(0);
+    expect(newest()).toHaveTextContent("BD · BD");
+    expect(newest()).not.toHaveTextContent(/more after this/);
+    await settle();
+    flush();
+    expect(cards()).toHaveLength(1);
   });
 });

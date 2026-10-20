@@ -15,6 +15,8 @@ import { RETURN_PAN, RETURN_VOLUME } from "../domain/parameters";
 import FillSlider from "../instrument/FillSlider";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 import { ariaBool } from "../shared/aria";
+import { useShortcuts } from "../shortcuts";
+import { MAX_DISPLAY_NAME_LENGTH } from "./displayNameLimit";
 import { chainSummary } from "./MasterStrip";
 import { DbFader } from "./TrackFaders";
 
@@ -139,7 +141,9 @@ function ReturnPan(props: {
 /**
  * A return's name, typed in place, as a track's is (`TrackNameInput`): a
  * change commits one `return.update`; an empty or unchanged name puts the
- * return's own back.
+ * return's own back. Escape, while the name has focus, is the registry's
+ * `view.close_surface`: it puts the return's own name back and blurs, so no
+ * change event fires and nothing is committed.
  */
 function ReturnNameInput(props: {
   readonly returnBus: ReturnBus;
@@ -147,11 +151,28 @@ function ReturnNameInput(props: {
     commands: RawCommandInput | readonly RawCommandInput[],
   ): TransactionResult | undefined;
 }): JSX.Element {
+  let input: HTMLInputElement | undefined;
+  useShortcuts({
+    handlers: () => ({
+      "view.close_surface": {
+        run: () => {
+          if (!input) return;
+          input.value = props.returnBus.name;
+          input.blur();
+        },
+        isEnabled: () => input !== undefined && document.activeElement === input,
+      },
+    }),
+    contexts: () => [],
+  });
+
   return (
     <input
+      ref={input}
       id={`return-name-${props.returnBus.id}`}
       class={`mixer-strip-name ${MASK_CONTENT}`}
       type="text"
+      maxlength={MAX_DISPLAY_NAME_LENGTH}
       aria-label="Return name"
       value={props.returnBus.name}
       onChange={(event) => {

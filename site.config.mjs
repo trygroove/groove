@@ -22,7 +22,7 @@ export const SITE_NAME = "Groove";
  * it speaks or is spoken of. One constant, so a rename is one edit; "the
  * assistant" never appears in copy.
  */
-export const ASSISTANT_NAME = "Cue";
+export const ASSISTANT_NAME = "Coproducer";
 
 /**
  * The landing page's `<title>`.

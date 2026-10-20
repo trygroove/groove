@@ -15,6 +15,7 @@ import {
   slotSound,
   soundList,
 } from "../support/library";
+import { reloadPage } from "../support/reload";
 import { expect, test } from "../support/test";
 
 /**
@@ -104,7 +105,7 @@ test.describe("CF-033", () => {
     //    and reload the page.
     await backToInstrument(page);
     await expect.poll(() => slotSound(page, "BD")).toBe(starterKick);
-    await page.reload();
+    await reloadPage(page);
     await expect(page).toHaveURL(`${projectUrl}/instrument`);
     await expect(drumMachine(page)).toBeVisible();
     await step("Press 3 without inserting, and reload");

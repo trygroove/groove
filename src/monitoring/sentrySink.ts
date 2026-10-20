@@ -37,7 +37,7 @@
 // `SENTRY_AUTH_TOKEN`, which uploads source maps and creates releases; it
 // lives in CI only. See `.env.example` and `docs/testing.md`.
 
-import type { ErrorReport, ErrorSink } from "./errorReporting";
+import { type ErrorReport, type ErrorSink, reportTags } from "./errorReporting";
 import {
   type ScrubbableBreadcrumb,
   type ScrubbableEvent,
@@ -173,15 +173,7 @@ export class SentrySink implements ErrorSink {
       mechanism: { type: "solid_groove_boundary", handled: !report.fatal },
       captureContext: {
         level: report.fatal ? "fatal" : "error",
-        tags: {
-          area: report.area,
-          error_code: report.code,
-          fatal: report.fatal,
-          browser_name: report.browser.browserName,
-          browser_version: report.browser.browserVersion,
-          engine_name: report.browser.engineName,
-          engine_version: report.browser.engineVersion,
-        },
+        tags: reportTags(report),
       },
     });
   }

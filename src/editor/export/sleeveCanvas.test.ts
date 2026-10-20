@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { COLOR_TOKENS } from "../../arrangement/canvasRenderer";
 import {
   drawSleeve,
+  fitLabel,
   pixelRuns,
   resolveSleevePalette,
   type SleeveFrame,
@@ -31,6 +32,8 @@ function recordingContext() {
     fillRect: (...args: unknown[]) => record("fillRect", state.fillStyle, args),
     strokeRect: (...args: unknown[]) => record("strokeRect", state.strokeStyle, args),
     fillText: (...args: unknown[]) => record("fillText", state.fillStyle, args),
+    // Seven units a character: enough to test where a label is cut.
+    measureText: (text: string) => ({ width: text.length * 7 }),
   });
   return { ctx: ctx as unknown as CanvasRenderingContext2D, painted, state };
 }
@@ -49,6 +52,22 @@ const frame: SleeveFrame = {
   ],
   palette: resolveSleevePalette(),
 };
+
+describe("fitLabel", () => {
+  const { ctx } = recordingContext();
+
+  it("leaves a label that fits as it is", () => {
+    expect(fitLabel(ctx, "NIGHT DRIVE", 77)).toBe("NIGHT DRIVE");
+  });
+
+  it("shortens a long label with an ellipsis, within the width (GRV-158)", () => {
+    const name = "SUMMER_ANTHEM_FINAL_MIX_V12_WITH_NEW_VOCALS_AND_EXTRA_BASS_MASTER";
+    const label = fitLabel(ctx, name, 200);
+    expect(label.endsWith("…")).toBe(true);
+    expect(name.startsWith(label.slice(0, -1))).toBe(true);
+    expect(ctx.measureText(label).width).toBeLessThanOrEqual(200);
+  });
+});
 
 describe("drawSleeve", () => {
   it("paints black ground, then only the tracks' own colours for the stripes", () => {
@@ -77,6 +96,16 @@ describe("drawSleeve", () => {
     expect(to.args[0]).toBe(Math.round(ox + (2 / 8) * side));
     expect(to.args[1]).toBeCloseTo(oy + side / 2);
     expect(to.alpha).toBe(1);
+  });
+
+  it("keeps a long name's caption inside the sleeve's width (GRV-158)", () => {
+    const { ctx, painted } = recordingContext();
+    const name = "summer_anthem_final_mix_v12_with_new_vocals_and_extra_bass_MASTER";
+    drawSleeve(ctx, { ...frame, name }, 1);
+    const [caption] = painted.filter((paint) => paint.op === "fillText");
+    const [text, x] = caption.args as [string, number];
+    expect(text.endsWith("…")).toBe(true);
+    expect(x + text.length * 7).toBeLessThanOrEqual(frame.width);
   });
 
   it("frames the sleeve in white and names it, in capitals, only once landed", () => {

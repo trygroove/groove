@@ -21,7 +21,7 @@ export interface MemoryCardProps {
 }
 
 /**
- * The "saved to memory" card (GRV-25): what Cue now remembers, one line per
+ * The "saved to memory" card (GRV-25): what Coproducer now remembers, one line per
  * answered question, and the box (unticked unless ticked) to share the
  * answers' fixed choices for customer validation.
  */

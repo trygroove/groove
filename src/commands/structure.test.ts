@@ -73,6 +73,24 @@ describe("structural commands", () => {
       expect(next.song.tracks.map((entry) => entry.order).sort()).toEqual([0, 1, 2]);
     });
 
+    it("labels a new track with its starter clip and placement as an add", () => {
+      const track = createTrackEntity(context, { name: "Synth", order: 2 });
+      const clip = createNoteClip(context, { trackId: track.id, name: "Starter" });
+      const placement = createPlacement(context, {
+        clipId: clip.id,
+        trackId: track.id,
+        startTicks: 0,
+        durationTicks: bars(1),
+      });
+      const result = executeCommand(
+        fixture.project,
+        addTrack(track, { clips: [clip], placements: [placement] }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.summary).toBe('Add track "Synth"');
+    });
+
     it("rejects a position beyond the end of the track list", () => {
       const track = createTrackEntity(context, { name: "Lead", order: 9 });
       const result = executeCommand(fixture.project, addTrack(track));

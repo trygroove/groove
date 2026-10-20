@@ -28,7 +28,7 @@
 
 /* A tutorial video fills the window from inside the panel (GRV-16). The panel
    is its own stacking context, so the panel itself lifts over the app's
-   chrome (the release badge and the telemetry notice, 1000) while it does.
+   chrome (the telemetry notice, 70) while it does.
    The player stays where it is in the document: moving an iframe reloads it. */
 .assistant-panel.assistant-panel-video-expanded {
   z-index: 1001;
@@ -359,6 +359,65 @@
   gap: 10px;
   align-items: baseline;
   padding: 5px 12px;
+}
+
+/* A proposal that arrives part by part (GRV-144): a line per part, its words
+   on the left and its own Apply, or where it stands, on the right. A part
+   that waits on another says which under its line. */
+.assistant-proposal-parts {
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+}
+
+.assistant-proposal-part {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  align-items: center;
+  min-height: 34px;
+  padding: 3px 12px;
+}
+
+.assistant-card .assistant-proposal-part-text {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-foreground-bright);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-proposal-part-done .assistant-proposal-part-text {
+  color: var(--color-foreground);
+  font-weight: 400;
+}
+
+.assistant-card .assistant-proposal-part-state {
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.assistant-card .assistant-proposal-part-note {
+  grid-column: 1 / -1;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-tiny);
+}
+
+.assistant-button.assistant-proposal-part-apply {
+  height: 24px;
+  padding: 0 10px;
+  font-size: var(--font-size-tiny);
+}
+
+/* While the turn still writes: the quiet line under the parts so far. */
+.assistant-proposal-arriving {
+  margin: 0;
+  padding: 0 12px 8px;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-tiny);
 }
 
 .assistant-card .assistant-proposal-values {
@@ -1085,7 +1144,7 @@
   }
 }
 
-/* Something Cue proposes remembering (GRV-25): Remember and Not now, then a
+/* Something Coproducer proposes remembering (GRV-25): Remember and Not now, then a
    receipt line with Undo once it is saved. */
 .memory-proposal {
   gap: 6px;
@@ -1414,7 +1473,7 @@
   height: auto;
 }
 
-/* Cue's one nudge a day (GRV-25), over the suggestions. */
+/* Coproducer's one nudge a day (GRV-25), over the suggestions. */
 .cue-nudge {
   flex: none;
   gap: 8px;

@@ -75,6 +75,7 @@ export const assetAddCommand = defineCommand<AssetAddPayload>({
   schema: assetAddPayloadSchema,
   touches: () => [controlAddress(SONG_ENTITY, CONTROL_PARTS.assets)],
   summarize: (payload) => `Add ${payload.asset.name} to the project`,
+  supporting: true,
   apply(project, payload) {
     const assets = project.song.assets;
     if (assets.some((candidate) => candidate.id === payload.asset.id)) {

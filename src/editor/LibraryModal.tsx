@@ -620,6 +620,9 @@ export default function LibraryModal(props: LibraryModalProps): JSX.Element {
     document.querySelector<HTMLInputElement>(".library-modal-search")?.focus();
 
   function press(action: ShortcutActionId): void {
+    // The keys sheet covers the library, so nothing behind it answers a key
+    // (GRV-164): its own keys are the sheet's, and `?` or Escape closes it.
+    if (keysOpen()) return;
     if (action === "library.search") {
       focusSearch();
       return;
@@ -639,6 +642,9 @@ export default function LibraryModal(props: LibraryModalProps): JSX.Element {
   }
 
   function toggleKeys(): void {
+    // The sheet covers the genre menu, so the menu closes as the sheet opens
+    // (GRV-164) rather than staying on top of it.
+    if (!keysOpen()) closeSoundsMenu?.();
     setKeysOpen((open) => !open);
   }
 
@@ -891,6 +897,14 @@ export default function LibraryModal(props: LibraryModalProps): JSX.Element {
       }
     >
       <Show when={keysOpen()}>
+        {/* The sheet is a panel with the library still showing round it, so a
+            backdrop under it takes every click there and closes the sheet
+            instead: nothing behind the sheet can be clicked (GRV-164). */}
+        <div
+          class="library-keys-backdrop"
+          aria-hidden="true"
+          onClick={() => setKeysOpen(false)}
+        />
         <LibraryKeys onClose={() => setKeysOpen(false)} />
       </Show>
       <div class="library-modal-body">

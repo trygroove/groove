@@ -74,7 +74,7 @@ test.describe("CF-027", () => {
     await goToView(page, "Arrangement");
     await expect(arrangement(page)).toBeVisible();
 
-    // 2. Press the Cue button in the header. The assistant opens
+    // 2. Press the Coproducer button in the header. The assistant opens
     //    floating over the bottom-right corner of the editor, ready to type
     //    into. It says its scope is the selected track, BD.
     await assistantButton(page).click();
@@ -137,11 +137,11 @@ test.describe("CF-027", () => {
     await goToView(page, "Arrangement");
     await step("Cancel: back, and nothing changed");
 
-    // 7. Press Preview again, then Apply. The proposal says it was applied.
+    // 7. Press Preview again, then Apply all. The proposal says it was applied.
     //    Swing reads 58%, and BD's volume is at the proposed level.
     await proposalButton(page, "Preview").click();
     await expect(page).toHaveURL(/\/mixer$/);
-    await proposalButton(page, "Apply").click();
+    await proposalButton(page, "Apply all").click();
     await expect(proposal(page)).toContainText(/Applied/);
     await expect.poll(() => swingPercent(page)).toBe(PROPOSED_SWING);
     expect(Number(await volume(page, TRACK).inputValue())).toBe(proposedVolume);

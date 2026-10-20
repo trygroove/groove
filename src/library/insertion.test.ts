@@ -419,6 +419,21 @@ describe("insertLoopCommands", () => {
     );
   });
 
+  it("is labelled as the track it adds, not the asset it carries in (GRV-160)", async () => {
+    const project = createSliceFixtureProject();
+    const sample = await loopSample();
+    const insert = insertLoopCommands(project, sample, context(), {
+      order: project.song.tracks.length,
+      existingNames: [],
+      songTempo: project.song.tempo,
+    });
+    expect(insert.commands.some((command) => command.type === "asset.add")).toBe(true);
+
+    const result = executeTransaction(project, insert.commands);
+    if (!result.ok) throw new Error(result.issues[0].message);
+    expect(result.summary).toBe(`Add track "${sample.name}"`);
+  });
+
   it("plays unstretched when the loop states no tempo", async () => {
     const project = createSliceFixtureProject();
     const base = await loopSample();

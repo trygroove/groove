@@ -4,6 +4,7 @@ import {
   ASSISTANT_TRANSCRIPTS_COLLECTION,
   preferenceDocPath,
 } from "../../../../src/assistant/transcripts";
+import { reloadPage } from "./reload";
 
 /**
  * Shared steps and locators for the assistant's core flows (CF-027, CF-028).
@@ -14,17 +15,18 @@ import {
  * its markup. The panel (#849), the conversation (GRV-26) and the proposal
  * card (GRV-5) meet them as written.
  *
- *  - the header's "Cue" button (GRV-25 named the assistant; it was "Assistant") (`aria-keyshortcuts` carries Ctrl+K/⌘K);
- *  - the panel: a region named "Cue", whose header has "Minimise",
+ *  - the header's "Coproducer" button (GRV-25 named the assistant; it was "Assistant") (`aria-keyshortcuts` carries Ctrl+K/⌘K);
+ *  - the panel: a region named "Coproducer", whose header has "Minimise",
  *    "Dock to the right", "Float" and "Close" buttons. Minimised, the region
  *    is the header bar alone, and a click on its title floats it again;
  *  - its resize edge: a separator named "Resize height" while floating and
  *    "Resize width" while docked;
- *  - the composer: a textbox named "Message Cue", and a button named
+ *  - the composer: a textbox named "Message Coproducer", and a button named
  *    "Scope: <what>" that says what the assistant reads and may change;
  *  - the conversation: a log named "Conversation";
- *  - a proposal: a region named "Proposal" with "Preview", "Apply" and "Cancel"
- *    buttons, which says "Applied" once it has been;
+ *  - a proposal: a region named "Proposal" with "Preview", "Apply all" and
+ *    "Cancel" buttons, which says "Applied" once it has been. It fills in part
+ *    by part as the turn streams (GRV-144), each part its own "Apply …";
  *  - a recommended pack (GRV-23, CF-034): a region named "Recommended pack:
  *    <pack>", with a list named "Sounds" whose items each hold a "Hear <sound>"
  *    button, and "Try on <slot>", "Keep", "Put back", "Pack demo" and "Open in
@@ -82,18 +84,18 @@ export async function goToView(page: Page, name: "Arrangement" | "Mixer"): Promi
 /** Wait for the last edit to be written, then reload. */
 export async function reloadSaved(page: Page): Promise<void> {
   await expect(page.locator(".save-status")).toHaveText("Saved", { timeout: 10_000 });
-  await page.reload();
+  await reloadPage(page);
 }
 
 // --- The assistant -----------------------------------------------------------
 
 /** The header button that opens and closes the assistant. */
 export const assistantButton = (page: Page): Locator =>
-  page.getByRole("button", { name: "Cue", exact: true });
+  page.getByRole("button", { name: "Coproducer", exact: true });
 
 /** The assistant panel, floating or docked. */
 export const panel = (page: Page): Locator =>
-  page.getByRole("region", { name: "Cue", exact: true });
+  page.getByRole("region", { name: "Coproducer", exact: true });
 
 export const panelButton = (page: Page, name: string): Locator =>
   panel(page).getByRole("button", { name, exact: true });
@@ -103,7 +105,7 @@ export const resizeEdge = (page: Page, name: "Resize height" | "Resize width"): 
 
 /** The disclosure the assistant shows before the first message (GRV-8). */
 export const disclosure = (page: Page): Locator =>
-  panel(page).getByRole("region", { name: "About Cue" });
+  panel(page).getByRole("region", { name: "About Coproducer" });
 
 /**
  * Answers the disclosure a fresh account meets the first time it opens the
@@ -191,7 +193,7 @@ export async function storedTranscripts(uid: string): Promise<StoredTranscript[]
 }
 
 export const composer = (page: Page): Locator =>
-  panel(page).getByRole("textbox", { name: "Message Cue" });
+  panel(page).getByRole("textbox", { name: "Message Coproducer" });
 
 export const scope = (page: Page): Locator =>
   panel(page).getByRole("button", { name: /^Scope\b/ });
@@ -206,8 +208,9 @@ export const proposal = (page: Page): Locator =>
 
 export const proposalButton = (
   page: Page,
-  name: "Preview" | "Apply" | "Cancel",
-): Locator => proposal(page).getByRole("button", { name: new RegExp(`^${name}\\b`) });
+  /** "Apply" is a whole proposal's, as one restored after a reload is (GRV-135). */
+  name: "Preview" | "Apply" | "Apply all" | "Cancel",
+): Locator => proposal(page).getByRole("button", { name, exact: true });
 
 /** The newest recommended pack in the conversation (GRV-23). */
 export const recommendation = (page: Page): Locator =>

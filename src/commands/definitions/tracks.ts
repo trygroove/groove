@@ -94,10 +94,10 @@ export const trackCreateCommand = defineCommand<TrackCreatePayload>({
   version: 1,
   schema: trackCreatePayloadSchema,
   touches: (payload) => [controlAddress(payload.track.id, CONTROL_PARTS.header)],
-  summarize: (payload) =>
-    payload.clips.length > 0 || payload.placements.length > 0
-      ? `Restore track "${payload.track.name}"`
-      : `Add track "${payload.track.name}"`,
+  // Always "Add": the entry's label comes from the forward command, and a
+  // delete's undo is labelled "Undo Delete track" by the history, so a
+  // payload carrying clips (every UI add, every duplicate) is never a restore.
+  summarize: (payload) => `Add track "${payload.track.name}"`,
   apply(project, payload) {
     if (findTrack(project, payload.track.id)) {
       return rejected(`Track ${payload.track.id} already exists`);

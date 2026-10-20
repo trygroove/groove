@@ -64,7 +64,7 @@ export function planStemBatches(
   const wav = wav24ByteLength(RENDER_CHANNELS, planFrames(plan, options));
   const expectedWav = wav24ByteLength(
     RENDER_CHANNELS,
-    expectedPlanFrames(plan, options.sampleRate),
+    expectedPlanFrames(plan, options.sampleRate, options.maxTailSeconds),
   );
   const limit = archiveLimitBytes(options.maxBytes);
   const groups: StemRender[][] = [];

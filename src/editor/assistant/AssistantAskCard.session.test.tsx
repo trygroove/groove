@@ -220,8 +220,9 @@ async function setUp(start: Project = createSliceFixtureProject()) {
   };
 }
 
-const panel = () => screen.getByRole("region", { name: "Cue" });
-const composer = () => within(panel()).getByRole("textbox", { name: "Message Cue" });
+const panel = () => screen.getByRole("region", { name: "Coproducer" });
+const composer = () =>
+  within(panel()).getByRole("textbox", { name: "Message Coproducer" });
 const askCard = () => within(panel()).queryByRole("region", { name: ASK_CARD_LABEL });
 const proposalCard = () => within(panel()).getByRole("region", { name: /^Proposal\b/ });
 const option = (name: RegExp) => {

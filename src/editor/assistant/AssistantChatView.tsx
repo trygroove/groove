@@ -15,6 +15,7 @@ import MemoryProposalCard from "./MemoryProposalCard";
 import ProposalCard from "./ProposalCard";
 import RecommendationCard from "./RecommendationCard";
 import ReplyRating from "./ReplyRating";
+import StreamedProposalCard from "./StreamedProposalCard";
 import type { AssistantChat } from "./useAssistantChat";
 import { type ConversationEntry, MAX_MESSAGE_CHARS } from "./useAssistantConversation";
 import VideoCard from "./VideoCard";
@@ -208,7 +209,7 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
             />
           )}
         </Show>
-        {/* Cue's one nudge a day (GRV-25), above the suggestions. */}
+        {/* Coproducer's one nudge a day (GRV-25), above the suggestions. */}
         <Show
           when={
             !streaming() && !conversation().pendingAsk() && props.chat.nudge?.lesson()
@@ -400,14 +401,31 @@ function Entry(props: {
         >
           {(proposals) => (
             <>
-              <ProposalCard
-                entryId={props.entry.id}
-                proposals={proposals()}
-                canAsk={
-                  props.chat.account().registered && !props.chat.conversation.streaming()
+              {/* A proposal whose parts streamed has a card of its own (GRV-144). */}
+              <Show
+                when={proposals().streamed(props.entry.id) !== undefined}
+                fallback={
+                  <ProposalCard
+                    entryId={props.entry.id}
+                    proposals={proposals()}
+                    canAsk={
+                      props.chat.account().registered &&
+                      !props.chat.conversation.streaming()
+                    }
+                    heldAfter={props.chat.cards.heldAfter(props.entry.id)}
+                  />
                 }
-                heldAfter={props.chat.cards.heldAfter(props.entry.id)}
-              />
+              >
+                <StreamedProposalCard
+                  entryId={props.entry.id}
+                  proposals={proposals()}
+                  canAsk={
+                    props.chat.account().registered &&
+                    !props.chat.conversation.streaming()
+                  }
+                  heldAfter={props.chat.cards.heldAfter(props.entry.id)}
+                />
+              </Show>
               <Show when={props.chat.cards.skipped(props.entry.id)}>
                 {(count) => <p class="assistant-panel-note">{skippedLine(count())}</p>}
               </Show>

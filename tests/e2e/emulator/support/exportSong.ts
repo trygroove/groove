@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import { reloadPage } from "./reload";
 
 /**
  * The song both export core flows build before they export it: steps 1 to 7
@@ -436,7 +437,7 @@ export async function reloadAndExpectSongUnchanged(
   // The save status is how the editor reports a revision-checked write has
   // completed, so the reload tests persistence rather than a race (CF-016).
   await expect(page.locator(".save-status")).toHaveText("Saved", { timeout: 10_000 });
-  await page.reload();
+  await reloadPage(page);
   await expect(page).toHaveURL(song.projectUrl);
   await page.getByTestId("arrangement-view-ready").waitFor();
   await expect(trackList(page)).toHaveText(tracksInOrder(song.loopTrack));

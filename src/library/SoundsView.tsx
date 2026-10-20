@@ -154,11 +154,34 @@ export default function SoundsView(props: SoundsViewProps): JSX.Element {
   const filters = useSoundFilters(() => props.songBpm ?? 120);
   const [genreMenuOpen, setGenreMenuOpen] = createSignal(false);
   let genreButton: HTMLButtonElement | undefined;
+  // Set when G opens the menu, so the menu takes focus as it appears.
+  let focusMenuOnOpen = false;
+
+  /** The menu's controls in order: its genres, then *Any genre*. */
+  function menuStops(menu: Element): HTMLElement[] {
+    return [...menu.querySelectorAll<HTMLElement>("input, .filter-menu-clear")];
+  }
+  function focusedMenu(): Element | null {
+    const menu = genreButton?.parentElement?.querySelector(".filter-menu") ?? null;
+    return menu?.contains(document.activeElement) ? menu : null;
+  }
+  /** Up and Down walk the menu while focus is in it, not the list behind it. */
+  function stepInMenu(menu: Element, direction: 1 | -1): void {
+    const stops = menuStops(menu);
+    const at = stops.indexOf(document.activeElement as HTMLElement);
+    stops[Math.min(stops.length - 1, Math.max(0, at + direction))]?.focus();
+  }
+  function showMenu(menu: HTMLElement): void {
+    if (!focusMenuOnOpen) return;
+    focusMenuOnOpen = false;
+    queueMicrotask(() => menuStops(menu)[0]?.focus());
+  }
 
   /** Escape's innermost step: the menu closes onto its button, the library stays. */
   function closeGenreMenu(): boolean {
     if (!genreMenuOpen()) return false;
     setGenreMenuOpen(false);
+    focusMenuOnOpen = false;
     genreButton?.focus();
     return true;
   }
@@ -290,7 +313,14 @@ export default function SoundsView(props: SoundsViewProps): JSX.Element {
     const sound = current();
     if (shelfKeys[action]) shelfKeys[action]?.();
     else if (action === "library.shuffle") shuffle();
-    else if (action === "library.genre_menu") setGenreMenuOpen((open) => !open);
+    else if (action === "library.genre_menu") {
+      focusMenuOnOpen = !genreMenuOpen();
+      setGenreMenuOpen((open) => !open);
+    } else if (
+      (action === "library.select_next" || action === "library.select_previous") &&
+      focusedMenu()
+    )
+      stepInMenu(focusedMenu() as Element, action === "library.select_next" ? 1 : -1);
     else if (action === "library.loop_tempo" && family() === "loops")
       filters.toggleTempo();
     else if (action === "library.select_next") step(1);
@@ -428,6 +458,7 @@ export default function SoundsView(props: SoundsViewProps): JSX.Element {
               count={sounds().length}
               keyLabel={props.keyLabel}
               onMenuOpen={setGenreMenuOpen}
+              menuRef={showMenu}
               genreButtonRef={(button) => {
                 genreButton = button;
               }}

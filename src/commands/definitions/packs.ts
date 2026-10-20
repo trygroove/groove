@@ -146,6 +146,7 @@ export const packSetVersionCommand = defineCommand<PackSetVersionPayload>({
   touches: () => [controlAddress(SONG_ENTITY, CONTROL_PARTS.packs)],
   summarize: (payload) =>
     `Move pack ${payload.packId} from version ${payload.from} to ${payload.to}`,
+  supporting: true,
   apply(project, payload) {
     const { packId, from, to } = payload;
     if (from === to) {

@@ -41,6 +41,17 @@ import {
   type ValidProposal,
   validateProposal,
 } from "./proposal";
+import { editsLeaveProposalValid } from "./proposalStaleness";
+
+/** Whether the edits since `baseRevision` leave a proposal of these commands valid. */
+function editsLeaveValid(
+  target: ProposalTarget,
+  baseRevision: number,
+  commandTypes: readonly string[],
+): boolean {
+  const since = target.commandTypesSince?.(baseRevision) ?? null;
+  return editsLeaveProposalValid(since, commandTypes);
+}
 
 /**
  * What the executor applies to. In the editor that is the editor session
@@ -59,6 +70,13 @@ export interface ProposalTarget {
   readonly gestureActive: boolean;
   /** The newest undo entry's correlation ID, or null with nothing to undo. */
   readonly latestCorrelationId: string | null;
+  /**
+   * The command types committed after `revision`, oldest first, or null when
+   * they are not all known (a change adopted from elsewhere, or history older
+   * than the target keeps). Without it, any revision change makes a proposal
+   * stale.
+   */
+  commandTypesSince?(revision: number): readonly string[] | null;
   execute(
     commands: readonly RawCommandInput[],
     options: TransactionOptions,
@@ -175,20 +193,23 @@ class Handle implements ProposalHandle {
 
   get isStale(): boolean {
     if (this.#status === "stale") return true;
-    return (
-      this.#status === "pending" &&
-      this.options.target.project.metadata.revision !== this.proposal.baseRevision
-    );
+    return this.#status === "pending" && this.#moved() && !this.#stillValid();
   }
 
   apply(): ProposalActionResult {
     if (this.#status !== "pending") return refuse("not_pending");
     const { target, analytics, clock } = this.options;
     if (target.gestureActive) return refuse("busy");
+    if (this.#moved() && !this.#stillValid()) {
+      this.#status = "stale";
+      return refuse("stale");
+    }
     const result = target.execute(this.proposal.commands, {
       actor: "assistant",
       correlationId: this.id,
-      baseRevision: this.proposal.baseRevision,
+      // Edits that cannot affect the proposal moved the revision; the
+      // transaction still checks every invariant against the song as it is.
+      ...(this.#moved() ? {} : { baseRevision: this.proposal.baseRevision }),
     });
     if (!result.ok) {
       const stale = result.issues.some((issue) => issue.code === "revision_conflict");
@@ -260,13 +281,29 @@ class Handle implements ProposalHandle {
     });
   }
 
+  #moved(): boolean {
+    return this.options.target.project.metadata.revision !== this.proposal.baseRevision;
+  }
+
+  #stillValid(): boolean {
+    return editsLeaveValid(
+      this.options.target,
+      this.proposal.baseRevision,
+      this.proposal.commands.map((command) => command.type),
+    );
+  }
+
   #commandCount() {
     return bucketOf("command_count", this.proposal.commands.length);
   }
 }
 
-/** `assistant_proposal_rejected`: codes, a capability and a bucketed count, nothing else. */
-function logRejection(
+/**
+ * `assistant_proposal_rejected`: codes, a capability and a bucketed count,
+ * nothing else. A streamed proposal's card (GRV-144) logs one for each part
+ * that does not fit.
+ */
+export function logProposalRejection(
   analytics: ProposalAnalytics,
   input: unknown,
   issues: readonly ProposalIssue[],
@@ -292,9 +329,13 @@ export function createProposalExecutor(
   };
   return {
     propose(input) {
-      const validation = validateProposal(resolved.target.project, input);
+      const validation = validateProposal(
+        resolved.target.project,
+        input,
+        (baseRevision, types) => editsLeaveValid(resolved.target, baseRevision, types),
+      );
       if (!validation.ok) {
-        logRejection(resolved.analytics, input, validation.issues);
+        logProposalRejection(resolved.analytics, input, validation.issues);
         return validation;
       }
       return { ok: true, handle: new Handle(validation.proposal, resolved) };

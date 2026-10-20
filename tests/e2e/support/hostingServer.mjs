@@ -11,7 +11,8 @@
 // for the emulators and serves it through this instead.
 //
 // What it copies from `firebase.json`: the rewrites (`/` is `index.html`,
-// every other path that is not a file is `app.html`) and every header in
+// every other extensionless path that is not a file is `app.html`, and a
+// missing file-like path such as a gone `/assets/*.js` is a 404; GRV-137) and every header in
 // `hosting.headers`, verbatim. What it changes, and only for this local run:
 //
 // - `connect-src` also allows the Firebase emulators' origins, which are what
@@ -129,8 +130,15 @@ function main() {
     const path = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
     let file = join(dir, path);
     if (url.pathname === "/") file = join(dir, "index.html");
-    else if (!existsSync(file) || statSync(file).isDirectory())
-      file = join(dir, "app.html");
+    else if (!existsSync(file) || statSync(file).isDirectory()) {
+      const deepLink = firebaseJson.hosting.rewrites.find((rule) => rule.regex);
+      if (!deepLink || !new RegExp(deepLink.regex).test(url.pathname)) {
+        response.writeHead(404, { ...headers, "content-type": "text/plain" });
+        response.end("Not Found");
+        return;
+      }
+      file = join(dir, deepLink.destination);
+    }
 
     response.writeHead(200, {
       ...headers,

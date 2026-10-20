@@ -240,7 +240,7 @@ export default function Dashboard(props: DashboardProps = {}) {
           <div class="dashboard-actions">
             <div class="action-row">
               <Show when={!auth.isAnonymous}>
-                {/* What Cue remembers about them (GRV-25). */}
+                {/* What Coproducer remembers about them (GRV-25). */}
                 <a class="dashboard-memory-link" href="/memory">
                   Memory
                 </a>

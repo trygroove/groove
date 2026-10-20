@@ -26,11 +26,11 @@ import {
   SAMPLER_SAMPLE_END,
   SAMPLER_SAMPLE_START,
 } from "../domain/parameters";
+import { formatReadout } from "../domain/valueFormat";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 import ControlGroup from "./ControlGroup";
 import EnvelopeWell from "./EnvelopeWell";
 import FillSlider from "./FillSlider";
-import { formatInstrumentValue } from "./formatValue";
 import "./InstrumentPanel.css";
 import SampleSlot from "./SampleSlot";
 import SampleWell, { type WatchPeaks } from "./SampleWell";
@@ -110,7 +110,7 @@ export default function SamplerPanel(props: SamplerPanelProps): JSX.Element {
             watchPeaks={props.watchPeaks}
             start={read(SAMPLER_SAMPLE_START)}
             end={read(SAMPLER_SAMPLE_END)}
-            readout={`${formatInstrumentValue(SAMPLER_SAMPLE_START, read(SAMPLER_SAMPLE_START))} → ${formatInstrumentValue(SAMPLER_SAMPLE_END, read(SAMPLER_SAMPLE_END))}`}
+            readout={`${formatReadout(SAMPLER_SAMPLE_START, read(SAMPLER_SAMPLE_START))} → ${formatReadout(SAMPLER_SAMPLE_END, read(SAMPLER_SAMPLE_END))}`}
             commandStart={(value) => command(SAMPLER_SAMPLE_START, value)}
             commandEnd={(value) => command(SAMPLER_SAMPLE_END, value)}
             {...wellEdits}
@@ -184,7 +184,7 @@ export default function SamplerPanel(props: SamplerPanelProps): JSX.Element {
         definition={definition}
         control={parameterControl(props.trackId, definition.id)}
         value={value()}
-        displayValue={formatInstrumentValue(definition, value())}
+        displayValue={formatReadout(definition, value())}
         onInput={(next) => control.input(next)}
         onCommit={(next, settle) => {
           control.commit(next, settle);

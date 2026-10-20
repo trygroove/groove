@@ -11,14 +11,11 @@ import { setParameter } from "../commands";
 import { delayDivision, deviceParameters, FILTER_MODES } from "../domain/devices";
 import type { Device } from "../domain/entities";
 import { bareParameterId, type ParameterDefinition } from "../domain/parameters";
+import { formatReadout } from "../domain/valueFormat";
 import DragSurface from "../instrument/DragSurface";
 import FilterWell from "../instrument/FilterWell";
 import Well from "../instrument/Well";
-import {
-  deviceParameterTarget,
-  formatDeviceValue,
-  readDeviceParameter,
-} from "./deviceControlModel";
+import { deviceParameterTarget, readDeviceParameter } from "./deviceControlModel";
 import {
   COMPRESSOR_CEILING_DB,
   COMPRESSOR_FLOOR_DB,
@@ -176,7 +173,7 @@ export default function DeviceWell(props: DeviceWellProps): JSX.Element {
   const type = untrack(() => props.device.type);
   const p = (id: string) => parameter(type, id) as ParameterDefinition;
   const show = (definition: ParameterDefinition) =>
-    formatDeviceValue(definition, value(definition));
+    formatReadout(definition, value(definition));
 
   if (type === "overdrive" || type === "saturator") {
     const x = type === "overdrive" ? p("tone") : p("character");
@@ -320,7 +317,7 @@ export default function DeviceWell(props: DeviceWellProps): JSX.Element {
     return (
       <PointWell
         title="Echoes"
-        readout={`${synced() ? `${delayDivision(value(division)).label} · ` : ""}${formatDeviceValue(time, current())}`}
+        readout={`${synced() ? `${delayDivision(value(division)).label} · ` : ""}${formatReadout(time, current())}`}
         scale={["0", "0.5 s", "1 s", "1.5 s", "2 s"]}
         class="delay-well"
         x={x()}
@@ -401,7 +398,7 @@ export default function DeviceWell(props: DeviceWellProps): JSX.Element {
       cutoff={cutoff}
       resonance={resonance}
       values={{ cutoff: value(cutoff), resonance: value(resonance) }}
-      readout={`${formatDeviceValue(cutoff, value(cutoff))} · Q ${formatDeviceValue(resonance, value(resonance))}`}
+      readout={`${formatReadout(cutoff, value(cutoff))} · Q ${formatReadout(resonance, value(resonance))}`}
       command={command}
       dispatch={(commands) => props.dispatch(commands)}
       beginGesture={(options) => props.beginGesture(options)}

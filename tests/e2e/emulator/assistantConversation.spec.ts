@@ -73,7 +73,7 @@ test.describe("the assistant's conversation", { tag: "@sanity" }, () => {
     await composer(page).fill(`Once more [flaky] ${test.info().testId}-${Date.now()}`);
     await page.keyboard.press("Enter");
     const failure = conversation(page).getByRole("alert");
-    await expect(failure).toContainText("Cue couldn't reply.");
+    await expect(failure).toContainText("Coproducer couldn't reply.");
     await expect(failure).toContainText("Your song is unchanged");
     // What the failed turn wrote says it was cut off.
     await expect(conversation(page).locator(".assistant-reply").last()).toContainText(
@@ -95,7 +95,9 @@ test.describe("the assistant's conversation", { tag: "@sanity" }, () => {
     await page.keyboard.press("Enter");
     const card = conversation(page).getByRole("region", { name: /^Proposal\b/ });
     await expect(card).toContainText(/Tempo\b.*→.*\b100 BPM/);
-    await expect(card.getByRole("button", { name: "Apply" })).toBeEnabled();
+    await expect(
+      card.getByRole("button", { name: "Apply all", exact: true }),
+    ).toBeEnabled();
   });
 });
 
@@ -109,7 +111,7 @@ test.describe("a question the assistant asks", () => {
     await composer(page).fill("Build me a drop [ask]");
     await page.keyboard.press("Enter");
 
-    const card = panel(page).getByRole("region", { name: "Cue asks" });
+    const card = panel(page).getByRole("region", { name: "Coproducer asks" });
     await expect(card).toContainText("Where should the drop land?");
     await expect(card.getByRole("button", { name: "Bar 17" })).toHaveClass(
       /assistant-ask-suggested-option/,
@@ -137,7 +139,7 @@ test.describe("a question the assistant asks", () => {
     await answerDisclosure(page);
     await composer(page).fill("Build me a drop [ask]");
     await page.keyboard.press("Enter");
-    const card = panel(page).getByRole("region", { name: "Cue asks" });
+    const card = panel(page).getByRole("region", { name: "Coproducer asks" });
     await expect(card).toContainText("Where should the drop land?");
 
     const rest = await composer(page).boundingBox();
@@ -168,7 +170,7 @@ test.describe("a question the assistant asks", () => {
     await composer(page).fill("Where do I start? [ask-rich]");
     await page.keyboard.press("Enter");
 
-    const card = panel(page).getByRole("region", { name: "Cue asks" });
+    const card = panel(page).getByRole("region", { name: "Coproducer asks" });
     await expect(card).toContainText("What should change first?");
     await expect(card.getByRole("button", { name: "The first track" })).toContainText(
       "Track BD",

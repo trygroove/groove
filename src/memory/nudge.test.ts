@@ -15,7 +15,7 @@ const onboarded = (
   ...extra,
 });
 
-describe("Cue's daily nudge (GRV-25)", () => {
+describe("Coproducer's daily nudge (GRV-25)", () => {
   it("names the local day", () => {
     expect(localDay(NOON)).toBe("2026-10-11");
   });

@@ -1181,7 +1181,7 @@ describe("EditorView", () => {
 
     await screen.findByText("Save failed", {}, { timeout: 3_000 });
     expect(
-      within(saveStatusGroup()).getByText("Check your connection."),
+      within(saveStatusGroup()).getByText("Offline. Reconnect to save."),
     ).toBeInTheDocument();
     const retryButton = saveRetryButton();
     expect(retryButton).not.toBeNull();
@@ -3667,12 +3667,12 @@ describe("EditorView assistant panel", () => {
     return transport;
   }
 
-  const panel = () => screen.queryByRole("region", { name: "Cue" });
+  const panel = () => screen.queryByRole("region", { name: "Coproducer" });
   const panelButton = (name: string) =>
-    within(screen.getByRole("region", { name: "Cue" })).getByRole("button", {
+    within(screen.getByRole("region", { name: "Coproducer" })).getByRole("button", {
       name,
     });
-  const launcher = () => screen.getByRole("button", { name: /^Cue$/ });
+  const launcher = () => screen.getByRole("button", { name: /^Coproducer$/ });
   const press = (key: string, init: KeyboardEventInit = {}) =>
     fireAndFlush(() =>
       fireEvent.keyDown(document.activeElement ?? window, { key, ...init }),
@@ -3726,7 +3726,7 @@ describe("EditorView assistant panel", () => {
 
     await openPanel();
     const composer = within(panel() as HTMLElement).getByRole("textbox", {
-      name: "Message Cue",
+      name: "Message Coproducer",
     });
     expect(composer).toHaveFocus();
     expect(panelButton("Scope: BD")).toBeInTheDocument();
@@ -3785,7 +3785,7 @@ describe("EditorView assistant panel", () => {
   async function openAndSend(client: FakeAssistantClient, text: string) {
     if (!panel()) await openPanel();
     const composer = within(panel() as HTMLElement).getByRole("textbox", {
-      name: "Message Cue",
+      name: "Message Coproducer",
     });
     composer.focus();
     fireAndFlush(() => fireEvent.input(composer, { target: { value: text } }));
@@ -3795,7 +3795,7 @@ describe("EditorView assistant panel", () => {
   }
 
   const scopeChip = () =>
-    within(screen.getByRole("region", { name: "Cue" })).getByRole("button", {
+    within(screen.getByRole("region", { name: "Coproducer" })).getByRole("button", {
       name: /^Scope:/,
     });
 
@@ -3822,7 +3822,7 @@ describe("EditorView assistant panel", () => {
     });
   }
   const askCard = () =>
-    within(panel() as HTMLElement).queryByRole("region", { name: "Cue asks" });
+    within(panel() as HTMLElement).queryByRole("region", { name: "Coproducer asks" });
   const settleTurn = () => new Promise((resolve) => setTimeout(resolve, 0));
   const currentView = () =>
     screen
@@ -3891,7 +3891,7 @@ describe("EditorView assistant panel", () => {
 
     // In the composer a digit is typing, not an answer.
     const composer = within(panel() as HTMLElement).getByRole("textbox", {
-      name: "Message Cue",
+      name: "Message Coproducer",
     });
     composer.focus();
     press("1");
@@ -4300,7 +4300,7 @@ describe("EditorView assistant panel", () => {
     expect(retention.requests).toEqual([{ op: "get" }]);
     expect(
       within(panel() as HTMLElement).getByRole("textbox", {
-        name: "Message Cue",
+        name: "Message Coproducer",
       }),
     ).toBeInTheDocument();
   });
@@ -4310,16 +4310,16 @@ describe("EditorView assistant panel", () => {
     await openPanel();
     expect(panel()).toHaveFocus();
     expect(within(panel() as HTMLElement).queryByRole("textbox")).toBeNull();
-    expect(panel()).toHaveTextContent("Sign in to talk to Cue.");
+    expect(panel()).toHaveTextContent("Sign in to talk to Coproducer.");
   });
 
-  it("puts the Cue button first in the header's document zone: Cue, Export, Help", async () => {
+  it("puts the Coproducer button first in the header's document zone: Coproducer, Export, Help", async () => {
     await renderSlice();
     const end = document.querySelector(".editor-header-end") as HTMLElement;
     const names = within(end)
       .getAllByRole("button")
       .map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim());
-    const order = ["Cue", "Export", "Keyboard shortcuts"].map((name) =>
+    const order = ["Coproducer", "Export", "Keyboard shortcuts"].map((name) =>
       names.indexOf(name),
     );
     expect(order.every((index) => index >= 0)).toBe(true);
@@ -4429,7 +4429,7 @@ describe("EditorView assistant panel", () => {
     await renderSlice();
     press("?");
     const guide = await screen.findByRole("dialog", { name: /keyboard/i });
-    expect(within(guide).getByText("Open or close Cue")).toBeInTheDocument();
+    expect(within(guide).getByText("Open or close Coproducer")).toBeInTheDocument();
   });
 });
 

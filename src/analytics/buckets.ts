@@ -12,7 +12,7 @@
 // same way as a change to an event name — as a contract change.
 
 /** The real-world unit a scale's input is measured in. */
-export type BucketUnit = "days" | "seconds" | "milliseconds" | "items";
+export type BucketUnit = "days" | "seconds" | "milliseconds" | "items" | "bytes";
 
 export interface BucketBoundary {
   /** The label a value strictly below `below` receives. */
@@ -147,6 +147,35 @@ export const BUCKET_SCALES = {
   dropped_events: {
     unit: "items",
     boundaries: [
+      { label: "1_4", below: 5 },
+      { label: "5_20", below: 21 },
+      { label: "21_100", below: 101 },
+    ],
+    overflow: "100_plus",
+  },
+
+  /**
+   * The size of a file the app makes or writes, such as an export (GRV-55):
+   * enough to tell a small file from one near a browser's memory limit,
+   * never the exact size, which would help identify a project.
+   */
+  file_bytes: {
+    unit: "bytes",
+    boundaries: [
+      { label: "under_10mb", below: 10 * 1024 * 1024 },
+      { label: "10_100mb", below: 100 * 1024 * 1024 },
+      { label: "100_500mb", below: 500 * 1024 * 1024 },
+      { label: "500mb_1gb", below: 1024 * 1024 * 1024 },
+      { label: "1_2gb", below: 2 * 1024 * 1024 * 1024 },
+    ],
+    overflow: "2gb_plus",
+  },
+
+  /** Audio resources of one kind still registered after their project closed (GRV-55). */
+  leak_count: {
+    unit: "items",
+    boundaries: [
+      { label: "0", below: 1 },
       { label: "1_4", below: 5 },
       { label: "5_20", below: 21 },
       { label: "21_100", below: 101 },

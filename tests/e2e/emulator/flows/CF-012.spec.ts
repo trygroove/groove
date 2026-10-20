@@ -1,5 +1,6 @@
 import { walkthrough } from "../../support/walkthrough";
 import { library } from "../support/library";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 import { expectView } from "../support/views";
 
@@ -226,7 +227,7 @@ test.describe("CF-012", () => {
     await expect(page.locator(".save-status")).toHaveText("Saved", {
       timeout: 10_000,
     });
-    await page.reload();
+    await reloadPage(page);
     // The view is part of the address (#304); the track selection is UI
     // state, deliberately not persisted, so it is made again.
     await expect(page).toHaveURL(instrumentUrl);

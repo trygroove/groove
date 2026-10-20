@@ -23,6 +23,7 @@ import {
 } from "../assistantClientProvider";
 import { getAudioRuntime } from "../audio/AudioRuntime";
 import { provideStoredAudio } from "../audio/storedAudio";
+import { ToneAuditionEngine } from "../audio/toneAuditionEngine";
 import { type CapabilityReport, FULLY_CAPABLE } from "../browser/capabilities";
 import { reportMissingCapabilities } from "../browser/reportCapabilities";
 import { renameProject } from "../commands/definitions/project";
@@ -35,7 +36,6 @@ import type { PreviewEngine } from "../library/audition";
 import { withdrawnFactoryPacks } from "../library/factoryAvailability";
 import { type LibraryClient, sharedLibraryClient } from "../library/libraryClient";
 import type { LibraryPackSummary } from "../library/manifest";
-import { ToneAuditionEngine } from "../library/toneAuditionEngine";
 import { useFavourites } from "../library/useFavourites";
 import { useProducerProfile } from "../memory/useProducerProfile";
 import type { FavouritesRepository } from "../persistence/favouritesRepository";
@@ -139,7 +139,7 @@ export interface EditorViewProps {
   /** Injected in tests; Firestore (or memory) otherwise. */
   readonly favouritesRepository?: () => Promise<FavouritesRepository>;
   /**
-   * Where the producer's profile is, for what Cue remembers (GRV-25).
+   * Where the producer's profile is, for what Coproducer remembers (GRV-25).
    * Injected in tests; Firestore (or memory) otherwise.
    */
   readonly profileRepository?: () => Promise<ProfileRepository>;
@@ -441,7 +441,7 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
       }
     },
   });
-  // What Cue remembers about a signed-in producer (GRV-25), read once per
+  // What Coproducer remembers about a signed-in producer (GRV-25), read once per
   // editor and sent with every turn.
   const producerProfile = useProducerProfile({
     uid: () =>
@@ -635,7 +635,11 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
                     }}
                   />
                   <CompatibilityNotice
-                    items={compatibilityNoticeItems(capabilities(), audio.startFailure())}
+                    items={compatibilityNoticeItems(
+                      capabilities(),
+                      audio.startFailure(),
+                      audio.loadFailure(),
+                    )}
                   />
                   <LoadRecoveryNotice
                     droppedPlacements={session.state.droppedPlacements}

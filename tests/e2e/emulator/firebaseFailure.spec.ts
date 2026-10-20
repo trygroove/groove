@@ -1,3 +1,4 @@
+import { reloadPage } from "./support/reload";
 import { expect, type Page, test } from "./support/test";
 
 /**
@@ -32,23 +33,29 @@ test.describe("Firebase failure states", () => {
     await expect(saveStatus(page)).toHaveAttribute("data-state", /^(idle|saved)$/);
 
     await context.setOffline(true);
+    // QA (GRV-55): DevTools' offline throttling can leave the page believing
+    // it is online. Say so falsely here, so nothing below leans on the
+    // browser's word.
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
     await setTempo(page, 128);
     // The edit is applied locally at once; only the save is waiting.
     await expect(tempo(page)).toHaveValue("128");
+    // Offline, it says so while the write waits (GRV-55), then that it failed.
+    await expect(saveStatus(page)).toHaveText(/^(Saving…|Offline|Save failed)$/);
     await expect(saveStatus(page)).toHaveText("Save failed", { timeout: 60_000 });
     const recovery = page
       .getByRole("alert")
-      .filter({ hasText: "Check your connection." });
+      .filter({ hasText: "Offline. Reconnect to save." });
     await expect(recovery).toBeVisible();
+    await expect(recovery.getByRole("button", { name: "Retry" })).toBeVisible();
 
     await context.setOffline(false);
-    // Retry, unless the queued write already went through on reconnect.
-    const retry = recovery.getByRole("button", { name: "Retry" });
-    if (await retry.isVisible()) await retry.click();
+    // Back online, the queued write goes through by itself, with no Retry
+    // (GRV-55).
     await expect(saveStatus(page)).toHaveText("Saved", { timeout: 30_000 });
 
     // The edit that was made offline is the one that persisted.
-    await page.reload();
+    await reloadPage(page);
     await page.getByTestId("arrangement-view-ready").waitFor();
     await expect(tempo(page)).toHaveValue("128");
   });

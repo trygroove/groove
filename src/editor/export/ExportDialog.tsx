@@ -9,12 +9,12 @@ import {
 } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
 import type { ErrorCode } from "../../analytics/errorCodes";
-import { OfflineRenderError } from "../../audio/offlineRenderer";
 import { CAPABILITY_MESSAGES } from "../../browser/capabilityMessages";
 import Dialog from "../../components/Dialog";
 import type { Project } from "../../domain/entities";
 import { missingSoundCount } from "../../export/missingSounds";
 import { StemExportError } from "../../export/stems/exportStems";
+import type { reportError } from "../../monitoring/errorReporting";
 import { systemClock } from "../../shared/clock";
 import { useShortcuts } from "../../shortcuts";
 import DownloadsRow from "./DownloadsRow";
@@ -24,6 +24,7 @@ import ExportDone from "./ExportDone";
 import ExportFooter, { EXPORT_NOTE_ID } from "./ExportFooter";
 import ExportTitleRow from "./ExportTitleRow";
 import { estimateStereoBytes, exportFacts } from "./exportFacts";
+import { exportFailureCode, handOver, reportExportFailure } from "./exportFailure";
 import { missingSoundsNote, stemsNote, stoppedNote, zipFailure } from "./exportNotes";
 import FormatCards, { type ExportFormat } from "./FormatCards";
 import { finishedExport } from "./finishedExport";
@@ -47,6 +48,8 @@ export interface ExportDialogProps {
   readonly exportWav?: typeof exportStereoWav;
   readonly exportStemsBatch?: typeof exportStemsBatch;
   readonly download?: typeof downloadFile;
+  /** Where a failed export is reported (GRV-55); the app-wide boundary by default. */
+  readonly reportError?: typeof reportError;
   onClose(): void;
 }
 
@@ -80,6 +83,17 @@ export function failureMessage(code: ErrorCode, format: Format = "stereo"): stri
     }
     case "quota_exceeded":
       return "The song is too long to export as one WAV file. Shorten the arrangement and try again.";
+    // GRV-55: the render, the ZIP and the download each fail in their own way.
+    case "out_of_memory":
+      return format === "stems"
+        ? "Your browser ran out of memory. Close other tabs, or select fewer tracks, and try again."
+        : "Your browser ran out of memory. Close other tabs and try again, or export stems instead.";
+    case "render_failed":
+      return "The render stopped partway. Try again; if it fails again, reload the page. Your edits are kept.";
+    case "zip_batch_failed":
+      return "The ZIP couldn't be put together. Try again.";
+    case "download_blocked":
+      return "Your browser blocked the download. Allow downloads for this site, then try again.";
     default:
       return "Something went wrong while rendering. Try again.";
   }
@@ -252,20 +266,29 @@ export default function ExportDialog(props: ExportDialogProps): JSX.Element {
         // A ZIP that finished after Cancel is not downloaded; the next ZIP's
         // call sees the aborted signal and ends the export as cancelled.
         if (current.signal.aborted) continue;
-        (props.download ?? downloadFile)(file.blob, file.fileName);
+        handOver(props.download ?? downloadFile, file.blob, file.fileName);
         setWritten((sizes) => [...sizes.slice(0, index), file.blob.size]);
         setGot(index + 1);
       }
       if (current.signal.aborted) throw new StemExportError("aborted", "cancelled");
-      // The finished screen takes the dialog's place, at the dialog's size.
+      // The finished screen takes the dialog's place, at least at the dialog's size;
+      // a taller screen (a one-track song) grows the dialog rather than clipping.
       setDoneHeight(root.closest(".dialog")?.getBoundingClientRect().height ?? 0);
       list.setFocused(false);
       setPhase({ kind: "done" });
     } catch (error) {
       if (controller !== current) return;
-      const coded =
-        error instanceof OfflineRenderError || error instanceof StemExportError;
-      const code = coded ? error.code : "internal";
+      const code = exportFailureCode(error);
+      reportExportFailure({
+        error,
+        code,
+        format: stems ? "stems" : "stereo",
+        bytes: stems ? (batches[index]?.expectedBytes ?? 0) : stereoBytes(),
+        trackCount: stems ? list.trackIds().length : props.project().song.tracks.length,
+        zipCount: count,
+        analytics: props.analytics,
+        report: props.reportError,
+      });
       setResumeFrom(got());
       if (code === "aborted" && got() > 0) setStopped(stoppedNote(got(), count));
       setPhase(
@@ -432,7 +455,17 @@ export default function ExportDialog(props: ExportDialogProps): JSX.Element {
               </>
             }
           >
-            <button type="button" class="export-secondary" onClick={cancel}>
+            <button
+              type="button"
+              class="export-secondary"
+              onClick={(event) => {
+                // Cancel takes Export's place under the pointer, so a double click on
+                // Export lands its second click here (`detail` 2). That is not a choice
+                // to cancel; a deliberate click is a fresh one (`detail` 1).
+                if (event.detail > 1) return;
+                cancel();
+              }}
+            >
               Cancel
             </button>
           </Show>

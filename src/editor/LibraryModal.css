@@ -442,12 +442,23 @@
   border: 0;
 }
 
+/* Under the keys sheet, over everything else in the same box the sheet is
+   placed in (GRV-164): a click round the sheet lands here and closes it rather
+   than reaching the library behind. Clear, so the library still shows. */
+.library-keys-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+}
+
 /* The library's own keys (#813): a sheet over the window's body, leaving the
    header and footer showing, as the reference places it. */
 .library-keys {
   position: absolute;
   inset: 60px 90px 70px;
-  z-index: 1;
+  /* Above the genre menu (SoundsView.css, z-index 6), so nothing the sheet
+     covers can draw over it (GRV-164). */
+  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 12px;

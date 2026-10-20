@@ -124,7 +124,7 @@ export interface UseAssistantChatOptions {
   /** What times a proposal's undo against its apply (GRV-103); the real clock by default. */
   readonly clock?: Clock;
   /**
-   * The producer's profile (GRV-25): what Cue remembers, sent with every
+   * The producer's profile (GRV-25): what Coproducer remembers, sent with every
    * turn, and where a confirmed memory card is saved. Without it turns carry
    * no memory.
    */
@@ -157,7 +157,7 @@ export interface AssistantChat {
   readonly ask: AskDraft;
   /** The memory cards, when there is a profile to save them to (GRV-25). */
   readonly memory: AssistantMemoryProposals | null;
-  /** Cue's one nudge a day, when there is a profile to read it from (GRV-25). */
+  /** Coproducer's one nudge a day, when there is a profile to read it from (GRV-25). */
   readonly nudge: CueNudge | null;
   /** The account's answer about keeping conversations, when it is asked for. */
   readonly retention: AssistantRetention | null;
@@ -232,8 +232,12 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         project: options.project,
         analytics: options.analytics,
         // The conversation is made just below; Refresh is only ever pressed later.
-        refresh: (entryId) => conversation.refresh(entryId),
+        refresh: (entryId, shown) => conversation.refresh(entryId, shown),
+        continueRest: (entryId, shown) => conversation.continueProposal(entryId, shown),
+        clock: options.clock,
         onOutcome: (entryId, outcome, issues) => {
+          // The conversation is made just below; an outcome only comes later.
+          conversation.recordProposalOutcome(entryId, outcome);
           const turnId = turnOfEntry.get(entryId);
           if (turnId) retention?.reportOutcome(turnId, outcome, issues);
           const sessionTurn = sessionTurnOfEntry.get(entryId);
@@ -294,8 +298,41 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
       options.account().registered && (retention ? retention.answered() : true),
     analytics: options.analytics,
     committedProject: options.committedProject,
+    clock: options.clock,
+    onProposalPart: proposals
+      ? (entryId, part, origin, baseRevision) => {
+          // The first part shows the card, which fills in as the rest land
+          // (GRV-144). It is the turn's first card, so nothing holds it.
+          if (!proposalOfTurn.has(origin)) {
+            if (origin.turnId) turnOfEntry.set(entryId, origin.turnId);
+            if (origin.sessionTurn !== undefined) {
+              sessionTurnOfEntry.set(entryId, origin.sessionTurn);
+            }
+            proposalOfTurn.set(origin, { entryId, created: createdTargets([]) });
+            queue.add(origin, {
+              entryId,
+              show: () => {},
+              decided: () => proposals.decided(entryId),
+            });
+          }
+          proposals.receivePart(entryId, part, origin, baseRevision);
+        }
+      : undefined,
+    onProposalEnded: proposals
+      ? (entryId, ending) => proposals.endStream(entryId, ending)
+      : undefined,
     onProposal: proposals
       ? (entryId, proposal, origin) => {
+          if (proposalOfTurn.get(origin)?.entryId === entryId) {
+            // The turn's parts streamed: its card is up already, and the
+            // whole proposal says what the parts make and why.
+            proposalOfTurn.set(origin, {
+              entryId,
+              created: createdTargets(proposal.calls),
+            });
+            proposals.receive(entryId, proposal, origin);
+            return;
+          }
           if (origin.turnId) turnOfEntry.set(entryId, origin.turnId);
           if (origin.sessionTurn !== undefined) {
             sessionTurnOfEntry.set(entryId, origin.sessionTurn);
@@ -331,7 +368,14 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
       ? (entryId, call, library, origin) =>
           queue.add(origin, {
             entryId,
-            show: () => recommendations.receive(entryId, call, library, origin),
+            show: () => {
+              const receive = () =>
+                recommendations.receive(entryId, call, library, origin);
+              // A card from before a reload (GRV-135) comes up once the
+              // library its sounds are found in has loaded again.
+              if (!origin.restored || recommending?.library.current()) receive();
+              else void recommending?.library.load().then(receive, receive);
+            },
             decided: () => recommendations.decided(entryId),
             hold: () => recommendations.hold(entryId),
             skip: () => forDeclinedProposal(origin, call),
@@ -348,7 +392,16 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
       : undefined,
     onMemoryQuestionAsked: memory ? (question) => memory.asked(question) : undefined,
     persistence: options.conversationKey
-      ? { key: options.conversationKey, store: options.conversationStore }
+      ? {
+          key: options.conversationKey,
+          store: options.conversationStore,
+          // A card still to be decided is kept with the conversation and comes
+          // back after a reload; a decided or skipped one does not (GRV-135).
+          decided: (entryId) =>
+            queue.wasSkipped(entryId) ||
+            (proposals?.decided(entryId) ?? false) ||
+            (recommendations?.decided(entryId) ?? false),
+        }
       : undefined,
     health,
   });

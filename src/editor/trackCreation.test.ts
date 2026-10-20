@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { Analytics } from "../analytics/analytics";
+import { executeTransaction, type RawCommandInput } from "../commands";
 import { createFactoryContext } from "../domain/factories";
+import { createSliceFixtureProject } from "../domain/fixtures";
 import { createSeededIdFactory } from "../domain/ids";
-import { createNewTrack, instrumentTypeKey, NEW_TRACK_KINDS } from "./trackCreation";
+import {
+  addTrackOfKind,
+  createNewTrack,
+  instrumentTypeKey,
+  NEW_TRACK_KINDS,
+} from "./trackCreation";
 
 const context = () => createFactoryContext({ ids: createSeededIdFactory(223), now: 0 });
 
@@ -65,5 +73,32 @@ describe("createNewTrack", () => {
     // "Synth 2" is still on screen, so the freed "Synth" is what is reused —
     // numbering follows collisions, not the count of tracks.
     expect(name(["Synth 2"])).toBe("Synth");
+  });
+});
+
+describe("addTrackOfKind's history label (GRV-160)", () => {
+  it("names the first drum machine for its track, not for the kit it carries in", () => {
+    const project = createSliceFixtureProject();
+    const dispatched: RawCommandInput[] = [];
+    let summary: string | undefined;
+    addTrackOfKind("drumMachine", {
+      project,
+      context: context(),
+      dispatch(commands) {
+        const list = Array.isArray(commands) ? commands : [commands];
+        dispatched.push(...list);
+        const result = executeTransaction(project, list);
+        if (result.ok) summary = result.summary;
+        return result;
+      },
+      analytics: new Analytics({ storage: null }),
+      feature: "arrangement",
+      onSelect: () => {},
+    });
+
+    // The kit's sounds join the project in the same transaction...
+    expect(dispatched.some((command) => command.type === "asset.add")).toBe(true);
+    // ...but Undo describes what the producer did.
+    expect(summary).toBe('Add track "Drum machine"');
   });
 });

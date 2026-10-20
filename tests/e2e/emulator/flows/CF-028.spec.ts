@@ -9,6 +9,7 @@ import {
   panelButton,
   resizeEdge,
 } from "../support/assistant";
+import { reloadPage } from "../support/reload";
 import { expect, test } from "../support/test";
 
 /**
@@ -79,7 +80,7 @@ test.describe("CF-028", () => {
     const bar = await boxOf(panel(page), "the minimised assistant");
     expect(bar.height).toBeLessThan(64);
     expect(bar.y + bar.height).toBeGreaterThan(viewport.height - 2);
-    await expect(panel(page)).toContainText("Cue");
+    await expect(panel(page)).toContainText("Coproducer");
     await step("Minimise to a bar");
     await panel(page).click({ position: { x: 48, y: bar.height / 2 } });
     expect((await boxOf(panel(page), "the assistant")).height).toBe(taller.height);
@@ -119,7 +120,7 @@ test.describe("CF-028", () => {
 
     // 8. Reload the page. The assistant is docked at the same width, as you
     //    left it. Press Float. It floats at the height you set in step 3.
-    await page.reload();
+    await reloadPage(page);
     await expect(arrangement(page)).toBeVisible();
     await expect(panel(page)).toBeVisible();
     const reloaded = await boxOf(panel(page), "the docked assistant");

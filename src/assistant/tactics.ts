@@ -84,6 +84,41 @@ export const TACTICS = {
     default: "off",
     alters: ["prompt"],
   },
+  promptText: {
+    description:
+      "How the system prompt's own rules are worded (GRV-147): `full` as written; `moderate` shorter, rules said twice merged and examples cut; `aggressive` shorter still, about a sentence a rule. Every level keeps every rule, in the prompt.",
+    values: ["full", "moderate", "aggressive"],
+    default: "full",
+    alters: ["prompt"],
+  },
+  promptDropAppFeatures: {
+    description:
+      'Whether the system prompt leaves out its "What Groove has" section, the map of panels the assistant cannot use (GRV-101), to test whether it still earns its place (GRV-147).',
+    values: ["keep", "drop"],
+    default: "keep",
+    alters: ["prompt"],
+  },
+  promptDropToolAddressing: {
+    description:
+      'Whether the system prompt leaves out its "How the tools address things" bullets (ID shapes, note arrays, parameter IDs, ticks, placements, order), which the tool descriptions and the new-ID block also say (GRV-147). A tactic\'s own bullets there stay.',
+    values: ["keep", "drop"],
+    default: "keep",
+    alters: ["prompt"],
+  },
+  promptDropStaleDescription: {
+    description:
+      "Whether the system prompt leaves out its two sentences saying the project description is never out of date (GRV-122), whose bug the description's pad counts fixed (GRV-147).",
+    values: ["keep", "drop"],
+    default: "keep",
+    alters: ["prompt"],
+  },
+  promptDropDrumSoundPads: {
+    description:
+      'Whether the system prompt leaves out its bullet saying a named drum sound is a pad found by name in "pads" (GRV-122), which the drum-parts bullet before it mostly says (GRV-147).',
+    values: ["keep", "drop"],
+    default: "keep",
+    alters: ["prompt"],
+  },
   toolBundles: {
     description:
       "Which tools each turn is offered (GRV-143): `all` is every tool; `bundled` is one of a few fixed bundles (mix, notes, arrange, everything) a gateway rule picks from the scope, the selected track and the message, each but everything with need_more_tools, which re-runs the step with every tool.",

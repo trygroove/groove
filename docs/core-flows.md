@@ -147,7 +147,7 @@ signing in from the landing page and arriving signed in. From creating a project
 onwards the journey is the one it always was: edit the starter pattern and hear
 it. Parked at `test.fixme` until #854's stack lands.
 
-**Revised for onboarding (GRV-25).** A new account now meets Cue at the welcome
+**Revised for onboarding (GRV-25).** A new account now meets Coproducer at the welcome
 before the dashboard, so step 3 passes through it with Skip to the studio. The
 welcome itself is CF-035's subject.
 
@@ -156,7 +156,7 @@ list. You have no projects.
 
 1. Open the landing page.
 2. Choose Sign in, and sign in with Google as the invited address.
-3. You arrive signed in at the welcome, where Cue introduces itself. Choose
+3. You arrive signed in at the welcome, where Coproducer introduces itself. Choose
    Skip to the studio: you are on the dashboard, with no projects yet.
 4. Create a new project.
 5. The project opens on the arrangement, with a four-on-the-floor starter
@@ -1200,7 +1200,7 @@ proposal of two changes: swing up to 58%, and the BD track 3 dB quieter. This
 account has already answered the assistant's disclosure (GRV-8).
 
 1. Create a new project. It opens on the arrangement.
-2. Press the Cue button in the header. The assistant opens floating over
+2. Press the Coproducer button in the header. The assistant opens floating over
    the bottom-right corner of the editor, ready to type into. It says its scope
    is the selected track, BD.
 3. Type "Loosen the beat" and press Enter. Your message appears in the
@@ -1212,8 +1212,8 @@ account has already answered the assistant's disclosure (GRV-8).
    BD's volume fader sits at the proposed level, and swing reads 58%.
 6. Press Cancel. The editor goes back to the arrangement. Swing reads what it
    did before, and BD's volume is where it was. There is nothing to undo.
-7. Press Preview again, then Apply. The proposal says it was applied. Swing
-   reads 58%, and BD's volume is at the proposed level.
+7. Press Preview again, then Apply all. The proposal says it was applied.
+   Swing reads 58%, and BD's volume is at the proposed level.
 8. Undo once. Both changes are gone. Redo once. Both are back.
 9. Reload the page. Swing still reads 58%, and BD's volume is still at the
    proposed level.
@@ -1228,7 +1228,8 @@ a proposal that goes out of date under an edit, and "Why this works", which are
 tested at the component and emulator layers. The outlines that mark previewed
 and changed controls, which are component-layer. That a preview is audible. No
 headless browser records audio. Pack and video recommendations, which are other
-issues.
+issues. Applying a proposal one part at a time as its parts arrive (GRV-144),
+which is component-layer.
 
 ### CF-028 — The assistant stays where a producer puts it
 
@@ -1454,7 +1455,7 @@ track. The library holds at least one such kick.
 
 1. Create a new project. It opens on the arrangement, with the starter kick on
    the drum machine's "BD" pad.
-2. Press the Cue button, type "The kick is too clean. Anything dustier?"
+2. Press the Coproducer button, type "The kick is too clean. Anything dustier?"
    and press Enter. Your message appears in the conversation, and the
    assistant's reply follows it.
 3. The reply ends with a recommended pack. It names the pack, its publisher,
@@ -1487,7 +1488,7 @@ sound the library does not hold, and a card that goes out of date under an
 edit, which are tested at the component and unit layers, as are the outlines on
 the slot. Proposals of changes, which are CF-027's.
 
-### CF-035 — A new producer meets Cue and opens the studio
+### CF-035 — A new producer meets Coproducer and opens the studio
 
 **Issue:** GRV-25 · **Suite:** `tests/e2e/emulator/flows/CF-035.spec.ts` · **Entrypoint:**
 the project dashboard
@@ -1495,35 +1496,35 @@ the project dashboard
 **Preconditions:** signed in as an invited producer who has never been through
 onboarding, with no projects.
 
-1. Open the dashboard. You are taken to the welcome instead: Cue introduces
+1. Open the dashboard. You are taken to the welcome instead: Coproducer introduces
    itself under its name, and asks what music you love, with genres to pick
    and a box for the artists you love. "Skip to the studio" is on screen.
 2. Pick House and Techno, type "Four Tet" in the box, and send. Your answer
-   appears in the conversation, and Cue asks how much music you have made.
-3. Pick "Played around". Cue asks whether you have a goal.
-4. Skip that question. Cue asks what you would like to learn.
-5. Pick "Drums and beats" and send. Cue asks about gear.
-6. Pick "Ableton Move" and send. A "Saved to memory" card lists what you
-   said: House, Techno, Four Tet, Played around, Drums and beats and Ableton
-   Move. Its box to share your answers is unticked. Cue offers a first lesson.
-7. Choose Open the studio. A new project opens on the arrangement, with Cue's
+   appears in the conversation, and Coproducer asks how much music you have made.
+3. Pick "Played around". Coproducer asks whether you have a goal.
+4. Skip that question. Coproducer asks what you would like to learn.
+5. Pick "Drums and beats" and send. Coproducer asks about gear.
+6. Pick "A synth" and send. A "Saved to memory" card lists what you
+   said: House, Techno, Four Tet, Played around, Drums and beats and A
+   synth. Its box to share your answers is unticked. Coproducer offers a first lesson.
+7. Choose Open the studio. A new project opens on the arrangement, with Coproducer's
    panel open. A producer who has not yet answered the notice about Groove
    keeping conversations (GRV-8) sees it first; choose OK. The same
-   conversation is in the panel: your answers, and Cue's offer of a first
+   conversation is in the panel: your answers, and Coproducer's offer of a first
    lesson.
-8. Reload the page. The conversation is still in Cue's panel.
+8. Reload the page. The conversation is still in Coproducer's panel.
 9. Open the dashboard. It stays on the dashboard, and lists the project.
 
-**Outcome:** a new producer told Cue about themselves once, in a conversation
+**Outcome:** a new producer told Coproducer about themselves once, in a conversation
 that carried on into their first project, and is not asked again.
 
-**Out of scope:** what Cue says after onboarding, and whether a real model uses
+**Out of scope:** what Coproducer says after onboarding, and whether a real model uses
 the memory well, which `AI-005` evaluates. Skipping the whole welcome, the
 Memory page, proposing and undoing a memory note, the daily nudge, and the
 consented validation event, which are tested at the component and unit layers.
 Starting the lesson itself (GRV-43).
 
-### CF-036 — A producer builds a first beat with Cue, one card at a time
+### CF-036 — A producer builds a first beat with Coproducer, one card at a time
 
 **Issue:** GRV-129 · **Suite:** `tests/e2e/emulator/flows/CF-036.spec.ts` · **Entrypoint:**
 the project dashboard
@@ -1538,12 +1539,12 @@ Hat pad, in that order. The library holds a kick, a snare and a hat.
 
 1. Create a new project. It opens on the arrangement, with the starter kick on
    the drum machine's "BD" pad.
-2. Press the Cue button, type "Let's build my first beat [first-beat]" and
+2. Press the Coproducer button, type "Let's build my first beat [first-beat]" and
    press Enter. Your message appears in the conversation, and the assistant's
    reply follows it.
 3. Only the proposal is shown. It says there are 3 more after this. No
    recommended pack is on screen yet.
-4. Press Apply. The proposal says it was applied. Then the first recommended
+4. Press Apply all. The proposal says it was applied. Then the first recommended
    pack appears, on its own: its header names BD's track and pad (BD · BD), it
    offers to try its sound on BD, and it says there are 2 more after this.
 5. Press Try on BD, then Keep. The card says the sound was kept, and BD's

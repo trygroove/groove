@@ -315,6 +315,83 @@ test.describe("Export dialog layout", () => {
     });
   });
 
+  // GRV-163: the note is the one line of copy that says why Export is off or how
+  // the stems split, so at a normal window it must wrap rather than end in an
+  // ellipsis, and it must sit inside its slot rather than be clipped by it.
+  test("wraps the footer note so the whole sentence reads at 1280 x 720", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/");
+    await harness(page, "mountExportDialog", "over");
+    const dialog = page.getByRole("dialog", { name: "Export" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("radio", { name: "Stems (ZIP)" }).check();
+    const note = dialog.locator(".export-note");
+    await expect(note).toHaveText(/is over the 2 GiB browser limit/);
+    const clipped = () =>
+      page.evaluate(() => {
+        const note = document.querySelector(".export-note") as HTMLElement;
+        const slot = note.parentElement as HTMLElement;
+        return {
+          across: note.scrollWidth > note.clientWidth,
+          // The slot bottom-aligns the note, so a note taller than the slot
+          // spills up out of it: check both edges.
+          above:
+            note.getBoundingClientRect().top < slot.getBoundingClientRect().top - 0.5,
+          below:
+            note.getBoundingClientRect().bottom >
+            slot.getBoundingClientRect().bottom + 0.5,
+        };
+      });
+    expect(await clipped()).toEqual({ across: false, above: false, below: false });
+
+    // A failure is the same one-line slot's other message: it wraps the same way.
+    await dialog.getByRole("button", { name: "Export", exact: true }).click();
+    await harness(page, "progress", 0.5);
+    await harness(page, "fail");
+    await expect(dialog.getByRole("alert")).toContainText("ZIP 1 failed:");
+    expect(
+      await page.evaluate(() => {
+        const alert = document.querySelector(".export-alert") as HTMLElement;
+        const slot = alert.parentElement as HTMLElement;
+        const box = alert.getBoundingClientRect();
+        const edge = slot.getBoundingClientRect();
+        return {
+          across: alert.scrollWidth > alert.clientWidth,
+          above: box.top < edge.top - 0.5,
+          below: box.bottom > edge.bottom + 0.5,
+        };
+      }),
+    ).toEqual({ across: false, above: false, below: false });
+  });
+
+  test("says why Export is off, in full, with no tracks on", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/");
+    await harness(page, "mountExportDialog", "few");
+    const dialog = page.getByRole("dialog", { name: "Export" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("radio", { name: "Stems (ZIP)" }).check();
+    const options = dialog.getByRole("option");
+    for (let i = 0; i < (await options.count()); i++) {
+      await options.nth(i).click();
+    }
+    const note = dialog.locator(".export-note");
+    await expect(note).toHaveText("Turn on at least one track to export stems.");
+    expect(
+      await page.evaluate(() => {
+        const note = document.querySelector(".export-note") as HTMLElement;
+        const slot = note.parentElement as HTMLElement;
+        return (
+          note.scrollWidth <= note.clientWidth &&
+          note.getBoundingClientRect().top >= slot.getBoundingClientRect().top - 0.5 &&
+          note.getBoundingClientRect().bottom <= slot.getBoundingClientRect().bottom + 0.5
+        );
+      }),
+    ).toBe(true);
+  });
+
   test("keeps Close and Export reachable in a short or a narrow window (GRV-153)", async ({
     page,
   }) => {
@@ -361,5 +438,112 @@ test.describe("Export dialog layout", () => {
         });
       }
     }
+  });
+});
+
+test.describe("Export complete screen", () => {
+  // GRV-158: a one-word project name must not push the heading off the top of the
+  // dialog, run the file name past its right edge, or spill the sleeve's caption
+  // into the right-hand panel. Stems at 1280x720, as the report found it.
+  test("keeps the heading, file name and sleeve inside the dialog for a long one-word name", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/");
+    await harness(
+      page,
+      "mountExportDialog",
+      "few",
+      "summer_anthem_final_mix_v12_with_new_vocals_and_extra_bass_MASTER",
+    );
+    const dialog = page.getByRole("dialog", { name: "Export" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("radio", { name: "Stems (ZIP)" }).check();
+    await dialog.getByRole("button", { name: "Export", exact: true }).click();
+    await harness(page, "finish");
+    await expect(page.locator(".export-done")).toBeVisible();
+    // Let the staggered rise finish, so the boxes are where they settle.
+    await page.evaluate(() =>
+      Promise.all(document.getAnimations().map((animation) => animation.finished)),
+    );
+    const boxes = await page.evaluate(() => {
+      const box = (selector: string) => {
+        const el = document.querySelector(selector);
+        if (!el) throw new Error(`${selector} is not on the page`);
+        const r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+      };
+      // The text's own extent: a word wider than its box paints past the box's edge.
+      const textRight = (selector: string) => {
+        const range = document.createRange();
+        range.selectNodeContents(document.querySelector(selector) as Element);
+        return range.getBoundingClientRect().right;
+      };
+      return {
+        dialog: box(".export-shell"),
+        out: box(".export-out"),
+        heading: box(".export-out h3"),
+        caption: { ...box(".export-out p"), right: textRight(".export-out p") },
+        sleeve: box(".export-sleeve"),
+      };
+    });
+    const { dialog: frame, out, heading, caption, sleeve } = boxes;
+    // The heading is whole and in view: inside its column and under the dialog's top.
+    expect.soft(heading.top, "heading top").toBeGreaterThanOrEqual(out.top);
+    expect.soft(heading.bottom, "heading bottom").toBeLessThanOrEqual(out.bottom);
+    expect.soft(heading.top, "heading in dialog").toBeGreaterThanOrEqual(frame.top);
+    expect.soft(heading.right, "heading right").toBeLessThanOrEqual(out.right);
+    // The file name stays within the dialog's right edge.
+    expect.soft(caption.right, "file name right").toBeLessThanOrEqual(frame.right);
+    // The sleeve stays in the left panel, clear of the right one.
+    expect.soft(sleeve.right, "sleeve right").toBeLessThanOrEqual(out.left);
+  });
+
+  // GRV-158 QA: the name clips sideways for its ellipsis, and that clip must not
+  // also slice the top off an accented capital (the dots of Ü) or the bottom off
+  // a descender, which stand outside the heading's tight 0.98 line.
+  test("shows an accented capital's accent and a descender whole in the heading", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/");
+    await harness(page, "mountExportDialog", "few", "Ünïcødé gypsy");
+    const dialog = page.getByRole("dialog", { name: "Export" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Export", exact: true }).click();
+    await harness(page, "finish");
+    await expect(page.locator(".export-done")).toBeVisible();
+    await page.evaluate(() =>
+      Promise.all(document.getAnimations().map((animation) => animation.finished)),
+    );
+    const { clip, glyphs, heading } = await page.evaluate(() => {
+      const name = document.querySelector(".export-out h3 .export-name") as HTMLElement;
+      // The clip edge is the padding box; the text's own box spans the font's
+      // full ascent and descent, which is where accents and descenders reach.
+      const box = name.getBoundingClientRect();
+      const style = getComputedStyle(name);
+      const range = document.createRange();
+      range.selectNodeContents(name);
+      const text = range.getBoundingClientRect();
+      const heading = (
+        document.querySelector(".export-out h3") as HTMLElement
+      ).getBoundingClientRect();
+      return {
+        clip: {
+          top: box.top + Number.parseFloat(style.borderTopWidth),
+          bottom: box.bottom - Number.parseFloat(style.borderBottomWidth),
+        },
+        glyphs: { top: text.top, bottom: text.bottom },
+        heading: { height: heading.height },
+      };
+    });
+    expect
+      .soft(glyphs.top, "accent inside the clip")
+      .toBeGreaterThanOrEqual(clip.top - 0.5);
+    expect
+      .soft(glyphs.bottom, "descender inside the clip")
+      .toBeLessThanOrEqual(clip.bottom + 0.5);
+    // The room is made without growing the heading past its one 52px x 0.98 line.
+    expect.soft(Math.round(heading.height), "heading height").toBe(Math.round(52 * 0.98));
   });
 });

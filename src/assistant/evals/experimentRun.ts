@@ -35,6 +35,10 @@
  *   expected to take it past the budget, and an experiment stopped short
  *   reports what it has, its verdict `inconclusive` unless a winner was
  *   found first, and every cut not yet proven `restore`.
+ * - **A failed run.** A phase also stops when {@link RunGuard} sees every
+ *   later turn would be refused (the key, the credit, or a streak of
+ *   refusals). That run, or one where every turn errored, has `failed` set:
+ *   its verdict is `inconclusive` whatever ran first, so it opens no PR.
  *
  * Each turn goes through {@link runCaseTurn}, the gateway's own turn, with
  * the variant's tactic values; tests hand in their own turn runner, with a
@@ -59,18 +63,16 @@ import {
   type VariantTactics,
 } from "./experiment";
 import {
-  AUTH_ABORT_REASON,
   buildReport,
-  CREDIT_ABORT_REASON,
   describeTurnError,
   type EvalRecord,
   type EvalReport,
   type EvalTurn,
   type EvalTurnError,
   evaluateTurnSafely,
-  isAuthError,
   runCaseTurn,
 } from "./run";
+import { RunGuard } from "./runGuard";
 import type { EvalSplit } from "./splits";
 import {
   analyzeVariant,
@@ -234,8 +236,8 @@ export async function runPhase(options: PhaseOptions): Promise<ExperimentPhase> 
   const records: (EvalRecord | undefined)[] = new Array(jobs.length);
   let next = 0;
   let inFlight = 0;
-  let replied = false;
   let stopped: string | null = null;
+  const guard = new RunGuard();
   const worker = async () => {
     while (next < jobs.length && stopped === null) {
       if (!options.tally.canStart(inFlight)) {
@@ -251,9 +253,7 @@ export async function runPhase(options: PhaseOptions): Promise<ExperimentPhase> 
       options.tally.addUsage(options.model, turn.usage);
       const record = evaluateTurnSafely(evalCase, run, turn);
       records[index] = record;
-      if (!turn.error) replied = true;
-      else if (!replied && isAuthError(turn.turnError)) stopped ??= AUTH_ABORT_REASON;
-      if (turn.turnError?.outOfCredit) stopped ??= CREDIT_ABORT_REASON;
+      stopped ??= guard.observe(turn);
       options.onRecord?.(variant.name, record);
     }
   };
@@ -356,6 +356,12 @@ export interface ExperimentResult {
   readonly reason: string;
   /** Why the experiment stopped before it finished, or null when it did not. */
   readonly stopped: string | null;
+  /**
+   * Why the run failed, so its numbers say nothing ({@link runFailure}), or
+   * null when it did not. A failed run's verdict is `inconclusive`, it opens
+   * no PR, and its card is Blocked.
+   */
+  readonly failed: string | null;
 }
 
 export interface RunExperimentOptions {
@@ -691,7 +697,11 @@ export async function runExperiment(
   }
   const cuts = cutVariants.map((cut) => outcomes.get(cut.name) as CutOutcome);
 
-  const { verdict, reason } = conclude(improves, gates, winner, keptCuts, stopped);
+  const partial = { train, gates, cutGate, combined, stopped };
+  const failed = runFailure(partial);
+  const { verdict, reason } = failed
+    ? { verdict: "inconclusive" as const, reason: `The run failed: ${failed}` }
+    : conclude(improves, gates, winner, keptCuts, stopped);
   return {
     experiment,
     model: model.id,
@@ -709,6 +719,7 @@ export async function runExperiment(
     winner,
     reason,
     stopped,
+    failed,
   };
 }
 
@@ -716,8 +727,29 @@ function goalLabel(experiment: Experiment): string {
   return GOAL_METRICS[experiment.goal].label.toLowerCase();
 }
 
+/** What {@link experimentPhases} reads. */
+type RanPhases = Pick<ExperimentResult, "train" | "gates" | "cutGate" | "combined">;
+
+export const ALL_ERRORED_REASON = "Every turn errored, so there is nothing to compare.";
+
+/**
+ * Why a run's numbers say nothing, or null when they do: it stopped because
+ * the provider refused the key, the credit or every call ({@link RunGuard}),
+ * or every turn errored. Reaching the budget is not a failure.
+ */
+export function runFailure(
+  result: RanPhases & Pick<ExperimentResult, "stopped">,
+): string | null {
+  if (result.stopped && result.stopped !== BUDGET_STOP_REASON) return result.stopped;
+  const records = experimentRecords(result);
+  if (records.length > 0 && records.every((record) => record.error)) {
+    return ALL_ERRORED_REASON;
+  }
+  return null;
+}
+
 /** Every phase the experiment ran, in order. */
-export function experimentPhases(result: ExperimentResult): ExperimentPhase[] {
+export function experimentPhases(result: RanPhases): ExperimentPhase[] {
   return [
     result.train,
     ...result.gates.map((gate) => gate.phase),
@@ -730,20 +762,16 @@ export function experimentPhases(result: ExperimentResult): ExperimentPhase[] {
 }
 
 /** Every turn the experiment ran, every phase and variant. */
-export function experimentRecords(result: ExperimentResult): EvalRecord[] {
+export function experimentRecords(result: RanPhases): EvalRecord[] {
   return experimentPhases(result).flatMap((phase) =>
     Object.values(phase.reports).flatMap((report) => [...report.records]),
   );
 }
 
 /**
- * The script's exit status: 1 when the provider refused the key or the
- * account ran out of credit, or every turn errored, since then the verdict
- * says nothing; 0 otherwise, whatever the verdict.
+ * The script's exit status: 1 when the run failed ({@link runFailure}), since
+ * then the verdict says nothing; 0 otherwise, whatever the verdict.
  */
 export function experimentExitCode(result: ExperimentResult): 0 | 1 {
-  if (result.stopped && result.stopped !== BUDGET_STOP_REASON) return 1;
-  const records = experimentRecords(result);
-  if (records.length > 0 && records.every((record) => record.error)) return 1;
-  return 0;
+  return result.failed ? 1 : 0;
 }

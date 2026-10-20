@@ -1,5 +1,5 @@
 /**
- * The welcome's conversation (GRV-25): Cue's five questions, one at a time,
+ * The welcome's conversation (GRV-25): Coproducer's five questions, one at a time,
  * the producer's answers, and the two ways out, Skip to the studio and Open
  * the studio.
  *
@@ -70,7 +70,7 @@ export interface UseOnboardingOptions {
   readonly uid: Accessor<string | null>;
   readonly profiles: () => Promise<ProfileRepository>;
   readonly analytics: Pick<Analytics, "log" | "logFeatureFirstUse">;
-  /** How long Cue "writes" before each reply, in ms; 0 in tests. */
+  /** How long Coproducer "writes" before each reply, in ms; 0 in tests. */
   readonly replyDelayMs?: number;
   readonly clock?: Clock;
   /** Where the conversation is handed to the studio; this tab's by default. */
@@ -118,7 +118,7 @@ const ANSWER_SCOPE = "Song";
 export function useOnboarding(options: UseOnboardingOptions): Onboarding {
   const clock = options.clock ?? systemClock;
   const delay = options.replyDelayMs ?? 450;
-  // The welcome opens with Cue's hello and its first question, already said.
+  // The welcome opens with Coproducer's hello and its first question, already said.
   const first = ONBOARDING_QUESTIONS[0];
   const welcome: ConversationEntry = {
     kind: "reply",
@@ -151,7 +151,7 @@ export function useOnboarding(options: UseOnboardingOptions): Onboarding {
    * seen.
    */
   let base: ProducerProfile | null | undefined;
-  // Cue's replies wait a moment before they are said; leaving the welcome
+  // Coproducer's replies wait a moment before they are said; leaving the welcome
   // cancels any still waiting.
   const timers = new Set<ReturnType<typeof setTimeout>>();
   onCleanup(() => {
@@ -168,7 +168,7 @@ export function useOnboarding(options: UseOnboardingOptions): Onboarding {
   const append = (entry: ConversationEntry) =>
     setEntries((current) => [...current, entry]);
 
-  /** Cue's reply: written after a moment, ending in `question` if there is one. */
+  /** Coproducer's reply: written after a moment, ending in `question` if there is one. */
   function reply(text: string, question: OnboardingQuestion | null, then?: () => void) {
     const say = () => {
       const replyId = id();

@@ -21,7 +21,7 @@ import { formatDb, formatPan } from "../domain/faders";
 import type { AssetId, PadId, TrackId } from "../domain/ids";
 import { nextPadName } from "../domain/padNames";
 import { PAD_PITCH, TRACK_PAN, TRACK_VOLUME } from "../domain/parameters";
-import { formatInstrumentValue } from "../instrument/formatValue";
+import { formatReadout } from "../domain/valueFormat";
 import SampleSlot from "../instrument/SampleSlot";
 import { createPeaks, peakBars, type WatchPeaks } from "../instrument/SampleWell";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
@@ -296,7 +296,7 @@ export default function DrumMachinePanel(props: DrumMachinePanelProps): JSX.Elem
                     definition={PAD_PITCH}
                     label="Pitch"
                     value={padParam(pad(), "pitch", PAD_PITCH.defaultValue)}
-                    displayValue={formatInstrumentValue(
+                    displayValue={formatReadout(
                       PAD_PITCH,
                       padParam(pad(), "pitch", PAD_PITCH.defaultValue),
                     )}

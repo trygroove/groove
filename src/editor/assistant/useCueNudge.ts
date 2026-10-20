@@ -1,6 +1,6 @@
 /**
- * Cue's one nudge a day in the editor (GRV-25): when a returning producer
- * opens a project with Cue's panel open, Cue may offer one "Want to try…?",
+ * Coproducer's one nudge a day in the editor (GRV-25): when a returning producer
+ * opens a project with Coproducer's panel open, Coproducer may offer one "Want to try…?",
  * at most once a day across every project, and dismissable. Opening the
  * editor with the panel closed, or before the day after onboarding, offers
  * nothing. While the conversation cannot be shown (the retention notice is
@@ -20,7 +20,7 @@ import type { AssistantConversation } from "./useAssistantConversation";
 export interface CueNudge {
   /** The lesson on offer, or null while there is none. */
   readonly lesson: Accessor<string | null>;
-  /** "Let's try it": asks Cue for it, as the producer's own message. */
+  /** "Let's try it": asks Coproducer for it, as the producer's own message. */
   tryIt(): void;
   /** "Not today". */
   dismiss(): void;
@@ -40,7 +40,7 @@ export interface UseCueNudgeOptions {
   readonly clock?: Clock;
 }
 
-/** What "Let's try it" says to Cue. */
+/** What "Let's try it" says to Coproducer. */
 export function nudgeMessage(lesson: string): string {
   return `I'd like to try "${lesson}".`;
 }

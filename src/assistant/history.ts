@@ -11,6 +11,44 @@
 import { type AssistantAsk, askTranscript } from "./ask";
 import { ASSISTANT_REQUEST_LIMITS, ESTIMATED_CHARS_PER_TOKEN } from "./config";
 import type { AssistantMessage } from "./protocol";
+import type { ProposalOutcome } from "./transcripts";
+
+/**
+ * What became of the proposal a reply made (GRV-150): one of its outcomes,
+ * or `pending` while nobody has applied or cancelled it (and after a reload,
+ * which does not bring back its card, so it can no longer be applied).
+ */
+export type HistoryProposal = ProposalOutcome | "pending";
+
+/** The proposal states a reply can carry, for a schema that keeps them. */
+export const HISTORY_PROPOSALS = [
+  "pending",
+  "applied",
+  "cancelled",
+  "undone",
+  "rejected",
+] as const satisfies readonly HistoryProposal[];
+
+/**
+ * The line the model reads after a reply that proposed a change, saying what
+ * the producer did with it. The reply only says what it proposed, so without
+ * it a cancelled track reads like one that exists, and the model trusts the
+ * conversation over the project description (GRV-150).
+ */
+const PROPOSAL_NOTES: Record<HistoryProposal, string> = {
+  applied:
+    "[The producer applied this proposal. The project description shows the song as it is now.]",
+  cancelled: "[The producer cancelled this proposal. Nothing in it is in the song.]",
+  undone:
+    "[The producer applied this proposal, then undid it. Nothing in it is in the song.]",
+  rejected: "[This proposal could not be applied. Nothing in it is in the song.]",
+  pending: "[The producer has not applied this proposal. Nothing in it is in the song.]",
+};
+
+/** The note for `proposal`, as {@link historyOf} resends it after the reply. */
+export function proposalNote(proposal: HistoryProposal): string {
+  return PROPOSAL_NOTES[proposal];
+}
 
 /**
  * What {@link historyOf} reads of one thing in a conversation's log. The
@@ -23,6 +61,8 @@ export type HistoryEntry =
       readonly text: string;
       readonly failed?: boolean;
       readonly ask?: AssistantAsk;
+      /** What became of the proposal the reply made, when it made one (GRV-150). */
+      readonly proposal?: HistoryProposal;
     }
   | { readonly kind: "video"; readonly video: { readonly videoId: string } }
   | { readonly kind: "proposal" | "recommendation" | "memory" | "error" };
@@ -32,7 +72,8 @@ export const MAX_MESSAGE_CHARS = ASSISTANT_REQUEST_LIMITS.maxMessageChars;
 
 /**
  * The conversation so far, as the next turn resends it: every message that
- * got a reply, with that reply. A message whose turn failed is left out,
+ * got a reply, with that reply, and after a reply that proposed a change, a
+ * line saying what the producer did with it (GRV-150). A message whose turn failed is left out,
  * along with whatever its reply wrote before failing, so the roles always
  * alternate and a broken answer is never passed off as the assistant's; the
  * retry resends the message, and its reply is the one that counts.
@@ -62,9 +103,12 @@ export function historyOf(entries: readonly HistoryEntry[]): AssistantMessage[] 
       .filter((part) => part.length > 0)
       .join("\n\n");
     if (said.length === 0) continue;
+    // What became of its proposal follows it (GRV-150), and is never the part
+    // a long reply loses.
+    const note = entry.proposal ? `\n\n${proposalNote(entry.proposal)}` : "";
     history.push(
       { role: "user", text: pending.slice(0, MAX_MESSAGE_CHARS) },
-      { role: "assistant", text: said.slice(0, MAX_MESSAGE_CHARS) },
+      { role: "assistant", text: said.slice(0, MAX_MESSAGE_CHARS - note.length) + note },
     );
     pending = null;
   }

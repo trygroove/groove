@@ -15,6 +15,7 @@ import {
   buildAudioProjection,
 } from "../../projection/audioProjection";
 import { type Clock, systemClock } from "../../shared/clock";
+import { isOutOfMemory } from "../../shared/outOfMemory";
 import { exportFileName } from "./exportFileName";
 
 /**
@@ -94,6 +95,12 @@ function encodeToBlob(rendered: OfflineRender): Blob {
 /** Why an export failed, as a stable analytics code. */
 function failureOf(error: unknown): OfflineRenderError {
   if (error instanceof OfflineRenderError) return error;
+  // Encoding holds the whole song in memory once more (GRV-55).
+  if (isOutOfMemory(error)) {
+    return new OfflineRenderError("out_of_memory", "The export ran out of memory", {
+      cause: error,
+    });
+  }
   // The encoder's only refusal is a render longer than a WAV can describe.
   if (error instanceof RangeError) {
     return new OfflineRenderError("quota_exceeded", "The song is too long to export", {

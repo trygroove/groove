@@ -74,11 +74,11 @@ than also meaning `track.move_left`. It suppresses nothing else.
 | `arrangement.open_clip` | Open clip | `Enter` | `Enter` | Navigation | arrangement | Groove addition — Live shows a clip's notes under the arrangement; Groove's are a view of their own |
 | `view.close_surface` | Close or cancel | `Escape` | `Escape` | Navigation | global, dialog, gesture | Follows Live (`Esc`) |
 | `help.shortcut_guide` | Open keyboard mapping guide | `?` | `?` | Navigation | editor, library | Groove addition — `?` is the web convention |
-| `assistant.toggle` | Open or close Cue | `Cmd+K` | `Ctrl+K` | Navigation | editor | Groove addition — Live has no assistant; `Cmd/Ctrl+K` is the web's convention for summoning one |
-| `assistant.grow` | Grow Cue | `Up / Left` | `Up / Left` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
-| `assistant.shrink` | Shrink Cue | `Down / Right` | `Down / Right` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
-| `assistant.grow_more` | Grow Cue more | `Shift+Up / Shift+Left` | `Shift+Up / Shift+Left` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
-| `assistant.shrink_more` | Shrink Cue more | `Shift+Down / Shift+Right` | `Shift+Down / Shift+Right` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
+| `assistant.toggle` | Open or close Coproducer | `Cmd+K` | `Ctrl+K` | Navigation | editor | Groove addition — Live has no assistant; `Cmd/Ctrl+K` is the web's convention for summoning one |
+| `assistant.grow` | Grow Coproducer | `Up / Left` | `Up / Left` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
+| `assistant.shrink` | Shrink Coproducer | `Down / Right` | `Down / Right` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
+| `assistant.grow_more` | Grow Coproducer more | `Shift+Up / Shift+Left` | `Shift+Up / Shift+Left` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
+| `assistant.shrink_more` | Shrink Coproducer more | `Shift+Down / Shift+Right` | `Shift+Down / Shift+Right` | Navigation | resize_edge | Groove addition — Live has no assistant panel |
 | `assistant.send` | Send the message | `Enter` | `Enter` | Navigation | composer | Groove addition — Live has no assistant; Enter sends, as in any chat composer |
 | `assistant.ask_option_1` | Pick answer 1 | `1` | `1` | Navigation | assistant_ask | Groove addition — Live has no assistant; number keys pick an answer |
 | `assistant.ask_option_2` | Pick answer 2 | `2` | `2` | Navigation | assistant_ask | Groove addition — Live has no assistant; number keys pick an answer |
@@ -273,6 +273,16 @@ override recorded on the entry:
 - **Deterministic context resolution.** A shortcut fires only if one of its
   declared contexts is active. A registry test proves no two mappings can match
   the same event in the same context, so dispatch is never ambiguous.
+- **One press, one action; the top surface first** (GRV-148). Every surface
+  that answers a key (the editor, a dialog, a popover, the Privacy panel)
+  attaches its own `ShortcutController`, and the controllers on the window
+  share one listener. A press is offered to the controller attached last, the
+  surface opened most recently, first, and stops at the first that runs it; a
+  controller with no enabled handler for the key passes it down. So Escape on
+  the Privacy panel closes the panel and leaves the arrangement's selection
+  alone. A popover or panel that is not modal closes through
+  `useCloseOnEscape`, which also stands down while a modal dialog is open over
+  it, because the `?` guide's Escape belongs to the editor's older controller.
 - **Layout-aware character matching.** Matching reads `KeyboardEvent.key`, not
   `code`, and ignores the Shift *modifier* for punctuation keys — `?` works
   whether the layout needs Shift, AltGr, or nothing.

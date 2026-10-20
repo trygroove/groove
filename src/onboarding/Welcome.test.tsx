@@ -42,6 +42,8 @@ beforeEach(() => {
   profiles = new InMemoryProfileRepository();
   sessionStorage.clear();
   localStorage.removeItem(LAYOUT_STORAGE_KEY);
+  // jsdom does not scroll; the summary's centring calls it (GRV-128).
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -69,7 +71,7 @@ function renderWelcome(replyDelayMs = 0) {
   return { projects };
 }
 
-const card = () => screen.getByRole("region", { name: "Cue asks" });
+const card = () => screen.getByRole("region", { name: "Coproducer asks" });
 const option = (label: string) => within(card()).getByRole("button", { name: label });
 const send = () =>
   clickAndFlush(within(card()).getByRole("button", { name: "Send the answer" }));
@@ -92,16 +94,18 @@ function answerEverything() {
   clickAndFlush(within(card()).getByRole("button", { name: "Skip this question" }));
   clickAndFlush(option("Drums and beats"));
   send();
-  clickAndFlush(option("Ableton Move"));
+  clickAndFlush(option("A MIDI keyboard"));
   send();
 }
 
 describe("the welcome (GRV-25)", () => {
-  it("introduces Cue under its name and asks what music you love, with a way out", async () => {
+  it("introduces Coproducer under its name and asks what music you love, with a way out", async () => {
     renderWelcome();
-    expect(screen.getByRole("heading", { level: 1, name: "Cue" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Coproducer" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("log", { name: "Conversation" })).toHaveTextContent(
-      /I'm Cue/,
+      /I'm Coproducer/,
     );
     expect(card()).toHaveTextContent(/What music do you love/);
     expect(
@@ -138,26 +142,33 @@ describe("the welcome (GRV-25)", () => {
     }
   });
 
-  it("scrolls Open the studio clear of the screen's bottom edge once saved (GRV-128)", async () => {
-    const scrollIntoView = vi.fn();
-    Element.prototype.scrollIntoView = scrollIntoView;
-    try {
-      renderWelcome();
-      answerEverything();
-      const open = await screen.findByRole("button", { name: OPEN_STUDIO_LABEL });
-      await waitFor(() =>
-        expect(
-          scrollIntoView.mock.contexts.some((element) =>
-            (element as Element).contains(open),
-          ),
-        ).toBe(true),
-      );
-      expect(scrollIntoView).toHaveBeenLastCalledWith(
-        expect.objectContaining({ block: "nearest" }),
-      );
-    } finally {
-      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
-    }
+  it("centres the summary where the questions sat, rather than dropping it to the bottom edge (GRV-128)", async () => {
+    // An 800px screen, the memory card at 500-700 and Open the studio at
+    // 708-744, the run-out starting at 760: the region's middle is 622.
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    const boxes: Record<string, [number, number]> = {
+      "memory-card": [500, 700],
+      "welcome-actions": [708, 744],
+      "welcome-runout": [760, 760],
+    };
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const name = Object.keys(boxes).find((key) => this.classList.contains(key));
+      const [top, bottom] = name ? boxes[name] : [0, 0];
+      return { top, bottom, height: bottom - top } as DOMRect;
+    });
+    const scrollTo = vi.mocked(window.scrollTo);
+    renderWelcome();
+    answerEverything();
+    await screen.findByRole("button", { name: OPEN_STUDIO_LABEL });
+    await waitFor(() =>
+      expect(scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ top: 222 })),
+    );
+    // The run-out stays, just long enough for that scroll: collapsing it
+    // shortened the page and pulled the summary down to the bottom edge.
+    const runout = document.querySelector<HTMLElement>(".welcome-runout");
+    expect(runout?.style.height).toBe("262px");
   });
 
   it("sends the typed answer when Enter is pressed in the text box", () => {
@@ -198,7 +209,7 @@ describe("the welcome (GRV-25)", () => {
       "Four Tet",
       "Played around",
       "Drums and beats",
-      "Ableton Move",
+      "A MIDI keyboard",
     ]) {
       expect(memory).toHaveTextContent(said);
     }
@@ -219,7 +230,7 @@ describe("the welcome (GRV-25)", () => {
         experience: "played_around",
         goal: null,
         learn: ["Drums and beats"],
-        gear: ["Ableton Move"],
+        gear: ["A MIDI keyboard"],
       },
       laterQuestions: ["goal"],
       validationConsent: false,
@@ -267,7 +278,7 @@ describe("the welcome (GRV-25)", () => {
     expect(loaded.ok && loaded.profile?.validationConsent).toBe(true);
   });
 
-  it("opens the studio with the conversation and Cue's panel waiting in it", async () => {
+  it("opens the studio with the conversation and Coproducer's panel waiting in it", async () => {
     const { projects } = renderWelcome();
     answerEverything();
     clickAndFlush(await screen.findByRole("button", { name: OPEN_STUDIO_LABEL }));
@@ -283,7 +294,13 @@ describe("the welcome (GRV-25)", () => {
     const stored = parseConversation(
       sessionStorage.getItem(conversationStorageKey("user-1", projectId)),
     );
-    expect(stored?.entries.some((entry) => entry.text.includes("Four Tet"))).toBe(true);
+    expect(
+      stored?.entries.some(
+        (entry) =>
+          (entry.kind === "message" || entry.kind === "reply") &&
+          entry.text.includes("Four Tet"),
+      ),
+    ).toBe(true);
     expect(stored?.pendingAsk?.ask.question).toMatch(/first lesson/);
     expect(loadLayout().mode).not.toBe("closed");
     expect(transport.named("project_created")).toHaveLength(1);
@@ -338,7 +355,7 @@ describe("what the welcome saves on (GRV-25)", () => {
     clickAndFlush(within(card()).getByRole("button", { name: "Skip this question" }));
     clickAndFlush(option("Drums and beats"));
     send();
-    clickAndFlush(option("Ableton Move"));
+    clickAndFlush(option("A MIDI keyboard"));
     send();
 
     await waitFor(async () => {
@@ -366,10 +383,10 @@ describe("what the welcome saves on (GRV-25)", () => {
     clickAndFlush(option("Drums and beats"));
     send();
     await next(/gear|make music with/i);
-    clickAndFlush(option("Ableton Move"));
+    clickAndFlush(option("A MIDI keyboard"));
     send();
 
-    // Cue is still writing its last reply, and Skip is already gone.
+    // Coproducer is still writing its last reply, and Skip is already gone.
     expect(screen.queryByRole("button", { name: SKIP_LABEL })).not.toBeInTheDocument();
     await screen.findByRole("button", { name: OPEN_STUDIO_LABEL });
     await waitFor(async () => {

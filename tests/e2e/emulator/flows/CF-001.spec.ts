@@ -92,12 +92,14 @@ test.describe("CF-001", { tag: "@sanity" }, () => {
       page.getByRole("button", { name: "Sign in", exact: true }).first().click(),
     );
 
-    // 3. You arrive signed in at the welcome, where Cue introduces itself.
+    // 3. You arrive signed in at the welcome, where Coproducer introduces itself.
     //    Choose Skip to the studio: you are on the dashboard, with no projects
-    //    yet. (Revised for GRV-25: a new account meets Cue first; the welcome
+    //    yet. (Revised for GRV-25: a new account meets Coproducer first; the welcome
     //    is CF-035's subject.)
     await expect(page).toHaveURL(/\/welcome$/);
-    await expect(page.getByRole("heading", { level: 1, name: "Cue" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Coproducer" }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Skip to the studio" }).click();
     await expect(page).toHaveURL(/\/projects$/);
     await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();

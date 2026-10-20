@@ -3,14 +3,17 @@
 .export-done {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  height: var(--done-height);
+  min-height: var(--done-height);
   background: var(--color-background);
 }
 
+/* Centred, but `safe`: a column taller than the dialog overflows at its bottom
+   and stays scrollable, rather than pushing its heading off the top, where no
+   scroll reaches it (GRV-158). */
 .export-out {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: safe center;
   gap: 18px;
   padding: 40px;
   min-width: 0;
@@ -20,20 +23,40 @@
   color: var(--color-foreground);
 }
 
+/* One line, whatever the name: the name shortens with an ellipsis and "is out."
+   stays whole, so a long one-word name cannot grow the heading into many lines. */
 .export-out h3 {
+  display: flex;
+  align-items: baseline;
   margin: 0;
   font-size: 52px;
   line-height: 0.98;
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--color-foreground-bright);
-  text-wrap: balance;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+
+/* The clip is for the ellipsis, sideways. The 0.98 line is shorter than the
+   font, so the padding lets an accented capital (Ü) and a descender stand
+   outside it unclipped, and the negative margin keeps the heading's height. */
+.export-out h3 .export-name {
+  min-width: 0;
+  padding-block: 0.25em;
+  margin-block: -0.25em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.export-out h3 .export-verb {
+  flex: none;
+  margin-left: 0.25em;
 }
 
 .export-out p {
   margin: 0;
   max-width: 40ch;
+  overflow-wrap: anywhere;
   color: var(--color-text-secondary);
 }
 
@@ -144,7 +167,7 @@
 @media (max-width: 640px) {
   .export-done {
     grid-template-columns: minmax(0, 1fr);
-    height: auto;
+    min-height: 0;
   }
 
   .export-sleeve {

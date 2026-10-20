@@ -21,6 +21,10 @@
  * and 19. A case names its set (`set`, the musical one when it does not), and
  * the scorecard scores each set on its own as well as the run as a whole.
  *
+ * GRV-150 adds two cases whose history holds proposals the producer applied
+ * and cancelled, judged on whether the reply agrees with the project context
+ * (`caseChecksContext.ts`) rather than with what was only proposed.
+ *
  * GRV-145 runs a case as a session when it names `session` (`session.ts`):
  * the large, open requests, judged on the song a scripted producer ends with.
  */
@@ -31,14 +35,18 @@ import type { Project } from "../../domain/entities";
 import { lessonOfferAsk, lessonOfferText } from "../../onboarding/questions";
 import type { SelectionScope, SelectionState } from "../../selection/types";
 import { type AskAnswer, type AssistantAsk, answerMessage, askTranscript } from "../ask";
+import { type HistoryEntry, historyOf } from "../history";
 import { type AssistantMessage, assistantMessageSchema } from "../protocol";
+import type { ProposalOutcome } from "../transcripts";
 import { BASIC_ACTION_CASES } from "./basicActionCases";
 import type { BasicAction } from "./basicActionChecks";
 import { CASE_CHECK_IDS, type CaseCheckId, type EvalExpectation } from "./caseChecks";
+import type { ProjectFacts } from "./caseChecksContext";
 import type { ExpectedValue } from "./caseChecksQa";
 import {
   createArrangementProject,
   createBdOnlyProject,
+  createBdSdProject,
   createBdSketchProject,
   createEmptySongProject,
   createHouseLoopProject,
@@ -75,6 +83,8 @@ export const EVAL_CAPABILITIES = [
   "basicAction",
   // GRV-129: sounds picked for the pads a turn adds.
   "soundPicks",
+  // GRV-150: replies that follow the project context, not the history.
+  "projectContext",
 ] as const;
 export type EvalCapability = (typeof EVAL_CAPABILITIES)[number];
 
@@ -145,6 +155,8 @@ export interface EvalCase {
   readonly exempt?: readonly CaseCheckId[];
   /** What the `endsAt` check holds a parameter to. */
   readonly expectedValue?: ExpectedValue;
+  /** What the project has and lacks, which the reply checks hold the reply to (GRV-150). */
+  readonly facts?: ProjectFacts;
   /** The edit `exactEdit` and `nothingElse` judge (GRV-119). */
   readonly action?: BasicAction;
   readonly fixture: () => Project;
@@ -265,7 +277,7 @@ function relativeDbCase(
 /** The first lesson onboarding offers a producer who wants to finish a track. */
 const FIRST_LESSON_ASK = lessonOfferAsk("first_track");
 
-/** The conversation the lesson offer ends: the producer's goal, then Cue's offer. */
+/** The conversation the lesson offer ends: the producer's goal, then Coproducer's offer. */
 const FIRST_LESSON_HISTORY: readonly AssistantMessage[] = [
   { role: "user", text: "My goal is to finish my first track." },
   {
@@ -281,6 +293,67 @@ function resentTurn(request: string, reply: string): readonly AssistantMessage[]
     { role: "assistant", text: reply },
   ];
 }
+
+/**
+ * One turn as the panel logs it (GRV-150): the producer's message, the reply,
+ * and, when the reply proposed a change, what the producer did with it. The
+ * case's history is built from these by the panel's own {@link historyOf}, so
+ * the eval sends what the editor would.
+ */
+function loggedTurn(
+  request: string,
+  reply: string,
+  proposal?: ProposalOutcome,
+): HistoryEntry[] {
+  return [
+    { kind: "message", text: request },
+    { kind: "reply", text: reply, ...(proposal ? { proposal } : {}) },
+    ...(proposal ? [{ kind: "proposal" } as const] : []),
+  ];
+}
+
+/** GRV-150: the snare the producer asked for and applied, as the SD track. */
+const SNARE_APPLIED = loggedTurn(
+  "add a snare on beats 2 and 4",
+  "I'll add a snare on beats 2 and 4: a new drum machine track, SD, with one snare pad playing the backbeat, looped under the BD.",
+  "applied",
+);
+
+/**
+ * GRV-150's QA session up to "make the snare a little brighter", turn for
+ * turn: the snare applied, turned down and applied, a question about what
+ * changed, and (after a reload) a Closed Hat cancelled. QA did not quote the
+ * answer to "what did you just change?"; this one is what a model that never
+ * learns what became of its proposals can say, and what "I never actually
+ * added it" a turn later builds on. A case whose history leaves these turns
+ * out, or answers that question as if it knew, passed without the fix.
+ */
+const QA_SESSION: readonly HistoryEntry[] = [
+  ...SNARE_APPLIED,
+  ...loggedTurn(
+    "make it quieter",
+    "I'll bring the SD down 6 dB, from 0.0 dB to -6.0 dB, so the snare sits behind the kick.",
+    "applied",
+  ),
+  ...loggedTurn(
+    "what did you just change?",
+    "I proposed two changes: a new SD drum machine track with a snare on beats 2 and 4, then turning the SD down from 0.0 dB to -6.0 dB. Both were proposals for you to apply, so I can't tell from here whether either of them actually went in.",
+  ),
+  ...loggedTurn(
+    "add a closed hi-hat on the offbeats",
+    "I'll add a Closed Hat: a new drum machine track with one closed hi-hat pad on every offbeat 8th, looped under the kick and snare.",
+    "cancelled",
+  ),
+];
+
+/** QA's reply to "make the snare a little brighter", which the next turn resent. */
+const SNARE_DENIED = loggedTurn(
+  "make the snare a little brighter",
+  "There's no snare track in the project yet — I never actually added it. Want me to add one now, with a brighter snare on beats 2 and 4?",
+);
+
+/** What the producer's track names and the snare's own word call the SD track. */
+const SNARE_WORDS = ["snare", "SD"];
 
 /**
  * The cases written here, in TypeScript. Tests that pin what a particular
@@ -592,6 +665,33 @@ export const TYPESCRIPT_CASES: readonly EvalCase[] = [
     scope: { tracks: "all", createTracks: true, ...NOTHING_ELSE },
     checks: ["recommendationTargets"],
     library: true,
+  },
+  // GRV-150: replies that contradicted the project context in QA.
+  {
+    id: "context-applied-snare",
+    capability: "projectContext",
+    axis: "conventional",
+    request: "make the snare a little brighter",
+    history: historyOf(QA_SESSION),
+    expect: "proposal",
+    fixture: () => createBdSdProject(-6),
+    selection: null,
+    scope: { tracks: ["SD"], createTracks: false, ...NOTHING_ELSE },
+    checks: ["noDeniedTrack"],
+    facts: { present: SNARE_WORDS },
+  },
+  {
+    id: "context-cancelled-hat",
+    capability: "projectContext",
+    axis: "conventional",
+    request: "is anything muted right now?",
+    history: historyOf([...QA_SESSION, ...SNARE_DENIED]),
+    expect: "explain",
+    fixture: () => createBdSdProject(-6),
+    selection: null,
+    scope: { tracks: [], createTracks: false, ...NOTHING_ELSE },
+    checks: ["noAbsentTrack", "noDeniedTrack"],
+    facts: { present: SNARE_WORDS, absent: ["closed hat", "hi-hat", "hat"] },
   },
   // GRV-119: the basic production actions, a set of their own.
   ...BASIC_ACTION_CASES,

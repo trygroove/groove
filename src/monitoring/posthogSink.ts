@@ -43,6 +43,7 @@ const MAX_BUFFERED_REPORTS = 20;
  */
 export function postHogExceptionProperties(report: ErrorReport): Record<string, unknown> {
   return {
+    ...report.context,
     $exception_level: report.fatal ? "fatal" : "error",
     area: report.area,
     error_code: report.code,
