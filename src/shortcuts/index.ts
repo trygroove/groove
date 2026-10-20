@@ -76,4 +76,5 @@ export {
   SHORTCUT_GROUP_LABELS,
   SHORTCUT_GROUPS,
 } from "./types";
+export { modalDialogOpen, useCloseOnEscape } from "./useCloseOnEscape";
 export { useShortcuts } from "./useShortcuts";
