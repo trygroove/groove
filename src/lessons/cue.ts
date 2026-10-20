@@ -11,7 +11,14 @@
  * already carries to the same provider.
  */
 import { chapter } from "./chapters";
-import type { BiteEnding, BiteId, ChapterId } from "./ids";
+import {
+  type BeatStyle,
+  type BiteEnding,
+  type BiteId,
+  type ChapterId,
+  type LessonMoment,
+  MAX_EARLIER,
+} from "./ids";
 import {
   biteOf,
   chapterOf,
@@ -19,18 +26,7 @@ import {
   type LessonState,
   stepWords,
 } from "./session";
-import type { BeatStyle } from "./style";
 import type { LessonSettings } from "./types";
-
-/** Where the lesson stands as a turn is sent. */
-export const LESSON_MOMENTS = [
-  "bite_started",
-  "step_done",
-  "bite_done",
-  "chapter_done",
-  "under_way",
-] as const;
-export type LessonMoment = (typeof LESSON_MOMENTS)[number];
 
 export interface LessonCue {
   readonly chapterId: ChapterId;
@@ -48,13 +44,28 @@ export interface LessonCue {
   /** The step under way, in plain words, or null between bites. */
   readonly step: string | null;
   /** What the producer changed during what just ended, a line each. */
-  readonly changes: readonly string[];
+  readonly changes: string[];
   /** The beat the chapter teaches, for "Make a beat"; null otherwise. */
   readonly style: BeatStyle | null;
   /** The bite's quiz question and answer, once it is over. */
   readonly quiz: string | null;
   /** The next bite's title after a bite; a few pointers after the chapter. */
-  readonly next: readonly string[];
+  readonly next: string[];
+  /**
+   * What happened since Coproducer last spoke that it has not answered yet,
+   * oldest first: turns that waited while a reply was on its way, folded
+   * into this one ({@link foldTurns}). Empty for a turn that did not wait.
+   */
+  readonly earlier: LessonEarlier[];
+}
+
+/** One moment a turn waited with, as the turn that took its place carries it. */
+export interface LessonEarlier {
+  readonly moment: LessonMoment;
+  readonly chapter: string;
+  readonly bite: string;
+  readonly how: BiteEnding | null;
+  readonly changes: string[];
 }
 
 /** Where a producer might go after each chapter, besides the other chapters. */
@@ -130,6 +141,49 @@ export function lessonCue(
         : over && following
           ? [following.title]
           : [],
+    earlier: [],
+  };
+}
+
+/** A lesson's turn: the line the conversation shows, and its cue. */
+export interface LessonTurn {
+  readonly text: string;
+  readonly cue: LessonCue;
+}
+
+/**
+ * The turns that waited while a reply was on its way, as the one turn that
+ * goes once it has arrived: the newest, carrying what came before it in
+ * `earlier`, so a finished bite is still celebrated and a step still
+ * commented on, in the one reply that also does the newest's job. A bite's
+ * intro is dropped once the producer has moved on to another bite, since it
+ * no longer says anything useful; at most {@link MAX_EARLIER} moments ride
+ * along, the newest of them.
+ */
+export function foldTurns(turns: readonly [LessonTurn, ...LessonTurn[]]): LessonTurn {
+  const newest = turns[turns.length - 1];
+  const kept = turns
+    .slice(0, -1)
+    .filter(
+      ({ cue }) =>
+        cue.moment !== "under_way" &&
+        (cue.moment !== "bite_started" || cue.biteId === newest.cue.biteId),
+    )
+    .slice(-MAX_EARLIER);
+  if (kept.length === 0) return newest;
+  return {
+    text: [...kept.map(({ text }) => text), newest.text].join(" "),
+    cue: { ...newest.cue, earlier: kept.map(({ cue }) => earlierOf(cue)) },
+  };
+}
+
+function earlierOf(cue: LessonCue): LessonEarlier {
+  return {
+    moment: cue.moment,
+    chapter: cue.chapter,
+    bite: cue.bite,
+    how: cue.how,
+    changes: cue.changes,
   };
 }
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { starterWorld } from "../testing/lessonWorld";
-import { cueMessage, lessonCue, wrapUpPointers } from "./cue";
-import { BITE_IDS } from "./ids";
-import { skip, startBite } from "./session";
+import { cueMessage, foldTurns, type LessonTurn, lessonCue, wrapUpPointers } from "./cue";
+import { BITE_IDS, MAX_EARLIER } from "./ids";
+import { type LessonTransition, skip, startBite, startNextBite } from "./session";
 
 const settings = { style: "trap" } as const;
 
@@ -69,5 +69,61 @@ describe("what a lesson tells Coproducer (GRV-43)", () => {
     const world = starterWorld();
     const { state } = startBite("sound", null, world, settings);
     expect(lessonCue(state, null, settings, []).moment).toBe("under_way");
+  });
+});
+
+describe("turns that waited for a reply (GRV-43)", () => {
+  const world = starterWorld();
+  const turnOf = ({ state, event }: LessonTransition): LessonTurn => ({
+    text: cueMessage(state, event),
+    cue: lessonCue(state, event, settings, []),
+  });
+  /** Skips every step left in the bite, to its end. */
+  function skipped(transition: LessonTransition): LessonTransition {
+    let current = transition;
+    do {
+      const over = skip(current.state, world, settings);
+      if (!over) throw new Error("not skipped");
+      current = over;
+    } while (current.event.kind !== "bite_done");
+    return current;
+  }
+
+  it("goes as it is when it waited alone", () => {
+    const one = turnOf(startBite("beat", "beat-kick", world, settings));
+    expect(foldTurns([one])).toBe(one);
+  });
+
+  it("carries a finished bite into the next bite's intro, so it is still celebrated", () => {
+    const started = startBite("beat", "beat-play", world, settings);
+    const intro = turnOf(started);
+    const finished = skipped(started);
+    const next = startNextBite(finished.state, world, settings);
+    if (!next) throw new Error("no next bite");
+    const folded = foldTurns([intro, turnOf(finished), turnOf(next)]);
+    expect(folded.cue).toMatchObject({ moment: "bite_started", biteId: "beat-snare" });
+    // The old intro is stale once the producer moved on; the celebration is not.
+    expect(folded.cue.earlier).toEqual([
+      {
+        moment: "bite_done",
+        chapter: "Make a beat",
+        bite: "Hear it",
+        how: "skipped",
+        changes: [],
+      },
+    ]);
+    expect(folded.text).toBe('Skipped "Hear it". Let\'s do "The backbeat".');
+  });
+
+  it("keeps the intro of the bite still under way, and keeps at most a few moments", () => {
+    const started = startBite("beat", "beat-kick", world, settings);
+    const intro = turnOf(started);
+    const step = skip(started.state, world, settings);
+    if (!step) throw new Error("not skipped");
+    const folded = foldTurns([intro, turnOf(step)]);
+    expect(folded.cue.earlier.map((one) => one.moment)).toEqual(["bite_started"]);
+
+    const many = Array.from({ length: MAX_EARLIER + 3 }, () => turnOf(step));
+    expect(foldTurns([intro, ...many]).cue.earlier).toHaveLength(MAX_EARLIER);
   });
 });

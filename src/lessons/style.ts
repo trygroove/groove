@@ -8,8 +8,9 @@
  * on screen.
  */
 
-export const BEAT_STYLES = ["four_on_the_floor", "boom_bap", "trap"] as const;
-export type BeatStyle = (typeof BEAT_STYLES)[number];
+import { BEAT_STYLES, type BeatStyle } from "./ids";
+
+export { BEAT_STYLES, type BeatStyle };
 
 export interface BeatPattern {
   /** What the style is called, as a term the producer can tap (`glossary.ts`). */

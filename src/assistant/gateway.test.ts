@@ -35,6 +35,7 @@ import {
   createInMemoryGuardStores,
   type InMemoryGuardStores,
 } from "./inMemoryGuardStores";
+import { type AssistantLessonContext, LESSON_BLOCK_HEADING } from "./lesson";
 import { type AssistantMemoryContext, REMEMBER_TOOL_NAME } from "./memory";
 import { buildAssistantPayload } from "./payload";
 import {
@@ -520,6 +521,45 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
     expect(sent.system[2].text).toContain("Making more trap lately");
     expect(sent.system[2].text).toContain('"askLater":"goal"');
     expect(sent.system[0].text).toMatch(/You are Coproducer/);
+  });
+
+  it("reads the lesson a turn carries, after memory (GRV-43)", async () => {
+    const memory: AssistantMemoryContext = {
+      taste: ["Hip hop"],
+      artists: "",
+      experience: "none",
+      goal: "first_track",
+      learn: [],
+      gear: [],
+      notes: [],
+      askLater: null,
+    };
+    const lesson: AssistantLessonContext = {
+      chapterId: "beat",
+      chapter: "Make a beat",
+      biteId: "beat-kick",
+      bite: "The kick pattern",
+      skill: "placing the kick",
+      biteNumber: 2,
+      biteCount: 6,
+      moment: "step_done",
+      how: "did_it",
+      step: null,
+      changes: ["BD's BD: hits added on step 11."],
+      style: "boom_bap",
+      quiz: null,
+      next: [],
+      earlier: [],
+    };
+    const h = harness([replyEvents(["Nice kick."])]);
+    await run(h, request({ memory, lesson }));
+    const sent = h.provider.requests[0];
+    // start_lesson is not offered until the panel starts a lesson from it.
+    expect(sent.tools.map((tool) => tool.name)).not.toContain("start_lesson");
+    // The prompt, the project, the memory, the lesson, then the turn's ID stem.
+    expect(sent.system).toHaveLength(5);
+    expect(sent.system[3].text).toContain(LESSON_BLOCK_HEADING);
+    expect(sent.system[3].text).toContain("hits added on step 11");
   });
 
   it("returns a memory proposal among the turn's calls, for the browser to take out", async () => {

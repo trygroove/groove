@@ -53,6 +53,11 @@
  * - `[remember]`: a short reply that ends in `remember_producer` (GRV-25),
  *   proposing {@link EMULATOR_REMEMBER}'s note. The gateway only lets it
  *   through on a turn that carries the producer's memory.
+ * - a turn during a lesson (GRV-43, CF-037), whatever its message: a short
+ *   reply that names the bite it is about, or for the chapter's end the
+ *   chapter, from the lesson block the turn carries ({@link lessonReply}),
+ *   after a line for each moment the turn waited with (`earlier`). A
+ *   message the producer wrote mid-lesson is answered as anything else is.
  * - anything else: a short reply, streamed in pieces with a pause between.
  *
  * Like the rest of `src/assistant`, it imports no Firebase and no SDK.
@@ -60,6 +65,7 @@
 import { setParameter } from "../commands/definitions/parameters";
 import { SONG_TEMPO } from "../domain/parameters";
 import { ASK_PRODUCER_TOOL_NAME, type AskProducerInput } from "./ask";
+import { type AssistantLessonContext, LESSON_BLOCK_HEADING } from "./lesson";
 import { REMEMBER_TOOL_NAME } from "./memory";
 import { LIBRARY_BLOCK_HEADING, PROJECT_BLOCK_HEADING } from "./prompt";
 import type { AssistantLibraryContext } from "./protocol";
@@ -707,6 +713,49 @@ function rememberReply(): Step[] {
   ]);
 }
 
+/**
+ * What a lesson's turn is answered with (CF-037): one short line naming the
+ * bite it is about, or the chapter at its end, as a model's reply would.
+ */
+export function lessonReplyText(lesson: AssistantLessonContext): string {
+  // What the turn waited with comes first, a line each, as a model would
+  // answer it before the moment itself.
+  const earlier = lesson.earlier.map((moment) =>
+    momentText({ ...lesson, ...moment, next: [] }),
+  );
+  return [...earlier, momentText(lesson)].join(" ");
+}
+
+function momentText(lesson: AssistantLessonContext): string {
+  const bite = `"${lesson.bite}"`;
+  switch (lesson.moment) {
+    case "bite_started":
+      return `Here's ${bite}: ${lesson.skill}.`;
+    case "step_done":
+      return `Nice, that step of ${bite} is done. On to the next.`;
+    case "bite_done":
+      return lesson.next[0]
+        ? `Well done: ${bite} is finished. Next is "${lesson.next[0]}", whenever you're ready.`
+        : `Well done: ${bite} is finished.`;
+    case "chapter_done":
+      return lesson.next.length > 0
+        ? `That's "${lesson.chapter}" finished. Where next: ${lesson.next.join("; ")}.`
+        : `That's "${lesson.chapter}" finished.`;
+    case "under_way":
+      return EMULATOR_REPLY_CHUNKS.join("");
+  }
+}
+
+/** A lesson's turn, answered from the lesson block it carries; null for any other. */
+function lessonReply(request: ProviderMessagesRequest): Step[] | null {
+  const lesson = systemJson(
+    request,
+    LESSON_BLOCK_HEADING,
+  ) as AssistantLessonContext | null;
+  if (!lesson || lesson.moment === "under_way") return null;
+  return textReply([lessonReplyText(lesson)]);
+}
+
 function lastUserMessage(request: ProviderMessagesRequest): string {
   for (let index = request.messages.length - 1; index >= 0; index -= 1) {
     const message = request.messages[index];
@@ -813,7 +862,7 @@ export function createEmulatorAssistantProvider(
     if (message.includes("[ask]")) return askReply(false);
     if (message.includes("[remember]")) return rememberReply();
     if (message.includes("[video]")) return videoReply();
-    return textReply(EMULATOR_REPLY_CHUNKS);
+    return lessonReply(request) ?? textReply(EMULATOR_REPLY_CHUNKS);
   }
 
   return {

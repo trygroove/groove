@@ -47,3 +47,23 @@ export function isChapterId(value: string): value is ChapterId {
 export function isBiteId(value: string): value is BiteId {
   return (BITE_IDS as readonly string[]).includes(value);
 }
+
+/** The beats "Make a beat" teaches, by the genre a producer loves (`style.ts`). */
+export const BEAT_STYLES = ["four_on_the_floor", "boom_bap", "trap"] as const;
+export type BeatStyle = (typeof BEAT_STYLES)[number];
+
+/** Where a lesson stands as a turn is sent (`cue.ts`). */
+export const LESSON_MOMENTS = [
+  "bite_started",
+  "step_done",
+  "bite_done",
+  "chapter_done",
+  "under_way",
+] as const;
+export type LessonMoment = (typeof LESSON_MOMENTS)[number];
+
+/**
+ * At most this many earlier moments ride along with one lesson turn
+ * (`cue.ts`, `foldTurns`); older ones are dropped.
+ */
+export const MAX_EARLIER = 6;

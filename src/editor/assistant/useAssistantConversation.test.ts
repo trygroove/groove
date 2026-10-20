@@ -5,6 +5,8 @@ import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
 import { type AssistantAsk, askTranscript } from "../../assistant/ask";
 import { ASSISTANT_REQUEST_LIMITS } from "../../assistant/config";
+import type { AssistantLessonContext } from "../../assistant/lesson";
+import { START_LESSON_TOOL_NAME } from "../../assistant/lessonTool";
 import type { AssistantLibraryContext } from "../../assistant/protocol";
 import { RECOMMEND_SOUNDS_TOOL } from "../../assistant/recommendation";
 import { createSliceFixtureProject } from "../../domain/fixtures";
@@ -207,6 +209,88 @@ describe("a conversation that can recommend (GRV-23)", () => {
     expect(conversation.refresh(entry?.id ?? "")).toBe(true);
     await vi.waitFor(() => expect(client.turns).toHaveLength(2));
     expect(client.last().request.messages.at(-1)?.text).toBe("Dustier, and slower");
+    dispose();
+  });
+});
+
+describe("a conversation during a lesson (GRV-43)", () => {
+  const project = createSliceFixtureProject();
+  const scope: AssistantScope = {
+    level: "song",
+    label: "Song",
+    catalogScope: "song",
+    selection: null,
+    track: null,
+  };
+  const lesson: AssistantLessonContext = {
+    chapterId: "tour",
+    chapter: "Tour the studio",
+    biteId: "tour-mixer",
+    bite: "The Mixer",
+    skill: "balancing tracks",
+    biteNumber: 5,
+    biteCount: 5,
+    moment: "under_way",
+    how: null,
+    step: "Open the Mixer with 5.",
+    changes: [],
+    style: null,
+    quiz: null,
+    next: [],
+    earlier: [],
+  };
+
+  it("sends the lesson with each turn while there is one, and starts one the reply names", async () => {
+    const client = createFakeAssistantClient();
+    const onStartLesson = vi.fn();
+    const onProposal = vi.fn();
+    let current: AssistantLessonContext | null = lesson;
+    let conversation: AssistantConversation | undefined;
+    const dispose = createRoot((dispose) => {
+      conversation = useAssistantConversation({
+        client: async () => client,
+        project: () => project,
+        scope: () => scope,
+        canSend: () => true,
+        analytics: () =>
+          new Analytics({
+            transport: createRecordingTransport(),
+            storage: memoryStorage(),
+          }),
+        lesson: () => current,
+        onStartLesson,
+        onProposal,
+      });
+      return dispose;
+    });
+    flush();
+    if (!conversation) throw new Error("no conversation");
+    conversation.send("What does pan do?");
+    await vi.waitFor(() => expect(client.turns).toHaveLength(1));
+    expect(client.last().request.lesson).toEqual(lesson);
+    client.last().emit({
+      type: "proposal",
+      proposal: {
+        baseRevision: 0,
+        toolsetVersion: 10,
+        calls: [
+          { id: "t1", name: START_LESSON_TOOL_NAME, input: { chapter: "beat" } },
+          { id: "t2", name: START_LESSON_TOOL_NAME, input: { chapter: "jazz" } },
+        ],
+      },
+    });
+    client.last().done();
+    flush();
+    expect(onStartLesson).toHaveBeenCalledTimes(1);
+    expect(onStartLesson).toHaveBeenCalledWith("beat");
+    // Starting a lesson is no proposal, and no card.
+    expect(onProposal).not.toHaveBeenCalled();
+    expect(conversation.entries().map((entry) => entry.kind)).toEqual(["message"]);
+
+    current = null;
+    conversation.send("Thanks");
+    await vi.waitFor(() => expect(client.turns).toHaveLength(2));
+    expect(client.last().request.lesson).toBeUndefined();
     dispose();
   });
 });
