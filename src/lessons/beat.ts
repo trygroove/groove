@@ -1,12 +1,14 @@
 /**
  * "Make a beat" (GRV-43): pick a kick in the Library, write the kick's
- * pattern, hear it, add the backbeat and the hats, and loop it. The pattern
+ * pattern, set the tempo and hear it, add the backbeat and the hats, and
+ * loop it. The pattern
  * and the words follow the producer's genre (`style.ts`).
  */
 import { CONTROL_PARTS, controlAddress } from "../commands/controlAddress";
+import { parameterTargetControl, setParameter } from "../commands/definitions/parameters";
 import { updatePlacement } from "../commands/definitions/placements";
 import { addTrack } from "../commands/definitions/tracks";
-import type { Project } from "../domain/entities";
+import type { DrumPad, Project } from "../domain/entities";
 import {
   createDrumMachineInstrument,
   createDrumPad,
@@ -14,20 +16,29 @@ import {
   createPlacement,
   createTrack,
 } from "../domain/factories";
+import { SONG_TEMPO } from "../domain/parameters";
 import { TICKS_PER_BAR, toTicks } from "../domain/time";
 import {
   anyOtherPadHits,
   beatTrack,
+  clearPad,
   type DrumTrack,
   factorySound,
-  hitsAll,
+  hitsExactly,
   kickPad,
   noteClips,
-  writeHits,
+  padSilent,
   writePadPart,
+  writePattern,
 } from "./drums";
 import { BEAT_PATTERNS, stepList } from "./style";
-import type { LessonBite, LessonChapter, LessonStep, LessonWorld } from "./types";
+import type {
+  LessonBite,
+  LessonChapter,
+  LessonSettings,
+  LessonStep,
+  LessonWorld,
+} from "./types";
 
 /** How long the loop bite asks the beat to run. */
 export const LOOP_BARS = 4;
@@ -128,12 +139,60 @@ function beatNotes(project: Project): ReturnType<typeof controlAddress> | null {
 
 const KICK_WORDS = {
   four_on_the_floor: (where: string, steps: string) =>
-    `Put the [kick](kick) on every [beat](beat): [steps](step) ${steps} on ${where} row, in the [Sequence view](sequence). That's [four on the floor](four-on-the-floor).`,
+    `Put the [kick](kick) on every [beat](beat): [steps](step) ${steps} on ${where} row, and nothing else on it, in the [Sequence view](sequence). That's [four on the floor](four-on-the-floor).`,
   boom_bap: (where: string, steps: string) =>
-    `Put the [kick](kick) on beat 1 and on the "and" of beat 3: [steps](step) ${steps} on ${where} row, in the [Sequence view](sequence). That's the [boom bap](boom-bap) kick.`,
+    `Put the [kick](kick) on beat 1 and on the "and" of beat 3: [steps](step) ${steps} on ${where} row, in the [Sequence view](sequence), and turn its other steps off. That's the [boom bap](boom-bap) kick.`,
   trap: (where: string, steps: string) =>
-    `Put the [kick](kick) on beat 1 and on the "and" of beat 2: [steps](step) ${steps} on ${where} row, in the [Sequence view](sequence). Sparse kicks leave room for [trap](trap)'s 808s.`,
+    `Put the [kick](kick) on beat 1 and on the "and" of beat 2: [steps](step) ${steps} on ${where} row, in the [Sequence view](sequence), and turn its other steps off. Sparse kicks leave room for [trap](trap)'s 808s.`,
 } as const;
+
+/** The beat's drum machine and its kick pad, when it has both. */
+function kickOf(world: LessonWorld): { track: DrumTrack; pad: DrumPad } | null {
+  const track = beatOf(world);
+  const pad = track ? kickPad(track) : null;
+  return track && pad ? { track, pad } : null;
+}
+
+/** Whether the kick already plays the style's pattern and nothing else. */
+function kickInPlace(world: LessonWorld, settings: LessonSettings): boolean {
+  const found = kickOf(world);
+  return (
+    found !== null &&
+    hitsExactly(
+      world.project,
+      found.track,
+      found.pad.id,
+      BEAT_PATTERNS[settings.style].kick,
+    )
+  );
+}
+
+/**
+ * Run only when the kick already plays the pattern, as the starter's four on
+ * the floor does for house: the producer clears the row so the next step has
+ * them build it themselves, rather than finding it done.
+ */
+const clearKick: LessonStep = {
+  id: "clear",
+  applies: kickInPlace,
+  instruction(world, settings) {
+    const track = beatOf(world);
+    const where = track ? `${track.name}'s` : "the kick's";
+    const { term, termId } = BEAT_PATTERNS[settings.style];
+    return `${where[0].toUpperCase()}${where.slice(1)} row already plays [${term}](${termId}). To build it yourself, clear the row first: turn each of its [steps](step) off in the [Sequence view](sequence).`;
+  },
+  target: (world) => beatNotes(world.project),
+  done(world) {
+    const found = kickOf(world);
+    return found !== null && padSilent(world.project, found.track, found.pad.id);
+  },
+  showMe(world) {
+    const found = kickOf(world);
+    if (!found) return null;
+    const commands = clearPad(world.project, found.track, found.pad.id);
+    return commands.length > 0 ? { kind: "commands", commands } : null;
+  },
+};
 
 const kick: LessonBite = {
   id: "beat-kick",
@@ -143,6 +202,7 @@ const kick: LessonBite = {
   quiz: "In a bar of sixteen steps, which step is beat 3 on? (Step 9.)",
   steps: [
     addDrums,
+    clearKick,
     {
       id: "pattern",
       instruction(world, settings) {
@@ -154,23 +214,14 @@ const kick: LessonBite = {
         );
       },
       target: (world) => beatNotes(world.project),
-      done(world, _start, settings) {
-        const track = beatOf(world);
-        const pad = track ? kickPad(track) : null;
-        return (
-          track !== null &&
-          pad !== null &&
-          hitsAll(world.project, track, pad.id, BEAT_PATTERNS[settings.style].kick)
-        );
-      },
+      done: (world, _start, settings) => kickInPlace(world, settings),
       showMe(world, settings, context) {
-        const track = beatOf(world);
-        const pad = track ? kickPad(track) : null;
-        if (!track || !pad) return null;
-        const commands = writeHits(
+        const found = kickOf(world);
+        if (!found) return null;
+        const commands = writePattern(
           world.project,
-          track,
-          pad.id,
+          found.track,
+          found.pad.id,
           BEAT_PATTERNS[settings.style].kick,
           context,
         );
@@ -180,13 +231,48 @@ const kick: LessonBite = {
   ],
 };
 
+/** How far from the style's tempo the song may sit and still be at it, in BPM. */
+export const TEMPO_TOLERANCE = 3;
+
+const TEMPO_TARGET = { scope: "song", parameterId: SONG_TEMPO.id } as const;
+
+const TEMPO_WORDS = {
+  four_on_the_floor: "house sits around there, steady enough to dance to",
+  boom_bap: "boom bap sits laid back, around there",
+  trap: "trap sits up there, and its hats make it feel fast while the snare keeps it half-time",
+} as const;
+
+/** Whether the song is at the style's tempo, give or take {@link TEMPO_TOLERANCE}. */
+export function atStyleTempo(world: LessonWorld, settings: LessonSettings): boolean {
+  return (
+    Math.abs(world.project.song.tempo - BEAT_PATTERNS[settings.style].tempo) <=
+    TEMPO_TOLERANCE
+  );
+}
+
+/** Passed over when the song is already at the style's tempo. */
+const setTempo: LessonStep = {
+  id: "tempo",
+  applies: (world, settings) => !atStyleTempo(world, settings),
+  instruction: (_world, settings) =>
+    `First, the [tempo](tempo): set it to ${BEAT_PATTERNS[settings.style].tempo} BPM in the tempo field at the top of the studio. ${TEMPO_WORDS[settings.style][0].toUpperCase()}${TEMPO_WORDS[settings.style].slice(1)}.`,
+  target: () => parameterTargetControl(TEMPO_TARGET),
+  done: (world, _start, settings) => atStyleTempo(world, settings),
+  showMe: (_world, settings) => ({
+    kind: "commands",
+    commands: [setParameter(TEMPO_TARGET, BEAT_PATTERNS[settings.style].tempo)],
+  }),
+};
+
 const play: LessonBite = {
   id: "beat-play",
   chapter: "beat",
   title: "Hear it",
-  skill: "playing the song and listening to what the beat does",
+  skill:
+    "setting the tempo for the style, then playing the song and listening to what the beat does",
   quiz: "Which key starts and stops the song? (Space.)",
   steps: [
+    setTempo,
     {
       id: "play",
       instruction: () =>

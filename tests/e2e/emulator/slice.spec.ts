@@ -1,3 +1,4 @@
+import { reloadPage } from "./support/reload";
 import { expect, type Locator, type Page, test } from "./support/test";
 
 /** One bar at 192 PPQ. */
@@ -243,7 +244,7 @@ test.describe("foundation vertical slice", { tag: "@sanity" }, () => {
 
     // Reload it: a genuine browser reload, answered by the emulator rather
     // than by in-memory state the reload just discarded.
-    await page.reload();
+    await reloadPage(page);
     await expect(page).toHaveURL(projectUrl);
     const reopened = await openStarterClip(page);
     await expect(reopened.getByRole("button", { name: "BD, step 1, on" })).toBeVisible();

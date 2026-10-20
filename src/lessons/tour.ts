@@ -1,6 +1,9 @@
 /**
  * "Tour the studio" (GRV-43): the editor's five views, one bite each. A
- * bite is done once its view is on screen; Show me goes there.
+ * bite is done once the producer has gone to its view; Show me goes there.
+ * Being on it already is not going there: a bite that starts on its own view
+ * (the editor opens on the arrangement) first asks the producer to step away,
+ * so they still learn the way back.
  */
 import type { EditorViewName } from "../analytics/catalog";
 import type { BiteId } from "./ids";
@@ -11,7 +14,10 @@ interface Stop {
   readonly view: EditorViewName;
   readonly title: string;
   readonly skill: string;
-  readonly instruction: string;
+  /** What the view is for. */
+  readonly about: string;
+  /** How to get there. */
+  readonly open: string;
   readonly quiz: string;
 }
 
@@ -21,8 +27,9 @@ const STOPS: readonly Stop[] = [
     view: "arrangement",
     title: "The Arrangement",
     skill: "reading the song laid out in time",
-    instruction:
-      "The [arrangement](arrangement) is your whole song in time: a row per track, its [clips](clip) along it. Open it with 1, or its tile in the [dock](dock).",
+    about:
+      "The [arrangement](arrangement) is your whole song in time: a row per track, its [clips](clip) along it.",
+    open: "Open it with 1, or its tile in the [dock](dock).",
     quiz: "Which key takes you to the arrangement? (1.)",
   },
   {
@@ -30,8 +37,9 @@ const STOPS: readonly Stop[] = [
     view: "sequence",
     title: "The Sequence view",
     skill: "writing a clip's notes",
-    instruction:
-      "The [Sequence view](sequence) is where a clip's notes are written: steps for drums, a piano roll for the rest. Open it with 2.",
+    about:
+      "The [Sequence view](sequence) is where a clip's notes are written: steps for drums, a piano roll for the rest.",
+    open: "Open it with 2.",
     quiz: "Where do you draw a clip's notes? (The Sequence view, key 2.)",
   },
   {
@@ -39,8 +47,9 @@ const STOPS: readonly Stop[] = [
     view: "instrument",
     title: "The Instrument view",
     skill: "finding a track's instrument and its controls",
-    instruction:
-      "The [Instrument view](instrument) is the selected track's instrument, every control that shapes its sound. Open it with 3.",
+    about:
+      "The [Instrument view](instrument) is the selected track's instrument, every control that shapes its sound.",
+    open: "Open it with 3.",
     quiz: "Which view shapes the selected track's sound? (The Instrument view, key 3.)",
   },
   {
@@ -48,8 +57,8 @@ const STOPS: readonly Stop[] = [
     view: "library",
     title: "The Library",
     skill: "browsing sounds and packs",
-    instruction:
-      "The [Library](library) holds every sound, in packs: press one to hear it. Open it with 4.",
+    about: "The [Library](library) holds every sound, in packs: press one to hear it.",
+    open: "Open it with 4.",
     quiz: "Where do you look for a new sound? (The Library, key 4.)",
   },
   {
@@ -57,11 +66,16 @@ const STOPS: readonly Stop[] = [
     view: "mixer",
     title: "The Mixer",
     skill: "balancing tracks and adding new ones",
-    instruction:
-      "The [Mixer](mixer) puts every track's volume, pan and effects side by side, and it's where new tracks come from. Open it with 5.",
+    about:
+      "The [Mixer](mixer) puts every track's volume, pan and effects side by side, and it's where new tracks come from.",
+    open: "Open it with 5.",
     quiz: "Where do you add a new track? (The Mixer, key 5.)",
   },
 ];
+
+/** Where Show me steps away to, from `view`. */
+const elsewhere = (view: EditorViewName): EditorViewName =>
+  view === "arrangement" ? "sequence" : "arrangement";
 
 function bite(stop: Stop): LessonBite {
   return {
@@ -72,10 +86,19 @@ function bite(stop: Stop): LessonBite {
     quiz: stop.quiz,
     steps: [
       {
-        id: "open",
-        instruction: () => stop.instruction,
+        id: "away",
+        applies: (world) => world.view === stop.view,
+        instruction: () =>
+          `${stop.about} You're on it already, so step away first: go to any other view, then come back.`,
         target: () => null,
-        done: (world) => world.view === stop.view,
+        done: (world) => world.view !== stop.view,
+        showMe: () => ({ kind: "view", view: elsewhere(stop.view) }),
+      },
+      {
+        id: "open",
+        instruction: () => `${stop.about} ${stop.open}`,
+        target: () => null,
+        done: (world, start) => world.view === stop.view && start.view !== stop.view,
         showMe: () => ({ kind: "view", view: stop.view }),
       },
     ],

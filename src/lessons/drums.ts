@@ -7,9 +7,9 @@
 import { addAsset } from "../commands/definitions/assets";
 import { addClip } from "../commands/definitions/clips";
 import { addPad } from "../commands/definitions/drum";
-import { addNotes } from "../commands/definitions/notes";
+import { addNotes, removeNotes } from "../commands/definitions/notes";
 import type { RawCommandInput } from "../commands/types";
-import type { Asset, Clip, DrumPad, Project, Track } from "../domain/entities";
+import type { Asset, Clip, DrumPad, NoteEvent, Project, Track } from "../domain/entities";
 import {
   createDrumPad,
   createNoteClip,
@@ -114,6 +114,102 @@ export function hitsAll(
     const hit = stepsHit(clip, padId);
     return steps.every((step) => hit.has(step));
   });
+}
+
+/** `padId`'s notes in `clip`. */
+function padNotes(clip: Clip, padId: PadId): NoteEvent[] {
+  if (clip.content.kind !== "notes") return [];
+  return clip.content.events.filter(
+    (note) => note.trigger.kind === "pad" && note.trigger.padId === padId,
+  );
+}
+
+/** Where `note` falls on the bar's step grid, or null when it is off it. */
+function stepOf(note: NoteEvent): number | null {
+  const inBar = note.startTicks % TICKS_PER_BAR;
+  return inBar % TICKS_PER_SIXTEENTH === 0 ? inBar / TICKS_PER_SIXTEENTH : null;
+}
+
+/**
+ * Whether one clip of `track` has `padId` on every one of `steps` and on no
+ * other step, in any bar of the clip: the pattern and nothing else.
+ */
+export function hitsExactly(
+  project: Project,
+  track: DrumTrack,
+  padId: PadId,
+  steps: readonly number[],
+): boolean {
+  const wanted = new Set(steps);
+  return noteClips(project, track).some((clip) => {
+    const notes = padNotes(clip, padId);
+    const hit = new Set(notes.map(stepOf));
+    return (
+      notes.every((note) => {
+        const step = stepOf(note);
+        return step !== null && wanted.has(step);
+      }) && steps.every((step) => hit.has(step))
+    );
+  });
+}
+
+/** Whether `padId` is silent in every clip of `track`. */
+export function padSilent(project: Project, track: DrumTrack, padId: PadId): boolean {
+  return noteClips(project, track).every((clip) => padNotes(clip, padId).length === 0);
+}
+
+/** The commands that take every one of `padId`'s notes out of `track`'s clips. */
+export function clearPad(
+  project: Project,
+  track: DrumTrack,
+  padId: PadId,
+): RawCommandInput[] {
+  return noteClips(project, track).flatMap((clip) => {
+    const notes = padNotes(clip, padId);
+    return notes.length > 0
+      ? [
+          removeNotes(
+            clip.id,
+            notes.map((note) => note.id),
+          ),
+        ]
+      : [];
+  });
+}
+
+/**
+ * The commands that make `padId` play exactly `steps` in the track's first
+ * note clip: the hits it is missing are added and every other hit it has
+ * there is taken out, in one change. A track with no note clip gets one, as
+ * {@link writeHits} does.
+ */
+export function writePattern(
+  project: Project,
+  track: DrumTrack,
+  padId: PadId,
+  steps: readonly number[],
+  context: DomainFactoryContext,
+): RawCommandInput[] {
+  const clip = noteClips(project, track)[0];
+  const wanted = new Set(steps);
+  const stray = clip
+    ? padNotes(clip, padId).filter((note) => {
+        const step = stepOf(note);
+        return step === null || !wanted.has(step);
+      })
+    : [];
+  const removing =
+    clip && stray.length > 0
+      ? [
+          removeNotes(
+            clip.id,
+            stray.map((note) => note.id),
+          ),
+        ]
+      : [];
+  // The strays are all off the pattern, so what `writeHits` finds missing is
+  // the same with or without them.
+  return [...removing, ...writeHits(project, track, padId, steps, context)];
 }
 
 /**

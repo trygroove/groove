@@ -110,7 +110,14 @@
  * 2026-10-19.1 (GRV-168): the assistant is named Coproducer (`ASSISTANT_NAME`),
  * which the prompt reads, so the model calls itself what the toolbar calls it.
  *
- * 2026-10-19.2 (GRV-43): lessons. A turn during a lesson carries a block of
+ * 2026-10-19.2 (GRV-150): Coproducer said an applied SD track did not
+ * exist and described a Closed Hat whose proposal was cancelled. The history
+ * resent only what each reply said it proposed, never what became of it, so
+ * a reply that proposed a change is now followed by a bracketed line saying
+ * whether it was applied, cancelled, undone or never applied
+ * (`history.ts`), and the description's head says how to read it.
+ *
+ * 2026-10-20.1 (GRV-43): lessons. A turn during a lesson carries a block of
  * its own, after memory: how to teach a bite (explain, comment on what the
  * producer changed, celebrate in words, perhaps one quiz question, a wrap-up
  * with pointers at a chapter's end) and the lesson as JSON. The fixed prompt
@@ -145,7 +152,7 @@ import type { AssistantContextPayload, AssistantLibraryContext } from "./protoco
 import type { ProviderTextBlock } from "./providerRequest";
 import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-19.2";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-20.1";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",
@@ -278,9 +285,9 @@ You help with the song that is open: its arrangement, its parts, its sounds and 
 };
 
 const DESCRIPTION_HEAD: PromptPassage = {
-  full: `What you know about the project is the description that follows, and nothing else. It is the song as it is right now, sent fresh with every message: earlier replies in the conversation may describe values that were since changed, undone or never applied, so read every current value from the description, never from the conversation.`,
-  moderate: `All you know of the project is the description that follows: the song right now, sent fresh with every message. Read every current value from it, never from earlier replies, which may describe values since changed, undone or never applied.`,
-  aggressive: `You know the project only from the description below, the song now, fresh each message: read values there, never from earlier replies (since changed, undone or never applied).`,
+  full: `What you know about the project is the description that follows, and nothing else. It is the song as it is right now, sent fresh with every message: earlier replies in the conversation may describe values that were since changed, undone or never applied, so read every current value from the description, never from the conversation. A reply of yours that proposed a change is followed by a line in brackets saying what the producer did with it (applied, cancelled, undone, not applied): only an applied change is in the song, so never describe a cancelled or unapplied one as there, and never say an applied one is missing.`,
+  moderate: `All you know of the project is the description that follows: the song right now, sent fresh with every message. Read every current value from it, never from earlier replies, which may describe values since changed, undone or never applied. A bracketed line after a reply that proposed a change says what the producer did with it: only an applied change is in the song, so never describe a cancelled or unapplied one as there, nor call an applied one missing.`,
+  aggressive: `You know the project only from the description below, the song now, fresh each message: read values there, never from earlier replies (since changed, undone or never applied). A bracketed line after a proposing reply says its fate: only an applied change is in the song.`,
 };
 
 /** Drop group `staleDescription` (GRV-122). */

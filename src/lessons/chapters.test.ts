@@ -67,7 +67,12 @@ describe("the chapters (GRV-43)", () => {
   it("passes over a step that does not apply", () => {
     const world = starterWorld();
     const settings = { style: "trap" } as const;
+    // The starter has a drum machine, and its kick is not trap's yet.
     expect(nextStep(bite("beat-kick"), world, settings)?.step.id).toBe("pattern");
-    expect(nextStep(bite("beat-kick"), world, settings, 1)).toBeNull();
+    expect(nextStep(bite("beat-kick"), world, settings, 2)).toBeNull();
+    // Its four on the floor is house's, so a house producer clears it first.
+    expect(
+      nextStep(bite("beat-kick"), world, { style: "four_on_the_floor" })?.step.id,
+    ).toBe("clear");
   });
 });

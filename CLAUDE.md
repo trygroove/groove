@@ -52,6 +52,7 @@ src/
 ├── editor/         # The project editor: session, audio wiring, panes and panels
 ├── export/         # Stem export: rendering, batching and archives
 ├── instrument/     # Instrument faceplate parts
+├── lessons/        # Coproducer's lessons (GRV-43): the chapters and bites, each step's predicate and Show me, the glossary, the lesson session; pure, over a Project
 ├── library/        # Read side of the generated factory asset manifest
 ├── memory/         # What Coproducer remembers about the producer (GRV-25): the profile hook, memory proposals and their receipts, the Memory page, the daily nudge
 ├── monitoring/     # Error reporting, scrubbing and replay privacy
@@ -274,6 +275,7 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends t
    - AuthProvider automatically redirects unauthenticated users to home
 
 2. **Firestore Data Access**
+   - **These import rules are enforced by `src/projection/boundaries.test.ts`** (domain/commands, `firebase/firestore`, `firebase/storage`, `tone`, assistant); its commented allowlists, not this prose, are the authority. Widening one is a deliberate edit to that test
    - All Firestore operations go through the schema-v1 `ProjectRepository` boundary (`src/persistence`), obtained via `getProjectRepository()` (`src/projectRepositoryClient.ts`) — never call `firebase/firestore` directly outside `src/persistence/firestoreProjectRepository.ts`
    - The one other module allowed to import `firebase/firestore`, and the only one allowed to import `firebase/storage`, is `src/userLibrary/firebaseUserLibraryRepository.ts`: the personal library's packs and audio (#282), behind `UserLibraryRepository` and obtained via `getUserLibraryRepository()`. It never hands out a download URL; audio is read back as the signed-in user with `readAudio`
    - `src/access/firestoreAccessRepository.ts` may import `firebase/firestore` too: the alpha allowlist and its refused sign-ins (#854), behind `AccessRepository` and obtained via `getAccessRepository()` (`src/accessRepositoryClient.ts`). Only an `admin: true` claim gets past `firestore.rules` there

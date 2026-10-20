@@ -1,4 +1,5 @@
 import { walkthrough } from "../../support/walkthrough";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 import {
   dock,
@@ -251,7 +252,7 @@ test.describe("CF-008", { tag: "@sanity" }, () => {
       await expect(page.locator(".save-status")).toHaveText("Saved", {
         timeout: 10_000,
       });
-      await page.reload();
+      await reloadPage(page);
       await expectView(page, "Mixer");
       await expect(
         page.getByRole("slider", { name: `Volume for ${trackName}` }),

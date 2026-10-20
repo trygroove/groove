@@ -48,6 +48,7 @@ import { resolveTactics, type TacticOverrides, type TacticValues } from "../tact
 import type { AssistantTurnLog, ToolBundleFallback } from "../telemetry";
 import { ASSISTANT_TOOLSET_VERSION, type ToolBundleId } from "../tools";
 import { caseChecksFor, checkOutcome, runCaseCheck } from "./caseChecks";
+import { isReplyCheck, runReplyCheck } from "./caseChecksContext";
 import {
   caseMessages,
   casePairs,
@@ -71,6 +72,7 @@ import {
 } from "./checks";
 import { describeProposal, type ProposalStats } from "./describe";
 import { evalLibrary } from "./evalLibrary";
+import { isAuthError, RunGuard } from "./runGuard";
 import { type Scorecard, scorecardOf } from "./scorecard";
 import {
   type EvalSession,
@@ -251,10 +253,6 @@ export function summaryOf(report: EvalReport): EvalSummary {
 }
 
 /** The provider refused the API key: every other turn will be refused too. */
-export function isAuthError(error: EvalTurnError | null | undefined): boolean {
-  return error?.providerStatus === 401 || error?.providerStatus === 403;
-}
-
 /** One line for an errored turn: the code, our message, and what the provider said. */
 export function describeTurnError(error: EvalTurnError): string {
   const provider = [
@@ -565,11 +563,22 @@ export function evaluateTurn(
   };
   if (turn.error) return { ...base, checks: {}, stats: null, fingerprint: null };
   const outcome = checkOutcome(evalCase.expect, turn);
+  const caseChecks = caseChecksFor(evalCase.checks, evalCase.exempt);
+  // The reply checks (GRV-150) read the text alone, so they judge every turn.
+  const replyChecks = Object.fromEntries(
+    caseChecks.flatMap((id) =>
+      isReplyCheck(id) ? [[id, runReplyCheck(id, turn.text, evalCase.facts)]] : [],
+    ),
+  );
   const proposed = turn.proposal !== null && turn.proposal !== undefined;
   if (evalCase.expect !== "proposal" && !proposed) {
-    return { ...base, checks: { outcome }, stats: null, fingerprint: null };
+    return {
+      ...base,
+      checks: { outcome, ...replyChecks },
+      stats: null,
+      fingerprint: null,
+    };
   }
-  const caseChecks = caseChecksFor(evalCase.checks, evalCase.exempt);
   const project = evalCase.fixture();
   const judged = turn.session
     ? fromSession(sessionJudgement(project, turn.session, whyNoProposal(turn)))
@@ -587,6 +596,7 @@ export function evaluateTurn(
         coverage: notJudged,
         outcome,
         ...Object.fromEntries(caseChecks.map((id) => [id, notJudged])),
+        ...replyChecks,
       },
       stats: null,
       fingerprint: null,
@@ -612,6 +622,7 @@ export function evaluateTurn(
             action: evalCase.action,
             recommendations: judged.recommendations,
             library: evalCase.library ? evalLibrary() : null,
+            facts: evalCase.facts,
           }),
         ]),
       ),
@@ -811,17 +822,11 @@ export interface RunEvalsOptions extends RunTurnOptions {
   readonly onRecord?: (record: EvalRecord) => void;
 }
 
-export const AUTH_ABORT_REASON =
-  "The provider rejected the API key (HTTP 401/403), so no further turns were run.";
-
-export const CREDIT_ABORT_REASON =
-  "The account ran out of API credit (HTTP 400, credit balance too low), so no further turns were run. Top it up and rerun the cases that errored.";
-
 /**
- * Runs every case `runs` times and builds the report. If the provider rejects
- * the API key before any turn has come back with a reply, or refuses a call
- * at any point because the account is out of credit, it stops starting
- * turns: every one would be refused, and the report says so in `aborted`.
+ * Runs every case `runs` times and builds the report. It stops starting turns
+ * once {@link RunGuard} says every later one would be refused (the key
+ * rejected, the account out of credit, or a streak of refusals), and the
+ * report says why in `aborted`.
  */
 export async function runEvals(options: RunEvalsOptions): Promise<EvalReport> {
   const model = options.model ?? ASSISTANT_MODELS[ASSISTANT_MODEL_ID];
@@ -831,20 +836,16 @@ export async function runEvals(options: RunEvalsOptions): Promise<EvalReport> {
   );
   const records: (EvalRecord | undefined)[] = new Array(jobs.length);
   let next = 0;
-  let replied = false;
-  let aborted: string | null = null;
+  const guard = new RunGuard();
   const worker = async () => {
-    while (next < jobs.length && aborted === null) {
+    while (next < jobs.length && guard.reason === null) {
       const index = next;
       next += 1;
       const { evalCase, run } = jobs[index];
       const turn = await runCaseTurn(evalCase, { ...options, model, now });
       const record = evaluateTurnSafely(evalCase, run, turn);
       records[index] = record;
-      if (!turn.error) replied = true;
-      else if (!replied && isAuthError(turn.turnError)) aborted = AUTH_ABORT_REASON;
-      // Credit can run out mid-run: every later turn would be refused too.
-      if (turn.turnError?.outOfCredit) aborted ??= CREDIT_ABORT_REASON;
+      guard.observe(turn);
       options.onRecord?.(record);
     }
   };
@@ -858,7 +859,7 @@ export async function runEvals(options: RunEvalsOptions): Promise<EvalReport> {
       model: model.id,
       tactics: options.tactics,
       runsPerCase: options.runs,
-      aborted,
+      aborted: guard.reason,
     },
   );
 }

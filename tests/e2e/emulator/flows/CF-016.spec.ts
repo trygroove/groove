@@ -1,4 +1,5 @@
 import { walkthrough } from "../../support/walkthrough";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 import { backToArrangement, expectView, sequenceView } from "../support/views";
 
@@ -214,7 +215,7 @@ test.describe("CF-016", () => {
     // something once the edits have been written, and the save status is how
     // the editor reports that a revision-checked write completed.
     await expect(page.locator(".save-status")).toHaveText("Saved", { timeout: 10_000 });
-    await page.reload();
+    await reloadPage(page);
 
     // 8. The project reopens exactly as step 6 left it: "BD" and "Sampler"
     //    each have clips in bars 1, 3 and 5, with bars 2 and 4 empty, and the
