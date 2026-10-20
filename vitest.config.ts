@@ -185,6 +185,7 @@ export default defineConfig({
         "src/routes/**/*.test.{ts,tsx}",
         "src/onboarding/**/*.test.{ts,tsx}",
         "src/memory/**/*.test.{ts,tsx}",
+        "src/lessons/**/*.test.{ts,tsx}",
       ]),
       // The boundaries that talk to something outside the app: the
       // repository, the sample-library manifest, auth, and exported files.
