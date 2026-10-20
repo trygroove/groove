@@ -4,7 +4,6 @@ import { delayDivision, deviceParameters } from "../domain/devices";
 import type { Device } from "../domain/entities";
 import type { DeviceId } from "../domain/ids";
 import { bareParameterId, type ParameterDefinition } from "../domain/parameters";
-import { formatInstrumentValue } from "../instrument/formatValue";
 import { delayTime } from "./deviceDrawings";
 
 /**
@@ -103,18 +102,4 @@ export function deviceParameterTarget(
     case "return":
       return { scope: "returnDevice", returnId: chain.returnId, deviceId, parameterId };
   }
-}
-
-/**
- * A continuous device value in its own unit, for the slider's reading. The
- * instrument panel's formatter already speaks hertz, seconds, decibels and
- * percent; a compressor's ratio is the one device quantity whose unit is a
- * relationship, so it reads "4.0:1" as every compressor prints it.
- */
-export function formatDeviceValue(
-  definition: ParameterDefinition,
-  value: number,
-): string {
-  if (bareParameterId(definition.id) === "ratio") return `${value.toFixed(1)}:1`;
-  return formatInstrumentValue(definition, value);
 }

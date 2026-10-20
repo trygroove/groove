@@ -7,6 +7,7 @@ import {
 } from "../persistence/profileDocuments";
 import {
   applyAnswer,
+  GEAR_CHOICES,
   isAnswered,
   lessonOfferAsk,
   memoryLines,
@@ -27,6 +28,16 @@ const pick = (questionIndex: number, labels: string[], text = "") => {
 };
 
 describe("onboarding's questions (GRV-25)", () => {
+  it("offers only generic gear, never a named product (GRV-185)", () => {
+    expect(GEAR_CHOICES.map(([label]) => label)).toEqual([
+      "A MIDI keyboard",
+      "A drum machine",
+      "A synth",
+      "Just my computer",
+    ]);
+    expect(JSON.stringify(GEAR_CHOICES)).not.toMatch(/ableton|move|roland|t-?8/i);
+  });
+
   it("asks the five, in order, each a valid question the panel can carry", () => {
     expect(ONBOARDING_QUESTIONS.map((question) => question.id)).toEqual([
       ...ONBOARDING_QUESTION_IDS,
@@ -59,9 +70,9 @@ describe("onboarding's questions (GRV-25)", () => {
     const memory = applyAnswer(
       EMPTY_MEMORY,
       "gear",
-      pick(4, ["Ableton Move"], "Roland T-8, ableton move, OP-1"),
+      pick(4, ["A synth"], "Roland T-8, a synth, OP-1"),
     );
-    expect(memory.gear).toEqual(["Ableton Move", "Roland T-8", "OP-1"]);
+    expect(memory.gear).toEqual(["A synth", "Roland T-8", "OP-1"]);
     expect(typedItems(" a ,, b ")).toEqual(["a", "b"]);
   });
 
@@ -102,13 +113,13 @@ describe("onboarding's questions (GRV-25)", () => {
       experience: null,
       goal: "sound_design",
       learn: ["Mixing", "My own typed thing"],
-      gear: ["Roland T-8", "OP-1"],
+      gear: ["A synth", "OP-1"],
     });
     expect(answers).toEqual({
       experience: "unanswered",
       goal: "sound_design",
       learn: ["mixing"],
-      gear: ["roland_t8"],
+      gear: ["synth"],
     });
   });
 });

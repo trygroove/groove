@@ -690,7 +690,11 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
                     }}
                   />
                   <CompatibilityNotice
-                    items={compatibilityNoticeItems(capabilities(), audio.startFailure())}
+                    items={compatibilityNoticeItems(
+                      capabilities(),
+                      audio.startFailure(),
+                      audio.loadFailure(),
+                    )}
                   />
                   <LoadRecoveryNotice
                     droppedPlacements={session.state.droppedPlacements}

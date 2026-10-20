@@ -101,4 +101,21 @@ describe("AudioRuntime.resume", () => {
     expect(runtime.diagnostics().contextsCreated).toBe(2);
     expect(runtime.diagnostics().contextsClosed).toBe(1);
   });
+
+  it("refuses to resume a context the browser closed, and keeps it (GRV-55)", async () => {
+    const runtime = new AudioRuntime();
+    await runtime.resume();
+    const closed = runtime.ensureContext() as unknown as { state: string };
+    // Closed by the browser, not by the runtime: its own state still says running.
+    closed.state = "closed";
+    vi.mocked(Tone.start).mockClear();
+
+    await expect(runtime.resume()).rejects.toMatchObject({ name: "InvalidStateError" });
+
+    expect(Tone.start).not.toHaveBeenCalled();
+    // No second context: the project's graph lives on this one.
+    expect(runtime.ensureContext()).toBe(closed);
+    expect(runtime.diagnostics().contextsCreated).toBe(1);
+    expect(runtime.contextState()).toBe("closed");
+  });
 });

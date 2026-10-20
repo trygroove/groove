@@ -14,6 +14,7 @@ import {
   TRACK_SEND_LEVEL,
   TRACK_VOLUME,
 } from "../../domain/parameters";
+import { formatSummary } from "../../domain/valueFormat";
 import {
   type ControlAddress,
   MASTER_ENTITY,
@@ -417,26 +418,6 @@ export function parameterDefinitionAt(
   return isUnresolved(resolution) ? undefined : resolution.definition;
 }
 
-const UNIT_SUFFIX: Record<ParameterDefinition["unit"], string> = {
-  bars: " bars",
-  bpm: " BPM",
-  decibels: " dB",
-  hertz: " Hz",
-  percent: "%",
-  seconds: " s",
-  semitones: " semitones",
-  normalized: "",
-  bipolar: "",
-};
-
-/** Human-readable value for a summary line, in the parameter's own unit. */
-export function formatParameterValue(
-  definition: ParameterDefinition,
-  value: number,
-): string {
-  return `${Number(value.toFixed(4))}${UNIT_SUFFIX[definition.unit]}`;
-}
-
 export const parameterSetCommand = defineCommand<ParameterSetPayload>({
   type: "parameter.set",
   version: 1,
@@ -450,7 +431,7 @@ export const parameterSetCommand = defineCommand<ParameterSetPayload>({
     const { definition } = resolution;
     return (
       summarizeParameterChoice(definition, payload.value) ??
-      `Set ${definition.label} to ${formatParameterValue(definition, payload.value)}`
+      `Set ${definition.label} to ${formatSummary(definition, payload.value)}`
     );
   },
   apply(project, payload) {

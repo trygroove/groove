@@ -16,6 +16,7 @@ import type {
 } from "../domain/entities";
 import { formatDb, formatPan } from "../domain/faders";
 import {
+  bareParameterId,
   getParameterDefinition,
   MASTER_VOLUME,
   type ParameterDefinition,
@@ -23,7 +24,7 @@ import {
   TRACK_VOLUME,
 } from "../domain/parameters";
 import { TICKS_PER_BAR } from "../domain/time";
-import { formatInstrumentValue } from "../instrument/formatValue";
+import { formatReadout } from "../domain/valueFormat";
 
 /**
  * A control read back from a project (`UI-004`, GRV-5): what it is called on
@@ -93,7 +94,13 @@ function formatParameter(definition: ParameterDefinition, value: number): string
     case "bars":
       return plural(value, "bar");
     default:
-      return formatInstrumentValue(definition, value);
+      // A proposal row has always read a compressor ratio as its bare number,
+      // not the knob's "4.0:1". Unifying the readout formatters (GRV-179) was
+      // to change no visible string, so it keeps that here.
+      if (bareParameterId(definition.id) === "ratio") {
+        return String(Number(value.toFixed(2)));
+      }
+      return formatReadout(definition, value);
   }
 }
 

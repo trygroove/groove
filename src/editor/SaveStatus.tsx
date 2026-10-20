@@ -26,9 +26,21 @@ const SAVE_FAILURE_REASON_LABEL: Record<SaveFailureReason, string> = {
   document_too_large: "This project is too large to save further changes.",
 };
 
+/**
+ * What an unsaved edit says while the browser is offline (GRV-55). The edit
+ * is kept, queued, and written as soon as the connection is back, so the
+ * message says that rather than only that the save failed.
+ */
+export const OFFLINE_LABEL = "Offline";
+export const OFFLINE_MESSAGE = "Offline. Reconnect to save.";
+export const OFFLINE_DETAIL =
+  "You're offline. Your changes are kept here and save when you reconnect.";
+
 export interface SaveStatusProps {
   readonly saveStatus: Accessor<SaveStatusValue | null>;
   readonly onRetry: () => void;
+  /** Whether the browser is online (`useOnline`); online when not given. */
+  readonly online?: Accessor<boolean>;
 }
 
 /**
@@ -38,27 +50,46 @@ export interface SaveStatusProps {
  * needs comes from `saveStatus`.
  */
 export default function SaveStatus(props: SaveStatusProps) {
-  const saveStatusLabel = () => SAVE_STATUS_LABEL[props.saveStatus()?.state ?? "idle"];
+  const offline = () => props.online?.() === false;
+  /** Offline with an edit not yet written: waiting for the connection. */
+  const waitingOffline = () => {
+    const status = props.saveStatus();
+    return offline() && (status?.pending ?? 0) > 0 && status?.state !== "failed";
+  };
+  const saveStatusLabel = () =>
+    waitingOffline()
+      ? OFFLINE_LABEL
+      : SAVE_STATUS_LABEL[props.saveStatus()?.state ?? "idle"];
   const saveFailure = () => props.saveStatus()?.failure;
+  /** A failure for want of a connection, while the browser says it has none. */
+  const offlineFailure = () => offline() && saveFailure()?.reason === "unavailable";
   const saveFailureMessage = () => {
     const failure = saveFailure();
-    return failure ? SAVE_FAILURE_REASON_LABEL[failure.reason] : null;
+    if (!failure) return null;
+    return offlineFailure() ? OFFLINE_MESSAGE : SAVE_FAILURE_REASON_LABEL[failure.reason];
   };
+  const saveFailureDetail = () =>
+    offlineFailure() ? OFFLINE_DETAIL : (saveFailureMessage() ?? undefined);
 
   return (
     <div class="save-status-group">
       <div
         class="save-status"
         data-state={props.saveStatus()?.state}
+        data-offline={offline() ? "true" : undefined}
         data-revision={props.saveStatus()?.revision}
-        title={`Revision ${props.saveStatus()?.revision ?? 0}`}
+        title={
+          waitingOffline()
+            ? OFFLINE_DETAIL
+            : `Revision ${props.saveStatus()?.revision ?? 0}`
+        }
       >
         {saveStatusLabel()}
       </div>
       <Show when={saveFailure()}>
         {/* Titled with the reason, which narrow widths and long reasons
             hide or cut short (#1031). */}
-        <div class="save-recovery" role="alert" title={saveFailureMessage() ?? undefined}>
+        <div class="save-recovery" role="alert" title={saveFailureDetail()}>
           <span class="save-recovery-message">{saveFailureMessage()}</span>
           <Show when={saveFailure()?.retryable}>
             <button

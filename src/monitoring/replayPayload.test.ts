@@ -511,6 +511,8 @@ describe("source guards for the two gaps above", () => {
       // A save state enum and its integer revision.
       "props.saveStatus()?.state",
       "props.saveStatus()?.revision",
+      // Whether the browser is offline (GRV-55): a fixed flag or nothing.
+      'offline() ? "true" : undefined',
       // The deployed revision, which is our code's identity, not the user's.
       "RELEASE_SHA",
       // The arrangement's horizontal scale in pixels per tick: a rendering

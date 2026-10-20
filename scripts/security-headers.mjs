@@ -170,6 +170,10 @@ export const CSP_DIRECTIVES = [
         "https://apis.google.com",
         "Google sign-in's gapi iframe sends its gen_204 beacon here (GRV-136)",
       ],
+      [
+        "https://www.google.com/images/cleardot.gif",
+        "where that gen_204 beacon redirects; a redirect is checked against connect-src too",
+      ],
       [cloudFunctionsOrigin, "the callable Cloud Functions, the assistant's included"],
       ["https://*.googletagmanager.com", "GA4's tag configuration"],
       ["https://*.google-analytics.com", "GA4's collection endpoint"],
