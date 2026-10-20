@@ -244,13 +244,18 @@ export class TransportController {
   private readonly engine: TransportEngine;
   private readonly metronome: Metronome | null;
   private loopRange: LoopRange | null = null;
+  /** The song's loop switch (`song.loop.enabled`): the intent, which the loop
+   * button shows, whether or not the engine's own loop is armed right now. */
+  private loopIntent = false;
   /**
-   * A seek put the playhead past the loop end while looping (GRV-189): the
-   * transport plays on from there until the loop catches it, so the readout
-   * must not fold that position back into the loop as it does the lookahead
-   * overshoot of a normal pass. Cleared once the playhead is inside the loop.
+   * The playhead was put at or past the loop end while looping (GRV-189), by a
+   * seek or by playing on from a stored position there. Tone wraps to the loop
+   * start on the first tick at or past the end whenever its loop is on, so the
+   * engine loop is held off: the transport plays on from there and the loop
+   * catches nothing until the playhead is put back before the end (a seek, or
+   * Stop). Like Ableton, a playhead already past the loop is not looped.
    */
-  private seekedPastLoopEnd = false;
+  private pastLoopEnd = false;
   /** Where the playhead was when `stop()` last ran, so `continueFromStop()`
    * can resume there rather than from the position `stop()` rewound to. */
   private stoppedAtTicks = 0;
@@ -288,14 +293,7 @@ export class TransportController {
   get positionTicks(): number {
     const ticks = Math.max(0, Math.round(this.engine.ticks));
     const loop = this.loopRange;
-    if (loop && ticks < loop.endTicks) this.seekedPastLoopEnd = false;
-    if (
-      !loop ||
-      !this.isPlaying ||
-      !this.engine.loop ||
-      ticks < loop.endTicks ||
-      this.seekedPastLoopEnd
-    ) {
+    if (!loop || !this.isPlaying || !this.engine.loop || ticks < loop.endTicks) {
       return ticks;
     }
     return (
@@ -308,7 +306,7 @@ export class TransportController {
   }
 
   get loopEnabled(): boolean {
-    return this.engine.loop;
+    return this.loopIntent;
   }
 
   get metronomeEnabled(): boolean {
@@ -327,11 +325,12 @@ export class TransportController {
 
   /** The tick `stop()` rewinds to: the loop start when looping, else 0. */
   private get startTicks(): number {
-    return this.engine.loop ? (this.loopRange?.startTicks ?? 0) : 0;
+    return this.loopIntent ? (this.loopRange?.startTicks ?? 0) : 0;
   }
 
   /** Start (or resume) playback from the current position. */
   play(): void {
+    this.armLoopFor(this.engine.ticks);
     this.rewound = false;
     this.engine.start();
   }
@@ -351,7 +350,7 @@ export class TransportController {
     this.stoppedAtTicks = this.positionTicks;
     this.engine.stop();
     this.engine.ticks = this.startTicks;
-    this.seekedPastLoopEnd = false;
+    this.armLoopFor(this.engine.ticks);
     this.rewound = true;
   }
 
@@ -367,6 +366,7 @@ export class TransportController {
     if (this.engine.state === "stopped") {
       this.engine.ticks = this.stoppedAtTicks;
     }
+    this.armLoopFor(this.engine.ticks);
     this.rewound = false;
     this.engine.start();
   }
@@ -376,9 +376,7 @@ export class TransportController {
   seekTicks(ticks: number): void {
     const target = Math.max(0, Math.round(ticks));
     this.engine.ticks = target;
-    this.seekedPastLoopEnd =
-      this.engine.loop &&
-      target >= (this.loopRange?.endTicks ?? Number.POSITIVE_INFINITY);
+    this.armLoopFor(target);
     // Only a seek made while stopped or paused can put the next play at the
     // top; one made mid-play is part of the running programme.
     if (!this.isPlaying) this.rewound = target === this.startTicks;
@@ -427,9 +425,27 @@ export class TransportController {
       }
       this.loopRange = next;
     }
-    if (this.engine.loop !== loop.enabled) {
-      this.engine.loop = loop.enabled;
+    if (loop.enabled !== this.loopIntent) {
+      this.loopIntent = loop.enabled;
+      this.armLoopFor(this.engine.ticks);
+      return;
     }
+    // A reconcile never re-arms a loop the playhead is past, but a range
+    // edit that moves the end beyond the playhead does.
+    if (this.pastLoopEnd) this.armLoopFor(this.engine.ticks);
+    else this.syncEngineLoop();
+  }
+
+  /** Decide, for a playhead at `ticks`, whether the engine loop is armed. */
+  private armLoopFor(ticks: number): void {
+    const end = this.loopRange?.endTicks ?? Number.POSITIVE_INFINITY;
+    this.pastLoopEnd = this.loopIntent && Math.round(ticks) >= end;
+    this.syncEngineLoop();
+  }
+
+  private syncEngineLoop(): void {
+    const armed = this.loopIntent && !this.pastLoopEnd;
+    if (this.engine.loop !== armed) this.engine.loop = armed;
   }
 
   /** Turn the metronome click on or off without stopping playback. */

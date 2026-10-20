@@ -20,6 +20,7 @@ beforeAll(async () => {
  */
 function fakeEngine(): TransportEngine & {
   fireRepeat(atTicks: number, time: number): void;
+  advance(by: number): void;
   scheduled: { intervalTicks: number; startTicks: number } | null;
   startCalls: number;
   pauseCalls: number;
@@ -64,6 +65,17 @@ function fakeEngine(): TransportEngine & {
     clear() {
       repeatCallback = null;
       this.scheduled = null;
+    },
+    /** Run the clock `by` ticks the way Tone's transport does: on the first
+     * tick at or past the loop end, with the loop on, wrap to the loop start. */
+    advance(by: number) {
+      if (this._state !== "started") return;
+      for (let i = 0; i < by; i += 1) {
+        this.ticks += 1;
+        if (this.loop && this.ticks >= Number.parseInt(this.loopEnd, 10)) {
+          this.ticks = Number.parseInt(this.loopStart, 10);
+        }
+      }
     },
     fireRepeat(atTicks: number, time: number) {
       this.ticks = atTicks;
@@ -175,6 +187,100 @@ describe("TransportController (PRD AUD-01/AUD-02)", () => {
     transport.pause();
     transport.seekTicks(7 * TICKS_PER_BAR);
     expect(transport.positionTicks).toBe(7 * TICKS_PER_BAR);
+  });
+
+  describe("a seek relative to the loop while looping (GRV-189)", () => {
+    const loop = {
+      startTicks: TICKS_PER_BAR,
+      endTicks: 2 * TICKS_PER_BAR,
+      enabled: true,
+    };
+
+    it("plays on past the loop end without wrapping, readout following", () => {
+      const engine = fakeEngine();
+      const transport = new TransportModule.TransportController({ engine });
+      transport.mirrorLoop(loop);
+      transport.play();
+      expect(engine.loop).toBe(true);
+
+      transport.seekTicks(5 * TICKS_PER_BAR);
+      expect(engine.loop).toBe(false);
+      expect(transport.loopEnabled).toBe(true);
+      engine.advance(10 * TICKS_PER_QUARTER);
+      expect(engine.ticks).toBe(5 * TICKS_PER_BAR + 10 * TICKS_PER_QUARTER);
+      expect(transport.positionTicks).toBe(engine.ticks);
+    });
+
+    it("keeps the engine loop off across a reconcile while past the end", () => {
+      const engine = fakeEngine();
+      const transport = new TransportModule.TransportController({ engine });
+      transport.mirrorLoop(loop);
+      transport.play();
+      transport.seekTicks(5 * TICKS_PER_BAR);
+
+      transport.mirrorLoop({ ...loop });
+      expect(engine.loop).toBe(false);
+      engine.advance(TICKS_PER_BAR);
+      expect(transport.positionTicks).toBe(6 * TICKS_PER_BAR);
+    });
+
+    it("re-arms when the loop end moves past the playhead", () => {
+      const engine = fakeEngine();
+      const transport = new TransportModule.TransportController({ engine });
+      transport.mirrorLoop(loop);
+      transport.play();
+      transport.seekTicks(3 * TICKS_PER_BAR);
+
+      transport.mirrorLoop({ ...loop, endTicks: 8 * TICKS_PER_BAR });
+      expect(engine.loop).toBe(true);
+    });
+
+    it("plays into the loop from before its start, then loops", () => {
+      const engine = fakeEngine();
+      const transport = new TransportModule.TransportController({ engine });
+      transport.mirrorLoop(loop);
+      transport.play();
+      transport.seekTicks(0);
+      expect(engine.loop).toBe(true);
+
+      engine.advance(2 * TICKS_PER_BAR);
+      expect(engine.ticks).toBe(TICKS_PER_BAR);
+      expect(transport.positionTicks).toBe(TICKS_PER_BAR);
+    });
+
+    it("stop after playing on rewinds to the loop start and re-arms", () => {
+      const engine = fakeEngine();
+      const transport = new TransportModule.TransportController({ engine });
+      transport.mirrorLoop(loop);
+      transport.play();
+      transport.seekTicks(5 * TICKS_PER_BAR);
+
+      transport.stop();
+      expect(engine.ticks).toBe(TICKS_PER_BAR);
+      expect(engine.loop).toBe(true);
+    });
+
+    it("play from a stopped position past the end plays on", () => {
+      const engine = fakeEngine();
+      const transport = new TransportModule.TransportController({ engine });
+      transport.mirrorLoop(loop);
+      transport.seekTicks(4 * TICKS_PER_BAR);
+      expect(engine.loop).toBe(false);
+
+      transport.play();
+      engine.advance(TICKS_PER_BAR);
+      expect(transport.positionTicks).toBe(5 * TICKS_PER_BAR);
+    });
+
+    it("turning the loop off and on keeps the intent in loopEnabled", () => {
+      const engine = fakeEngine();
+      const transport = new TransportModule.TransportController({ engine });
+      transport.mirrorLoop(loop);
+      transport.seekTicks(4 * TICKS_PER_BAR);
+      transport.mirrorLoop({ ...loop, enabled: false });
+      expect(transport.loopEnabled).toBe(false);
+      expect(engine.loop).toBe(false);
+    });
   });
 
   it("knows when the next play starts from the top (#937)", () => {

@@ -688,6 +688,13 @@ describe("ArrangementView loop brace (LOOP-018)", () => {
     const uses = transport.events.filter((e) => e.name === "feature_first_use");
     expect(uses).toHaveLength(1);
     expect(uses[0].params).toMatchObject({ feature: "playhead_seek" });
+
+    firePointer(canvas, "pointerdown", { clientX: barLine(3.2), clientY: rulerY });
+    firePointer(canvas, "pointerup", { clientX: barLine(3.2), clientY: rulerY });
+    expect(seek).toHaveBeenCalledTimes(2);
+    expect(transport.events.filter((e) => e.name === "feature_first_use")).toHaveLength(
+      1,
+    );
     expect(session.history.entries.length).toBe(0);
   });
 
@@ -709,7 +716,7 @@ describe("ArrangementView loop brace (LOOP-018)", () => {
   });
 
   it("does not seek for a press that grabs the brace", async () => {
-    const { renderView } = await setUpEditing();
+    const { transport, renderView } = await setUpEditing();
     const seek = vi.fn();
     const { container } = renderView(undefined, undefined, seek);
     const canvas = interactionCanvasOf(container);
@@ -718,6 +725,11 @@ describe("ArrangementView loop brace (LOOP-018)", () => {
     firePointer(canvas, "pointerup", { clientX: barLine(2), clientY: rulerY });
 
     expect(seek).not.toHaveBeenCalled();
+    expect(
+      transport.events.filter(
+        (e) => e.name === "feature_first_use" && e.params.feature === "playhead_seek",
+      ),
+    ).toHaveLength(0);
   });
 
   it("offers no keyboard controls where nothing commits a range", async () => {
