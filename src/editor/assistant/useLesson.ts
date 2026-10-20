@@ -8,8 +8,9 @@
  * is done, by the producer or by Show me; each transition is one turn to
  * Coproducer (`sendLesson`), which writes the words: introducing a bite,
  * commenting on what was done, celebrating it, and wrapping the chapter up.
- * A turn that cannot go yet (a reply is still on its way) waits, and a newer
- * one takes its place.
+ * A turn that cannot go yet (a reply is still on its way) waits; turns that
+ * wait together go as one (`foldTurns`), the newest carrying the others, so
+ * a bite finished while Coproducer was still writing is still celebrated.
  *
  * - **Where to act**: the step's control wears the dashed proposal mark
  *   (`UI-004`) while it is under way, and what it belongs to is selected.
@@ -32,7 +33,7 @@ import type { Project } from "../../domain/entities";
 import { createFactoryContext, type DomainFactoryContext } from "../../domain/factories";
 import type { PadId, TrackId } from "../../domain/ids";
 import { chapter as chapterOfId, withBiteDone } from "../../lessons/chapters";
-import { cueMessage, lessonCue } from "../../lessons/cue";
+import { cueMessage, foldTurns, type LessonTurn, lessonCue } from "../../lessons/cue";
 import type { BiteId, ChapterId, LessonSource } from "../../lessons/ids";
 import {
   biteOf,
@@ -62,7 +63,8 @@ export interface LessonEditorPort {
    * the view, so the view the step names opens on it.
    */
   point(address: ControlAddress): void;
-  play(): void;
+  /** Starts the song; settles once it plays or could not start. */
+  play(): Promise<void>;
   /** Puts a library sound of `role` on the pad, as the Library's Insert; whether it did. */
   putSound(role: "kick", trackId: TrackId, padId: PadId): Promise<boolean>;
 }
@@ -93,8 +95,11 @@ export interface Lesson {
   readonly notice: Accessor<string | null>;
   /** Whether Show me has an editor to work in. */
   readonly canShowMe: boolean;
-  /** Starts `chapter` at `biteId`, or at its first bite not yet done. */
-  start(chapter: ChapterId, source: LessonSource, biteId?: BiteId): void;
+  /**
+   * Starts `chapter` at `biteId`, or at its first bite not yet done; whether
+   * it could (not while no project is open).
+   */
+  start(chapter: ChapterId, source: LessonSource, biteId?: BiteId): boolean;
   /** The next bite, once the one before is over. */
   next(): void;
   showMe(): void;
@@ -113,15 +118,20 @@ export const SHOW_ME_FAILED = "That didn't go in. Try it by hand, or press Skip.
 export const NO_SOUND =
   "I couldn't find another kick in the library. Pick one by hand, or press Skip.";
 
-interface PendingTurn {
-  readonly text: string;
-  readonly cue: AssistantLessonContext;
+interface PendingTurn extends LessonTurn {
   readonly chapter: string;
 }
 
+/**
+ * How long Show me waits for the view it asked for before deciding it did
+ * not open, and taking its mark back.
+ */
+export const SHOW_ME_SETTLE_MS = 1000;
+
 export function useLesson(options: UseLessonOptions): Lesson {
   const [state, setState] = createSignal<LessonState | null>(null);
-  const [pending, setPending] = createSignal<PendingTurn | null>(null);
+  // The turns waiting for a reply to finish, oldest first.
+  const [pending, setPending] = createSignal<readonly PendingTurn[]>([]);
   const [notice, setNotice] = createSignal<string | null>(null);
   const [finished, setFinished] = createSignal<readonly string[]>([]);
   const factory = options.factoryContext ?? (() => createFactoryContext());
@@ -143,11 +153,12 @@ export function useLesson(options: UseLessonOptions): Lesson {
   }
 
   function queue(next: LessonState, event: LessonEvent): void {
-    setPending({
+    const turn: PendingTurn = {
       text: cueMessage(next, event),
       cue: lessonCue(next, event, untrack(settings), untrack(done)),
       chapter: chapterOf(next).title,
-    });
+    };
+    setPending((waiting) => [...waiting, turn]);
   }
 
   function ids(next: LessonState) {
@@ -196,16 +207,21 @@ export function useLesson(options: UseLessonOptions): Lesson {
     },
   );
 
-  // A lesson's turn goes as soon as no reply is on its way.
+  // A lesson's turn goes as soon as no reply is on its way; the turns that
+  // waited for one go together, as the newest carrying the rest.
   createEffect(
-    () => ({ turn: pending(), busy: options.conversation.streaming() }),
-    ({ turn, busy }) => {
-      if (!turn || busy) return;
+    () => ({ waiting: pending(), busy: options.conversation.streaming() }),
+    ({ waiting, busy }) => {
+      const [first, ...rest] = waiting;
+      if (!first || busy) return;
+      const turn = foldTurns([first, ...rest]);
+      const chapter = waiting[waiting.length - 1]?.chapter ?? first.chapter;
       // Sending reads the conversation as it stands; it is not what this waits on.
       const sent = untrack(() =>
-        options.conversation.sendLesson(turn.text, turn.cue, turn.chapter),
+        options.conversation.sendLesson(turn.text, turn.cue, chapter),
       );
-      if (sent) setPending(null);
+      // Only what went is taken off: a turn queued meanwhile waits on.
+      if (sent) setPending((now) => now.slice(waiting.length));
     },
   );
 
@@ -229,9 +245,9 @@ export function useLesson(options: UseLessonOptions): Lesson {
     },
   );
 
-  function start(chapterId: ChapterId, source: LessonSource, biteId?: BiteId): void {
+  function start(chapterId: ChapterId, source: LessonSource, biteId?: BiteId): boolean {
     const now = world();
-    if (!now) return;
+    if (!now) return false;
     const current = state();
     if (current) {
       options.analytics().log("lesson_dropped_out", ids(current));
@@ -242,6 +258,7 @@ export function useLesson(options: UseLessonOptions): Lesson {
       chapterOfId(chapterId).bites.find((one) => !finishedIds.has(one.id))?.id ??
       null;
     begin(startBite(chapterId, first, now, settings()), source);
+    return true;
   }
 
   function next(): void {
@@ -280,9 +297,16 @@ export function useLesson(options: UseLessonOptions): Lesson {
         return;
       case "view":
         editor.goTo(shown.view);
+        // A view that never opens is no Show me: the producer who then goes
+        // there by hand did it themselves.
+        setTimeout(() => {
+          if (untrack(() => options.view()) !== shown.view) unmark();
+        }, SHOW_ME_SETTLE_MS);
         return;
       case "play":
-        editor.play();
+        void editor.play().then(() => {
+          if (!untrack(() => options.playing())) unmark();
+        });
         return;
       case "sound":
         void editor.putSound(shown.role, shown.trackId, shown.padId).then((put) => {
@@ -305,7 +329,7 @@ export function useLesson(options: UseLessonOptions): Lesson {
     const current = state();
     if (!current) return;
     options.analytics().log("lesson_dropped_out", ids(current));
-    setPending(null);
+    setPending([]);
     setNotice(null);
     setState(null);
   }

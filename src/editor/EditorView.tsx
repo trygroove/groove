@@ -12,6 +12,7 @@ import {
   Show,
   Switch,
   snapshot,
+  untrack,
 } from "solid-js";
 import { pageTitle } from "../../site.config.mjs";
 import { type Analytics, analytics as defaultAnalytics } from "../analytics/analytics";
@@ -468,7 +469,9 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
       },
       goTo: (view) => selectView(view, "reveal"),
       point(address) {
-        const current = project();
+        // Called from an effect's apply half: the project is read as it is,
+        // not tracked.
+        const current = untrack(project);
         if (!current) return;
         const home = controlHome(current, address);
         if (home.trackId) {
@@ -478,7 +481,7 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
         if (home.placementId !== undefined)
           trackSelection.selectPlacement(home.placementId);
       },
-      play: () => void audio.play(),
+      play: () => audio.play(),
       async putSound(role, trackId, padId) {
         const catalog = await assistantLibrary.load();
         const current = project();

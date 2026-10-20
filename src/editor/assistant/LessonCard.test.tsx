@@ -111,7 +111,9 @@ async function renderLesson(options: { putSound?: boolean } = {}) {
         apply,
         goTo: (next) => setView(next),
         point,
-        play: () => setPlaying(true),
+        play: async () => {
+          setPlaying(true);
+        },
         putSound,
       },
     });

@@ -45,8 +45,11 @@ export interface UseCueNudgeOptions {
   readonly ready?: Accessor<boolean>;
   readonly conversation: Pick<AssistantConversation, "send" | "pendingAsk">;
   readonly analytics: () => Pick<Analytics, "log">;
-  /** Starts the bite on offer (GRV-43). */
-  readonly startLesson?: (bite: LessonBite) => void;
+  /**
+   * Starts the bite on offer (GRV-43), and says whether it could; when it
+   * cannot, "Let's try it" asks Coproducer for it instead.
+   */
+  readonly startLesson?: (bite: LessonBite) => boolean;
   readonly clock?: Clock;
 }
 
@@ -95,8 +98,8 @@ export function useCueNudge(options: UseCueNudgeOptions): CueNudge {
     tryIt() {
       const offered = bite();
       if (!offered) return;
-      if (options.startLesson) options.startLesson(offered);
-      else if (!options.conversation.send(nudgeMessage(offered.title))) return;
+      const started = options.startLesson?.(offered) ?? false;
+      if (!started && !options.conversation.send(nudgeMessage(offered.title))) return;
       setBite(null);
       const analytics = options.analytics();
       analytics.log("cue_nudge_answered", { how: "tried" });

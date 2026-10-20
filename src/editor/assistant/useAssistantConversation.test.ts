@@ -292,6 +292,63 @@ describe("a conversation during a lesson (GRV-43)", () => {
     expect(client.last().request.lesson).toBeUndefined();
     dispose();
   });
+
+  it("sends an answer a lesson takes only when the lesson could not start", async () => {
+    const client = createFakeAssistantClient();
+    let starts = false;
+    const takeAnswer = vi.fn(() => starts);
+    let conversation: AssistantConversation | undefined;
+    const dispose = createRoot((dispose) => {
+      conversation = useAssistantConversation({
+        client: async () => client,
+        project: () => project,
+        scope: () => scope,
+        canSend: () => true,
+        analytics: () =>
+          new Analytics({
+            transport: createRecordingTransport(),
+            storage: memoryStorage(),
+          }),
+        takeAnswer,
+      });
+      return dispose;
+    });
+    flush();
+    if (!conversation) throw new Error("no conversation");
+    const ask: AssistantAsk = {
+      id: "ask-lesson",
+      question: "Want a first lesson?",
+      multiSelect: false,
+      options: [{ label: "Let's go" }, { label: "Not now" }],
+    };
+    const askOnce = async (turns: number) => {
+      conversation?.send("Hi");
+      await vi.waitFor(() => expect(client.turns).toHaveLength(turns));
+      client.last().emit({ type: "ask", ask });
+      client.last().done();
+      flush();
+    };
+
+    // The lesson cannot start: the answer goes to Coproducer as any other.
+    await askOnce(1);
+    expect(conversation.answerAsk({ picked: [0], text: "" })).toBe(true);
+    await vi.waitFor(() => expect(client.turns).toHaveLength(2));
+    client.last().done();
+    flush();
+
+    // The lesson starts: the answer is shown, and not sent.
+    starts = true;
+    await askOnce(3);
+    expect(conversation.answerAsk({ picked: [0], text: "" })).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(client.turns).toHaveLength(3);
+    expect(conversation.entries().at(-1)).toMatchObject({
+      kind: "message",
+      text: "Let's go",
+    });
+    expect(takeAnswer).toHaveBeenCalledTimes(2);
+    dispose();
+  });
 });
 
 describe("a conversation that recommends a video (GRV-16)", () => {

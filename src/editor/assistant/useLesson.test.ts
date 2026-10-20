@@ -3,12 +3,22 @@ import { describe, expect, it, vi } from "vitest";
 import { CONTROL_PARTS, controlAddress } from "../../commands/controlAddress";
 import { createControlRegistry } from "../../controls/registry";
 import type { Project } from "../../domain/entities";
+import { BEAT_PATTERNS, beatStyleFor } from "../../lessons/style";
 import { starterWorld } from "../../testing/lessonWorld";
 import type { EditorViewName } from "../editorViews";
-import { type LessonEditorPort, useLesson } from "./useLesson";
+import { type LessonEditorPort, SHOW_ME_SETTLE_MS, useLesson } from "./useLesson";
 
-function setup(editor?: LessonEditorPort) {
-  const [project, setProject] = createSignal<Project>(starterWorld().project);
+/** `project` at `tempo` BPM, as a committed edit would leave it. */
+function tempoed(project: Project | null, tempo: number): Project {
+  if (!project) throw new Error("no project");
+  return { ...project, song: { ...project.song, tempo } };
+}
+
+function setup(editor?: LessonEditorPort, open = true) {
+  const [project, setProject] = createSignal<Project | null>(
+    open ? starterWorld().project : null,
+  );
+  const [playing, setPlaying] = createSignal(false);
   const [view, setView] = createSignal<EditorViewName>("arrangement");
   const [streaming, setStreaming] = createSignal(false);
   const registry = createControlRegistry();
@@ -18,7 +28,7 @@ function setup(editor?: LessonEditorPort) {
     useLesson({
       project,
       view,
-      playing: () => false,
+      playing,
       conversation: { sendLesson, streaming },
       registry,
       editor,
@@ -30,6 +40,7 @@ function setup(editor?: LessonEditorPort) {
     project,
     setProject,
     setView,
+    setPlaying,
     setStreaming,
     registry,
     sendLesson,
@@ -40,7 +51,7 @@ function setup(editor?: LessonEditorPort) {
 describe("the lesson under way (GRV-43)", () => {
   it("marks where to act, dashed, until the step is over", () => {
     const h = setup();
-    const clip = h.project().clips[0];
+    const clip = h.project()?.clips[0];
     if (!clip) throw new Error("no clip");
     const notes = controlAddress(clip.id, CONTROL_PARTS.notes);
     // Four on the floor, with no genre in memory: the backbeat is still to write.
@@ -52,22 +63,94 @@ describe("the lesson under way (GRV-43)", () => {
     expect(h.registry.markOf(notes)).toBe("none");
   });
 
-  it("holds a lesson's turn while a reply is on its way, and sends the newest", () => {
+  it("holds a lesson's turn while a reply is on its way, then sends it", () => {
     const h = setup();
     h.setStreaming(true);
     h.lesson.start("tour", "asked", "tour-library");
     flush();
     expect(h.sendLesson).not.toHaveBeenCalled();
+    h.setStreaming(false);
+    flush();
+    expect(h.sendLesson).toHaveBeenCalledTimes(1);
+    expect(h.sendLesson).toHaveBeenCalledWith(
+      'Let\'s do "The Library".',
+      expect.objectContaining({ moment: "bite_started", earlier: [] }),
+      "Tour the studio",
+    );
+  });
+
+  it("still brings a bite finished while Coproducer writes to it, with the next bite", () => {
+    const h = setup();
+    h.setStreaming(true);
+    // Coproducer is still writing as the producer finishes "Pick a kick" and
+    // goes straight on to the next bite.
+    h.lesson.start("beat", "asked", "beat-library");
+    flush();
+    h.lesson.skip();
+    flush();
+    h.lesson.next();
+    flush();
+    expect(h.sendLesson).not.toHaveBeenCalled();
+    h.setStreaming(false);
+    flush();
+    expect(h.sendLesson).toHaveBeenCalledTimes(1);
+    expect(h.sendLesson).toHaveBeenCalledWith(
+      'Skipped "Pick a kick". Let\'s do "The kick pattern".',
+      expect.objectContaining({
+        moment: "bite_started",
+        biteId: "beat-kick",
+        // The first bite's intro is stale by now; its end is not.
+        earlier: [
+          {
+            moment: "bite_done",
+            chapter: "Make a beat",
+            bite: "Pick a kick",
+            how: "skipped",
+            changes: [],
+          },
+        ],
+      }),
+      "Make a beat",
+    );
+  });
+
+  it("keeps a bite's intro with the step done before it went, and sends each turn once", () => {
+    const h = setup();
+    h.setStreaming(true);
+    h.lesson.start("tour", "asked", "tour-library");
+    flush();
     h.setView("library");
     flush();
     h.setStreaming(false);
     flush();
     expect(h.sendLesson).toHaveBeenCalledTimes(1);
     expect(h.sendLesson).toHaveBeenCalledWith(
-      'Finished "The Library": I did it myself.',
-      expect.objectContaining({ moment: "bite_done", biteId: "tour-library" }),
+      'Let\'s do "The Library". Finished "The Library": I did it myself.',
+      expect.objectContaining({
+        moment: "bite_done",
+        earlier: [
+          expect.objectContaining({ moment: "bite_started", bite: "The Library" }),
+        ],
+      }),
       "Tour the studio",
     );
+    // Nothing waits any more: a later turn goes alone.
+    h.lesson.next();
+    flush();
+    expect(h.sendLesson).toHaveBeenCalledTimes(2);
+    expect(h.sendLesson).toHaveBeenLastCalledWith(
+      'Let\'s do "The Mixer".',
+      expect.objectContaining({ earlier: [] }),
+      "Tour the studio",
+    );
+  });
+
+  it("does not start without a project, and says so", () => {
+    const h = setup(undefined, false);
+    expect(h.lesson.start("beat", "nudge", "beat-kick")).toBe(false);
+    expect(h.lesson.state()).toBeNull();
+    const open = setup();
+    expect(open.lesson.start("beat", "nudge", "beat-kick")).toBe(true);
   });
 
   it("keeps how each bite ended, and starts a chapter at its first bite not done", () => {
@@ -95,7 +178,7 @@ describe("the lesson under way (GRV-43)", () => {
       apply: vi.fn(() => false),
       goTo: vi.fn(),
       point: vi.fn(),
-      play: vi.fn(),
+      play: vi.fn(async () => {}),
       putSound: vi.fn(async () => false),
     };
     const h = setup(editor);
@@ -120,6 +203,75 @@ describe("the lesson under way (GRV-43)", () => {
     expect(editor.putSound).toHaveBeenCalledTimes(1);
     expect(h.lesson.notice()).not.toBeNull();
     expect(h.lesson.state()?.step?.shown).toBe(false);
+  });
+
+  it("takes Show me back when the song does not start or the view does not open", async () => {
+    vi.useFakeTimers();
+    try {
+      const editor: LessonEditorPort = {
+        apply: vi.fn(() => true),
+        goTo: vi.fn(),
+        point: vi.fn(),
+        // Playback could not start (the browser blocked it, say).
+        play: vi.fn(async () => {}),
+        putSound: vi.fn(async () => false),
+      };
+      const h = setup(editor);
+      h.lesson.start("tour", "asked", "tour-mixer");
+      flush();
+      h.lesson.showMe();
+      flush();
+      expect(editor.goTo).toHaveBeenCalledWith("mixer");
+      expect(h.lesson.state()?.step?.shown).toBe(true);
+      vi.advanceTimersByTime(SHOW_ME_SETTLE_MS);
+      flush();
+      expect(h.lesson.state()?.step?.shown).toBe(false);
+
+      // At the style's tempo, so "Hear it" goes straight to Play.
+      h.setProject(tempoed(h.project(), BEAT_PATTERNS[beatStyleFor([])].tempo));
+      flush();
+      h.lesson.start("beat", "asked", "beat-play");
+      flush();
+      expect(h.lesson.state()?.step?.index).toBe(1);
+      h.lesson.showMe();
+      flush();
+      expect(h.lesson.state()?.step?.shown).toBe(true);
+      await Promise.resolve();
+      flush();
+      expect(editor.play).toHaveBeenCalledTimes(1);
+      expect(h.lesson.state()?.step?.shown).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps Show me's mark when the view it asked for opens", () => {
+    vi.useFakeTimers();
+    try {
+      const editor: LessonEditorPort = {
+        apply: vi.fn(() => true),
+        goTo: vi.fn(),
+        point: vi.fn(),
+        play: vi.fn(async () => {}),
+        putSound: vi.fn(async () => false),
+      };
+      const h = setup(editor);
+      editor.goTo = vi.fn((view) => h.setView(view));
+      h.lesson.start("tour", "asked", "tour-mixer");
+      flush();
+      h.lesson.showMe();
+      flush();
+      expect(h.lesson.state()).toBeNull();
+      vi.advanceTimersByTime(SHOW_ME_SETTLE_MS);
+      flush();
+      expect(h.lesson.done()).toContain("tour-mixer");
+      expect(h.log).toHaveBeenCalledWith(
+        "lesson_bite_completed",
+        expect.objectContaining({ bite_id: "tour-mixer", how: "show_me" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("has nothing to show without an editor", () => {

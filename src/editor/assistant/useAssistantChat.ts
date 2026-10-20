@@ -404,13 +404,9 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     lesson: () => lesson.context(),
     onStartLesson: (chapter) => lesson.start(chapter, "asked"),
     takeAnswer: (ask, answer) =>
-      ask.id === LESSON_OFFER_ASK_ID && answer.picked.includes(LESSON_OFFER_YES)
-        ? () =>
-            lesson.start(
-              chapterForGoal(profile?.profile()?.memory.goal ?? null),
-              "onboarding",
-            )
-        : null,
+      ask.id === LESSON_OFFER_ASK_ID &&
+      answer.picked.includes(LESSON_OFFER_YES) &&
+      lesson.start(chapterForGoal(profile?.profile()?.memory.goal ?? null), "onboarding"),
     persistence: options.conversationKey
       ? {
           key: options.conversationKey,

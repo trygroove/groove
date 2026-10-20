@@ -46,6 +46,7 @@ async function renderEditorChat(
   profile: ProducerProfile,
   open = true,
   retention?: FakeRetentionClient,
+  projectOpen = true,
 ) {
   const client = createFakeAssistantClient();
   const transport = createRecordingTransport();
@@ -67,7 +68,7 @@ async function renderEditorChat(
       repository: async () => profiles,
     });
     const chat = useAssistantChat({
-      project: () => project,
+      project: () => (projectOpen ? project : null),
       view,
       sources: () => ({ selection: null, track: project.song.tracks[0] ?? null }),
       account: () => ({ registered: true }),
@@ -146,6 +147,23 @@ describe("Coproducer's daily nudge (GRV-25)", () => {
       bite_id: "beat-kick",
       source: "nudge",
     });
+  });
+
+  it("keeps the nudge when there is no project to start the bite in (GRV-43)", async () => {
+    const { client, transport } = await renderEditorChat(
+      onboarded({ onboardedAt: Date.now() - DAY }),
+      true,
+      undefined,
+      false,
+    );
+    const nudge = await screen.findByRole("region", { name: NUDGE_LABEL });
+    clickAndFlush(within(nudge).getByRole("button", { name: "Let's try it" }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Neither the lesson nor the words could go: the offer stands.
+    expect(client.turns).toHaveLength(0);
+    expect(screen.getByRole("region", { name: NUDGE_LABEL })).toBeInTheDocument();
+    expect(transport.named("lesson_nudge_taken")).toHaveLength(0);
+    expect(transport.named("lesson_bite_started")).toHaveLength(0);
   });
 
   it("offers nothing once every bite is done (GRV-43)", async () => {

@@ -312,12 +312,13 @@ export interface UseAssistantConversationOptions {
   /** Hears that Coproducer started a lesson, and which chapter (GRV-43). */
   readonly onStartLesson?: (chapter: ChapterId) => void;
   /**
-   * Takes an answer to a question in place of sending it: what to do with it
-   * instead, or null to send it as usual. "Let's go" to the offer of a first
-   * lesson starts the lesson (GRV-43), whose own turn follows the answer in
-   * the log.
+   * Takes an answer to a question in place of sending it, and says whether it
+   * did; one it does not take is sent as usual. "Let's go" to the offer of a
+   * first lesson starts the lesson (GRV-43), whose own turn follows the
+   * answer in the log; when the lesson cannot start, the answer goes to
+   * Coproducer instead.
    */
-  readonly takeAnswer?: (ask: AssistantAsk, answer: AskAnswer) => (() => void) | null;
+  readonly takeAnswer?: (ask: AssistantAsk, answer: AskAnswer) => boolean;
   /** Hears each memory proposal as it arrives, under its entry's ID (GRV-25). */
   readonly onMemoryProposal?: (entryId: string, proposal: MemoryProposal) => void;
   /** Hears that Coproducer asked a question skipped in onboarding (GRV-25). */
@@ -905,15 +906,13 @@ export function useAssistantConversation(
       answers: ask.question,
       wire: answerMessage(ask, answer),
     };
-    const instead = options.takeAnswer?.(ask, answer) ?? null;
-    if (instead) {
+    if (options.takeAnswer?.(ask, answer)) {
       append({
         kind: "message",
         id: id(),
         scopeLabel: options.scope().label,
         ...message,
       });
-      instead();
       return true;
     }
     sendMessage(message, options.scope());
