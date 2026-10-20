@@ -53,7 +53,17 @@ export function sentryEventFor(report: ErrorReport): ScrubbableEvent {
   };
 }
 
-export function recordErrorReports(): RecordedErrorReports {
+export interface RecordErrorReportsOptions {
+  /**
+   * The reporter's clock. Identical errors within five seconds collapse into
+   * one report, so a test that fails the same way twice advances this.
+   */
+  readonly now?: () => number;
+}
+
+export function recordErrorReports(
+  options: RecordErrorReportsOptions = {},
+): RecordedErrorReports {
   const reports: ErrorReport[] = [];
   const consent = new ConsentStore(memoryStorage());
   const transport = createRecordingTransport();
@@ -70,6 +80,7 @@ export function recordErrorReports(): RecordedErrorReports {
     sinks: [{ capture: (report) => void reports.push(report) }],
     releaseSha: "test-release",
     browser: { ...UNKNOWN_BROWSER, browserName: "chrome", browserVersion: "140" },
+    now: options.now,
   });
   return {
     reports,

@@ -71,6 +71,40 @@ describe("useEditorSession navigation flush", () => {
     expect(savedClip.content.events.some((event) => event.id === eventId)).toBe(false);
   });
 
+  it("writes a save the connection dropped when the browser is back online (GRV-55)", async () => {
+    const repository = createInMemoryProjectRepository();
+    const project = createSliceFixtureProject();
+    const created = await repository.createProject(project);
+    if (!created.ok) throw new Error("fixture project failed to create");
+    const clip = project.clips[0];
+    if (clip.content.kind !== "notes") throw new Error("expected a note clip");
+
+    const { result } = renderHook(
+      () =>
+        useEditorSession(
+          () => project.metadata.id,
+          () => repository,
+        ),
+      {},
+    );
+    await vi.waitFor(() => expect(result.state.loading).toBe(false));
+
+    repository.failNextWrites({ count: 1 });
+    result.dispatch(removeNotes(clip.id as ClipId, [clip.content.events[0].id]));
+    window.dispatchEvent(new Event("pagehide"));
+    await vi.waitFor(() => {
+      flush();
+      expect(result.state.saveStatus?.state).toBe("failed");
+    });
+
+    window.dispatchEvent(new Event("online"));
+    await vi.waitFor(() => {
+      flush();
+      expect(result.state.saveStatus?.state).toBe("saved");
+    });
+    expect(result.state.saveStatus?.pending).toBe(0);
+  });
+
   it("flushes a queued edit on visibilitychange to hidden", async () => {
     const repository = createInMemoryProjectRepository();
     const project = createSliceFixtureProject();
