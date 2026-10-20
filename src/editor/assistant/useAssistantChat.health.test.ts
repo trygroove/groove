@@ -194,6 +194,9 @@ describe("a chat's sad sessions (GRV-103)", () => {
     const { chat, propose, health } = await setUp();
     const card = await propose();
     expect(health()).toEqual(["started"]);
+    // The first cancel ends the preview that opened by itself (GRV-193).
+    chat.proposals?.cancel(card);
+    flush();
     chat.proposals?.cancel(card);
     flush();
     expect(chat.proposals?.card(card)?.status).toBe("cancelled");
@@ -270,6 +273,8 @@ describe("a chat's sad sessions (GRV-103)", () => {
     // The old project's card is turned down after the new conversation began.
     chat.proposals?.cancel(oldCard);
     flush();
+    chat.proposals?.cancel(oldCard);
+    flush();
     expect(chat.proposals?.card(oldCard)?.status).toBe("cancelled");
     expect(health()).toEqual(["started", "started"]);
   });
@@ -290,6 +295,9 @@ describe("what the next turn resends of a proposal (GRV-150)", () => {
   it("says a cancelled proposal changed nothing", async () => {
     const { chat, client, propose } = await setUp();
     const card = await propose();
+    // The first cancel ends the preview that opened by itself (GRV-193).
+    chat.proposals?.cancel(card);
+    flush();
     chat.proposals?.cancel(card);
     flush();
     expect(await resent(chat, client)).toBe(

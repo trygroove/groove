@@ -328,7 +328,7 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
       "Swing 50% → to 58%",
     ]);
     expect(within(card()).queryByText("More parts on the way…")).toBeNull();
-    expect(cardStatus()).toHaveTextContent("Nothing has changed yet.");
+    expect(cardStatus()).toHaveTextContent("Previewing every part not applied yet");
     expect(within(card()).getByText("Why this works")).toBeInTheDocument();
   });
 
@@ -602,6 +602,8 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     const { ask, part, fail, client } = await setUp();
     await ask();
     part(TRACK);
+    // The first Cancel ends the preview that opened by itself.
+    await press(cardButton("Cancel"));
     await press(cardButton("Cancel"));
     fail();
     expect(cardStatus()).toHaveTextContent(
@@ -619,7 +621,7 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     const { ask, part, session } = await setUp();
     await ask();
     part(SWING);
-    await press(cardButton("Preview"));
+    // The preview opens by itself (GRV-193), with no click.
     expect(session.activePreview).not.toBeNull();
     expect(session.project.song.swing).toBe(58);
     expect(session.committedProject.song.swing).toBe(50);
@@ -628,9 +630,42 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     expect(session.project.song.tracks.some((t) => t.name === "Bass")).toBe(true);
     expect(session.history.canUndo).toBe(false);
     expect(cardButton("Preview")).toHaveAttribute("aria-pressed", "true");
+    expect(cardStatus()).toHaveTextContent("Still writing.");
     await press(cardButton("Cancel"));
     expect(session.activePreview).toBeNull();
     expect(session.project.song.swing).toBe(50);
+  });
+
+  it("stops following new parts once the producer cancels the preview, and previews again on a click", async () => {
+    const { ask, part, session } = await setUp();
+    await ask();
+    part(SWING);
+    expect(session.activePreview).not.toBeNull();
+    await press(cardButton("Cancel"));
+    part(TRACK);
+    expect(session.activePreview).toBeNull();
+    expect(cardButton("Preview")).toHaveAttribute("aria-pressed", "false");
+    await press(cardButton("Preview"));
+    expect(session.activePreview).not.toBeNull();
+    part(CLIP);
+    expect(session.activePreview).not.toBeNull();
+    expect(session.project.song.tracks.some((t) => t.name === "Bass")).toBe(true);
+  });
+
+  it("logs each preview shown once, as automatic or as the producer's own", async () => {
+    const { ask, part, events } = await setUp();
+    await ask();
+    part(SWING);
+    part(TRACK);
+    expect(events("assistant_proposal_previewed").map((e) => e.params)).toEqual([
+      expect.objectContaining({ automatic: true }),
+    ]);
+    await press(cardButton("Cancel"));
+    await press(cardButton("Preview"));
+    expect(events("assistant_proposal_previewed").map((e) => e.params)).toEqual([
+      expect.objectContaining({ automatic: true }),
+      expect.objectContaining({ automatic: false }),
+    ]);
   });
 
   it("logs the first part once per proposal, and each part applied once", async () => {

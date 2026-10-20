@@ -331,13 +331,18 @@ export function useAssistantProposals(
     // A change made elsewhere while the reply was written moved the song
     // under it, though not this session's revision.
     const movedElsewhere = remoteChanges !== origin.remoteChanges;
-    show(entryId, {
+    const arrived: ProposalCard = {
       ...base,
       status: movedElsewhere ? "stale" : "pending",
       rows,
       explanation: explainProposal(handle.proposal, rows),
       previewView: previewTarget(before, rows)?.view ?? null,
-    });
+    };
+    show(entryId, arrived);
+    // The preview is what makes a proposal understandable: it opens by itself
+    // (GRV-193). The card just shown is passed in; a signal write is not
+    // readable until it flushes.
+    if (!movedElsewhere) openPreview(entryId, true, arrived);
   }
 
   /**
@@ -373,8 +378,13 @@ export function useAssistantProposals(
       streamed.preview(entryId);
       return;
     }
+    openPreview(entryId, false);
+  }
+
+  /** Opens a whole proposal's preview; `automatic` is the assistant doing so as it arrives. */
+  function openPreview(entryId: string, automatic: boolean, arrived?: ProposalCard) {
     const entry = entries.get(entryId);
-    const card = cards().get(entryId);
+    const card = arrived ?? cards().get(entryId);
     if (!entry?.handle || card?.status !== "pending") return;
     if (entry.handle.isStale) {
       update(entryId, { status: "stale" });
@@ -392,7 +402,8 @@ export function useAssistantProposals(
     streamed.endPreviews();
     const opened = session.beginPreview(entry.handle.proposal.commands);
     if (!opened?.ok) {
-      update(entryId, { notice: BUSY });
+      // A preview nobody asked for says nothing when it cannot open.
+      if (!automatic) update(entryId, { notice: BUSY });
       return;
     }
     entry.preview = opened.preview;
@@ -405,6 +416,7 @@ export function useAssistantProposals(
       status: "previewing",
       returnView: entry.location?.view ?? null,
     });
+    options.analytics().log("assistant_proposal_previewed", { automatic });
     options.analytics().logFeatureFirstUse("assistant_proposal");
   }
 

@@ -40,13 +40,6 @@ export function streamedStatusText(card: Card): string {
           : "The rest of this proposal didn't arrive."
       }`;
     }
-    if (card.status === "previewing") {
-      const view = (name: Card["previewView"]) =>
-        name ? editorViewSpec(name).label : null;
-      const shown = view(card.previewView);
-      const back = card.returnView !== card.previewView ? view(card.returnView) : null;
-      return `Previewing every part not applied yet${shown ? ` in ${shown}` : ""}. Nothing is saved until you apply.${back ? ` Cancel takes you back to ${back}.` : ""}`;
-    }
     const progress =
       applied === 0
         ? null
@@ -57,34 +50,47 @@ export function streamedStatusText(card: Card): string {
                 ? "."
                 : ", each as its own undo step."
             }`;
-    switch (card.turn) {
-      case "running":
-        return [
-          progress,
-          "Still writing. Apply a part as it lands, or all of them once it's done.",
-        ]
-          .filter(Boolean)
-          .join(" ");
-      case "failed":
-        return [
-          "The rest of this proposal didn't arrive.",
-          card.continued
-            ? withdrawn
-              ? "Asked for the rest below, so the parts not applied here are withdrawn."
-              : "Asked for the rest below."
-            : null,
-          progress ?? (card.continued ? null : "The parts above can still be applied."),
-        ]
-          .filter(Boolean)
-          .join(" ");
-      case "stopped":
-        return [
-          "Stopped before the rest arrived.",
-          progress ?? "The parts above can still be applied.",
-        ].join(" ");
-      default:
-        return progress ?? "Nothing has changed yet.";
-    }
+    const turnSay = (() => {
+      switch (card.turn) {
+        case "running":
+          return [
+            progress,
+            "Still writing. Apply a part as it lands, or all of them once it's done.",
+          ]
+            .filter(Boolean)
+            .join(" ");
+        case "failed":
+          return [
+            "The rest of this proposal didn't arrive.",
+            card.continued
+              ? withdrawn
+                ? "Asked for the rest below, so the parts not applied here are withdrawn."
+                : "Asked for the rest below."
+              : null,
+            progress ?? (card.continued ? null : "The parts above can still be applied."),
+          ]
+            .filter(Boolean)
+            .join(" ");
+        case "stopped":
+          return [
+            "Stopped before the rest arrived.",
+            progress ?? "The parts above can still be applied.",
+          ].join(" ");
+        default:
+          return progress ?? "Nothing has changed yet.";
+      }
+    })();
+    if (card.status !== "previewing") return turnSay;
+    // A preview that opened by itself while the turn writes still says so,
+    // and still says when the turn failed or stopped (GRV-193).
+    const previewSay = (() => {
+      const view = (name: Card["previewView"]) =>
+        name ? editorViewSpec(name).label : null;
+      const shown = view(card.previewView);
+      const back = card.returnView !== card.previewView ? view(card.returnView) : null;
+      return `Previewing every part not applied yet${shown ? ` in ${shown}` : ""}. Nothing is saved until you apply.${back ? ` Cancel takes you back to ${back}.` : ""}`;
+    })();
+    return card.turn === "ended" ? previewSay : `${previewSay} ${turnSay}`;
   })();
   const notes = [
     say,

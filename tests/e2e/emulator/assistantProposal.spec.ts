@@ -114,6 +114,10 @@ test.describe("an assistant proposal across a reload", () => {
   }) => {
     await newProject(page);
     await askToLoosen(page);
+    // The preview opened by itself on the mixer (GRV-193); end it, so the
+    // reload lands on the arrangement.
+    await proposalButton(page, "Cancel").click();
+    await expect(page).not.toHaveURL(/\/mixer$/);
     // A question waiting in the same conversation comes back as it did before.
     await composer(page).fill("Build me a drop [ask]");
     await page.keyboard.press("Enter");

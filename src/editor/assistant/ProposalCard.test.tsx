@@ -271,7 +271,8 @@ describe("the proposal card (GRV-5)", () => {
       "Swing 50% → to 58%",
       "BD volume 0.0 dB → to -3.0 dB",
     ]);
-    expect(cardStatus()).toHaveTextContent("Nothing has changed yet.");
+    // The preview is already on (GRV-193), and nothing is committed.
+    expect(cardStatus()).toHaveTextContent("Previewing in Mixer.");
     expect(session.committedProject).toBe(project);
     expect(session.history.canUndo).toBe(false);
   });
@@ -281,8 +282,8 @@ describe("the proposal card (GRV-5)", () => {
       await setUp();
     await propose();
     repository.clearWrites();
+    // It opened by itself as the proposal arrived (GRV-193): no click.
     const preview = cardButton("Preview");
-    await press(preview);
 
     expect(session.activePreview).not.toBeNull();
     expect(session.project.song.swing).toBe(58);
@@ -291,7 +292,6 @@ describe("the proposal card (GRV-5)", () => {
     expect(session.autosave.status.state).not.toBe("pending");
     // It goes to the mixer, where BD's volume is, and leaves focus on the card.
     expect(revealControl).toHaveBeenCalledWith(volume, { focus: false });
-    expect(preview).toHaveFocus();
     expect(preview).toHaveAttribute("aria-pressed", "true");
     expect(registry.markOf(swing)).toBe("previewed");
     expect(registry.markOf(volume)).toBe("previewed");
@@ -303,10 +303,23 @@ describe("the proposal card (GRV-5)", () => {
     expect(repository.writes).toHaveLength(0);
   });
 
+  it("opens the preview by itself once, and logs a click on Preview as the producer's own (GRV-193)", async () => {
+    const { propose, events } = await setUp();
+    await propose();
+    expect(events("assistant_proposal_previewed").map((e) => e.params)).toEqual([
+      expect.objectContaining({ automatic: true }),
+    ]);
+    await press(cardButton("Preview"));
+    await press(cardButton("Preview"));
+    expect(events("assistant_proposal_previewed").map((e) => e.params)).toEqual([
+      expect.objectContaining({ automatic: true }),
+      expect.objectContaining({ automatic: false }),
+    ]);
+  });
+
   it("cancels a preview back to where the editor was, with nothing to undo", async () => {
     const { propose, session, restoreView, registry, volume } = await setUp();
     await propose();
-    await press(cardButton("Preview"));
     const cancel = cardButton("Cancel");
     await press(cancel);
 
@@ -384,7 +397,7 @@ describe("the proposal card (GRV-5)", () => {
     const store = createConversationStore(memoryStorage());
     const before = await setUp({ conversationStore: store });
     await before.propose();
-    expect(cardStatus()).toHaveTextContent("Nothing has changed yet.");
+    expect(cardStatus()).toHaveTextContent("Previewing in Mixer.");
     cleanup();
 
     const { session, client, events } = await setUp({ conversationStore: store });
@@ -648,13 +661,15 @@ describe("the proposal card (GRV-5)", () => {
 
     await propose();
     const next = client.last().request.session?.turnId;
-    await press(
+    const latest = () =>
       within(
         within(panel())
           .getAllByRole("region", { name: /^Proposal\b/ })
           .at(-1) as HTMLElement,
-      ).getByRole("button", { name: "Cancel" }),
-    );
+      ).getByRole("button", { name: "Cancel" });
+    // The first Cancel ends the preview that opened by itself.
+    await press(latest());
+    await press(latest());
     await settle();
     expect(
       retention.requests.filter((request) => request.op === "outcome").at(-1),
@@ -673,6 +688,8 @@ describe("the proposal card (GRV-5)", () => {
   it("turns a proposal down with Cancel, changing nothing", async () => {
     const { propose, session, events } = await setUp();
     await propose();
+    // The first Cancel ends the preview that opened by itself.
+    await press(cardButton("Cancel"));
     await press(cardButton("Cancel"));
     expect(cardStatus()).toHaveTextContent("Cancelled. Nothing changed.");
     expect(session.history.canUndo).toBe(false);
@@ -863,16 +880,19 @@ describe("the proposal card from the keyboard (GRV-5)", () => {
     const { propose, session } = await setUp();
     await propose();
     const preview = cardButton("Preview");
-    preview.focus();
-    await keys("{Enter}");
     expect(session.activePreview).not.toBeNull();
     expect(cardStatus().tagName).toBe("OUTPUT");
     expect(cardStatus()).toHaveTextContent("Previewing in Mixer.");
-    expect(preview).toHaveFocus();
+    preview.focus();
 
     await keys(" ");
     expect(session.activePreview).toBeNull();
     expect(cardStatus()).toHaveTextContent("Nothing has changed yet.");
+    expect(preview).toHaveFocus();
+
+    await keys("{Enter}");
+    expect(session.activePreview).not.toBeNull();
+    expect(cardStatus()).toHaveTextContent("Previewing in Mixer.");
     expect(preview).toHaveFocus();
   });
 
@@ -894,8 +914,6 @@ describe("the proposal card from the keyboard (GRV-5)", () => {
   it("cancels a preview with Enter on Cancel, keeping focus there, and turns it down with a second", async () => {
     const { propose, session, restoreView } = await setUp();
     await propose();
-    cardButton("Preview").focus();
-    await keys("{Enter}");
     const cancel = cardButton("Cancel");
     cancel.focus();
     await keys("{Enter}");
