@@ -350,8 +350,14 @@ export default function ArrangementView(props: ArrangementViewProps) {
   let loopDrag: LoopBraceDrag | null = null;
   // A press in empty space, while its pointer is down: where it was pressed,
   // so a jitter of a pixel or two stays a click rather than a sliver of band.
-  let bandPress: { pointerId: number; x: number; y: number; moved: boolean } | null =
-    null;
+  let bandPress: {
+    pointerId: number;
+    x: number;
+    y: number;
+    moved: boolean;
+    /** Pressed below the last track: a click there clears, it sets no point. */
+    belowTracks: boolean;
+  } | null = null;
   // While a clip-body drag runs, the browser is kept off the copy modifier's
   // own key (ARR-011); this ends that, passing whether it is still held. It is
   // kept after the drop, since a modifier still held then is guarded until its
@@ -920,12 +926,17 @@ export default function ArrangementView(props: ArrangementViewProps) {
 
     // A press in empty space is a click or the start of a drag band (#292),
     // which the pointer's release decides.
-    if (!trackId) {
+    // Below the last track there is no row, but a drag from there sweeps a
+    // band all the same (GRV-191), from the nearest row; a click only clears.
+    const start = trackId
+      ? { trackId, ticks: shell.pointToArrangement(x, y).tick }
+      : positionAt(x, y);
+    if (!start) {
       editing.clearSelection();
       return;
     }
-    editing.beginBand({ trackId, ticks: shell.pointToArrangement(x, y).tick });
-    bandPress = { pointerId: event.pointerId, x, y, moved: false };
+    editing.beginBand(start);
+    bandPress = { pointerId: event.pointerId, x, y, moved: false, belowTracks: !trackId };
     target.setPointerCapture?.(event.pointerId);
     noteFirstUse();
   }
@@ -934,9 +945,13 @@ export default function ArrangementView(props: ArrangementViewProps) {
    * a click sets the point at the start of the bar it landed in. */
   function endBandPress(): void {
     if (!bandPress || !editing) return;
-    const { x, y } = bandPress;
+    const { x, y, belowTracks } = bandPress;
     bandPress = null;
     if (editing.endBand()) return;
+    if (belowTracks) {
+      editing.clearSelection();
+      return;
+    }
     const position = positionAt(x, y);
     if (position) editing.placePoint(position);
   }
