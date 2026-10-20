@@ -273,16 +273,17 @@ override recorded on the entry:
 - **Deterministic context resolution.** A shortcut fires only if one of its
   declared contexts is active. A registry test proves no two mappings can match
   the same event in the same context, so dispatch is never ambiguous.
-- **One press, one action; the top surface first** (GRV-148). Every surface
-  that answers a key (the editor, a dialog, a popover, the Privacy panel)
-  attaches its own `ShortcutController`, and the controllers on the window
-  share one listener. A press is offered to the controller attached last, the
-  surface opened most recently, first, and stops at the first that runs it; a
-  controller with no enabled handler for the key passes it down. So Escape on
-  the Privacy panel closes the panel and leaves the arrangement's selection
-  alone. A popover or panel that is not modal closes through
-  `useCloseOnEscape`, which also stands down while a modal dialog is open over
-  it, because the `?` guide's Escape belongs to the editor's older controller.
+- **One press, one action; the top surface first** (GRV-148, GRV-186). Every
+  surface that answers a key (the editor, a dialog, a popover, the Privacy
+  panel) registers a scope on the app's one `ShortcutController`. A press is
+  offered to the scope mounted last, the surface opened most recently, first,
+  and runs there alone; a scope with no enabled handler for the key passes it
+  down. So Escape on the Privacy panel closes the panel and leaves the
+  arrangement's selection alone. A popover or panel that is not modal closes
+  through `useCloseOnEscape`. A modal dialog (the `?` guide, Export, a
+  confirmation) registers a modal scope, which hides every scope mounted
+  before it, so its Escape closes the dialog alone and the next one reaches
+  the popover.
 - **Layout-aware character matching.** Matching reads `KeyboardEvent.key`, not
   `code`, and ignores the Shift *modifier* for punctuation keys — `?` works
   whether the layout needs Shift, AltGr, or nothing.
@@ -299,7 +300,10 @@ override recorded on the entry:
   `catalog.test.ts`.
 - **No component owns a key listener.** Every surface that responds to a key —
   the editor, the `?` guide, and `ConfirmDialog` — registers a handler with
-  `useShortcuts` instead of comparing `event.key`. `src/shortcuts/` is the only
+  `useShortcutScope` instead of comparing `event.key`. All of them share the
+  app's one `ShortcutController` (GRV-186): a press runs in the most recently
+  mounted scope that has an enabled handler, and a modal scope hides the ones
+  under it. `src/shortcuts/` is the only
   place in `src/` that reads `KeyboardEvent.key` for a mapping (`ShortcutGuide`
   reads it for its `Tab` focus trap, which is modal focus management, not a
   mapping). `src/shortcuts/docs.test.ts` enforces this over `src/` — the shipped
@@ -329,7 +333,7 @@ the guide marks it "Not available here" from `controller.isEnabled()`.
    keys, group, contexts, and Ableton position.
 2. Add the ID to `SHORTCUT_ACTION_IDS` in both the registry and
    `src/analytics/catalog.ts`.
-3. Register a handler on the surface that owns the action with `useShortcuts`
+3. Register a handler on the surface that owns the action with `useShortcutScope`
    (see `src/editor/EditorView.tsx`, or `src/components/ConfirmDialog.tsx` for a
    modal). Never add a `keydown` listener to a component. Nothing else changes:
    tooltips, the guide, and analytics pick the entry up automatically.

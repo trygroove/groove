@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { createSignal, flush } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useCloseOnEscape } from "./useCloseOnEscape";
-import { useShortcuts } from "./useShortcuts";
+import { useShortcutScope } from "./useShortcutScope";
 
 afterEach(() => cleanup());
 
@@ -15,22 +15,29 @@ function Popover(props: { onClose(): void }): JSX.Element {
 
 // GRV-148: a popover's Escape (the Privacy panel, swing, a track's colour)
 // closes the popover and nothing under it, and gives way to a modal dialog
-// opened over it, even one whose Escape an older controller owns.
+// opened over it: the dialog's modal scope hides the popover's (GRV-186),
+// even though the dialog's owner was mounted long before the popover.
 describe("useCloseOnEscape (GRV-148)", () => {
   function setup() {
     const [popover, setPopover] = createSignal(true);
     const [modal, setModal] = createSignal(false);
     const below = vi.fn();
+    function Modal(): JSX.Element {
+      useShortcutScope({
+        modal: true,
+        handlers: () => ({ "view.close_surface": { run: () => setModal(false) } }),
+        contexts: () => ["dialog"],
+      });
+      return <div role="dialog" aria-modal="true" />;
+    }
     function Editor(): JSX.Element {
-      useShortcuts({
-        handlers: () => ({
-          "view.close_surface": { run: () => (modal() ? setModal(false) : below()) },
-        }),
+      useShortcutScope({
+        handlers: () => ({ "view.close_surface": { run: () => below() } }),
         contexts: () => [],
       });
       return (
         <Show when={modal()}>
-          <div role="dialog" aria-modal="true" />
+          <Modal />
         </Show>
       );
     }

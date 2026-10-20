@@ -228,6 +228,20 @@ describe("accessibility", () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  // GRV-186: the guide's own modal scope owns Escape, so one press closes it
+  // once and is logged once, from the search field that has focus.
+  it("closes once on Escape and logs shortcut_used once", () => {
+    const onClose = vi.fn();
+    const { transport } = renderGuide({ onClose });
+
+    fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    const used = transport.events.filter((event) => event.name === "shortcut_used");
+    expect(used).toHaveLength(1);
+    expect(used[0]?.params.action_id).toBe("view.close_surface");
+  });
 });
 
 describe("analytics", () => {

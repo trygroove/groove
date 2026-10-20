@@ -266,9 +266,9 @@ export class ShortcutController {
   /**
    * Listens on a target until the returned function is called.
    *
-   * The app attaches one controller (GRV-186), but a test or a stray
-   * provider-less surface can attach another, so one press can reach
-   * several. It runs one action, not one per controller: the controllers on a
+   * The app attaches one controller (GRV-186), but a test can attach
+   * another (its own `ShortcutRoot` beside the test-only fallback root), so
+   * one press can reach several. It runs one action, not one per controller: the controllers on a
    * target share a single listener that offers the press to the one attached
    * last first, the surface opened most recently and so the one on top, and
    * stops at the first that runs it (GRV-148). A controller with no enabled

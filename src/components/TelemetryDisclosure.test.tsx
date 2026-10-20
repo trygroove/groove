@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { createSignal, flush } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConsentStore } from "../analytics/consent";
-import { type ShortcutHandlers, useShortcuts } from "../shortcuts";
+import { type ShortcutHandlers, useShortcutScope } from "../shortcuts";
 import ShortcutGuide from "../shortcuts/ShortcutGuide";
 import { memoryStorage } from "../testing/storage";
 import ConfirmDialog from "./ConfirmDialog";
@@ -236,24 +236,27 @@ describe("TelemetryDisclosure Escape (GRV-148)", () => {
 
 // GRV-148 QA: a modal dialog opened over the panel (the shortcuts guide in the
 // studio) is the topmost surface, so one Escape closes the dialog alone and
-// the panel waits for the next one, whichever controller hears the key first.
-// In the studio the editor's controller is mounted long before the panel's.
+// the panel waits for the next one, wherever its owner sits in the tree. In
+// the studio the editor is mounted long before the panel. The dialog's modal
+// shortcut scope is what hides the panel's (GRV-186).
 describe("TelemetryDisclosure Escape under a modal dialog (GRV-148)", () => {
-  /**
-   * A modal's Escape owner, like the editor's: it closes the dialog when open,
-   * and, like every real owner, has nothing to close (so leaves the key to
-   * the surfaces under it) when it is not.
-   */
-  function ModalOwner(props: { open: boolean; onClose(): void }): JSX.Element {
-    useShortcuts({
+  /** A modal dialog's Escape, registered while it is open, like the guide's. */
+  function ModalScope(props: { onClose(): void }): JSX.Element {
+    useShortcutScope({
+      modal: true,
       handlers: (): ShortcutHandlers => ({
-        "view.close_surface": { run: () => props.onClose(), isEnabled: () => props.open },
+        "view.close_surface": { run: () => props.onClose() },
       }),
-      contexts: () => [],
+      contexts: () => ["dialog"],
     });
+    return <div role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" />;
+  }
+
+  /** Owns the dialog's open state, like the editor owns the guide's. */
+  function ModalOwner(props: { open: boolean; onClose(): void }): JSX.Element {
     return (
       <Show when={props.open}>
-        <div role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" />
+        <ModalScope onClose={() => props.onClose()} />
       </Show>
     );
   }
@@ -285,7 +288,7 @@ describe("TelemetryDisclosure Escape under a modal dialog (GRV-148)", () => {
   }
 
   for (const ownerFirst of [true, false]) {
-    it(`one Escape closes only the dialog (its controller attached ${ownerFirst ? "before" : "after"} the panel's)`, async () => {
+    it(`one Escape closes only the dialog (its owner mounted ${ownerFirst ? "before" : "after"} the panel)`, async () => {
       const { user, details, dialogOpen } = await openBoth(ownerFirst);
       await user.keyboard("{Escape}");
       flush();
@@ -338,32 +341,26 @@ describe("TelemetryDisclosure Escape under a confirm dialog (GRV-186)", () => {
   });
 });
 
-// GRV-148, second QA: in the studio the editor's controller, mounted long
-// before the panel, owns both the Keyboard shortcuts guide's Escape and the
+// GRV-148, second QA: in the studio the editor, mounted long before the
+// panel, owns both the Keyboard shortcuts guide's open state and the
 // arrangement's "Escape clears the selection". This stands in for that chain
 // with the real guide mounted beside the real panel, each a scope on the one
-// controller (GRV-186), as in the app. `flush()` in the editor's handler stands
-// in for the microtask checkpoint a browser runs between two listeners of one
-// key press, so the guide the editor closes is gone before anything else looks.
+// controller (GRV-186), as in the app. The guide's own modal scope closes it.
 describe("TelemetryDisclosure Escape beside the editor (GRV-148)", () => {
   function EditorStandIn(props: {
     selected: () => boolean;
     clearSelection(): void;
   }): JSX.Element {
     const [guideOpen, setGuideOpen] = createSignal(false);
-    useShortcuts({
+    useShortcutScope({
       handlers: (): ShortcutHandlers => ({
         "help.shortcut_guide": { run: () => setGuideOpen(true) },
         "view.close_surface": {
-          run: () => {
-            if (guideOpen()) setGuideOpen(false);
-            else props.clearSelection();
-            flush();
-          },
-          isEnabled: () => guideOpen() || props.selected(),
+          run: () => props.clearSelection(),
+          isEnabled: () => props.selected(),
         },
       }),
-      contexts: () => (guideOpen() ? ["dialog"] : ["editor"]),
+      contexts: () => ["editor"],
     });
     return (
       <Show when={guideOpen()}>
