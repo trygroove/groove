@@ -18,6 +18,7 @@
  * Firebase-free and SDK-free, like the rest of `src/assistant`.
  */
 import { z } from "zod";
+import { MAX_CHANGE_LINE_LENGTH } from "../lessons/changes";
 import {
   BEAT_STYLES,
   BITE_ENDINGS,
@@ -41,7 +42,9 @@ export const assistantLessonContextSchema = z.strictObject({
   moment: z.enum(LESSON_MOMENTS),
   how: z.enum(BITE_ENDINGS).nullable(),
   step: line.nullable(),
-  changes: z.array(line).max(12),
+  // `describeChanges` keeps each line to this, so no diff makes a turn the
+  // gateway refuses.
+  changes: z.array(z.string().max(MAX_CHANGE_LINE_LENGTH)).max(12),
   style: z.enum(BEAT_STYLES).nullable(),
   quiz: line.nullable(),
   next: z.array(line).max(5),
