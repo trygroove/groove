@@ -320,6 +320,41 @@ function loosenProposal(request: ProviderMessagesRequest): Step[] {
   );
 }
 
+/** The pads `[add-pads]` adds to the BD track's drum machine (GRV-138). */
+export const ADD_PADS = {
+  clap: { id: scriptedId("pad", "AddPadsClap"), name: "Clap" },
+  hat: { id: scriptedId("pad", "AddPadsClosedHat"), name: "Closed Hat" },
+} as const;
+
+/**
+ * GRV-138's script: asked to add pads, the model restates the BD track's drum
+ * machine as a whole with two more pads, and its existing pads carry no sound
+ * because it was never told which they hold, exactly as a real reply does.
+ * Applying it must leave the existing pads' sounds alone.
+ */
+function addPadsProposal(request: ProviderMessagesRequest): Step[] {
+  const tracks = contextTracks(request);
+  const track = tracks.find((candidate) => candidate.pads) ?? tracks[0];
+  if (!track?.pads) return textReply(EMULATOR_REPLY_CHUNKS);
+  return proposalReply("Two more pads on the drum machine; the rest stays as it is.", [
+    {
+      name: "instrument_change",
+      input: {
+        trackId: track.id,
+        instrument: {
+          kind: "drumMachine",
+          pads: [
+            ...track.pads.map((pad) => emptyPad(pad.id, pad.name)),
+            emptyPad(ADD_PADS.clap.id, ADD_PADS.clap.name),
+            emptyPad(ADD_PADS.hat.id, ADD_PADS.hat.name),
+          ],
+          parameters: {},
+        },
+      },
+    },
+  ]);
+}
+
 /** The role "anything dustier?" recommends. */
 export const DUSTIER_ROLE = "kick";
 /** The tags that make a sound dustier, the strongest first. */
@@ -831,6 +866,7 @@ export function createEmulatorAssistantProvider(
     if (message.includes("[misfit]")) return misfitProposal(request);
     if (/loosen the beat/i.test(message)) return loosenProposal(request);
     if (/\bdust(y|ier)\b/i.test(message)) return dustierRecommendation(request);
+    if (message.includes("[add-pads]")) return addPadsProposal(request);
     if (message.includes("[first-beat]")) return firstBeatLesson(request);
     if (message.includes("[ask-rich]")) return richAskReply(request);
     if (message.includes("[ask-multi]")) return askReply(true);

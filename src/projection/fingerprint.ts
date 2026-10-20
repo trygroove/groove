@@ -4,14 +4,30 @@
  * granularity so unrelated edits do not invalidate all cached geometry").
  *
  * Schema-v1 (`src/domain`) has one project-wide revision counter
- * (`metadata.revision`) and deliberately no per-track/per-clip counters —
- * adding those would be a domain-schema change, which is FND-002's contract,
- * not incidental work for this task. A deterministic content fingerprint
- * gives every projection the same guarantee (unrelated edits produce the same
- * fingerprint; any relevant edit produces a different one) without touching
- * the stored schema: two calls fingerprinting the same relevant fields always
- * agree, so a projection builder can compare a fingerprint against the
- * previous build and reuse the previous object when they match.
+ * (`metadata.revision`) and stores no per-track/per-clip counters; adding
+ * them would be a domain-schema change. Per-entity "did it change" comes from
+ * two projection-side mechanisms instead: this module's deterministic content
+ * fingerprint (two calls fingerprinting the same relevant fields always agree,
+ * so a builder can compare against the previous build and reuse the previous
+ * object when they match) and the identity counters in `revision.ts`.
+ *
+ * Which change detector to use (GRV-80; the same note heads `fingerprint.ts`
+ * and `revision.ts`):
+ *
+ *  - `revision.ts`: an object-identity counter. A per-entity render-cache key
+ *    within one process; free, but meaningless across reloads, tabs or builds.
+ *    The arrangement projection labels entities with it.
+ *  - `fingerprint.ts`: content equality (stable JSON + FNV-1a), valid across
+ *    builds and processes. It has two reasons to exist: the audio
+ *    `topologyFingerprint` (node-graph shape vs. a changed value, which an
+ *    identity counter cannot express) and the assistant context fingerprint
+ *    (did the song change, selected notes included).
+ *
+ * For a new projection: use the counter when the only consumer is a cache
+ * inside this process; use a fingerprint when equality must survive a process
+ * boundary or must separate kinds of change. Either way, every input the
+ * output reads must be in the dependency list: `projectionFreshness.test.ts`
+ * changes one field at a time to catch the ones that are not.
  */
 
 /**

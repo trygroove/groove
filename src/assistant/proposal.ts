@@ -31,7 +31,7 @@ import { type ControlAddress, uniqueControls } from "../commands/controlAddress"
 import { executeTransaction } from "../commands/execute";
 import { requireCommand } from "../commands/registry";
 import type { CommandIssue, RawCommandInput } from "../commands/types";
-import type { Project } from "../domain/entities";
+import type { Instrument, Project } from "../domain/entities";
 import type { ProposalIssueCode } from "./proposalIssues";
 import {
   ASSISTANT_TOOLSET_VERSION,
@@ -160,6 +160,14 @@ function invalid(issues: readonly ProposalIssue[]): ProposalValidation {
   return { ok: false, issues };
 }
 
+function staleRevision(baseRevision: number, project: Project): ProposalIssue {
+  return {
+    code: "stale_revision",
+    callIndex: null,
+    message: `The proposal was built against revision ${baseRevision}, but the project is at revision ${project.metadata.revision}`,
+  };
+}
+
 function describeShape(error: z.ZodError): string {
   return error.issues
     .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
@@ -245,7 +253,16 @@ export function rejectedProposalShape(input: unknown): {
  * would apply to. Returns the commands and their impact, or every reason it
  * cannot apply. Never throws and never changes `project`.
  */
-export function validateProposal(project: Project, input: unknown): ProposalValidation {
+export function validateProposal(
+  project: Project,
+  input: unknown,
+  /**
+   * Whether the edits committed since `baseRevision` leave a proposal with
+   * these command types valid (GRV-132). Without it, any revision change is
+   * stale.
+   */
+  editsLeaveValid?: (baseRevision: number, commandTypes: readonly string[]) => boolean,
+): ProposalValidation {
   const shape = proposalInputSchema.safeParse(input);
   if (!shape.success) {
     return invalid([
@@ -277,15 +294,8 @@ export function validateProposal(project: Project, input: unknown): ProposalVali
       },
     ]);
   }
-  if (baseRevision !== project.metadata.revision) {
-    return invalid([
-      {
-        code: "stale_revision",
-        callIndex: null,
-        message: `The proposal was built against revision ${baseRevision}, but the project is at revision ${project.metadata.revision}`,
-      },
-    ]);
-  }
+  const moved = baseRevision !== project.metadata.revision;
+  if (moved && !editsLeaveValid) return invalid([staleRevision(baseRevision, project)]);
 
   const commands: RawCommandInput[] = [];
   const capabilities: AssistantCapability[] = [];
@@ -303,11 +313,20 @@ export function validateProposal(project: Project, input: unknown): ProposalVali
     commands.push({
       type: resolution.commandType,
       version: resolution.commandVersion,
-      payload: resolution.payload,
+      payload: keepExistingPads(project, resolution.commandType, resolution.payload),
     });
     capabilities.push(resolution.capability);
   });
   if (issues.length > 0) return invalid(issues);
+  if (
+    moved &&
+    !editsLeaveValid?.(
+      baseRevision,
+      commands.map((command) => command.type),
+    )
+  ) {
+    return invalid([staleRevision(baseRevision, project)]);
+  }
   const rangeIssues = valueIssues(project, commands);
   if (rangeIssues.length > 0) return invalid(rangeIssues);
 
@@ -315,7 +334,8 @@ export function validateProposal(project: Project, input: unknown): ProposalVali
   // project, without committing a revision.
   const dryRun = executeTransaction(project, commands, {
     actor: "assistant",
-    baseRevision,
+    // A proposal the edits since leave valid is checked against the song as it is.
+    ...(moved ? {} : { baseRevision }),
     commitRevision: false,
   });
   if (!dryRun.ok) return invalid(dryRun.issues.map(fromCommandIssue));
@@ -336,6 +356,46 @@ export function validateProposal(project: Project, input: unknown): ProposalVali
         controls: uniqueControls(lines.flatMap((line) => line.controls)),
         ...diffProjects(project, dryRun.project),
       },
+    },
+  };
+}
+
+/**
+ * An `instrument.change` that installs a drum machine on a track that already
+ * has one is, in the model's hands, "these pads": it lists every pad in full,
+ * the old ones with no sound because it was never told theirs. Applied as
+ * written it would clear every sample the producer chose (GRV-138). So the
+ * pads the track already has are kept as they are, matched by id, and only a
+ * sound the proposal names for one replaces its own; new pads and the
+ * proposal's own removals are taken as proposed. Changing an existing pad
+ * (rename, choke group, level) is a job for `drum.setPad*`, not this call.
+ */
+function keepExistingPads(
+  project: Project,
+  commandType: string,
+  payload: unknown,
+): unknown {
+  if (commandType !== "instrument.change") return payload;
+  const { trackId, instrument } = payload as {
+    trackId: string;
+    instrument: Instrument | null;
+  };
+  const current = project.song.tracks.find((track) => track.id === trackId)?.instrument;
+  if (instrument?.kind !== "drumMachine" || current?.kind !== "drumMachine") {
+    return payload;
+  }
+  const existing = new Map(current.pads.map((pad) => [pad.id as string, pad]));
+  const pads = instrument.pads.map((pad) => {
+    const kept = existing.get(pad.id);
+    if (!kept) return pad;
+    return pad.assetId === null ? kept : { ...kept, assetId: pad.assetId };
+  });
+  return {
+    trackId,
+    instrument: {
+      ...instrument,
+      pads,
+      parameters: { ...current.parameters, ...instrument.parameters },
     },
   };
 }

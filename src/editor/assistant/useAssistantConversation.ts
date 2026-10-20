@@ -19,7 +19,12 @@
  * assistant has both. An answer is the next turn's message, and a newer
  * question takes the place of one still pending.
  *
- * Analytics: `assistant_message_sent` with the scope,
+ * Applying a proposal has the assistant take a turn by itself (GRV-195,
+ * `useFollowUp.ts` decides when): {@link AssistantConversation.followUp},
+ * whose message the log keeps but does not show.
+ *
+ * Analytics: `assistant_message_sent` with the scope and whether it was the
+ * assistant's own follow-up,
  * `assistant_suggestion_clicked` with the suggestion's ID, and
  * `assistant_ask_shown`/`assistant_ask_answered` with how many options a
  * question had and how it was answered, and `assistant_video_shown` once per
@@ -47,6 +52,7 @@ import type {
   AssistantStreamEvent,
   AssistantTurnHandle,
 } from "../../assistant/assistantClient";
+import { FOLLOW_UP_MESSAGE, FOLLOW_UP_TITLE } from "../../assistant/followUp";
 import {
   type HistoryProposal,
   historyOf as historyOfEntries,
@@ -97,6 +103,12 @@ export interface TurnOrigin {
   readonly answers?: string;
   /** What the turn sent, when it is not {@link text} (an answer's full wording). */
   readonly wire?: string;
+  /**
+   * The assistant's follow-up after an Apply (GRV-195), not the producer's
+   * words: the log does not show its message, and {@link text} only titles
+   * the turn's cards.
+   */
+  readonly automatic?: true;
   readonly scope: AssistantScope;
   /**
    * How many changes made elsewhere had been adopted when the turn was sent
@@ -145,6 +157,8 @@ export type ConversationEntry =
        * labels it as the lesson's rather than with a scope.
        */
       readonly lesson?: string;
+      /** The follow-up after an Apply (GRV-195): sent, kept, never shown. */
+      readonly automatic?: true;
     }
   /** The assistant's reply: streaming, finished, stopped or failed part-way. */
   | {
@@ -353,6 +367,12 @@ export interface UseAssistantConversationOptions {
    * session and are never kept.
    */
   readonly session?: () => { readonly projectId: string; readonly internal: boolean };
+  /**
+   * Hears each turn start, whatever started it (a message, an answer, Try
+   * again, Refresh, a follow-up), so a follow-up still to come knows the
+   * conversation moved on without it (GRV-195).
+   */
+  readonly onTurnStarted?: () => void;
   /** Makes the conversation's and each turn's ID; random by default. */
   readonly newId?: () => string;
   /**
@@ -404,6 +424,12 @@ export interface AssistantConversation {
    * message names them, as Try again's does.
    */
   refresh(entryId: string, shown?: readonly ShownPart[]): boolean;
+  /**
+   * Takes the assistant's turn after an Apply (GRV-195): no words from the
+   * producer, the song as it is now, in the scope on the chip. Returns whether
+   * it went: not while a reply streams, nor with no account.
+   */
+  followUp(): boolean;
   /** The question waiting for an answer, if there is one (GRV-42). */
   readonly pendingAsk: Accessor<PendingAsk | null>;
   /**
@@ -576,6 +602,7 @@ export function useAssistantConversation(
     let handle: AssistantTurnHandle | null = null;
     /** The entry the turn's streamed proposal parts share (GRV-144). */
     let partsEntryId: string | null = null;
+    options.onTurnStarted?.();
 
     /** Whether the reply is still in the log when the turn ends. */
     let replyKept = false;
@@ -785,12 +812,14 @@ export function useAssistantConversation(
   /**
    * Sends one message as a new turn in `scope`: the message, its analytics
    * and its turn. `wire` is what the turn says when the log shows something
-   * else (an answer to a question).
+   * else (an answer to a question). `followingUp` is the assistant sending
+   * it by itself after an Apply (GRV-195), which its analytics say.
    */
   function sendMessage(
-    message: Pick<TurnOrigin, "text" | "answers" | "wire" | "lesson">,
+    message: Pick<TurnOrigin, "text" | "answers" | "wire" | "lesson" | "automatic">,
     scope: AssistantScope,
     lessonNow?: AssistantLessonContext,
+    followingUp = false,
   ): void {
     const project = options.project();
     if (!project) return;
@@ -827,8 +856,13 @@ export function useAssistantConversation(
     const sessionTurn = options.health?.messageSent();
     // A lesson's own turn is not a message the producer wrote.
     if (!lessonNow) {
-      analytics.log("assistant_message_sent", { scope: scope.catalogScope });
-      analytics.logFeatureFirstUse("assistant_message");
+      analytics.log("assistant_message_sent", {
+        scope: scope.catalogScope,
+        automatic: followingUp,
+      });
+      analytics.logFeatureFirstUse(
+        followingUp ? "assistant_follow_up" : "assistant_message",
+      );
     }
     startTurn(request, {
       ...message,
@@ -865,9 +899,14 @@ export function useAssistantConversation(
   function continueProposal(entryId: string, shown: readonly ShownPart[]): boolean {
     const entry = entries().find((candidate) => candidate.id === entryId);
     if (entry?.kind !== "proposal" || !canStart()) return false;
-    const { text, answers, wire, scope } = entry.origin;
+    const { text, answers, wire, automatic, scope } = entry.origin;
     sendMessage(
-      { text, answers, wire: `${wire ?? text}\n\n${continueNote(shown)}` },
+      {
+        text,
+        answers,
+        wire: `${wire ?? text}\n\n${continueNote(shown)}`,
+        ...(automatic ? { automatic } : {}),
+      },
       scope,
     );
     return true;
@@ -877,13 +916,26 @@ export function useAssistantConversation(
     const entry = entries().find((candidate) => candidate.id === entryId);
     if (entry?.kind !== "proposal" && entry?.kind !== "recommendation") return false;
     if (!canStart()) return false;
-    const { text, answers, wire, scope } = entry.origin;
+    const { text, answers, wire, automatic, scope } = entry.origin;
     // Parts already applied are named, so the new proposal does not repeat them.
     const noted =
       shown?.some((part) => part.applied) === true
         ? `${wire ?? text}\n\n${refreshNote(shown)}`
         : wire;
-    sendMessage({ text, answers, wire: noted }, scope);
+    sendMessage(
+      { text, answers, wire: noted, ...(automatic ? { automatic } : {}) },
+      scope,
+    );
+    return true;
+  }
+
+  function followUp(): boolean {
+    if (!canStart()) return false;
+    sendMessage(
+      { text: FOLLOW_UP_TITLE, wire: FOLLOW_UP_MESSAGE, automatic: true },
+      options.scope(),
+      true,
+    );
     return true;
   }
 
@@ -1097,6 +1149,7 @@ export function useAssistantConversation(
     canRetry,
     continueProposal,
     refresh,
+    followUp,
     recordProposalOutcome,
     pendingAsk,
     answerAsk,

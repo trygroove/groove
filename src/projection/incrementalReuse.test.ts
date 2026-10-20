@@ -46,11 +46,11 @@ vi.mock("./fingerprint", async () => {
 
 import type { RowMetrics } from "../arrangement/geometry";
 import { buildArrangementProjection } from "../arrangement/projection";
-import { revisionOf } from "../arrangement/revision";
 import type { Placement, Project, Track } from "../domain/entities";
 import { createReferenceProject } from "../domain/fixtures";
 import { toTicks } from "../domain/time";
 import { buildAudioProjection } from "./audioProjection";
+import { revisionOf } from "./revision";
 
 beforeEach(() => {
   fingerprintCalls = 0;

@@ -9,6 +9,7 @@ import ReleaseBadge from "./components/ReleaseBadge";
 import TapeLoader from "./components/TapeLoader";
 import { Router } from "./router";
 import { syncInternalTraffic } from "./shared/internalTraffic";
+import ShortcutRoot from "./shortcuts/ShortcutRoot";
 import { installStaleDeployRecoveryForWindow } from "./staleDeployRecovery";
 import {
   createRouteTracker,
@@ -116,33 +117,37 @@ export default function App() {
 
   return (
     <Errored fallback={(err) => <UncaughtErrorFallback error={err()} />}>
-      <Router>
-        {(props) => (
-          <>
-            <Title>{APP_TITLE}</Title>
-            <SurfaceTracker telemetry={telemetry} />
-            <Errored
-              fallback={(err, reset) => (
-                <AppErrorFallback error={err()} reset={reset} area="shell" />
-              )}
-            >
-              <Loading fallback={<TapeLoader label="Loading" />}>
-                {props.children}
-              </Loading>
-            </Errored>
-            {/* Outside the shell's Errored/Loading boundary so the deployed revision
+      {/* The one keyboard-shortcut controller (GRV-186), above everything that
+          registers a shortcut scope: every route, the badge and the disclosure. */}
+      <ShortcutRoot>
+        <Router>
+          {(props) => (
+            <>
+              <Title>{APP_TITLE}</Title>
+              <SurfaceTracker telemetry={telemetry} />
+              <Errored
+                fallback={(err, reset) => (
+                  <AppErrorFallback error={err()} reset={reset} area="shell" />
+                )}
+              >
+                <Loading fallback={<TapeLoader label="Loading" />}>
+                  {props.children}
+                </Loading>
+              </Errored>
+              {/* Outside the shell's Errored/Loading boundary so the deployed revision
 					    stays visible/inspectable even while the app is loading or has
 					    hit an error -- exactly when knowing the build matters most. */}
-            <ReleaseBadge />
-            {/* Also outside the boundary: the PRD OPS-02 opt-out must stay
+              <ReleaseBadge />
+              {/* Also outside the boundary: the PRD OPS-02 opt-out must stay
 					    reachable even on the error screen -- which is why this stands
 					    down for the landing page's own inline copy (`LOOP-001b`, per
 					    DEC-009) only while that copy is actually mounted, rather than
 					    for the whole route. */}
-            <FloatingTelemetryDisclosure />
-          </>
-        )}
-      </Router>
+              <FloatingTelemetryDisclosure />
+            </>
+          )}
+        </Router>
+      </ShortcutRoot>
     </Errored>
   );
 }

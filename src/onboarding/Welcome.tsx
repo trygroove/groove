@@ -22,7 +22,7 @@ import type { ProjectRepository } from "../persistence/projectRepository";
 import { getProfileRepository } from "../profileRepositoryClient";
 import { getProjectRepository } from "../projectRepositoryClient";
 import { scrollBehavior } from "../shared/motion";
-import { useShortcuts } from "../shortcuts/useShortcuts";
+import { useShortcutScope } from "../shortcuts/useShortcutScope";
 import CueMark from "./CueMark";
 import { MemoryCard } from "./MemoryCard";
 import { centreRegion, fitRunout } from "./runout";
@@ -107,7 +107,7 @@ export default function Welcome(props: WelcomeProps): JSX.Element {
   let askText: HTMLElement | undefined;
   const askTextHasFocus = () =>
     askText !== undefined && document.activeElement === askText;
-  useShortcuts({
+  useShortcutScope({
     analytics,
     handlers: () => ({
       "assistant.send": { run: () => void draft.finish(), isEnabled: askTextHasFocus },

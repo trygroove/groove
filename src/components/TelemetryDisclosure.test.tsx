@@ -4,8 +4,10 @@ import userEvent from "@testing-library/user-event";
 import { createSignal, flush } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConsentStore } from "../analytics/consent";
-import { type ShortcutHandlers, useShortcuts } from "../shortcuts";
+import { type ShortcutHandlers, useShortcutScope } from "../shortcuts";
+import ShortcutGuide from "../shortcuts/ShortcutGuide";
 import { memoryStorage } from "../testing/storage";
+import ConfirmDialog from "./ConfirmDialog";
 import TelemetryDisclosure from "./TelemetryDisclosure";
 
 afterEach(() => cleanup());
@@ -234,20 +236,27 @@ describe("TelemetryDisclosure Escape (GRV-148)", () => {
 
 // GRV-148 QA: a modal dialog opened over the panel (the shortcuts guide in the
 // studio) is the topmost surface, so one Escape closes the dialog alone and
-// the panel waits for the next one, whichever controller hears the key first.
-// In the studio the editor's controller is mounted long before the panel's.
+// the panel waits for the next one, wherever its owner sits in the tree. In
+// the studio the editor is mounted long before the panel. The dialog's modal
+// shortcut scope is what hides the panel's (GRV-186).
 describe("TelemetryDisclosure Escape under a modal dialog (GRV-148)", () => {
-  /** A modal's Escape owner, like the editor's: it closes the dialog when open. */
-  function ModalOwner(props: { open: boolean; onClose(): void }): JSX.Element {
-    useShortcuts({
+  /** A modal dialog's Escape, registered while it is open, like the guide's. */
+  function ModalScope(props: { onClose(): void }): JSX.Element {
+    useShortcutScope({
+      modal: true,
       handlers: (): ShortcutHandlers => ({
         "view.close_surface": { run: () => props.onClose() },
       }),
-      contexts: () => [],
+      contexts: () => ["dialog"],
     });
+    return <div role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" />;
+  }
+
+  /** Owns the dialog's open state, like the editor owns the guide's. */
+  function ModalOwner(props: { open: boolean; onClose(): void }): JSX.Element {
     return (
       <Show when={props.open}>
-        <div role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" />
+        <ModalScope onClose={() => props.onClose()} />
       </Show>
     );
   }
@@ -279,7 +288,7 @@ describe("TelemetryDisclosure Escape under a modal dialog (GRV-148)", () => {
   }
 
   for (const ownerFirst of [true, false]) {
-    it(`one Escape closes only the dialog (its controller attached ${ownerFirst ? "before" : "after"} the panel's)`, async () => {
+    it(`one Escape closes only the dialog (its owner mounted ${ownerFirst ? "before" : "after"} the panel)`, async () => {
       const { user, details, dialogOpen } = await openBoth(ownerFirst);
       await user.keyboard("{Escape}");
       flush();
@@ -289,4 +298,122 @@ describe("TelemetryDisclosure Escape under a modal dialog (GRV-148)", () => {
       await vi.waitFor(() => expect(details.open).toBe(false));
     });
   }
+});
+
+// GRV-186: a confirmation over the open panel is a modal shortcut scope, so the
+// first Escape is the dialog's alone and the second closes the panel.
+describe("TelemetryDisclosure Escape under a confirm dialog (GRV-186)", () => {
+  it("closes the dialog on the first Escape and the panel on the second", async () => {
+    const store = new ConsentStore(memoryStorage());
+    const [confirming, setConfirming] = createSignal(false);
+    const cancel = vi.fn(() => setConfirming(false));
+    render(() => (
+      <>
+        <TelemetryDisclosure store={store} />
+        <Show when={confirming()}>
+          <ConfirmDialog
+            title="Delete?"
+            message="This cannot be undone."
+            onConfirm={() => {}}
+            onCancel={cancel}
+          />
+        </Show>
+      </>
+    ));
+    const user = userEvent.setup();
+    const summary = screen.getByText("Privacy");
+    await user.click(summary);
+    const details = summary.closest("details") as HTMLDetailsElement;
+    await vi.waitFor(() => expect(details.open).toBe(true));
+    setConfirming(true);
+    flush();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    flush();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(details.open).toBe(true);
+
+    await user.keyboard("{Escape}");
+    await vi.waitFor(() => expect(details.open).toBe(false));
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+});
+
+// GRV-148, second QA: in the studio the editor, mounted long before the
+// panel, owns both the Keyboard shortcuts guide's open state and the
+// arrangement's "Escape clears the selection". This stands in for that chain
+// with the real guide mounted beside the real panel, each a scope on the one
+// controller (GRV-186), as in the app. The guide's own modal scope closes it.
+describe("TelemetryDisclosure Escape beside the editor (GRV-148)", () => {
+  function EditorStandIn(props: {
+    selected: () => boolean;
+    clearSelection(): void;
+  }): JSX.Element {
+    const [guideOpen, setGuideOpen] = createSignal(false);
+    useShortcutScope({
+      handlers: (): ShortcutHandlers => ({
+        "help.shortcut_guide": { run: () => setGuideOpen(true) },
+        "view.close_surface": {
+          run: () => props.clearSelection(),
+          isEnabled: () => props.selected(),
+        },
+      }),
+      contexts: () => ["editor"],
+    });
+    return (
+      <Show when={guideOpen()}>
+        <ShortcutGuide contexts={["editor"]} onClose={() => setGuideOpen(false)} />
+      </Show>
+    );
+  }
+
+  async function studio() {
+    const store = new ConsentStore(memoryStorage());
+    const [selected, setSelected] = createSignal(true);
+    const clearSelection = vi.fn(() => setSelected(false));
+    render(() => (
+      <>
+        <EditorStandIn selected={selected} clearSelection={clearSelection} />
+        <TelemetryDisclosure store={store} />
+      </>
+    ));
+    const user = userEvent.setup();
+    const summary = screen.getByText("Privacy");
+    await user.click(summary);
+    const details = summary.closest("details") as HTMLDetailsElement;
+    await vi.waitFor(() => expect(details.open).toBe(true));
+    return { user, summary, details, selected, clearSelection };
+  }
+
+  it("one Escape closes only the shortcuts guide opened over the panel", async () => {
+    const { user, summary, details } = await studio();
+    await user.keyboard("?");
+    flush();
+    expect(
+      screen.getByRole("dialog", { name: "Keyboard shortcuts" }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    flush();
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+    expect(details.open).toBe(true);
+
+    await user.keyboard("{Escape}");
+    await vi.waitFor(() => expect(details.open).toBe(false));
+    expect(summary).toHaveFocus();
+  });
+
+  it("one Escape on the panel closes it and leaves the selection alone", async () => {
+    const { user, details, selected, clearSelection } = await studio();
+    await user.keyboard("{Escape}");
+    await vi.waitFor(() => expect(details.open).toBe(false));
+    expect(clearSelection).not.toHaveBeenCalled();
+    expect(selected()).toBe(true);
+
+    // With the panel closed, the next Escape is the arrangement's again.
+    await user.keyboard("{Escape}");
+    expect(clearSelection).toHaveBeenCalledTimes(1);
+  });
 });

@@ -265,6 +265,7 @@ async function setUp(
     session,
     client,
     clock,
+    revealControl,
     say,
     track,
     ask,
@@ -328,7 +329,7 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
       "Swing 50% → to 58%",
     ]);
     expect(within(card()).queryByText("More parts on the way…")).toBeNull();
-    expect(cardStatus()).toHaveTextContent("Nothing has changed yet.");
+    expect(cardStatus()).toHaveTextContent("Previewing every part not applied yet");
     expect(within(card()).getByText("Why this works")).toBeInTheDocument();
   });
 
@@ -572,11 +573,23 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     expect(within(card()).queryByRole("button", { name: "Apply all" })).toBeNull();
   });
 
+  it("stops saying more parts are on the way once the producer stops the turn (GRV-194)", async () => {
+    const { ask, part } = await setUp();
+    await ask();
+    part(TRACK);
+    expect(within(card()).getByText("More parts on the way…")).toBeInTheDocument();
+    clickAndFlush(button("Stop"));
+    expect(within(card()).queryByText("More parts on the way…")).toBeNull();
+    expect(lineTexts()).toEqual(["Bass · new track"]);
+  });
+
   it("keeps what arrived applicable when the turn fails partway, and Try again asks for the rest", async () => {
     const { ask, part, client, session, hasBass } = await setUp();
     await ask();
     part(TRACK);
+    expect(within(card()).getByText("More parts on the way…")).toBeInTheDocument();
     fireAndFlush(() => client.last().fail({ code: "timeout", retryable: true }));
+    expect(within(card()).queryByText("More parts on the way…")).toBeNull();
     expect(cardStatus()).toHaveTextContent("The rest of this proposal didn't arrive.");
     // The error says what went wrong; the card is what offers Try again.
     expect(within(panel()).getAllByRole("button", { name: "Try again" })).toHaveLength(1);
@@ -602,6 +615,8 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     const { ask, part, fail, client } = await setUp();
     await ask();
     part(TRACK);
+    // The first Cancel ends the preview that opened by itself.
+    await press(cardButton("Cancel"));
     await press(cardButton("Cancel"));
     fail();
     expect(cardStatus()).toHaveTextContent(
@@ -619,7 +634,7 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     const { ask, part, session } = await setUp();
     await ask();
     part(SWING);
-    await press(cardButton("Preview"));
+    // The preview opens by itself (GRV-193), with no click.
     expect(session.activePreview).not.toBeNull();
     expect(session.project.song.swing).toBe(58);
     expect(session.committedProject.song.swing).toBe(50);
@@ -628,9 +643,120 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     expect(session.project.song.tracks.some((t) => t.name === "Bass")).toBe(true);
     expect(session.history.canUndo).toBe(false);
     expect(cardButton("Preview")).toHaveAttribute("aria-pressed", "true");
+    expect(cardStatus()).toHaveTextContent("Still writing.");
     await press(cardButton("Cancel"));
     expect(session.activePreview).toBeNull();
     expect(session.project.song.swing).toBe(50);
+  });
+
+  it("stops following new parts once the producer cancels the preview, and previews again on a click", async () => {
+    const { ask, part, session } = await setUp();
+    await ask();
+    part(SWING);
+    expect(session.activePreview).not.toBeNull();
+    await press(cardButton("Cancel"));
+    part(TRACK);
+    expect(session.activePreview).toBeNull();
+    expect(cardButton("Preview")).toHaveAttribute("aria-pressed", "false");
+    await press(cardButton("Preview"));
+    expect(session.activePreview).not.toBeNull();
+    part(CLIP);
+    expect(session.activePreview).not.toBeNull();
+    expect(session.project.song.tracks.some((t) => t.name === "Bass")).toBe(true);
+  });
+
+  it("stops following when the producer previews another card mid-stream", async () => {
+    const { ask, part, finish, session, revealControl } = await setUp();
+    await ask();
+    part(SWING);
+    finish([SWING]);
+    await ask();
+    part(TRACK);
+    const cards = within(panel()).getAllByRole("region", { name: /^Proposal\b/ });
+    expect(cards).toHaveLength(2);
+    // The first card's own Preview takes the preview from the streaming one.
+    await press(within(cards[0] as HTMLElement).getByRole("button", { name: "Preview" }));
+    expect(session.project.song.swing).toBe(58);
+    const preview = session.activePreview;
+    const revealed = revealControl.mock.calls.length;
+    part(CLIP);
+    expect(session.activePreview).toBe(preview);
+    expect(revealControl.mock.calls.length).toBe(revealed);
+  });
+
+  it("follows the stream: each new part reveals where it lands", async () => {
+    const { ask, part, revealControl } = await setUp();
+    await ask();
+    part(SWING);
+    const first = revealControl.mock.calls.at(-1)?.[0];
+    expect(first).toMatchObject({ entity: "song" });
+    part(TRACK);
+    const newest = revealControl.mock.calls.at(-1)?.[0];
+    expect(revealControl.mock.calls.length).toBeGreaterThan(1);
+    expect(newest).toMatchObject({ entity: CREATE_EXAMPLES.track.id });
+    expect(newest).not.toEqual(first);
+    expect(revealControl.mock.calls.at(-1)?.[1]).toEqual({ focus: false });
+  });
+
+  it("stops following once the producer applies a part", async () => {
+    const { ask, part, session, revealControl } = await setUp();
+    await ask();
+    part(SWING);
+    expect(session.activePreview).not.toBeNull();
+    await press(applyAt(0));
+    expect(session.activePreview).toBeNull();
+    const revealed = revealControl.mock.calls.length;
+    part(TRACK);
+    expect(session.activePreview).toBeNull();
+    expect(revealControl.mock.calls.length).toBe(revealed);
+  });
+
+  it("ends the preview with Apply all, and nothing previews again", async () => {
+    // Apply all waits for the turn to end, so no later part can reach the card.
+    const { ask, part, fail, session, swing } = await setUp();
+    await ask();
+    part(SWING);
+    expect(session.activePreview).not.toBeNull();
+    fail();
+    await press(cardButton("Apply all"));
+    expect(session.activePreview).toBeNull();
+    expect(swing()).toBe(58);
+    expect(session.history.canUndo).toBe(true);
+  });
+
+  it("opens nothing, and says nothing, when a gesture keeps the preview from opening", async () => {
+    const { ask, part, session } = await setUp();
+    await ask();
+    const gesture = session.beginGesture();
+    part(SWING);
+    expect(session.activePreview).toBeNull();
+    expect(card()).not.toHaveTextContent("Finish the change");
+    gesture.cancel();
+    // The producer's own click still reports a busy session.
+    const gesture2 = session.beginGesture();
+    await press(cardButton("Preview"));
+    expect(card()).toHaveTextContent("Finish the change");
+    gesture2.cancel();
+  });
+
+  it("logs each preview shown once, as automatic or as the producer's own", async () => {
+    const { ask, part, events, revealControl } = await setUp();
+    await ask();
+    part(SWING);
+    part(TRACK);
+    expect(events("assistant_proposal_previewed").map((e) => e.params)).toEqual([
+      expect.objectContaining({ automatic: true }),
+    ]);
+    await press(cardButton("Cancel"));
+    await press(cardButton("Preview"));
+    expect(events("assistant_proposal_previewed").map((e) => e.params)).toEqual([
+      expect.objectContaining({ automatic: true }),
+      expect.objectContaining({ automatic: false }),
+    ]);
+    // The producer's own pick ends the follow: a later part does not move it.
+    const revealed = revealControl.mock.calls.length;
+    part(CLIP);
+    expect(revealControl.mock.calls.length).toBe(revealed);
   });
 
   it("logs the first part once per proposal, and each part applied once", async () => {

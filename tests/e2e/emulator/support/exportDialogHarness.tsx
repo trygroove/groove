@@ -5,6 +5,7 @@ import { createReferenceProject } from "~/domain/fixtures";
 import ExportDialog from "~/editor/export/ExportDialog";
 import type { StemsBatchRequest } from "~/editor/export/stemsExport";
 import { StemExportError } from "~/export/stems/exportStems";
+import ShortcutRoot from "~/shortcuts/ShortcutRoot";
 
 /**
  * The browser half of the Export dialog's layout specs (EXP-004): mounts the
@@ -61,25 +62,28 @@ export function mountExportDialog(kind: ProjectKind, title?: string): void {
   document.body.append(host);
   const remove = render(
     () => (
-      <ExportDialog
-        project={() => project}
-        exportWav={
-          ((
-            _project: Project,
-            options: { onProgress?: (f: number) => void; signal?: AbortSignal },
-          ) => start(options.onProgress, options.signal, "mix.wav")) as never
-        }
-        exportStemsBatch={
-          ((_project: Project, request: StemsBatchRequest) =>
-            start(
-              request.onProgress,
-              request.signal,
-              `zip ${request.batch.index + 1}`,
-            )) as never
-        }
-        download={(_blob, fileName) => void downloads.push(fileName)}
-        onClose={unmountExportDialog}
-      />
+      // A scope needs the app's controller above it (GRV-186).
+      <ShortcutRoot>
+        <ExportDialog
+          project={() => project}
+          exportWav={
+            ((
+              _project: Project,
+              options: { onProgress?: (f: number) => void; signal?: AbortSignal },
+            ) => start(options.onProgress, options.signal, "mix.wav")) as never
+          }
+          exportStemsBatch={
+            ((_project: Project, request: StemsBatchRequest) =>
+              start(
+                request.onProgress,
+                request.signal,
+                `zip ${request.batch.index + 1}`,
+              )) as never
+          }
+          download={(_blob, fileName) => void downloads.push(fileName)}
+          onClose={unmountExportDialog}
+        />
+      </ShortcutRoot>
     ),
     host,
   );

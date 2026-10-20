@@ -45,6 +45,9 @@ export interface AssistantChatViewProps {
 /** The status a streaming reply puts in the panel's header and bar. */
 export const WRITING_STATUS = "Writing…";
 
+/** The log's last line while a turn streams: more may still arrive (GRV-194). */
+export const STILL_WRITING_NOTE = `${ASSISTANT_NAME} is still writing…`;
+
 /** What the panel offers someone who must sign in first (ADR 0006 decision 4). */
 export const SIGN_IN_NOTE = `Sign in to talk to ${ASSISTANT_NAME}.`;
 
@@ -190,6 +193,12 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
             />
           )}
         </For>
+        {/* The turn is not over until it ends, even once the reply's words
+            stop and the proposals are still landing (GRV-194). Quiet on
+            purpose: the content is what draws the eye. */}
+        <Show when={streaming()}>
+          <p class="assistant-still-writing">{STILL_WRITING_NOTE}</p>
+        </Show>
       </div>
       <Show
         when={props.chat.account().registered}
@@ -330,7 +339,11 @@ function Entry(props: {
 }): JSX.Element {
   return (
     <Switch>
-      <Match when={props.entry.kind === "message" && props.entry}>
+      {/* The assistant's follow-up after an Apply (GRV-195) is not the
+          producer's message: only its reply shows. */}
+      <Match
+        when={props.entry.kind === "message" && !props.entry.automatic && props.entry}
+      >
         {(message) => (
           <div class="assistant-message">
             <span class="assistant-entry-label">

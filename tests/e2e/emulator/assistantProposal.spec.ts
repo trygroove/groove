@@ -3,6 +3,7 @@ import {
   arrangement,
   assistantButton,
   composer,
+  conversation,
   goToView,
   newProject,
   panel,
@@ -114,6 +115,10 @@ test.describe("an assistant proposal across a reload", () => {
   }) => {
     await newProject(page);
     await askToLoosen(page);
+    // The preview opened by itself on the mixer (GRV-193); end it, so the
+    // reload lands on the arrangement.
+    await proposalButton(page, "Cancel").click();
+    await expect(page).not.toHaveURL(/\/mixer$/);
     // A question waiting in the same conversation comes back as it did before.
     await composer(page).fill("Build me a drop [ask]");
     await page.keyboard.press("Enter");
@@ -142,5 +147,22 @@ test.describe("an assistant proposal across a reload", () => {
     await expect(proposalButton(page, "Apply all")).toBeEnabled({ timeout: 15_000 });
     await proposalButton(page, "Apply all").click();
     await expect(proposal(page)).toContainText("Applied as one undo step");
+  });
+});
+
+test.describe("an assistant proposal applied", () => {
+  test("has the assistant follow up by itself, with no message from the producer (GRV-195)", async ({
+    page,
+  }) => {
+    await newProject(page);
+    await askToLoosen(page);
+    await proposalButton(page, "Apply all").click();
+    await expect(proposal(page)).toContainText("Applied");
+
+    // The scripted provider's ordinary reply, to a turn nobody typed.
+    const replies = conversation(page).locator(".assistant-reply");
+    await expect(replies).toHaveCount(2, { timeout: 15_000 });
+    await expect(replies.last()).toContainText("Here is one idea.", { timeout: 15_000 });
+    await expect(conversation(page).locator(".assistant-message")).toHaveCount(1);
   });
 });

@@ -1206,10 +1206,10 @@ account has already answered the assistant's disclosure (GRV-8).
 3. Type "Loosen the beat" and press Enter. Your message appears in the
    conversation, marked with its scope, and the assistant's reply follows it.
 4. The reply ends with a proposal that lists both changes, each from its
-   current value to the new one. Nothing in the song has changed yet: swing
-   reads what it did before.
-5. Press Preview. The editor goes to the mixer, where the change can be seen.
-   BD's volume fader sits at the proposed level, and swing reads 58%.
+   current value to the new one.
+5. Without a click, the proposal is previewing: the editor goes to the mixer,
+   where the change can be seen. BD's volume fader sits at the proposed level,
+   and swing reads 58%. Nothing is saved yet.
 6. Press Cancel. The editor goes back to the arrangement. Swing reads what it
    did before, and BD's volume is where it was. There is nothing to undo.
 7. Press Preview again, then Apply all. The proposal says it was applied.

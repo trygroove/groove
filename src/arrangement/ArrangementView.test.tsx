@@ -55,6 +55,7 @@ function firePointer(
     pointerId?: number;
     ctrlKey?: boolean;
     shiftKey?: boolean;
+    altKey?: boolean;
   } = {},
 ): void {
   const event = new MouseEvent(type, {
@@ -65,6 +66,7 @@ function firePointer(
     clientY: init.clientY ?? 0,
     ctrlKey: init.ctrlKey ?? false,
     shiftKey: init.shiftKey ?? false,
+    altKey: init.altKey ?? false,
   });
   Object.defineProperty(event, "pointerId", { value: init.pointerId ?? 1 });
   fireEvent(el, event);
@@ -103,9 +105,11 @@ async function setUpEditing(
   function renderView(
     onOpenPlacement?: (placementId: PlacementId) => void,
     onSelectPlacement?: (placementId: PlacementId) => void,
+    onSeekTicks?: (ticks: number) => void,
   ) {
     return render(() => (
       <ArrangementView
+        onSeekTicks={onSeekTicks}
         project={session.project}
         analytics={analytics}
         dispatch={session.dispatch.bind(session)}
@@ -670,6 +674,64 @@ describe("ArrangementView loop brace (LOOP-018)", () => {
     expect(transport.named("loop_range_set")).toHaveLength(0);
   });
 
+  it("seeks to the nearest grid line for a press clear of the brace, once", async () => {
+    const { session, transport, renderView } = await setUpEditing();
+    const seek = vi.fn();
+    const { container } = renderView(undefined, undefined, seek);
+    const canvas = interactionCanvasOf(container);
+
+    firePointer(canvas, "pointerdown", { clientX: barLine(6.6), clientY: rulerY });
+    firePointer(canvas, "pointerup", { clientX: barLine(6.6), clientY: rulerY });
+
+    expect(seek).toHaveBeenCalledTimes(1);
+    expect(seek).toHaveBeenCalledWith(6 * TICKS_PER_BAR);
+    const uses = transport.events.filter((e) => e.name === "feature_first_use");
+    expect(uses).toHaveLength(1);
+    expect(uses[0].params).toMatchObject({ feature: "playhead_seek" });
+
+    firePointer(canvas, "pointerdown", { clientX: barLine(3.2), clientY: rulerY });
+    firePointer(canvas, "pointerup", { clientX: barLine(3.2), clientY: rulerY });
+    expect(seek).toHaveBeenCalledTimes(2);
+    expect(transport.events.filter((e) => e.name === "feature_first_use")).toHaveLength(
+      1,
+    );
+    expect(session.history.entries.length).toBe(0);
+  });
+
+  it("seeks exactly where the pointer is with Alt held", async () => {
+    const { renderView } = await setUpEditing();
+    const seek = vi.fn();
+    const { container } = renderView(undefined, undefined, seek);
+    const canvas = interactionCanvasOf(container);
+
+    firePointer(canvas, "pointerdown", {
+      clientX: barLine(6.6),
+      clientY: rulerY,
+      altKey: true,
+    });
+
+    const ticks = seek.mock.calls[0][0] as number;
+    expect(ticks).not.toBe(6 * TICKS_PER_BAR);
+    expect(Math.abs(ticks - 5.6 * TICKS_PER_BAR)).toBeLessThan(TICKS_PER_BAR / 10);
+  });
+
+  it("does not seek for a press that grabs the brace", async () => {
+    const { transport, renderView } = await setUpEditing();
+    const seek = vi.fn();
+    const { container } = renderView(undefined, undefined, seek);
+    const canvas = interactionCanvasOf(container);
+
+    firePointer(canvas, "pointerdown", { clientX: barLine(2), clientY: rulerY });
+    firePointer(canvas, "pointerup", { clientX: barLine(2), clientY: rulerY });
+
+    expect(seek).not.toHaveBeenCalled();
+    expect(
+      transport.events.filter(
+        (e) => e.name === "feature_first_use" && e.params.feature === "playhead_seek",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("offers no keyboard controls where nothing commits a range", async () => {
     const { renderView } = await setUpEditing();
     renderView();
@@ -734,6 +796,26 @@ describe("the one arrangement selection (#292)", () => {
     expect(session.project.song.placements.map((p) => p.id)).toEqual([
       placementIds[0][0],
     ]);
+  });
+
+  it("starts a band from the empty region below the last track (GRV-191)", async () => {
+    const { canvas, actions, placementIds } = await twoTracks();
+    // Row 2 does not exist: two tracks, so this press is below them.
+    drag(canvas, [2700, 3], [1164, 0]);
+    expect(said()).toBe("2 clips selected");
+    expect(actions.current?.getSelection()).toEqual([
+      placementIds[0][1],
+      placementIds[1][0],
+    ]);
+  });
+
+  it("clears the selection, and sets no point, on a click below the tracks", async () => {
+    const { canvas, actions } = await twoTracks();
+    drag(canvas, [0.5 * BAR, 0], [0.5 * BAR, 0]);
+    expect(actions.current?.getSelection().length).toBe(1);
+    drag(canvas, [4.5 * BAR, 3], [4.5 * BAR, 3]);
+    expect(actions.current?.getSelection()).toEqual([]);
+    expect(said()).toBe("No selection");
   });
 
   it("selects nothing with a band that touches no clip", async () => {

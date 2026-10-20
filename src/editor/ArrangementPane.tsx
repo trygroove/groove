@@ -41,6 +41,7 @@ export default function ArrangementPane(props: ArrangementPaneProps): JSX.Elemen
           project={props.project}
           playheadTicks={props.audio.positionTicks}
           isPlaying={props.audio.isPlaying}
+          onSeekTicks={props.audio.seekTicks}
           trackLevel={props.audio.trackLevel}
           dispatch={props.session.dispatch}
           beginGesture={props.session.beginGesture}

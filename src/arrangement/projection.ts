@@ -15,13 +15,13 @@ import type {
   SectionId,
   TrackId,
 } from "../domain/ids";
+import { combineRevisions, revisionOf } from "../projection/revision";
 import {
   buildRowOffsets,
   type RowMetrics,
   type RowRange,
   type TickRange,
 } from "./geometry";
-import { combineRevisions, revisionOf } from "./revision";
 
 /**
  * The renderer-specific `ArrangementProjection` PRD section 9.3 calls for:

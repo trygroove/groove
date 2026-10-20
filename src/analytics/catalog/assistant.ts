@@ -13,6 +13,7 @@ import {
 export const ASSISTANT_FEATURE_KEYS = [
   "assistant",
   "assistant_message",
+  "assistant_follow_up",
   "assistant_proposal",
   "assistant_proposal_part",
   "assistant_recommendation",
@@ -171,10 +172,18 @@ const MAX_PROPOSAL_PARTS = 100;
 const MAX_RECOMMENDED_SOUNDS = 3;
 
 export const ASSISTANT_EVENTS = {
+  /**
+   * A turn went to the assistant. `automatic` is true for the follow-up the
+   * assistant takes by itself after a proposal is applied (GRV-195), once per
+   * follow-up; false for everything the producer sent.
+   */
   assistant_message_sent: {
     phase: 3,
-    owners: ["AI-004"],
-    params: { scope: enumParam(["clip", "track", "section", "song"]) },
+    owners: ["AI-004", "GRV-195"],
+    params: {
+      scope: enumParam(["clip", "track", "section", "song"]),
+      automatic: boolParam(),
+    },
   },
 
   assistant_suggestion_clicked: {
@@ -248,6 +257,18 @@ export const ASSISTANT_EVENTS = {
       part_index: countParam(MAX_PROPOSAL_PARTS),
       turn_running: boolParam(),
     },
+  },
+
+  /**
+   * A proposal's preview opened on the arrangement (GRV-193): once per
+   * preview shown. `automatic` is true when the assistant turned it on as the
+   * proposal arrived, false when the producer clicked Preview. A preview
+   * that follows a streamed proposal's later parts is the same preview.
+   */
+  assistant_proposal_previewed: {
+    phase: 3,
+    owners: ["GRV-193"],
+    params: { automatic: boolParam() },
   },
 
   assistant_proposal_cancelled: {

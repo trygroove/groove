@@ -16,6 +16,12 @@
  *
  * If a level or a cut loses quality, the card names the rules most likely
  * behind it.
+ *
+ * Its first run on main (Actions run 39249960804) had every call refused with
+ * HTTP 400, the control's too, though the request was the same one that had
+ * just run fine: the API had stopped taking the account's calls an hour
+ * earlier, partway through `tool-bundles`. It runs again once that is cleared,
+ * and an errored turn now says what the API gave as its reason.
  */
 import { defineExperiment } from "../../src/assistant/evals/experiment";
 
