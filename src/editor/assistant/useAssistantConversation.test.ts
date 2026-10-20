@@ -17,6 +17,7 @@ import type { AssistantScope } from "./assistantScope";
 import {
   type AssistantConversation,
   type ConversationEntry,
+  continueNote,
   historyOf,
   useAssistantConversation,
 } from "./useAssistantConversation";
@@ -350,6 +351,129 @@ describe("a conversation that recommends a video (GRV-16)", () => {
       },
     ]);
     dispose();
+  });
+});
+
+describe("a proposal that streams its parts (GRV-144)", () => {
+  const project = createSliceFixtureProject();
+  const scope: AssistantScope = {
+    level: "song",
+    label: "Song",
+    catalogScope: "song",
+    selection: null,
+    track: null,
+  };
+  const call = (n: number) => ({
+    id: `toolu_${n}`,
+    name: "parameter_set",
+    input: { value: n },
+  });
+  const part = (n: number) => ({ index: n, toolsetVersion: 9, call: call(n) });
+
+  function talk() {
+    const client = createFakeAssistantClient();
+    const onProposal = vi.fn();
+    const onProposalPart = vi.fn();
+    const onProposalEnded = vi.fn();
+    let conversation: AssistantConversation | undefined;
+    const dispose = createRoot((dispose) => {
+      conversation = useAssistantConversation({
+        client: async () => client,
+        project: () => project,
+        scope: () => scope,
+        canSend: () => true,
+        analytics: () =>
+          new Analytics({
+            transport: createRecordingTransport(),
+            storage: memoryStorage(),
+          }),
+        onProposal,
+        onProposalPart,
+        onProposalEnded,
+      });
+      return dispose;
+    });
+    flush();
+    if (!conversation) throw new Error("no conversation");
+    return { conversation, client, onProposal, onProposalPart, onProposalEnded, dispose };
+  }
+
+  it("puts the turn's parts in one entry, which the whole proposal then fills", async () => {
+    const { conversation, client, onProposal, onProposalPart, onProposalEnded, dispose } =
+      talk();
+    conversation.send("Two changes");
+    await vi.waitFor(() => expect(client.turns).toHaveLength(1));
+    client.last().emit({ type: "part", part: part(0) });
+    client.last().emit({ type: "part", part: part(1) });
+    flush();
+    const proposals = () =>
+      conversation.entries().filter((entry) => entry.kind === "proposal");
+    expect(proposals()).toHaveLength(1);
+    const [entry] = proposals();
+    expect(onProposalPart.mock.calls.map(([id, sent]) => [id, sent.index])).toEqual([
+      [entry?.id, 0],
+      [entry?.id, 1],
+    ]);
+    const whole = { baseRevision: 0, toolsetVersion: 9, calls: [call(0), call(1)] };
+    client.last().emit({ type: "proposal", proposal: whole });
+    client.last().done();
+    flush();
+    expect(proposals()).toHaveLength(1);
+    expect(onProposal).toHaveBeenCalledWith(entry?.id, whole, expect.anything());
+    expect(onProposalEnded).toHaveBeenCalledWith(entry?.id, "ended");
+    dispose();
+  });
+
+  it("leaves Try again to the card when the turn fails after parts arrived, and asks for the rest", async () => {
+    const { conversation, client, onProposalEnded, dispose } = talk();
+    conversation.send("Two changes");
+    await vi.waitFor(() => expect(client.turns).toHaveLength(1));
+    client.last().emit({ type: "part", part: part(0) });
+    client.last().fail({ code: "timeout", retryable: true });
+    flush();
+    const error = conversation.entries().find((entry) => entry.kind === "error");
+    expect(error && conversation.canRetry(error)).toBe(false);
+    const entry = conversation
+      .entries()
+      .find((candidate) => candidate.kind === "proposal");
+    expect(onProposalEnded).toHaveBeenCalledWith(entry?.id, "failed");
+    const shown = [{ text: "Swing 50% to 58%", applied: true }];
+    expect(conversation.continueProposal(entry?.id ?? "", shown)).toBe(true);
+    await vi.waitFor(() => expect(client.turns).toHaveLength(2));
+    expect(client.last().request.messages.at(-1)?.text).toBe(
+      `Two changes\n\n${continueNote(shown)}`,
+    );
+    // The log shows the producer's words, not the note.
+    expect(conversation.entries().at(-2)).toMatchObject({
+      kind: "message",
+      text: "Two changes",
+    });
+    dispose();
+  });
+});
+
+describe("the note Try again sends for the rest of a proposal (GRV-144)", () => {
+  it("names the parts shown, which were applied and which are withdrawn", () => {
+    const note = continueNote([
+      { text: "Bass · new track", applied: true },
+      { text: "Bass · 1 bar", applied: false },
+    ]);
+    expect(note).toBe(
+      [
+        "[Continue] Your last reply stopped partway, after these parts of its proposal.",
+        "Applied, so the song has them now; don't propose them again:",
+        "- Bass · new track",
+        "Not applied, and withdrawn; propose them again only if the song still needs them:",
+        "- Bass · 1 bar",
+        "Propose only what is still missing for my request.",
+      ].join("\n"),
+    );
+  });
+
+  it("leaves out a group with no parts in it", () => {
+    const note = continueNote([{ text: "Bass · 1 bar", applied: false }]);
+    expect(note).not.toContain("Applied, so");
+    expect(note).toContain("- Bass · 1 bar");
   });
 });
 

@@ -42,7 +42,7 @@ import {
   type RecommendationTargets,
   withCreatedTargets,
 } from "./recommendationTargets";
-import { EXPLAIN_TOOL_NAME, resolveToolCall } from "./tools";
+import { EXPLAIN_TOOL_NAME, isNeedMoreToolsCall, resolveToolCall } from "./tools";
 import { isVideoCall } from "./video";
 
 /** The longest refusal sent back to the model, in characters. */
@@ -95,6 +95,17 @@ export function isChangeCall(call: AssistantToolCall): boolean {
     !isRememberCall(call) &&
     !isLessonCall(call)
   );
+}
+
+/**
+ * Whether an accepted call is a part of the proposal the browser can show on
+ * its own as it arrives (GRV-144): a change call, written out with no
+ * refusal, whose input fits its tool. `need_more_tools` changes nothing.
+ */
+export function isProposalPart(call: AssistantToolCall): boolean {
+  if (!isChangeCall(call) || isNeedMoreToolsCall(call)) return false;
+  if (call.refusal !== undefined) return false;
+  return resolveToolCall(call.name, call.input).ok;
 }
 
 /**
