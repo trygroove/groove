@@ -85,6 +85,26 @@ function settled(data: Float32Array): Float32Array {
   return data.subarray(Math.floor(data.length * 0.5));
 }
 
+/**
+ * Harmonic content per unit of level, taken as the median over equal slices of
+ * the settled signal rather than over the whole of it.
+ *
+ * `hfEnergy` is a first-difference measure, so one stray sample (a click, a
+ * block the offline renderer produced late) lands in it at full weight and
+ * can swing a whole-buffer ratio past the 14-30% gap between drive settings.
+ * That happened once in 6,919 CI runs (GRV-198) and never locally. A median
+ * of slices ignores a glitch confined to one slice, while a real change in
+ * the transfer curve moves every slice, so the property under test is intact.
+ */
+function medianBrightness(data: Float32Array, slices = 8): number {
+  const size = Math.floor(data.length / slices);
+  const values = Array.from({ length: slices }, (_, i) => {
+    const slice = data.subarray(i * size, (i + 1) * size);
+    return hfEnergy(slice) / rms(slice);
+  }).sort((a, b) => a - b);
+  return values[Math.floor(slices / 2)];
+}
+
 describe("filter device (FX-01)", () => {
   it("removes high-frequency energy as the cutoff closes", async () => {
     const open = settled(await render(buildFilter, device("filter", { cutoff: 18_000 })));
@@ -136,7 +156,7 @@ describe("overdrive and saturator (FX-01, FX-02)", () => {
     // Harmonic content per unit of level rises monotonically with drive —
     // normalising by RMS is what makes this a claim about *distortion* rather
     // than about the device simply getting louder.
-    const brightness = (d: Float32Array) => hfEnergy(d) / rms(d);
+    const brightness = medianBrightness;
     expect(brightness(pushed)).toBeGreaterThan(brightness(clean));
     expect(brightness(destroyed)).toBeGreaterThan(brightness(pushed));
   });
