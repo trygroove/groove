@@ -736,6 +736,26 @@ describe("the one arrangement selection (#292)", () => {
     ]);
   });
 
+  it("starts a band from the empty region below the last track (GRV-191)", async () => {
+    const { canvas, actions, placementIds } = await twoTracks();
+    // Row 2 does not exist: two tracks, so this press is below them.
+    drag(canvas, [2700, 3], [1164, 0]);
+    expect(said()).toBe("2 clips selected");
+    expect(actions.current?.getSelection()).toEqual([
+      placementIds[0][1],
+      placementIds[1][0],
+    ]);
+  });
+
+  it("clears the selection, and sets no point, on a click below the tracks", async () => {
+    const { canvas, actions } = await twoTracks();
+    drag(canvas, [0.5 * BAR, 0], [0.5 * BAR, 0]);
+    expect(actions.current?.getSelection().length).toBe(1);
+    drag(canvas, [4.5 * BAR, 3], [4.5 * BAR, 3]);
+    expect(actions.current?.getSelection()).toEqual([]);
+    expect(said()).toBe("No selection");
+  });
+
   it("selects nothing with a band that touches no clip", async () => {
     const { canvas } = await twoTracks();
     firePointer(canvas, "pointerdown", { clientX: x(0.5 * BAR), clientY: rowY(0) });
