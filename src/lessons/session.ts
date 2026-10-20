@@ -127,6 +127,26 @@ export function startBite(
   };
 }
 
+/**
+ * The lesson as it stood before a reload: bite `biteId` of `chapterId` with
+ * how the chapter's bites had ended. A bite under way starts again from the
+ * world as it is now; one that was over waits for the producer to pull the
+ * next. Null when that bite was the chapter's last and is over: the lesson
+ * had ended.
+ */
+export function resumeLesson(
+  chapterId: ChapterId,
+  biteId: BiteId,
+  world: LessonWorld,
+  settings: LessonSettings,
+  endings: LessonState["endings"],
+): LessonState | null {
+  const { state } = startBite(chapterId, biteId, world, settings, endings);
+  if (!endings[biteOf(state).id]) return state;
+  const over: LessonState = { ...state, step: null };
+  return chapterFinished(over) ? null : over;
+}
+
 /** The next bite, once the one before is over; null after the chapter's last. */
 export function startNextBite(
   state: LessonState,
