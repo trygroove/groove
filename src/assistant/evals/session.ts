@@ -374,6 +374,9 @@ function sessionTurn(fixture: Project, session: EvalSession): EvalTurn {
       : {}),
     usage: sessionUsage(turns),
     firstTextMs: turns[0]?.firstTextMs ?? null,
+    // The first turn that streamed a part, from that turn's start: a session
+    // often asks before it proposes.
+    firstPartMs: turns.find((turn) => turn.firstPartMs != null)?.firstPartMs ?? null,
     // The first turn's, as its first text is; each turn keeps its own.
     toolBundle: turns[0]?.toolBundle ?? null,
     session,

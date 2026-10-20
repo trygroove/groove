@@ -12,11 +12,17 @@ import {
   expandCalls,
   goesOnToReaim,
   goesOnToRefuse,
+  isProposalPart,
   MAX_CHANGE_STEPS,
   misaimedIn,
   refusedIn,
 } from "./steps";
-import { CREATE_EXAMPLES, EXPLAIN_TOOL_NAME, OFFERED_CLIP_EXAMPLE } from "./tools";
+import {
+  CREATE_EXAMPLES,
+  EXPLAIN_TOOL_NAME,
+  NEED_MORE_TOOLS_NAME,
+  OFFERED_CLIP_EXAMPLE,
+} from "./tools";
 
 const STEM = "BassNote000000000";
 
@@ -36,6 +42,26 @@ describe("continuesAfter", () => {
     expect(continuesAfter("end_turn", [])).toBe(false);
     expect(continuesAfter("tool_use", [other(RECOMMEND_SOUNDS_TOOL)])).toBe(false);
     expect(continuesAfter("tool_use", [other(REMEMBER_TOOL_NAME)])).toBe(false);
+  });
+});
+
+describe("isProposalPart (GRV-144)", () => {
+  it("is a change call that fits its tool, with no refusal", () => {
+    expect(isProposalPart(change)).toBe(true);
+    expect(isProposalPart({ ...change, refusal: "Not a note" })).toBe(false);
+    expect(isProposalPart({ ...change, input: { name: 3 } })).toBe(false);
+  });
+
+  it("is never a call that changes nothing", () => {
+    for (const name of [
+      EXPLAIN_TOOL_NAME,
+      ASK_PRODUCER_TOOL_NAME,
+      RECOMMEND_SOUNDS_TOOL,
+      REMEMBER_TOOL_NAME,
+      NEED_MORE_TOOLS_NAME,
+    ]) {
+      expect(isProposalPart(other(name))).toBe(false);
+    }
   });
 });
 

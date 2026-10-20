@@ -378,6 +378,10 @@ describe("runEvals", () => {
     });
     expect(record.firstTextMs).toBeGreaterThan(0);
     expect(record.firstTextMs).toBeLessThan(record.durationMs);
+    // The first accepted change call, after the text that led into it (GRV-144).
+    expect(record.firstPartMs).toBeGreaterThan(record.firstTextMs ?? 0);
+    expect(record.firstPartMs).toBeLessThan(record.durationMs);
+    expect(report.scorecard.secondary.firstPartMs?.count).toBe(1);
     expect(report.scorecard.secondary.tokens).toMatchObject({ turns: 1, input: 100 });
     // 100 input at $2/M and 20 output at $10/M on claude-sonnet-5.
     expect(report.scorecard.secondary.costUsd.total).toBeCloseTo(0.0004, 10);

@@ -95,7 +95,9 @@ test.describe("the assistant's conversation", { tag: "@sanity" }, () => {
     await page.keyboard.press("Enter");
     const card = conversation(page).getByRole("region", { name: /^Proposal\b/ });
     await expect(card).toContainText(/Tempo\b.*→.*\b100 BPM/);
-    await expect(card.getByRole("button", { name: "Apply" })).toBeEnabled();
+    await expect(
+      card.getByRole("button", { name: "Apply all", exact: true }),
+    ).toBeEnabled();
   });
 });
 

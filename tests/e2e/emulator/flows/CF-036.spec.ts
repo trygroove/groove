@@ -147,7 +147,7 @@ test.describe("CF-036", () => {
       //    recommended pack appears, on its own: its header names BD's track
       //    and pad (BD · BD), it offers to try its sound on BD, and it says
       //    there are 2 more after this.
-      await proposalButton(page, "Apply").click();
+      await proposalButton(page, "Apply all").click();
       await expect(proposal(page)).toContainText(/Applied/);
       await expect(recommendations(page)).toHaveCount(1);
       await expect(recommendation(page)).toContainText("BD · BD");

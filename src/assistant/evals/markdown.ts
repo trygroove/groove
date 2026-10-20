@@ -280,7 +280,7 @@ export function renderMarkdown(report: EvalReport, baseline?: MarkdownBaseline):
         continue;
       }
       lines.push(
-        `**Run ${record.run}** (${Math.round(record.durationMs / 1000)} s${record.firstTextMs != null ? `, first text ${Math.round(record.firstTextMs / 1000)} s` : ""}, stop: ${record.stopReason ?? "none"}): ${statsLine(record)}`,
+        `**Run ${record.run}** (${Math.round(record.durationMs / 1000)} s${record.firstTextMs != null ? `, first text ${Math.round(record.firstTextMs / 1000)} s` : ""}${record.firstPartMs != null ? `, first part ${Math.round(record.firstPartMs / 1000)} s` : ""}, stop: ${record.stopReason ?? "none"}): ${statsLine(record)}`,
       );
       lines.push("");
       const tokensText = tokensLine(record);
