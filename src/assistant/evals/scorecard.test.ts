@@ -78,6 +78,24 @@ describe("the secondary numbers", () => {
     expect(secondary.firstTextMs).toEqual({ count: 2, p50: 1_000, p95: 3_000 });
   });
 
+  it("takes the first part over turns that streamed one, n/a for a report from before it (GRV-144)", () => {
+    const secondary = secondaryOf(
+      [
+        testRecord({ firstPartMs: 6_000 }),
+        testRecord({ firstPartMs: 2_000 }),
+        testRecord({ firstPartMs: null }),
+        testRecord({}),
+      ],
+      sonnet,
+    );
+    expect(secondary.firstPartMs).toEqual({ count: 2, p50: 2_000, p95: 6_000 });
+    const older = buildTestReport([testRecord({})]).scorecard;
+    expect(older.secondary.firstPartMs).toEqual({ count: 0, p50: null, p95: null });
+    expect(
+      SCORECARD_METRICS.find((metric) => metric.label === "First part p50")?.value(older),
+    ).toBeNull();
+  });
+
   it("sums and averages tokens over the turns that recorded them", () => {
     const secondary = secondaryOf(
       [
@@ -376,6 +394,22 @@ describe("the heavy set (GRV-131)", () => {
     expect(heavy?.modelCallsP95).toBe(3.5);
   });
 
+  it("averages each heavy case's time to the first part, p50 and p95 (GRV-144)", () => {
+    const card = buildTestReport([
+      testRecord({ caseId: "sketch-house", firstPartMs: 4_000 }),
+      testRecord({ caseId: "sketch-house", firstPartMs: 8_000 }),
+      testRecord({ caseId: "density-hats", firstPartMs: 10_000 }),
+      testRecord({ caseId: "mute", firstPartMs: 100 }),
+    ]).scorecard;
+    const heavy = heavySetOf(card);
+    // sketch-house: p50 4 s, p95 8 s; density-hats: 10 s both.
+    expect(heavy?.firstPartP50Ms).toBe(7_000);
+    expect(heavy?.firstPartP95Ms).toBe(9_000);
+    expect(heavySetLines(card)).toContain("| Mean first part p50 | 7.0 s |");
+    expect(heavySetLines(card)).toContain("| Mean first part p95 | 9.0 s |");
+    expect(heavySetLines(heavyRun)).toContain("| Mean first part p50 | n/a |");
+  });
+
   it("leaves model calls n/a for turns that recorded none", () => {
     const older = buildTestReport([testRecord({ caseId: "sketch-house" })]).scorecard;
     expect(older.cases["sketch-house"].modelCalls).toEqual({
@@ -409,6 +443,8 @@ describe("the heavy set (GRV-131)", () => {
       "Mean cost per turn",
       "Mean model calls per turn",
       "Mean model calls p95",
+      "Mean first part p50",
+      "Mean first part p95",
     ]);
     // Against the baseline's sketch-house alone, not its density-hats too.
     expect(rows[0]).toMatchObject({

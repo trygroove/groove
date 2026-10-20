@@ -24,6 +24,8 @@ export interface TestRecordOptions {
   readonly run?: number;
   readonly durationMs?: number;
   readonly firstTextMs?: number | null;
+  /** Absent leaves the record without one, as a report from before GRV-144. */
+  readonly firstPartMs?: number | null;
   readonly usage?: Partial<ProviderUsage> | null;
   readonly stopReason?: AssistantStopReason | null;
   /** Check 1; `undefined` leaves it unjudged. */
@@ -75,6 +77,7 @@ export function testRecord(options: TestRecordOptions = {}): EvalRecord {
     run: options.run ?? 1,
     durationMs: options.durationMs ?? 10_000,
     firstTextMs: options.firstTextMs === undefined ? 2_000 : options.firstTextMs,
+    ...(options.firstPartMs === undefined ? {} : { firstPartMs: options.firstPartMs }),
     usage,
     ...(options.modelCalls === undefined
       ? {}
