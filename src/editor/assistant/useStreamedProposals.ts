@@ -185,6 +185,11 @@ export interface UseStreamedProposalsOptions {
     outcome: ProposalOutcome,
     issues?: readonly TranscriptIssue[],
   ): void;
+  /**
+   * The producer applied some of a card's parts, with Apply on a part or
+   * Apply all (GRV-195); never a redo.
+   */
+  onApplied?(entryId: string): void;
 }
 
 export interface StreamedProposals {
@@ -679,6 +684,7 @@ export function useStreamedProposals(
       state.location = null;
     }
     options.onOutcome?.(entryId, "applied");
+    options.onApplied?.(entryId);
     noticeAllApplied(state);
     publish();
     return true;

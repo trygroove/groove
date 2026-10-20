@@ -331,7 +331,11 @@ function Entry(props: {
 }): JSX.Element {
   return (
     <Switch>
-      <Match when={props.entry.kind === "message" && props.entry}>
+      {/* The assistant's follow-up after an Apply (GRV-195) is not the
+          producer's message: only its reply shows. */}
+      <Match
+        when={props.entry.kind === "message" && !props.entry.automatic && props.entry}
+      >
         {(message) => (
           <div class="assistant-message">
             <span class="assistant-entry-label">

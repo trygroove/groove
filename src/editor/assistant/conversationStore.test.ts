@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Analytics } from "../../analytics/analytics";
 import { createRecordingTransport } from "../../analytics/transport";
 import type { AssistantAsk } from "../../assistant/ask";
+import { FOLLOW_UP_MESSAGE, FOLLOW_UP_TITLE } from "../../assistant/followUp";
 import type { Project } from "../../domain/entities";
 import { createSliceFixtureProject } from "../../domain/fixtures";
 import { createFakeAssistantClient } from "../../testing/fakeAssistantClient";
@@ -244,6 +245,32 @@ describe("the conversation across a reload (GRV-42)", () => {
     } as const;
     const stored = parseConversation(serializeConversation([reply], null));
     expect(stored?.entries).toEqual([reply]);
+  });
+
+  it("keeps the assistant's follow-up as its own, so the log still hides it (GRV-195)", () => {
+    const message = {
+      kind: "message",
+      id: "entry-3",
+      text: FOLLOW_UP_TITLE,
+      scopeLabel: "BD",
+      wire: FOLLOW_UP_MESSAGE,
+      automatic: true,
+    } as const;
+    const stored = parseConversation(serializeConversation([message], null));
+    expect(stored?.entries).toEqual([message]);
+    // And a card from its turn keeps its turn as the assistant's too.
+    const origin = {
+      text: FOLLOW_UP_TITLE,
+      automatic: true,
+      scope: {
+        level: "track",
+        catalogScope: "track",
+        label: "BD",
+        selection: null,
+        trackId: null,
+      },
+    } as const;
+    expect(restoreOrigin(origin, project).automatic).toBe(true);
   });
 
   it("carries on in memory when storage throws", async () => {

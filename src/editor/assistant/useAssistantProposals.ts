@@ -147,6 +147,12 @@ export interface UseAssistantProposalsOptions {
     outcome: ProposalOutcome,
     issues?: readonly TranscriptIssue[],
   ): void;
+  /**
+   * The producer pressed Apply (or a streamed card's Apply on a part, or Apply
+   * all) and it committed (GRV-195). A redo is not an apply: it is heard as an
+   * `applied` outcome only.
+   */
+  onApplied?(entryId: string): void;
 }
 
 export interface AssistantProposals {
@@ -240,6 +246,7 @@ export function useAssistantProposals(
     onPreviewOpen: () => endWholePreviews(),
     onOutcome: (entryId, outcome, issues) =>
       options.onOutcome?.(entryId, outcome, issues),
+    onApplied: (entryId) => options.onApplied?.(entryId),
   });
 
   /** Ends every whole proposal's open preview, as a streamed card's opens. */
@@ -495,6 +502,7 @@ export function useAssistantProposals(
     controls.registry.setMark(entry.addresses, "changed");
     update(entryId, { status: "applied", returnView: null, outlined: true });
     options.onOutcome?.(entryId, "applied");
+    options.onApplied?.(entryId);
     options.analytics().logFeatureFirstUse("assistant_proposal");
   }
 

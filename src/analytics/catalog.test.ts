@@ -457,6 +457,7 @@ describe("catalog cross-references", () => {
         "arrangement_clip_resize",
         "assistant",
         "assistant_ask",
+        "assistant_follow_up",
         "assistant_message",
         "assistant_proposal",
         "assistant_proposal_part",

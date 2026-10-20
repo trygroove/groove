@@ -13,6 +13,7 @@ import {
 export const ASSISTANT_FEATURE_KEYS = [
   "assistant",
   "assistant_message",
+  "assistant_follow_up",
   "assistant_proposal",
   "assistant_proposal_part",
   "assistant_recommendation",
@@ -171,10 +172,18 @@ const MAX_PROPOSAL_PARTS = 100;
 const MAX_RECOMMENDED_SOUNDS = 3;
 
 export const ASSISTANT_EVENTS = {
+  /**
+   * A turn went to the assistant. `automatic` is true for the follow-up the
+   * assistant takes by itself after a proposal is applied (GRV-195), once per
+   * follow-up; false for everything the producer sent.
+   */
   assistant_message_sent: {
     phase: 3,
-    owners: ["AI-004"],
-    params: { scope: enumParam(["clip", "track", "section", "song"]) },
+    owners: ["AI-004", "GRV-195"],
+    params: {
+      scope: enumParam(["clip", "track", "section", "song"]),
+      automatic: boolParam(),
+    },
   },
 
   assistant_suggestion_clicked: {
