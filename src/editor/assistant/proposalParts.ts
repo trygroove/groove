@@ -27,9 +27,13 @@ import { type RejectionIssue, rejectionReason } from "./rejectionReason";
 /** One part that fits the song it would apply to. */
 export interface ResolvedPart {
   readonly ok: true;
-  /** The part as a proposal of one command, its impact read against `before`. */
+  /** The part as a proposal of one call, its impact read against `before`. */
   readonly proposal: ValidProposal;
-  readonly command: RawCommandInput;
+  /**
+   * What the call applies as: its one command, after the sounds a new drum
+   * machine's starter kit adds to the song (GRV-192).
+   */
+  readonly commands: readonly RawCommandInput[];
   /** Every ID the part makes: tracks, pads, devices, returns, clips, notes, placements, sections. */
   readonly creates: ReadonlySet<string>;
   /** What its line says: the track, and its length when it has one. */
@@ -101,12 +105,11 @@ export function resolvePart(
     };
   }
   const { proposal } = validation;
-  const [command] = proposal.commands;
   const after = applyCommands(working, proposal.commands) ?? working;
   return {
     ok: true,
     proposal,
-    command,
+    commands: proposal.commands,
     creates: createdIds(working, after),
     line: lineOf(working, after, proposal),
   };
@@ -126,15 +129,15 @@ export function applyCommands(
 }
 
 /**
- * The earlier parts `command` needs: those that make an ID its payload
- * names. IDs are prefixed and random, so one appearing in the payload is
- * the payload referring to it.
+ * The earlier parts `commands` need: those that make an ID their payloads
+ * name. IDs are prefixed and random, so one appearing in a payload is the
+ * payload referring to it.
  */
 export function partNeeds(
-  command: RawCommandInput,
+  commands: readonly RawCommandInput[],
   earlier: readonly { readonly index: number; readonly creates: ReadonlySet<string> }[],
 ): number[] {
-  const payload = JSON.stringify(command.payload);
+  const payload = JSON.stringify(commands.map((command) => command.payload));
   return earlier
     .filter((part) => [...part.creates].some((id) => payload.includes(id)))
     .map((part) => part.index);
@@ -202,7 +205,11 @@ function createdIds(before: Project, after: Project): ReadonlySet<string> {
   return new Set(projectIds(after).filter((id) => !had.has(id)));
 }
 
-/** Every ID in `project`: its tracks, pads, devices, returns, placements, sections, clips and notes. */
+/**
+ * Every ID in `project`: its tracks, pads, devices, returns, placements,
+ * sections, clips and notes, and its assets (a new drum machine's starter kit
+ * adds sounds a later part may load, GRV-192).
+ */
 export function projectIds(project: Project): string[] {
   const { song } = project;
   const devices = (owner: { readonly devices: readonly { readonly id: string }[] }) =>
@@ -219,6 +226,7 @@ export function projectIds(project: Project): string[] {
     ...devices(song.master),
     ...song.placements.map((placement) => placement.id),
     ...song.sections.map((section) => section.id),
+    ...song.assets.map((asset) => asset.id),
     ...project.clips.flatMap((clip) => [
       clip.id,
       ...(clip.content.kind === "notes"
