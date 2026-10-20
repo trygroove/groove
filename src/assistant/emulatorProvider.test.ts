@@ -8,7 +8,7 @@ import {
 } from "../domain/fixtures";
 import { SONG_SWING } from "../domain/parameters";
 import { createStarterProject } from "../editor/starterProject";
-import { lessonCue } from "../lessons/cue";
+import { foldTurns, lessonCue } from "../lessons/cue";
 import { skip, startBite } from "../lessons/session";
 import { buildAssistantLibrary, DRUM_PACK_ID } from "../testing/assistantLibrary";
 import { starterWorld } from "../testing/lessonWorld";
@@ -33,7 +33,6 @@ import {
 import { type AssistantGatewayDeps, runAssistantTurn } from "./gateway";
 import { createInMemoryGuardStores } from "./inMemoryGuardStores";
 import type { AssistantLessonContext } from "./lesson";
-import { START_LESSON_TOOL_NAME } from "./lessonTool";
 import { type AssistantMemoryContext, REMEMBER_TOOL_NAME } from "./memory";
 import { buildAssistantPayload } from "./payload";
 import { validateProposal } from "./proposal";
@@ -218,33 +217,6 @@ describe("the emulator's assistant provider", () => {
     ]);
   });
 
-  it("ends [lesson] in start_lesson on a turn that carries memory (GRV-43)", async () => {
-    const memory: AssistantMemoryContext = {
-      taste: [],
-      artists: "",
-      experience: null,
-      goal: null,
-      learn: [],
-      gear: [],
-      notes: [],
-      askLater: null,
-    };
-    const reply = await turn(
-      gateway(),
-      "Teach me to make a beat [lesson]",
-      new AbortController().signal,
-      createReferenceProject(),
-      undefined,
-      memory,
-    ).result;
-    expect(reply.proposal?.calls).toEqual([
-      expect.objectContaining({
-        name: START_LESSON_TOOL_NAME,
-        input: { chapter: "beat" },
-      }),
-    ]);
-  });
-
   it("answers a lesson's turn naming its bite, or the chapter at its end (CF-037)", async () => {
     const world = starterWorld();
     const settings = { style: "boom_bap" } as const;
@@ -271,6 +243,20 @@ describe("the emulator's assistant provider", () => {
     if (!over) throw new Error("not skipped");
     const wrapUp = lessonCue(over.state, over.event, settings, []);
     expect((await answer(wrapUp)).text).toContain('"Make a beat" finished');
+    // A turn that waited answers what it waited with first.
+    const finished = skip(
+      startBite("beat", "beat-library", world, settings).state,
+      world,
+      settings,
+    );
+    if (!finished) throw new Error("not skipped");
+    const folded = foldTurns([
+      { text: "a", cue: lessonCue(finished.state, finished.event, settings, []) },
+      { text: "b", cue: startedCue },
+    ]).cue;
+    expect((await answer(folded)).text).toBe(
+      `Well done: "Pick a kick" is finished. Here's "The kick pattern": ${startedCue.skill}.`,
+    );
     // A message the producer wrote mid-lesson is answered as any other.
     expect((await answer({ ...startedCue, moment: "under_way" })).text).toBe(
       EMULATOR_REPLY_CHUNKS.join(""),

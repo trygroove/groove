@@ -120,7 +120,8 @@
  * 2026-10-20.1 (GRV-43): lessons. A turn during a lesson carries a block of
  * its own, after memory: how to teach a bite (explain, comment on what the
  * producer changed, celebrate in words, perhaps one quiz question, a wrap-up
- * with pointers at a chapter's end) and the lesson as JSON. The fixed prompt
+ * with pointers at a chapter's end, and how to answer the moments a turn
+ * waited with, in `earlier`) and the lesson as JSON. The fixed prompt
  * is unchanged, so a turn outside a lesson reads what it did.
  */
 import { customAlphabet } from "nanoid";

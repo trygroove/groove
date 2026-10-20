@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { addNotes } from "../commands/definitions/notes";
 import { createNoteEvent } from "../domain/factories";
 import { TICKS_PER_SIXTEENTH } from "../domain/time";
-import { lessonCue } from "../lessons/cue";
+import { foldTurns, lessonCue } from "../lessons/cue";
 import { beatTrack, kickPad } from "../lessons/drums";
+import { MAX_EARLIER } from "../lessons/ids";
 import { skip, startBite } from "../lessons/session";
 import { applied, lessonContext, starterWorld } from "../testing/lessonWorld";
 import { MINIMAL_ASSISTANT_CONTEXT } from "../testing/scriptedAssistantProvider";
@@ -74,6 +75,25 @@ describe("a lesson as a turn carries it (GRV-43)", () => {
     expect(assistantLessonContextSchema.safeParse(lesson).success).toBe(true);
   });
 
+  it("takes a cue that carries the moments it waited with", () => {
+    const world = starterWorld();
+    const started = startBite("beat", "beat-play", world, settings);
+    const over = skip(started.state, world, settings);
+    if (!over) throw new Error("not skipped");
+    const folded = foldTurns([
+      { text: "a", cue: lessonCue(over.state, over.event, settings, []) },
+      { text: "b", cue: cue() },
+    ]).cue;
+    expect(folded.earlier).toHaveLength(1);
+    expect(assistantLessonContextSchema.parse(folded)).toEqual(folded);
+    expect(
+      assistantLessonContextSchema.safeParse({
+        ...folded,
+        earlier: Array.from({ length: MAX_EARLIER + 1 }, () => folded.earlier[0]),
+      }).success,
+    ).toBe(false);
+  });
+
   it("refuses a field it does not name, or a bite it does not know", () => {
     expect(
       assistantLessonContextSchema.safeParse({ ...cue(), projectId: "prj_x" }).success,
@@ -115,6 +135,7 @@ describe("a lesson as a turn carries it (GRV-43)", () => {
     for (const moment of ["bite_started", "step_done", "bite_done", "chapter_done"]) {
       expect(LESSON_RULES).toContain(`"${moment}"`);
     }
+    expect(LESSON_RULES).toContain('"earlier"');
     expect(LESSON_RULES).toMatch(/no emoji/);
     expect(LESSON_RULES).toMatch(/ask_producer/);
   });

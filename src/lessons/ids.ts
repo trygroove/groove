@@ -61,3 +61,9 @@ export const LESSON_MOMENTS = [
   "under_way",
 ] as const;
 export type LessonMoment = (typeof LESSON_MOMENTS)[number];
+
+/**
+ * At most this many earlier moments ride along with one lesson turn
+ * (`cue.ts`, `foldTurns`); older ones are dropped.
+ */
+export const MAX_EARLIER = 6;

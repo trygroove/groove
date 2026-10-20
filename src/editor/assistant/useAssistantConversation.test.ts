@@ -236,6 +236,7 @@ describe("a conversation during a lesson (GRV-43)", () => {
     style: null,
     quiz: null,
     next: [],
+    earlier: [],
   };
 
   it("sends the lesson with each turn while there is one, and starts one the reply names", async () => {

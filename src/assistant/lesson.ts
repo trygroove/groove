@@ -9,7 +9,9 @@
  * the system blocks put it in front of the model with {@link LESSON_RULES},
  * so Coproducer writes the words a lesson needs: the step explained, a
  * comment on what the producer did, a celebration in words, perhaps a quiz
- * question, and a wrap-up with pointers. Every field is ours, except the
+ * question, and a wrap-up with pointers. A turn that had to wait for a reply
+ * to finish carries the moments it waited with in `earlier`, so none of
+ * them goes unanswered. Every field is ours, except the
  * track and pad names in `changes`, which the project context already sends.
  *
  * **Starting one** is `start_lesson`, in `lessonTool.ts`: this module stays
@@ -25,6 +27,7 @@ import {
   BITE_IDS,
   CHAPTER_IDS,
   LESSON_MOMENTS,
+  MAX_EARLIER,
 } from "../lessons/ids";
 
 const title = z.string().min(1).max(80);
@@ -48,6 +51,17 @@ export const assistantLessonContextSchema = z.strictObject({
   style: z.enum(BEAT_STYLES).nullable(),
   quiz: line.nullable(),
   next: z.array(line).max(5),
+  earlier: z
+    .array(
+      z.strictObject({
+        moment: z.enum(LESSON_MOMENTS),
+        chapter: title,
+        bite: title,
+        how: z.enum(BITE_ENDINGS).nullable(),
+        changes: z.array(z.string().max(MAX_CHANGE_LINE_LENGTH)).max(12),
+      }),
+    )
+    .max(MAX_EARLIER),
 });
 export type AssistantLessonContext = z.infer<typeof assistantLessonContextSchema>;
 
@@ -66,7 +80,8 @@ You are teaching the producer one bite of a lesson, in their own project, and th
 - "step_done": say something specific about what they did, as "changes" lists it (a ghost note, a different sound, a step off the pattern), never generic praise; then point them at the next step, which "step" holds.
 - "bite_done": celebrate in words only, specific to what they made, as "changes" lists it: no emoji, no points, no exclamation-mark chains. If "how" is "show_me", say what Show me did so they could do it themselves next time; if "skipped", say that's fine and what the bite was for. Then you may ask "quiz" as one question with ask_producer, two to four short options, the right one among them, and say nothing after it; ask it at most once, and not every time. Otherwise end by naming the next bite in "next" and saying they can go on when they want.
 - "chapter_done": a wrap-up. Congratulate them on what the chapter made, specific to their project as the description and "changes" show it now, and offer two or three of "next" as pointers, in a sentence each. No question, no quiz.
-- "under_way": they wrote to you mid-lesson. Answer them, in the lesson's terms when it is about the step.`;
+- "under_way": they wrote to you mid-lesson. Answer them, in the lesson's terms when it is about the step.
+- "earlier", when it is not empty, is what happened while your last reply was still being written, oldest first, each with its own moment, "how" and "changes". Answer it before the moment above, in a sentence each and in the same reply: a finished bite still gets its specific celebration (but no quiz), a finished step its specific comment, a finished chapter its congratulations. Then do what the moment above asks. The reply may run a sentence or two longer for it.`;
 
 /** The lesson's system block: the rules, then the lesson. */
 export function lessonBlock(lesson: AssistantLessonContext): string {
