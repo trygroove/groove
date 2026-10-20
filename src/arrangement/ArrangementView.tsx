@@ -71,6 +71,7 @@ import {
   buildArrangementProjection,
   type PlacementGeometry,
 } from "./projection";
+import { rulerSeekTicks } from "./rulerSeek";
 import { describeArrangementSelection } from "./selectionAnnouncement";
 import { useArrangementCanvas, visibleViewportSize } from "./useArrangementCanvas";
 import { ZoomControls } from "./ZoomControls";
@@ -266,6 +267,12 @@ export interface ArrangementViewProps {
    * is selected by it.
    */
   readonly highlight?: Accessor<readonly ArrangementBand[]>;
+  /**
+   * Called with the tick a click on the ruler (clear of the loop brace) puts
+   * the playhead at (GRV-189). The arrangement holds no playhead of its own;
+   * without this the ruler away from the brace is inert.
+   */
+  readonly onSeekTicks?: (ticks: number) => void;
 }
 
 export default function ArrangementView(props: ArrangementViewProps) {
@@ -863,15 +870,28 @@ export default function ArrangementView(props: ArrangementViewProps) {
     return handle === "body" ? "grab" : "";
   }
 
-  /** A press on the ruler grabs the loop brace, or does nothing at all. */
+  /** A press on the ruler grabs the loop brace, or else puts the playhead there. */
   function handleRulerPointerDown(event: PointerEvent, x: number): void {
-    if (!shell || !loopDrag || (event.button ?? 0) !== 0) return;
+    if (!shell || (event.button ?? 0) !== 0) return;
     const handle = loopHandleAt(x);
-    if (!handle) return;
+    if (!handle) {
+      seekFromRuler(event, x);
+      return;
+    }
+    if (!loopDrag) return;
     if (!loopDrag.begin(handle, shell.pointToArrangement(x, 0).tick)) return;
     activePointerId = event.pointerId;
     (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
     noteFirstUse();
+  }
+
+  function seekFromRuler(event: PointerEvent, x: number): void {
+    if (!shell || !props.onSeekTicks) return;
+    const { tick } = shell.pointToArrangement(x, 0);
+    analytics().logFeatureFirstUse("playhead_seek");
+    props.onSeekTicks(
+      rulerSeekTicks(tick, shell.getViewport().pixelsPerTick, event.altKey),
+    );
   }
 
   function handlePointerDown(event: PointerEvent): void {

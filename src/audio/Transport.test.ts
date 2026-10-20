@@ -147,6 +147,36 @@ describe("TransportController (PRD AUD-01/AUD-02)", () => {
     expect(transport.positionTicks).toBe(2 * TICKS_PER_BAR);
   });
 
+  it("stop ignores a brace while looping is off (GRV-189)", () => {
+    const engine = fakeEngine();
+    const transport = new TransportModule.TransportController({ engine });
+    transport.mirrorLoop({
+      startTicks: 2 * TICKS_PER_BAR,
+      endTicks: 4 * TICKS_PER_BAR,
+      enabled: false,
+    });
+    engine.ticks = 3 * TICKS_PER_BAR;
+
+    transport.stop();
+    expect(transport.positionTicks).toBe(0);
+  });
+
+  it("a seek outside the loop is not clamped, while playing or stopped (GRV-189)", () => {
+    const engine = fakeEngine();
+    const transport = new TransportModule.TransportController({ engine });
+    transport.mirrorLoop({ startTicks: 0, endTicks: TICKS_PER_BAR, enabled: true });
+    transport.play();
+
+    transport.seekTicks(5 * TICKS_PER_BAR);
+    expect(transport.positionTicks).toBe(5 * TICKS_PER_BAR);
+    expect(transport.isPlaying).toBe(true);
+    expect(engine.stopCalls).toBe(0);
+
+    transport.pause();
+    transport.seekTicks(7 * TICKS_PER_BAR);
+    expect(transport.positionTicks).toBe(7 * TICKS_PER_BAR);
+  });
+
   it("knows when the next play starts from the top (#937)", () => {
     const engine = fakeEngine();
     const transport = new TransportModule.TransportController({ engine });

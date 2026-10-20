@@ -244,6 +244,13 @@ export class TransportController {
   private readonly engine: TransportEngine;
   private readonly metronome: Metronome | null;
   private loopRange: LoopRange | null = null;
+  /**
+   * A seek put the playhead past the loop end while looping (GRV-189): the
+   * transport plays on from there until the loop catches it, so the readout
+   * must not fold that position back into the loop as it does the lookahead
+   * overshoot of a normal pass. Cleared once the playhead is inside the loop.
+   */
+  private seekedPastLoopEnd = false;
   /** Where the playhead was when `stop()` last ran, so `continueFromStop()`
    * can resume there rather than from the position `stop()` rewound to. */
   private stoppedAtTicks = 0;
@@ -281,7 +288,14 @@ export class TransportController {
   get positionTicks(): number {
     const ticks = Math.max(0, Math.round(this.engine.ticks));
     const loop = this.loopRange;
-    if (!loop || !this.isPlaying || !this.engine.loop || ticks < loop.endTicks) {
+    if (loop && ticks < loop.endTicks) this.seekedPastLoopEnd = false;
+    if (
+      !loop ||
+      !this.isPlaying ||
+      !this.engine.loop ||
+      ticks < loop.endTicks ||
+      this.seekedPastLoopEnd
+    ) {
       return ticks;
     }
     return (
@@ -337,6 +351,7 @@ export class TransportController {
     this.stoppedAtTicks = this.positionTicks;
     this.engine.stop();
     this.engine.ticks = this.startTicks;
+    this.seekedPastLoopEnd = false;
     this.rewound = true;
   }
 
@@ -361,6 +376,9 @@ export class TransportController {
   seekTicks(ticks: number): void {
     const target = Math.max(0, Math.round(ticks));
     this.engine.ticks = target;
+    this.seekedPastLoopEnd =
+      this.engine.loop &&
+      target >= (this.loopRange?.endTicks ?? Number.POSITIVE_INFINITY);
     // Only a seek made while stopped or paused can put the next play at the
     // top; one made mid-play is part of the running programme.
     if (!this.isPlaying) this.rewound = target === this.startTicks;
