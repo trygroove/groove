@@ -1,6 +1,6 @@
 import type { JSX } from "@solidjs/web";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
-import { useShortcuts } from "../shortcuts";
+import { useShortcutScope } from "../shortcuts";
 
 export interface ProjectNameInputProps {
   readonly name: string;
@@ -19,7 +19,7 @@ export interface ProjectNameInputProps {
  */
 export default function ProjectNameInput(props: ProjectNameInputProps): JSX.Element {
   let input: HTMLInputElement | undefined;
-  useShortcuts({
+  useShortcutScope({
     handlers: () => ({
       "view.close_surface": {
         run: () => {

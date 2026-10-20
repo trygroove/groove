@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConsentStore } from "../analytics/consent";
 import { type ShortcutHandlers, useShortcuts } from "../shortcuts";
 import { memoryStorage } from "../testing/storage";
+import ConfirmDialog from "./ConfirmDialog";
 import TelemetryDisclosure from "./TelemetryDisclosure";
 
 afterEach(() => cleanup());
@@ -289,4 +290,45 @@ describe("TelemetryDisclosure Escape under a modal dialog (GRV-148)", () => {
       await vi.waitFor(() => expect(details.open).toBe(false));
     });
   }
+});
+
+// GRV-186: a confirmation over the open panel is a modal shortcut scope, so the
+// first Escape is the dialog's alone and the second closes the panel.
+describe("TelemetryDisclosure Escape under a confirm dialog (GRV-186)", () => {
+  it("closes the dialog on the first Escape and the panel on the second", async () => {
+    const store = new ConsentStore(memoryStorage());
+    const [confirming, setConfirming] = createSignal(false);
+    const cancel = vi.fn(() => setConfirming(false));
+    render(() => (
+      <>
+        <TelemetryDisclosure store={store} />
+        <Show when={confirming()}>
+          <ConfirmDialog
+            title="Delete?"
+            message="This cannot be undone."
+            onConfirm={() => {}}
+            onCancel={cancel}
+          />
+        </Show>
+      </>
+    ));
+    const user = userEvent.setup();
+    const summary = screen.getByText("Privacy");
+    await user.click(summary);
+    const details = summary.closest("details") as HTMLDetailsElement;
+    await vi.waitFor(() => expect(details.open).toBe(true));
+    setConfirming(true);
+    flush();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    flush();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(details.open).toBe(true);
+
+    await user.keyboard("{Escape}");
+    await vi.waitFor(() => expect(details.open).toBe(false));
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
 });

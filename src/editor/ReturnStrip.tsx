@@ -15,7 +15,7 @@ import { RETURN_PAN, RETURN_VOLUME } from "../domain/parameters";
 import FillSlider from "../instrument/FillSlider";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 import { ariaBool } from "../shared/aria";
-import { useShortcuts } from "../shortcuts";
+import { useShortcutScope } from "../shortcuts";
 import { MAX_DISPLAY_NAME_LENGTH } from "./displayNameLimit";
 import { chainSummary } from "./MasterStrip";
 import { DbFader } from "./TrackFaders";
@@ -152,7 +152,7 @@ function ReturnNameInput(props: {
   ): TransactionResult | undefined;
 }): JSX.Element {
   let input: HTMLInputElement | undefined;
-  useShortcuts({
+  useShortcutScope({
     handlers: () => ({
       "view.close_surface": {
         run: () => {

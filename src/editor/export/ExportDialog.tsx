@@ -16,7 +16,7 @@ import { missingSoundCount } from "../../export/missingSounds";
 import { StemExportError } from "../../export/stems/exportStems";
 import type { reportError } from "../../monitoring/errorReporting";
 import { systemClock } from "../../shared/clock";
-import { useShortcuts } from "../../shortcuts";
+import { useShortcutScope } from "../../shortcuts";
 import DownloadsRow from "./DownloadsRow";
 import { downloadCards } from "./downloadCards";
 import { downloadFile } from "./downloadFile";
@@ -214,7 +214,9 @@ export default function ExportDialog(props: ExportDialogProps): JSX.Element {
   );
 
   // Escape clears the list's picks first, and closes only when there were none.
-  useShortcuts({
+  // A modal scope: while it is open, no surface under it hears a key.
+  useShortcutScope({
+    modal: true,
     handlers: () => ({
       ...list.handlers(),
       "view.close_surface": {
