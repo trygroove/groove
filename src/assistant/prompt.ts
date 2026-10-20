@@ -130,6 +130,11 @@
  * wrote four bars of notes into it. Each placement in the description now
  * gives its clip's length, and the time rule says a clip's notes start
  * before it, lengthened with clip_update to hold more.
+ *
+ * 2026-10-20.3 (GRV-116): after a proposal that could not be applied, the
+ * reply said "That's a proper D&B groove now", as if it had happened. The
+ * rule on saying what is proposed now says to speak of it as yet to apply,
+ * never as done.
  */
 import { customAlphabet } from "nanoid";
 import { ASSISTANT_NAME } from "../../site.config.mjs";
@@ -160,7 +165,7 @@ import type { AssistantContextPayload, AssistantLibraryContext } from "./protoco
 import type { ProviderTextBlock } from "./providerRequest";
 import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-20.2";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-20.3";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",
@@ -331,9 +336,9 @@ const MISSING: PromptPassage = {
 
 /** Before how a proposal is built (the `oneResponseProposal` tactic's text). */
 const PROPOSE_HEAD: PromptPassage = {
-  full: `When the producer asks you to change the song, propose the change with your tools, in the same turn: a change you only describe in words cannot be applied, so never say you are proposing something without calling the tools that make it. Nothing you propose happens by itself: the producer sees what it would change and applies it or not, so say in a sentence what you are proposing. Put every change for one request into one proposal; together they apply in order, or not at all.`,
-  moderate: `When the producer asks for a change, propose it with your tools in the same turn: words alone cannot be applied, so never say you are proposing something without the calls that make it. Nothing happens until the producer sees what it would change and applies it; say in a sentence what you propose. One request is one proposal, its changes applied in order or not at all.`,
-  aggressive: `To change the song, call the tools in the same turn: words apply nothing, so never claim a proposal without its calls. Say in a sentence what you propose; the producer sees it and it happens only if they apply it. One request is one proposal, applied in order or not at all.`,
+  full: `When the producer asks you to change the song, propose the change with your tools, in the same turn: a change you only describe in words cannot be applied, so never say you are proposing something without calling the tools that make it. Nothing you propose happens by itself: the producer sees what it would change and applies it or not, so say in a sentence what you are proposing, as something they have yet to apply ("This rebuilds the kick into a busy four-bar groove"), never as done ("That's a proper groove now"): it may not apply, and it changes nothing until they apply it. Put every change for one request into one proposal; together they apply in order, or not at all.`,
+  moderate: `When the producer asks for a change, propose it with your tools in the same turn: words alone cannot be applied, so never say you are proposing something without the calls that make it. Nothing happens until the producer sees what it would change and applies it; say in a sentence what you propose, as yet to apply ("This rebuilds the kick"), never as done ("That's a groove now"), since it may not apply. One request is one proposal, its changes applied in order or not at all.`,
+  aggressive: `To change the song, call the tools in the same turn: words apply nothing, so never claim a proposal without its calls. Say in a sentence what you propose, as yet to apply, never as done (not "That's a groove now"); the producer sees it and it happens only if they apply it. One request is one proposal, applied in order or not at all.`,
 };
 
 /** After how a proposal is built. */

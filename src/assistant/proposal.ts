@@ -36,6 +36,7 @@ import type { Asset, Instrument, Project, Track } from "../domain/entities";
 import { createFactoryContext } from "../domain/factories";
 import { createSeededIdFactory } from "../domain/ids";
 import { loadStarterKit } from "../instrument/instrumentKinds";
+import { fitClipsToNotes } from "./clipFit";
 import type { ProposalIssueCode } from "./proposalIssues";
 import {
   ASSISTANT_TOOLSET_VERSION,
@@ -304,10 +305,10 @@ export function validateProposal(
   const moved = baseRevision !== project.metadata.revision;
   if (moved && !editsLeaveValid) return invalid([staleRevision(baseRevision, project)]);
 
-  const commands: RawCommandInput[] = [];
-  const capabilities: AssistantCapability[] = [];
+  const proposed: RawCommandInput[] = [];
+  const proposedCapabilities: AssistantCapability[] = [];
   /** The call each command came from: a starter kit's sounds join before its call. */
-  const callIndexOf: number[] = [];
+  const proposedCallIndexOf: number[] = [];
   const kitAssets: Asset[] = [];
   const issues: ProposalIssue[] = [];
   calls.forEach((call, callIndex) => {
@@ -328,19 +329,24 @@ export function validateProposal(
     );
     kitAssets.push(...kit.assets);
     for (const asset of kit.assets) {
-      commands.push({ ...addAsset(asset), version: assetAddCommand.version });
-      capabilities.push(resolution.capability);
-      callIndexOf.push(callIndex);
+      proposed.push({ ...addAsset(asset), version: assetAddCommand.version });
+      proposedCapabilities.push(resolution.capability);
+      proposedCallIndexOf.push(callIndex);
     }
-    commands.push({
+    proposed.push({
       type: resolution.commandType,
       version: resolution.commandVersion,
       payload: kit.payload,
     });
-    capabilities.push(resolution.capability);
-    callIndexOf.push(callIndex);
+    proposedCapabilities.push(resolution.capability);
+    proposedCallIndexOf.push(callIndex);
   });
   if (issues.length > 0) return invalid(issues);
+  // Notes written past a clip's end lengthen it (`clipFit.ts`, GRV-116).
+  const fit = fitClipsToNotes(project, proposed);
+  const commands = [...fit.commands];
+  const capabilities = fit.sourceOf.map((source) => proposedCapabilities[source]);
+  const callIndexOf = fit.sourceOf.map((source) => proposedCallIndexOf[source]);
   if (
     moved &&
     !editsLeaveValid?.(

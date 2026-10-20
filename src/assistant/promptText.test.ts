@@ -85,11 +85,11 @@ describe("the promptText and promptDrop tactics (GRV-147)", () => {
 
   // Pinned from origin/main before GRV-147 restructured the prompt into
   // passages: the 16 prompts the older prompt tactics make, at full with every
-  // group kept. Re-pin only when the full text itself is meant to change (GRV-168: the assistant's name; GRV-150: how to read a proposal's outcome; GRV-116: a clip's length beside its placement).
+  // group kept. Re-pin only when the full text itself is meant to change (GRV-168: the assistant's name; GRV-150: how to read a proposal's outcome; GRV-116: a clip's length beside its placement, and a proposal spoken of as yet to apply).
   it("leaves full with nothing dropped byte-identical to the prompt before GRV-147", () => {
     const texts = olderCombinations().map((tactics) => prompt(tactics));
     expect(createHash("sha256").update(texts.join("\u0000")).digest("hex")).toBe(
-      "f47ce2d5f0e7f966061e2494936d8d1c3368d38cb3b7ff87c9a7db7abae6197f",
+      "92b08f4568ff4098407071795d9049a80cb9b0aebe10e7f4a68d29316bc215c7",
     );
   });
 
@@ -306,6 +306,15 @@ describe("the promptText and promptDrop tactics (GRV-147)", () => {
       const text = prompt({ promptText: level });
       expect(text, level).toContain("clipLengthTicks");
       expect(text, level).toContain("clip_update");
+    }
+  });
+
+  // GRV-116: after a proposal that could not apply, the reply said it was done.
+  it("says at every level to speak of a proposal as yet to apply, never as done", () => {
+    for (const level of LEVELS) {
+      const text = prompt({ promptText: level });
+      expect(text, level).toContain("yet to apply");
+      expect(text, level).toContain("never as done");
     }
   });
 });
