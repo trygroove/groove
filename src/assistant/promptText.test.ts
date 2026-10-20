@@ -85,11 +85,11 @@ describe("the promptText and promptDrop tactics (GRV-147)", () => {
 
   // Pinned from origin/main before GRV-147 restructured the prompt into
   // passages: the 16 prompts the older prompt tactics make, at full with every
-  // group kept. Re-pin only when the full text itself is meant to change (GRV-168: the assistant's name; GRV-150: how to read a proposal's outcome).
+  // group kept. Re-pin only when the full text itself is meant to change (GRV-168: the assistant's name; GRV-150: how to read a proposal's outcome; GRV-116: a clip's length beside its placement).
   it("leaves full with nothing dropped byte-identical to the prompt before GRV-147", () => {
     const texts = olderCombinations().map((tactics) => prompt(tactics));
     expect(createHash("sha256").update(texts.join("\u0000")).digest("hex")).toBe(
-      "c5ffa6913e04d44ec3bf78805139e8bbde835ca2dfadce875e9c82147e08ef32",
+      "f47ce2d5f0e7f966061e2494936d8d1c3368d38cb3b7ff87c9a7db7abae6197f",
     );
   });
 
@@ -297,6 +297,15 @@ describe("the promptText and promptDrop tactics (GRV-147)", () => {
       ]) {
         expect(text, `${level}: ${phrase}`).toContain(phrase);
       }
+    }
+  });
+
+  // GRV-116: a looped one-bar kick got four bars of notes, past its end.
+  it("says at every level that a clip's notes start before the clip length each placement gives", () => {
+    for (const level of LEVELS) {
+      const text = prompt({ promptText: level });
+      expect(text, level).toContain("clipLengthTicks");
+      expect(text, level).toContain("clip_update");
     }
   });
 });
