@@ -39,8 +39,6 @@ export type LearnChipId = (typeof LEARN_CHIP_IDS)[number];
 
 /** The gear chips, as the validation event names them. */
 export const GEAR_CHIP_IDS = [
-  "ableton_move",
-  "roland_t8",
   "midi_keyboard",
   "drum_machine",
   "synth",
