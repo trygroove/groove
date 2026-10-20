@@ -591,6 +591,202 @@ describe("attach", () => {
   });
 });
 
+// GRV-186: the app runs one controller and every surface registers a scope on
+// it, so a press runs in one surface only and is measured once.
+describe("scopes", () => {
+  function root() {
+    const transport = createRecordingTransport();
+    const analytics = new Analytics({
+      transport,
+      consent: new ConsentStore(memoryStorage()),
+      storage: memoryStorage(),
+    });
+    analytics.setAccountType("anonymous");
+    const controller = new ShortcutController({
+      platform: "other",
+      analytics,
+      isTextEntry: () => false,
+    });
+    return {
+      controller,
+      transport,
+      press: (event: FakeKeyEvent) =>
+        controller.handleKeyDown(event as unknown as KeyboardEvent),
+    };
+  }
+
+  it("runs Escape in the most recent scope only, logged once, and the earlier one once it goes", () => {
+    const { controller, transport, press } = root();
+    const earlier = vi.fn();
+    const later = vi.fn();
+    controller.addScope({
+      handlers: () => ({ "view.close_surface": { run: earlier } }),
+      contexts: () => [],
+    });
+    const top = controller.addScope({
+      handlers: () => ({ "view.close_surface": { run: later } }),
+      contexts: () => [],
+    });
+
+    expect(press(keyEvent("Escape")).ran).toBe(true);
+    expect(later).toHaveBeenCalledTimes(1);
+    expect(earlier).not.toHaveBeenCalled();
+    expect(transport.named("shortcut_used")).toHaveLength(1);
+
+    top.dispose();
+    press(keyEvent("Escape"));
+    expect(earlier).toHaveBeenCalledTimes(1);
+    expect(later).toHaveBeenCalledTimes(1);
+    expect(transport.named("shortcut_used")).toHaveLength(2);
+  });
+
+  it("passes a press to an earlier scope when the newer one's handler is disabled", () => {
+    const { controller, press } = root();
+    const earlier = vi.fn();
+    const later = vi.fn();
+    controller.addScope({
+      handlers: () => ({ "view.close_surface": { run: earlier } }),
+      contexts: () => [],
+    });
+    controller.addScope({
+      handlers: () => ({ "view.close_surface": { run: later, isEnabled: () => false } }),
+      contexts: () => [],
+    });
+
+    press(keyEvent("Escape"));
+    expect(earlier).toHaveBeenCalledTimes(1);
+    expect(later).not.toHaveBeenCalled();
+  });
+
+  it("matches a key against each scope's own contexts", () => {
+    const { controller, press } = root();
+    const play = vi.fn();
+    controller.addScope({
+      handlers: () => ({ "transport.play_stop": { run: play } }),
+      contexts: () => ["editor"],
+    });
+    // A newer scope in a modal context has no Space of its own; the editor's
+    // contexts are its own, so its Space still plays.
+    controller.addScope({ handlers: () => ({}), contexts: () => ["dialog"] });
+
+    press(keyEvent(" "));
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides every earlier scope behind a modal one until it goes", () => {
+    const { controller, transport, press } = root();
+    const play = vi.fn();
+    const undo = vi.fn();
+    const editorEscape = vi.fn();
+    const editor = controller.addScope({
+      handlers: () => ({
+        "transport.play_stop": { run: play },
+        "edit.undo": { run: undo },
+        "view.close_surface": { run: editorEscape },
+      }),
+      contexts: () => ["editor", "arrangement"],
+    });
+    const close = vi.fn();
+    const modal = controller.addScope({
+      modal: true,
+      handlers: () => ({ "view.close_surface": { run: close } }),
+      contexts: () => ["dialog"],
+    });
+
+    const space = keyEvent(" ");
+    const undoPress = keyEvent("z", { ctrlKey: true });
+    expect(press(space).ran).toBe(false);
+    expect(press(undoPress).ran).toBe(false);
+    expect(play).not.toHaveBeenCalled();
+    expect(undo).not.toHaveBeenCalled();
+    expect(space.defaultPrevented).toBe(false);
+    expect(controller.isEnabled("transport.play_stop")).toBe(false);
+    expect(controller.activeContexts()).toEqual(["dialog"]);
+    expect(editor.isEnabled("transport.play_stop")).toBe(true);
+
+    press(keyEvent("Escape"));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(editorEscape).not.toHaveBeenCalled();
+
+    modal.dispose();
+    press(keyEvent(" "));
+    press(keyEvent("z", { ctrlKey: true }));
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(undo).toHaveBeenCalledTimes(1);
+    expect(
+      transport.named("shortcut_used").map(({ params }) => params.action_id),
+    ).toEqual(["view.close_surface", "transport.play_stop", "edit.undo"]);
+  });
+
+  it("lets a scope mounted over a modal hear keys, like a menu opened inside a dialog", () => {
+    const { controller, press } = root();
+    const dialogEscape = vi.fn();
+    const menuEscape = vi.fn();
+    controller.addScope({
+      modal: true,
+      handlers: () => ({ "view.close_surface": { run: dialogEscape } }),
+      contexts: () => ["dialog"],
+    });
+    controller.addScope({
+      handlers: () => ({ "view.close_surface": { run: menuEscape } }),
+      contexts: () => [],
+    });
+
+    press(keyEvent("Escape"));
+    expect(menuEscape).toHaveBeenCalledTimes(1);
+    expect(dialogEscape).not.toHaveBeenCalled();
+  });
+
+  it("logs through the scope's own analytics when it brings one", () => {
+    const { controller, transport, press } = root();
+    const own = createRecordingTransport();
+    const analytics = new Analytics({
+      transport: own,
+      consent: new ConsentStore(memoryStorage()),
+      storage: memoryStorage(),
+    });
+    analytics.setAccountType("anonymous");
+    controller.addScope({
+      analytics,
+      handlers: () => ({ "view.close_surface": { run() {} } }),
+      contexts: () => [],
+    });
+
+    press(keyEvent("Escape"));
+    expect(own.named("shortcut_used")).toHaveLength(1);
+    expect(transport.named("shortcut_used")).toHaveLength(0);
+  });
+
+  it("suppresses a held key's repeats once any scope ran its press (#961)", () => {
+    const { controller, press } = root();
+    const close = vi.fn();
+    const scope = controller.addScope({
+      handlers: () => ({ "view.close_surface": { run: close } }),
+      contexts: () => [],
+    });
+    press(keyEvent("Escape"));
+    scope.dispose();
+    const repeat = keyEvent("Escape", { repeat: true });
+    expect(press(repeat).rejected).toBe("repeat");
+    expect(repeat.defaultPrevented).toBe(true);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("disposes a scope once, however often it is asked to", () => {
+    const { controller, press } = root();
+    const first = vi.fn();
+    controller.addScope({
+      handlers: () => ({ "view.close_surface": { run: first } }),
+      contexts: () => [],
+    });
+    const second = controller.addScope({ handlers: () => ({}), contexts: () => [] });
+    second.dispose();
+    second.dispose();
+    press(keyEvent("Escape"));
+    expect(first).toHaveBeenCalledTimes(1);
+  });
+});
+
 // GRV-148: every surface that answers a key attaches its own controller to the
 // window, so one press reaches all of them. One press runs one action: the
 // controller attached last, the surface opened last, hears it first, and the

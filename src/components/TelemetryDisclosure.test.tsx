@@ -7,6 +7,7 @@ import { ConsentStore } from "../analytics/consent";
 import { type ShortcutHandlers, useShortcuts } from "../shortcuts";
 import ShortcutGuide from "../shortcuts/ShortcutGuide";
 import { memoryStorage } from "../testing/storage";
+import ConfirmDialog from "./ConfirmDialog";
 import TelemetryDisclosure from "./TelemetryDisclosure";
 
 afterEach(() => cleanup());
@@ -296,14 +297,54 @@ describe("TelemetryDisclosure Escape under a modal dialog (GRV-148)", () => {
   }
 });
 
+// GRV-186: a confirmation over the open panel is a modal shortcut scope, so the
+// first Escape is the dialog's alone and the second closes the panel.
+describe("TelemetryDisclosure Escape under a confirm dialog (GRV-186)", () => {
+  it("closes the dialog on the first Escape and the panel on the second", async () => {
+    const store = new ConsentStore(memoryStorage());
+    const [confirming, setConfirming] = createSignal(false);
+    const cancel = vi.fn(() => setConfirming(false));
+    render(() => (
+      <>
+        <TelemetryDisclosure store={store} />
+        <Show when={confirming()}>
+          <ConfirmDialog
+            title="Delete?"
+            message="This cannot be undone."
+            onConfirm={() => {}}
+            onCancel={cancel}
+          />
+        </Show>
+      </>
+    ));
+    const user = userEvent.setup();
+    const summary = screen.getByText("Privacy");
+    await user.click(summary);
+    const details = summary.closest("details") as HTMLDetailsElement;
+    await vi.waitFor(() => expect(details.open).toBe(true));
+    setConfirming(true);
+    flush();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    flush();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(details.open).toBe(true);
+
+    await user.keyboard("{Escape}");
+    await vi.waitFor(() => expect(details.open).toBe(false));
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+});
+
 // GRV-148, second QA: in the studio the editor's controller, mounted long
 // before the panel, owns both the Keyboard shortcuts guide's Escape and the
 // arrangement's "Escape clears the selection". This stands in for that chain
-// with the real guide mounted beside the real panel, each on its own
-// controller on the window, as in the app. A browser runs a microtask
-// checkpoint between two listeners of one key press, so the guide the editor
-// closes is already gone from the document when the panel's listener runs;
-// `flush()` in the editor's handler is that checkpoint.
+// with the real guide mounted beside the real panel, each a scope on the one
+// controller (GRV-186), as in the app. `flush()` in the editor's handler stands
+// in for the microtask checkpoint a browser runs between two listeners of one
+// key press, so the guide the editor closes is gone before anything else looks.
 describe("TelemetryDisclosure Escape beside the editor (GRV-148)", () => {
   function EditorStandIn(props: {
     selected: () => boolean;

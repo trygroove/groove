@@ -1,21 +1,21 @@
-import { onSettled } from "solid-js";
-import { ShortcutController, type ShortcutControllerOptions } from "./ShortcutController";
+import type { ShortcutHandlers } from "./ShortcutController";
+import type { ShortcutContext } from "./types";
+import { type ShortcutScopeHandle, useShortcutScope } from "./useShortcutScope";
 
 /**
- * Installs one `ShortcutController` on the window for the lifetime of the
- * calling component (PRD `KEY-01`).
+ * Registers a surface's shortcuts on the app's one controller for the lifetime
+ * of the calling component (PRD `KEY-01`).
  *
- * Listening on the window rather than on an editor element is what makes a
- * shortcut work while focus sits on a transport button or a fader; the
- * controller's own context and text-entry rules decide whether it acts, so
- * "listens everywhere" never means "fires everywhere".
- *
- * `attach` returns its own detach function, and in Solid 2 the value an
- * `onSettled` callback returns *is* its cleanup — so handing the detach back is
- * the whole teardown, in place of 1.x's nested `onCleanup`.
+ * The surfaces still calling this (the editor, the Mixer, the device chain)
+ * move to `useShortcutScope` in GRV-186's second PR. Until then this is that
+ * hook under its old name, not a controller of its own: a controller attached
+ * beside the root would be offered every press ahead of the dialogs and
+ * popovers registered on the root after it (GRV-148), so the surface on top
+ * would not get its Escape first.
  */
-export function useShortcuts(options: ShortcutControllerOptions): ShortcutController {
-  const controller = new ShortcutController(options);
-  onSettled(() => controller.attach(window));
-  return controller;
+export function useShortcuts(options: {
+  handlers: () => ShortcutHandlers;
+  contexts: () => readonly ShortcutContext[];
+}): ShortcutScopeHandle {
+  return useShortcutScope(options);
 }

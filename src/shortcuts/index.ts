@@ -1,9 +1,9 @@
 // Public surface of the PRD `KEY-01` shortcut layer.
 //
-// `ShortcutGuide.tsx` is deliberately absent: it is the one module here that
-// imports Solid's JSX runtime, and importing this barrel from a non-component
+// `ShortcutGuide.tsx` and `ShortcutRoot.tsx` are deliberately absent: they are
+// the modules here that import Solid's JSX runtime, and importing this barrel from a non-component
 // module (the registry is consumed by tests and docs generation too) should not
-// pull a component in. Components import it by name.
+// pull a component in. Components import them by name.
 
 export type {
   ChordEvent,
@@ -60,6 +60,8 @@ export type {
   ShortcutHandler,
   ShortcutHandlers,
   ShortcutRejection,
+  ShortcutScope,
+  ShortcutScopeOptions,
 } from "./ShortcutController";
 export { ShortcutController } from "./ShortcutController";
 export { isTextEntry } from "./textEntry";
@@ -77,4 +79,10 @@ export {
   SHORTCUT_GROUPS,
 } from "./types";
 export { modalDialogOpen, useCloseOnEscape } from "./useCloseOnEscape";
+export type { ShortcutScopeHandle, ShortcutScopeHookOptions } from "./useShortcutScope";
+export {
+  ShortcutRootContext,
+  useShortcutRoot,
+  useShortcutScope,
+} from "./useShortcutScope";
 export { useShortcuts } from "./useShortcuts";

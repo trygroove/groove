@@ -3,7 +3,7 @@ import type { RawCommandInput, TransactionResult } from "../commands";
 import { updateTrack } from "../commands";
 import type { Track } from "../domain/entities";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
-import { useShortcuts } from "../shortcuts";
+import { useShortcutScope } from "../shortcuts";
 import { MAX_DISPLAY_NAME_LENGTH } from "./displayNameLimit";
 
 export interface TrackNameInputProps {
@@ -30,7 +30,7 @@ export interface TrackNameInputProps {
  */
 export default function TrackNameInput(props: TrackNameInputProps): JSX.Element {
   let input: HTMLInputElement | undefined;
-  useShortcuts({
+  useShortcutScope({
     handlers: () => ({
       "view.close_surface": {
         run: () => {
