@@ -274,6 +274,71 @@ describe("the lesson under way (GRV-43)", () => {
     }
   });
 
+  it("wraps the chapter up once its last bite is done, once, even after a reply", () => {
+    const editor: LessonEditorPort = {
+      apply: vi.fn(() => true),
+      goTo: vi.fn(),
+      point: vi.fn(),
+      play: vi.fn(async () => {}),
+      putSound: vi.fn(async () => false),
+    };
+    const h = setup(editor);
+    editor.goTo = vi.fn((view) => h.setView(view));
+    // Coproducer is still writing as the tour's last bite starts and ends.
+    h.setStreaming(true);
+    h.lesson.start("tour", "asked", "tour-mixer");
+    flush();
+    h.lesson.showMe();
+    flush();
+    expect(h.lesson.state()).toBeNull();
+    expect(h.sendLesson).not.toHaveBeenCalled();
+    h.setStreaming(false);
+    flush();
+    expect(h.sendLesson).toHaveBeenCalledTimes(1);
+    const [text, cue, chapter] = h.sendLesson.mock.lastCall as unknown as [
+      string,
+      { moment: string; next: readonly string[] },
+      string,
+    ];
+    expect(chapter).toBe("Tour the studio");
+    expect(text).toContain('That was the last bite of "Tour the studio".');
+    expect(cue.moment).toBe("chapter_done");
+    expect(cue.next.length).toBeGreaterThanOrEqual(2);
+    expect(cue.next.length).toBeLessThanOrEqual(3);
+    // Its wrap-up reply comes and goes: nothing is sent again.
+    h.setStreaming(true);
+    flush();
+    h.setStreaming(false);
+    flush();
+    expect(h.sendLesson).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends the wrap-up as its own turn when nothing was on its way", () => {
+    const editor: LessonEditorPort = {
+      apply: vi.fn(() => true),
+      goTo: vi.fn(),
+      point: vi.fn(),
+      play: vi.fn(async () => {}),
+      putSound: vi.fn(async () => false),
+    };
+    const h = setup(editor);
+    editor.goTo = vi.fn((view) => h.setView(view));
+    h.lesson.start("tour", "asked", "tour-mixer");
+    flush();
+    expect(h.sendLesson).toHaveBeenCalledTimes(1);
+    h.lesson.showMe();
+    flush();
+    expect(h.sendLesson).toHaveBeenCalledTimes(2);
+    const [, cue] = h.sendLesson.mock.lastCall as unknown as [
+      string,
+      { moment: string; next: readonly string[]; earlier: readonly unknown[] },
+    ];
+    expect(cue.moment).toBe("chapter_done");
+    expect(cue.earlier).toEqual([]);
+    expect(cue.next.length).toBeGreaterThanOrEqual(2);
+    expect(cue.next.length).toBeLessThanOrEqual(3);
+  });
+
   it("has nothing to show without an editor", () => {
     const h = setup();
     expect(h.lesson.canShowMe).toBe(false);

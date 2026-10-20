@@ -36,8 +36,12 @@ import { dockTile, expectView } from "../support/views";
  *    under the step.
  *
  * **The scripted provider** answers a lesson's turn with a short reply that
- * names the bite; the spec reads only that the bite's name follows in the
- * conversation, not the wording.
+ * names the bite (`lessonReplyText` in `src/assistant/emulatorProvider.ts`).
+ * The spec reads Coproducer's replies alone, never the producer's side of the
+ * log, whose lesson lines already name every bite and the chapter; and it
+ * reads which moment a reply answers (a bite started, finished, the chapter
+ * finished) by the scripted reply's own words, since a bite's name alone is
+ * in every reply about it.
  *
  * Runs against the Firestore/Auth emulator because the gateway it talks to is
  * the emulator's function, and step 12 is a real reload.
@@ -61,6 +65,14 @@ const bite = (page: Page, name: string): Locator =>
     .getByRole("list", { name: "Bites" })
     .getByRole("listitem")
     .filter({ hasText: name });
+
+/** Coproducer's replies in the panel's conversation, not the producer's lines. */
+const replies = (page: Page): Locator =>
+  conversationIn(cuePanel(page)).locator(".assistant-reply");
+
+/** Coproducer's reply that says `words`, as the scripted provider writes it. */
+const replySaying = (page: Page, words: string): Locator =>
+  replies(page).filter({ hasText: words });
 
 const lessonButton = (page: Page, name: string): Locator =>
   lesson(page).getByRole("button", { name, exact: true });
@@ -142,7 +154,7 @@ test.describe("CF-037", () => {
       await expect(lesson(page)).toContainText(/Library/);
       await expect(lessonButton(page, "Show me")).toBeVisible();
       await expect(lessonButton(page, "Skip")).toBeVisible();
-      await expect(conversationIn(cuePanel(page))).toContainText(BITES[0], {
+      await expect(replySaying(page, `Here's "${BITES[0]}"`)).toHaveCount(1, {
         timeout: 15_000,
       });
       await step("The lesson starts in Coproducer's panel");
@@ -158,6 +170,9 @@ test.describe("CF-037", () => {
       await expect(bite(page, BITES[0])).toContainText("done");
       await dockTile(page, "Instrument").click();
       await expect(padSound(page)).not.toHaveText(starterKick);
+      await expect(replySaying(page, `"${BITES[0]}" is finished`)).toHaveCount(1, {
+        timeout: 15_000,
+      });
       await expect(lessonButton(page, `Next: ${BITES[1]}`)).toBeVisible({
         timeout: 15_000,
       });
@@ -192,6 +207,9 @@ test.describe("CF-037", () => {
           .click();
       }
       await expect(bite(page, BITES[1])).toContainText("done");
+      await expect(replySaying(page, `"${BITES[1]}" is finished`)).toHaveCount(1, {
+        timeout: 15_000,
+      });
       await expect(lessonButton(page, `Next: ${BITES[2]}`)).toBeVisible({
         timeout: 15_000,
       });
@@ -263,7 +281,7 @@ test.describe("CF-037", () => {
       // 11. That was the chapter's last bite: the lesson leaves the panel, and
       //     Coproducer's wrap-up follows in the conversation.
       await expect(lesson(page)).toHaveCount(0);
-      await expect(conversationIn(cuePanel(page))).toContainText(CHAPTER, {
+      await expect(replySaying(page, `That's "${CHAPTER}" finished`)).toHaveCount(1, {
         timeout: 15_000,
       });
       await step("The chapter's done, and Coproducer wraps it up");
