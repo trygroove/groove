@@ -251,6 +251,71 @@ describe("a copied clip (GRV-131 clip reuse)", () => {
     expect(copy.noteIds).toEqual([3, 4].map((index) => gatewayNoteId(STEM, index)));
   });
 
+  const COPY_ORDER =
+    "the copied notes in time order (by start, then ID), then your new notes in the order you gave them";
+
+  it("gives copies their IDs in time order, not the order eventIds names them, and says so", () => {
+    const [a, , c] = LISTED_NOTES;
+    const copy = clipCreate({
+      kind: "copy",
+      clipId: LISTED,
+      eventIds: [c.id, a.id],
+      events: [[96, 72, 48, 0.9]],
+    });
+    const ids = [1, 2, 3].map((index) => gatewayNoteId(STEM, index));
+    const expanded = accepted(reuseExpander().expand(copy));
+    expect(eventsOf(expanded.call)).toEqual([
+      { ...a, id: ids[0] },
+      { ...c, id: ids[1] },
+      expect.objectContaining({ id: ids[2], startTicks: 96 }),
+    ]);
+    const answered = answerStep([copy], new Map(), reuseExpander());
+    expect(answered.results[0]?.content).toContain(
+      `Its 3 notes' IDs, ${COPY_ORDER}, count up from ${ids[0]} to ${ids[2]}.`,
+    );
+    // A clip of notes alone keeps the default wording.
+    const plain = answerStep(
+      [
+        clipCreate({
+          kind: "notes",
+          events: [
+            [0, 60, 48, 0.8],
+            [96, 62, 48, 0.8],
+          ],
+        }),
+      ],
+      new Map(),
+      reuseExpander(),
+    );
+    expect(plain.results[0]?.content).toContain("in the order you gave them, count up");
+  });
+
+  it("copies a clip the turn wrote out of time order in time order", () => {
+    const notes = reuseExpander(new Map());
+    accepted(
+      notes.expand(
+        clipCreate({
+          kind: "notes",
+          events: [
+            [384, 67, 48, 0.8],
+            [0, 60, 48, 0.8],
+          ],
+        }),
+      ),
+    );
+    const copy = clipCreate({ kind: "copy", clipId: NEW_CLIP }, newId("clp", STEM, 2));
+    const ids = [3, 4].map((index) => gatewayNoteId(STEM, index));
+    const expanded = accepted(notes.fork().expand(copy));
+    expect(eventsOf(expanded.call).map((event) => [event.id, event.startTicks])).toEqual([
+      [ids[0], 0],
+      [ids[1], 384],
+    ]);
+    const answered = answerStep([copy], new Map(), notes);
+    expect(answered.results[0]?.content).toContain(
+      `Its 2 notes' IDs, ${COPY_ORDER}, count up from ${ids[0]} to ${ids[1]}.`,
+    );
+  });
+
   it("refuses a clip whose notes it does not have, an unknown note, and a malformed copy", () => {
     const notes = reuseExpander();
     expect(refusal(notes.expand(clipCreate({ kind: "copy", clipId: PLACED })))).toMatch(

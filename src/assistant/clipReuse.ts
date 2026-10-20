@@ -20,7 +20,10 @@
  *   `{ kind: "copy", clipId, eventIds?, events? }`: the notes of a clip the
  *   gateway knows (one the turn made, or one whose notes the description
  *   lists), all of them or those `eventIds` names, with new IDs, plus any new
- *   notes in `events` in every form the turn's tactics offer.
+ *   notes in `events` in every form the turn's tactics offer. The copies
+ *   take their IDs first, in time order (by start, then ID, as the command
+ *   layer sorts notes), whatever order the clip or `eventIds` lists them in;
+ *   the new notes take the IDs after, in the order the call gives them.
  * - **Duplicate notes without making their IDs.** `notes_duplicate` may leave
  *   out `newIds`; the gateway gives the copies IDs from the turn's note
  *   counter, as it gives the notes the model writes.
@@ -363,11 +366,24 @@ export type Rewrite =
   | { readonly ok: true; readonly input: Record<string, unknown> }
   | { readonly ok: false; readonly reason: string };
 
+/** Whether `call` is a `clip_create` whose content copies another clip. */
+export function isClipCopy(call: {
+  readonly name: string;
+  readonly input: unknown;
+}): boolean {
+  return (
+    call.name === "clip_create" &&
+    isRecord(call.input) &&
+    isRecord(call.input.content) &&
+    call.input.content.kind === "copy"
+  );
+}
+
 /**
  * A `clip_create` whose content is a copy, as a `clip_create` of notes: the
- * copied notes as compact notes (in the source clip's order), then the new
- * ones, for the note expander to write out with new IDs. Any other input
- * comes back as it is.
+ * copied notes as compact notes in time order (start, then ID; `sortEvents`),
+ * then the new ones in the order given, for the note expander to write out
+ * with new IDs. Any other input comes back as it is.
  */
 export function rewriteClipCopy(
   input: Record<string, unknown>,
@@ -396,7 +412,10 @@ export function rewriteClipCopy(
     ok: true,
     input: {
       ...input,
-      content: { kind: "notes", events: [...selected.map(asCompactNote), ...events] },
+      content: {
+        kind: "notes",
+        events: [...sortEvents(selected).map(asCompactNote), ...events],
+      },
     },
   };
 }

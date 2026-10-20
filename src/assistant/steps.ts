@@ -31,6 +31,7 @@
  * with refused calls is fixing them and does not count.
  */
 import { isAskCall } from "./ask";
+import { isClipCopy } from "./clipReuse";
 import type { ExpandedCall, NoteExpander } from "./compactNotes";
 import { isRememberCall } from "./memory";
 import type { AssistantStopReason, AssistantToolCall } from "./protocol";
@@ -63,32 +64,39 @@ export const MAX_CHANGE_STEPS = 2;
 /** What a change call past {@link MAX_CHANGE_STEPS} is told. */
 export const CHANGE_STEPS_SPENT = `Refused, not added to the proposal: a proposal takes at most ${MAX_CHANGE_STEPS} responses of changes, and this one has had them. Send no more changes; finish with what the proposal has, calling explain_change for it if you have not.`;
 
+/** The order a change call's new note IDs follow (see {@link addedResult}). */
+export type AddedOrder = "given" | "duplicate" | "copy";
+
+const ADDED_ORDER: Record<AddedOrder, string> = {
+  given: "in the order you gave them",
+  duplicate: "in time order of the notes copied (by start, then ID)",
+  copy: "the copied notes in time order (by start, then ID), then your new notes in the order you gave them",
+};
+
 /**
  * What a change call that joined the proposal is told: {@link ADDED_RESULT},
  * and the IDs its new notes were given (GRV-131), so a later step can update,
  * remove or duplicate them. They count up from the first, so the first and
  * the last say them all. A placement the gateway gave its ID (`clipReuse`)
- * is told that ID too. The copies of a `notes_duplicate` the gateway gave
- * IDs (`clipReuse`, the only way such a call has gateway note IDs) take them
- * in the command's order, by start and then ID, not the order the call named
- * the notes in.
+ * is told that ID too. With `clipReuse`, the order the IDs follow is not
+ * always the order the call gave its notes in: the copies of a
+ * `notes_duplicate` the gateway gave IDs (the only way such a call has
+ * gateway note IDs) take them in the command's order, by start and then ID;
+ * a copied clip's copies take them in that order too, before its new notes.
  */
 export function addedResult(
   noteIds: readonly string[],
   placementId?: string,
-  duplicate = false,
+  order: AddedOrder = "given",
 ): string {
   const [first] = noteIds;
   const last = noteIds.at(-1);
   const said = [ADDED_RESULT];
   if (first !== undefined && last !== undefined) {
-    const order = duplicate
-      ? "in time order of the notes copied (by start, then ID)"
-      : "in the order you gave them";
     said.push(
       noteIds.length === 1
         ? `Its note's ID is ${first}.`
-        : `Its ${noteIds.length} notes' IDs, ${order}, count up from ${first} to ${last}.`,
+        : `Its ${noteIds.length} notes' IDs, ${ADDED_ORDER[order]}, count up from ${first} to ${last}.`,
     );
   }
   if (placementId !== undefined) said.push(`Its placement's ID is ${placementId}.`);
@@ -244,7 +252,11 @@ export function answerStep(
       content: addedResult(
         expanded.noteIds,
         expanded.placementId,
-        expanded.call.name === "notes_duplicate",
+        expanded.call.name === "notes_duplicate"
+          ? "duplicate"
+          : isClipCopy(call)
+            ? "copy"
+            : "given",
       ),
     };
   });

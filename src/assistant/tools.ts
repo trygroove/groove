@@ -525,7 +525,7 @@ const CLIP_CREATE_GENERATORS_TEXT = [
  * (GRV-131): a clip's content may copy another clip's notes.
  */
 export const CLIP_CREATE_COPY_TEXT = [
-  `For a variation of a clip (a sparser intro, a fill, a second half), content may instead be a copy, {kind: "copy", clipId, eventIds, events}: the notes of a clip made earlier in this reply, or of one whose notes the description lists, all of them or only those eventIds names, plus the new notes in events. Groove gives every note its ID; never write out notes a clip already has.`,
+  `For a variation of a clip (a sparser intro, a fill, a second half), content may instead be a copy, {kind: "copy", clipId, eventIds, events}: the notes of a clip made earlier in this reply, or of one whose notes the description lists, all of them or only those eventIds names, plus the new notes in events. Groove gives every note its ID: the copied notes first, in time order (by start, then ID), then the new notes in the order you give them. Never write out notes a clip already has.`,
   `Example content: ${JSON.stringify({ kind: "copy", clipId: "clp_...", events: [[1344, 38, 48, 0.9]] })}`,
 ].join(" ");
 
