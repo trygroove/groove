@@ -264,10 +264,19 @@ export function useLesson(options: UseLessonOptions): Lesson {
       return;
     }
     setNotice(null);
-    setState(markShown(current));
+    // Marked before the editor acts, so the change it makes is read as Show
+    // me's when the step sees it; taken back if the editor could not act, so
+    // a producer who then does the step by hand is credited with it.
+    const marked = markShown(current);
+    setState(marked);
+    // The updater form, which sees the write above even before it flushes.
+    const unmark = () => setState((now) => (now === marked ? current : now));
     switch (shown.kind) {
       case "commands":
-        if (!editor.apply(shown.commands)) setNotice(SHOW_ME_FAILED);
+        if (!editor.apply(shown.commands)) {
+          unmark();
+          setNotice(SHOW_ME_FAILED);
+        }
         return;
       case "view":
         editor.goTo(shown.view);
@@ -277,7 +286,9 @@ export function useLesson(options: UseLessonOptions): Lesson {
         return;
       case "sound":
         void editor.putSound(shown.role, shown.trackId, shown.padId).then((put) => {
-          if (!put) setNotice(NO_SOUND);
+          if (put) return;
+          unmark();
+          setNotice(NO_SOUND);
         });
     }
   }

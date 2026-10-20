@@ -153,13 +153,19 @@ async function renderLesson(options: { putSound?: boolean } = {}) {
   };
 }
 
-/** A kick on step 11 of BD, as the producer would click it. */
-function kickOnEleven(project: Project): Project {
+/**
+ * Boom bap's kick on BD, as the producer would click it: step 11 on, and the
+ * starter's kicks on 5, 9 and 13 off.
+ */
+function boomBapKickByHand(project: Project): Project {
   const track = beatTrack(project);
   const pad = track && kickPad(track);
   const clip = project.clips[0];
   if (!track || !pad || !clip || clip.content.kind !== "notes")
     throw new Error("no beat");
+  const offBeat = clip.content.events
+    .filter((note) => note.startTicks !== 0)
+    .map((note) => note.id);
   return applied(project, [
     {
       type: "note.add",
@@ -174,6 +180,7 @@ function kickOnEleven(project: Project): Project {
         ],
       },
     },
+    { type: "note.remove", payload: { clipId: clip.id, eventIds: offBeat } },
   ]);
 }
 
@@ -202,6 +209,7 @@ describe("a lesson in the panel (GRV-43)", () => {
       moment: "bite_started",
       style: "boom_bap",
     });
+    expect(h.transport.named("lesson_bite_started")).toHaveLength(1);
     expect(h.transport.named("lesson_bite_started")[0]?.params).toMatchObject({
       chapter_id: "beat",
       bite_id: "beat-library",
@@ -220,7 +228,7 @@ describe("a lesson in the panel (GRV-43)", () => {
     await waitFor(() => expect(h.client.turns).toHaveLength(1));
     const lesson = h.lesson();
     expect(lesson).toHaveTextContent(/beat 1 and on the "and" of beat 3/);
-    h.setProject(kickOnEleven(h.project()));
+    h.setProject(boomBapKickByHand(h.project()));
     await waitFor(() => expect(h.bite("The kick pattern")).toHaveTextContent("done"));
     expect(within(lesson).getByRole("button", { name: "Next: Hear it" })).toBeVisible();
     await h.reply();
@@ -230,7 +238,9 @@ describe("a lesson in the panel (GRV-43)", () => {
     );
     expect(h.client.last().request.lesson?.changes).toEqual([
       "BD's BD: hits added on step 11.",
+      "BD's BD: hits removed from step 5, step 9 and step 13.",
     ]);
+    expect(h.transport.named("lesson_bite_completed")).toHaveLength(1);
     expect(h.transport.named("lesson_bite_completed")[0]?.params).toMatchObject({
       bite_id: "beat-kick",
       how: "did_it",
@@ -247,6 +257,7 @@ describe("a lesson in the panel (GRV-43)", () => {
     clickAndFlush(within(h.lesson()).getByRole("button", { name: "Show me" }));
     expect(h.apply).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(h.bite("The backbeat")).toHaveTextContent("done"));
+    expect(h.transport.named("lesson_bite_completed")).toHaveLength(1);
     expect(h.transport.named("lesson_bite_completed")[0]?.params.how).toBe("show_me");
     expect(beatTrack(h.project())?.instrument.pads.map((pad) => pad.name)).toEqual([
       "BD",
@@ -257,6 +268,11 @@ describe("a lesson in the panel (GRV-43)", () => {
   it("plays the song for Hear it, and goes to the view for a stop on the tour", async () => {
     const h = await renderLesson();
     h.start("beat", "asked", "beat-play");
+    // Boom bap's tempo first, then playing it.
+    expect(h.lesson()).toHaveTextContent(/90 BPM/);
+    clickAndFlush(within(h.lesson()).getByRole("button", { name: "Show me" }));
+    await waitFor(() => expect(h.project().song.tempo).toBe(90));
+    await waitFor(() => expect(h.lesson()).toHaveTextContent(/Play/));
     clickAndFlush(within(h.lesson()).getByRole("button", { name: "Show me" }));
     await waitFor(() => expect(h.bite("Hear it")).toHaveTextContent("done"));
 
@@ -310,11 +326,17 @@ describe("a lesson in the panel (GRV-43)", () => {
     h.start("beat", "asked", "beat-hats");
     clickAndFlush(within(h.lesson()).getByRole("button", { name: "Skip" }));
     await waitFor(() => expect(h.bite("Hats")).toHaveTextContent("skipped"));
+    expect(h.transport.named("lesson_bite_completed")).toHaveLength(1);
+    expect(h.transport.named("lesson_bite_completed")[0]?.params).toMatchObject({
+      bite_id: "beat-hats",
+      how: "skipped",
+    });
     clickAndFlush(within(h.lesson()).getByRole("button", { name: "Next: Loop it" }));
     expect(h.bite("Loop it")).toHaveAttribute("aria-current", "step");
     expect(h.transport.named("lesson_bite_started").at(-1)?.params.source).toBe("next");
     clickAndFlush(within(h.lesson()).getByRole("button", { name: "Leave" }));
     expect(screen.queryByRole("region", { name: LESSON_LABEL })).not.toBeInTheDocument();
+    expect(h.transport.named("lesson_dropped_out")).toHaveLength(1);
     expect(h.transport.named("lesson_dropped_out")[0]?.params).toMatchObject({
       chapter_id: "beat",
       bite_id: "beat-loop",

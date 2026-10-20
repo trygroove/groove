@@ -102,6 +102,7 @@ describe("Coproducer's daily nudge (GRV-25)", () => {
     const nudge = await screen.findByRole("region", { name: NUDGE_LABEL });
     expect(nudge).toHaveTextContent('Want to try "Pick a kick"?');
     expect(transport.named("cue_nudge_shown")).toHaveLength(1);
+    expect(transport.named("lesson_nudge_shown")).toHaveLength(1);
     expect(transport.named("lesson_nudge_shown")[0]?.params).toMatchObject({
       chapter_id: "beat",
       bite_id: "beat-library",
@@ -134,10 +135,12 @@ describe("Coproducer's daily nudge (GRV-25)", () => {
     );
     expect(screen.queryByRole("region", { name: NUDGE_LABEL })).not.toBeInTheDocument();
     expect(transport.named("cue_nudge_answered")[0]?.params.how).toBe("tried");
+    expect(transport.named("lesson_nudge_taken")).toHaveLength(1);
     expect(transport.named("lesson_nudge_taken")[0]?.params).toMatchObject({
       chapter_id: "beat",
       bite_id: "beat-kick",
     });
+    expect(transport.named("lesson_bite_started")).toHaveLength(1);
     expect(transport.named("lesson_bite_started")[0]?.params).toMatchObject({
       chapter_id: "beat",
       bite_id: "beat-kick",
