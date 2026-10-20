@@ -59,8 +59,8 @@ import {
 } from "./useAssistantRecommendations";
 import { type AssistantRetention, useAssistantRetention } from "./useAssistantRetention";
 import { type CueNudge, useCueNudge } from "./useCueNudge";
-import { type Lesson, type LessonEditorPort, useLesson } from "./useLesson";
 import { useFollowUp } from "./useFollowUp";
+import { type Lesson, type LessonEditorPort, useLesson } from "./useLesson";
 import { type AssistantMemoryProposals, useMemoryProposals } from "./useMemoryProposals";
 
 /** Who is here to talk: a signed-in account, or someone who must sign in. */

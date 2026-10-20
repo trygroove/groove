@@ -934,6 +934,7 @@ export function useAssistantConversation(
     sendMessage(
       { text: FOLLOW_UP_TITLE, wire: FOLLOW_UP_MESSAGE, automatic: true },
       options.scope(),
+      undefined,
       true,
     );
     return true;
