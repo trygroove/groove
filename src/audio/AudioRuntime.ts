@@ -4,6 +4,7 @@
 
 import * as Tone from "tone";
 import {
+  type RegisteredResourceInfo,
   type ResourceHandle,
   ResourceRegistry,
   type ResourceType,
@@ -106,6 +107,12 @@ export interface AudioHost {
    */
   contextState?(): string;
   /**
+   * What is still registered under `ownerId`: after its scope is disposed,
+   * those are leaks (GRV-55). Allocation stacks are recorded in development
+   * and test builds only. Optional so a fake host need not have one.
+   */
+  ownedResources?(ownerId: string): readonly RegisteredResourceInfo[];
+  /**
    * Calls `listener` once the browser closes the real-time context under
    * the runtime (GRV-55): an output device went away. A close the runtime
    * makes itself is not reported. Returns the unsubscribe. Optional so a
@@ -135,6 +142,10 @@ export class AudioRuntime implements AudioHost {
 
   getState(): AudioRuntimeState {
     return this.state;
+  }
+
+  ownedResources(ownerId: string): readonly RegisteredResourceInfo[] {
+    return this.registry.snapshot().filter((entry) => entry.owner === ownerId);
   }
 
   contextState(): string {

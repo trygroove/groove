@@ -54,6 +54,27 @@ const libraryAssetFixture = {
   bars: null,
 } as unknown as LibraryAsset;
 
+/** The registry owners of a project's graphs: its ID and which graph it is. */
+function graphOwners(
+  runtime: import("../audio/AudioRuntime").AudioRuntime,
+  project: Project,
+): string[] {
+  return [...new Set(runtime.registry.snapshot().map((entry) => entry.owner))].filter(
+    (owner) => owner.startsWith(`${project.metadata.id}/`),
+  );
+}
+
+/** How many resources a project's graphs hold. */
+function ownedCount(
+  runtime: import("../audio/AudioRuntime").AudioRuntime,
+  project: Project,
+): number {
+  return graphOwners(runtime, project).reduce(
+    (sum, owner) => sum + runtime.registry.countForOwner(owner),
+    0,
+  );
+}
+
 function fakeAnalytics() {
   const transport = createRecordingTransport();
   const consent = new ConsentStore(memoryStorage());
@@ -482,7 +503,7 @@ describe("useProjectAudio", () => {
 
     const afterMount = runtime.diagnostics().resources;
     expect(afterMount.byType.node ?? 0).toBeGreaterThan(0);
-    expect(afterMount.byOwner[project.metadata.id]).toBeGreaterThan(0);
+    expect(ownedCount(runtime, project)).toBeGreaterThan(0);
 
     cleanupHook();
     await Promise.resolve();
@@ -492,7 +513,7 @@ describe("useProjectAudio", () => {
     // The graph's own resources (nodes, schedules, subscriptions, buffers)
     // are all released; only the shared context — which this project graph
     // never owned and disposal must never touch (PRD AUD-07) — remains.
-    expect(afterDispose.byOwner[project.metadata.id]).toBeUndefined();
+    expect(ownedCount(runtime, project)).toBe(0);
     expect(afterDispose.byType.node ?? 0).toBe(0);
     expect(afterDispose.byType.schedule ?? 0).toBe(0);
     expect(afterDispose.byType.subscription ?? 0).toBe(0);
@@ -775,6 +796,98 @@ describe("useProjectAudio", () => {
     expect(runtime.diagnostics().resources.byType.node).toBe(nodesBefore);
 
     cleanupHook();
+  });
+
+  describe("leaks (GRV-55)", () => {
+    it("reports nothing when a closed project left nothing registered", async () => {
+      const { analytics } = fakeAnalytics();
+      const recorded = recordErrorReports();
+      const runtime = AudioRuntimeModule.getAudioRuntime();
+      const project = createSliceFixtureProject();
+      const { cleanup: cleanupHook } = renderHook(
+        () =>
+          useProjectAudioModule.useProjectAudio(() => project, {
+            runtime,
+            analytics,
+            reportError: recorded.report,
+            leaks: { sampleRate: 1, warn: () => {} },
+          }),
+        {},
+      );
+      await Promise.resolve();
+      cleanupHook();
+      await vi.waitFor(() => expect(ownedCount(runtime, project)).toBe(0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(
+        recorded.reports.filter((report) => report.code === "resource_leak"),
+      ).toEqual([]);
+    });
+
+    it("never counts the graph a remounted editor builds as the last one's leak", async () => {
+      const { analytics, transport } = fakeAnalytics();
+      const recorded = recordErrorReports();
+      const runtime = AudioRuntimeModule.getAudioRuntime();
+      const project = createSliceFixtureProject();
+      const mount = () =>
+        renderHook(
+          () =>
+            useProjectAudioModule.useProjectAudio(() => project, {
+              runtime,
+              analytics,
+              reportError: recorded.report,
+              leaks: { sampleRate: 1, warn: () => {} },
+            }),
+          {},
+        );
+      const first = mount();
+      await Promise.resolve();
+      const [firstOwner] = graphOwners(runtime, project);
+      // The editor remounts on the same project: the new graph is built
+      // before the old one's disposal has settled.
+      first.cleanup();
+      const second = mount();
+      await Promise.resolve();
+      const owners = graphOwners(runtime, project);
+      expect(owners).not.toContain(firstOwner);
+      expect(owners).toHaveLength(1);
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(transport.named("resources_leaked")).toHaveLength(0);
+      expect(
+        recorded.reports.filter((report) => report.code === "resource_leak"),
+      ).toEqual([]);
+      second.cleanup();
+    });
+
+    it("reports what a closed project left registered", async () => {
+      const { analytics, transport } = fakeAnalytics();
+      const recorded = recordErrorReports();
+      const runtime = AudioRuntimeModule.getAudioRuntime();
+      const project = createSliceFixtureProject();
+      const { cleanup: cleanupHook } = renderHook(
+        () =>
+          useProjectAudioModule.useProjectAudio(() => project, {
+            runtime,
+            analytics,
+            reportError: recorded.report,
+            leaks: { sampleRate: 1, warn: () => {} },
+          }),
+        {},
+      );
+      await Promise.resolve();
+      // A node allocated as the project closes, which nothing will dispose.
+      const [owner] = graphOwners(runtime, project);
+      const scope = runtime.openProjectScope(owner);
+      cleanupHook();
+      const late = scope.register("node", () => {});
+      await vi.waitFor(() => expect(transport.named("resources_leaked")).toHaveLength(1));
+
+      expect(recorded.payloads()[0]?.tags).toMatchObject({
+        error_code: "resource_leak",
+        leaked_node_bucket: "1_4",
+      });
+      await scope.release(late);
+    });
   });
 
   // LOOP-006 / INS-02 analytics: a project with a tempo-labelled loop reports
