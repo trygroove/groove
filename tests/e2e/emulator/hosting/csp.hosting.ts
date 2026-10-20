@@ -23,6 +23,20 @@ async function watchViolations(page: import("@playwright/test").Page) {
 }
 
 test.describe("the hosted build's security headers", { tag: "@hosting" }, () => {
+  // GRV-137: a chunk a deploy removed must be a 404, not the app shell served
+  // as `200 text/html` (which a module import refuses with a MIME error).
+  test("answers a missing asset with 404 and still serves deep links", async ({
+    request,
+  }) => {
+    const missing = await request.get("/assets/nonexistent-XXXX.js");
+    expect(missing.status()).toBe(404);
+    for (const path of ["/projects", "/projects/prj_missing/arrangement"]) {
+      const response = await request.get(path, { headers: { accept: "text/html" } });
+      expect(response.status(), path).toBe(200);
+      expect(response.headers()["content-type"], path).toContain("text/html");
+    }
+  });
+
   test("serves an enforced policy and the other headers on every path", async ({
     request,
   }) => {
