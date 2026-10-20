@@ -7,6 +7,7 @@ import {
   ASSISTANT_SYSTEM_PROMPT,
   assistantSystemPrompt,
   buildSystemBlocks,
+  CLIP_REUSE_LINE,
   DRUM_STEP_STRINGS_LINE,
   describeParameter,
   GUIDED_BUILD_RULE,
@@ -41,8 +42,14 @@ function olderCombinations(): PromptTactics[] {
   );
 }
 
+/** clipReuse (GRV-131) off whatever its default, so the pinned prompts stand after a win. */
 const prompt = (tactics: PromptTactics) =>
-  assistantSystemPrompt({ ...KEEP_ALL, promptText: "full", ...tactics });
+  assistantSystemPrompt({
+    ...KEEP_ALL,
+    promptText: "full",
+    clipReuse: "off",
+    ...tactics,
+  });
 
 /** How a proposal is built, and its room: `oneResponseProposal`'s text (GRV-142). */
 const PROPOSAL_STEPS =
@@ -267,9 +274,10 @@ describe("the promptText and promptDrop tactics (GRV-147)", () => {
         promptDropToolAddressing: "drop",
         drumStepStrings: "on",
         patternGenerators: "on",
+        clipReuse: "on",
       });
       expect(text).toContain(
-        `## How the tools address things\n\n${PATTERN_GENERATORS_LINE}\n${DRUM_STEP_STRINGS_LINE}\n\n## Sounds`,
+        `## How the tools address things\n\n${PATTERN_GENERATORS_LINE}\n${DRUM_STEP_STRINGS_LINE}\n${CLIP_REUSE_LINE}\n\n## Sounds`,
       );
     }
   });

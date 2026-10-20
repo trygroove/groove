@@ -28,7 +28,8 @@ const LEVELS = TACTICS.toolText.values as readonly ToolTextLevel[];
 /**
  * Every tool the model can be offered, the conditional ones included, at
  * `level`, with the tactics that add note forms to clip_create off
- * (`drumStepStrings`, `patternGenerators`) whatever their defaults: their text
+ * (`drumStepStrings`, `patternGenerators`) and the short forms of `clipReuse`
+ * off whatever their defaults: their text
  * follows clip_create's at whatever level this leaves it.
  */
 function offered(level: ToolTextLevel) {
@@ -37,7 +38,7 @@ function offered(level: ToolTextLevel) {
     return { name: rest.name, description: rest.description, inputSchema };
   });
   return [
-    ...assistantTools(level, "off", "off"),
+    ...assistantTools(level, "off", "off", "off"),
     withToolText(EXPLAIN_TOOL, level),
     withToolText(askProducerTool(), level),
     ...conditional,

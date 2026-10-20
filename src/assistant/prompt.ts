@@ -646,6 +646,14 @@ export const DRUM_STEP_STRINGS_LINE = `- A drum pad's part in clip_create may in
  */
 export const PATTERN_GENERATORS_LINE = `- For a common pattern, an entry in clip_create's content.events may be a pattern generator call instead of its notes, and Groove writes the notes, repeating them to fill the clip: on a drum pad fourOnTheFloor, backbeat, hats (rate ${HAT_RATES.join(" | ")}) or euclidean (hits, steps, rotate, stepTicks), e.g. {"generator": "euclidean", "padId": "pad_...", "hits": 5, "steps": 16, "rotate": 2}; on a pitched track arpeggio (direction, rate, octaves), chordStabs or bassRoot (rhythm, x a hit and . a rest a step; octave) over chords you name with their bars, e.g. {"generator": "bassRoot", "chords": [["Am", 1], ["F", 1], ["C", 1], ["G", 1]], "rhythm": "x..x..x.", "octave": 2}. variation, 0 to ${MAX_VARIATION}, loosens it. Use generators for the scaffolding, choose their parameters for this song, and write out the parts that make it its own; add, edit or remove notes after as usual.`;
 
+/**
+ * What the prompt says of clip reuse, only with the `clipReuse` tactic on
+ * (GRV-131): a bullet under "How the tools address things", after the note
+ * forms the other tactics add, that steers every repeat and every variation
+ * to reuse a clip rather than write its notes again.
+ */
+export const CLIP_REUSE_LINE = `- Never write out notes a clip already has: reuse the clip. A part that comes back (the same groove in a later section, the drop's bass after the break) is the same clip placed again, and placement_create takes it short, {"clipId": "clp_...", "bars": [9, 16]}: bars count from 1 and both are included, and Groove gives the placement its ID, its clip's track, clipOffsetTicks 0 and looped: true. A variation (a sparser intro, a fill, a busier second half) is clip_create with content {"kind": "copy", "clipId": "clp_...", "eventIds": [...], "events": [...]}: the notes of a clip made earlier in this proposal, or of one whose notes the description lists, all of them or only those eventIds names (the kick and the bass notes for a stripped-back intro), plus the new notes in events; change it further with the notes_ transforms. notes_duplicate may leave out newIds, and Groove gives the copies theirs. So an arrangement is mostly short placements of the clips the song has, and a part is written out once.`;
+
 /** The tactics the fixed prompt reads; one left out is production's. */
 export type PromptTactics = Partial<
   Pick<
@@ -653,6 +661,7 @@ export type PromptTactics = Partial<
     | "oneResponseProposal"
     | "drumStepStrings"
     | "patternGenerators"
+    | "clipReuse"
     | "guidedBuild"
     | "promptText"
     | PromptDropTactic
@@ -666,6 +675,7 @@ export type SystemBlockTactics = Pick<
   | "toolText"
   | "drumStepStrings"
   | "patternGenerators"
+  | "clipReuse"
   | "guidedBuild"
   | "promptText"
   | PromptDropTactic
@@ -684,6 +694,7 @@ function tacticOf<Id extends keyof PromptTactics>(
  * `oneResponseProposal` changes how a proposal is built (GRV-142),
  * `drumStepStrings` adds {@link DRUM_STEP_STRINGS_LINE} (GRV-140),
  * `patternGenerators` adds {@link PATTERN_GENERATORS_LINE} (GRV-141),
+ * `clipReuse` adds {@link CLIP_REUSE_LINE} (GRV-131),
  * `guidedBuild` adds {@link GUIDED_BUILD_RULE} (GRV-145), `promptText` picks
  * the wording and each `promptDrop*` tactic leaves out its rule group
  * (GRV-147). A tactic left out is at its default.
@@ -704,6 +715,7 @@ export function assistantSystemPrompt(tactics: PromptTactics = TACTIC_DEFAULTS):
         ? [PATTERN_GENERATORS_LINE]
         : []),
       ...(tacticOf(tactics, "drumStepStrings") === "on" ? [DRUM_STEP_STRINGS_LINE] : []),
+      ...(tacticOf(tactics, "clipReuse") === "on" ? [CLIP_REUSE_LINE] : []),
     ],
   });
 }

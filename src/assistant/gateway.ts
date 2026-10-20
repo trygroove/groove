@@ -66,6 +66,7 @@
  * names the bundle and any fallback.
  */
 import { type AssistantAsk, askProducerTool, isAskCall, parseAskCall } from "./ask";
+import { contextClips } from "./clipReuse";
 import {
   createNoteExpander,
   expandAskPreviews,
@@ -336,6 +337,7 @@ function offeredTools(
         tactics.toolText,
         tactics.drumStepStrings,
         tactics.patternGenerators,
+        tactics.clipReuse,
       ),
       withToolText(EXPLAIN_TOOL, tactics.toolText),
       withToolText(askProducerTool(), tactics.toolText),
@@ -739,11 +741,13 @@ function offers(tools: readonly ProviderTool[], name: string): boolean {
 }
 
 /**
- * What the note expander needs to write out drum step strings (GRV-140) and
- * pattern generator calls (GRV-141), or undefined when the `drumStepStrings`
- * and `patternGenerators` tactics are both off and neither is offered: a
- * string's or a generator's pads are checked against the project's tracks
- * and those the turn's accepted calls make.
+ * What the note expander needs to write out drum step strings (GRV-140),
+ * pattern generator calls (GRV-141) and clip reuse's short placements,
+ * copies and duplicates (GRV-131), or undefined when the `drumStepStrings`,
+ * `patternGenerators` and `clipReuse` tactics are all off and none is
+ * offered: a string's or a generator's pads are checked against the
+ * project's tracks and those the turn's accepted calls make, and a reused
+ * clip is one the context or an accepted call tells of.
  */
 function stepStringOptions(
   tactics: TacticValues,
@@ -751,12 +755,14 @@ function stepStringOptions(
 ): StepStringOptions | undefined {
   const stepStrings = tactics.drumStepStrings === "on";
   const generators = tactics.patternGenerators === "on";
-  if (!stepStrings && !generators) return undefined;
+  const reuse = tactics.clipReuse === "on";
+  if (!stepStrings && !generators && !reuse) return undefined;
   return {
     targets: contextTargets(context),
     track: withCreatedTargets,
     stepStrings,
     generators,
+    ...(reuse ? { clipReuse: contextClips(context) } : {}),
   };
 }
 
@@ -876,7 +882,9 @@ export async function runAssistantTurn(
     // IDs from the turn's stem (`compactNotes.ts`, GRV-131).
     // With the drumStepStrings tactic on, a drum pad's step string is written
     // out the same way (`drumSteps.ts`, GRV-140), and with patternGenerators
-    // on, a generator call (`generators/`, GRV-141).
+    // on, a generator call (`generators/`, GRV-141). With clipReuse on, a
+    // short placement, a copied clip and a notes_duplicate with no newIds are
+    // written out too (`clipReuse.ts`, GRV-131).
     const stepStrings = stepStringOptions(tactics, turn.context);
     const notes = createNoteExpander(idStem, undefined, stepStrings);
     history = prepared.history;
@@ -1021,7 +1029,7 @@ export async function runAssistantTurn(
       // last step's notes are numbered once, by `expandCalls`.
       const refused =
         misaimedIn(outcome.toolCalls, targets) +
-        (oneResponse ? refusedIn(outcome.toolCalls, idStem) : 0) +
+        (oneResponse ? refusedIn(outcome.toolCalls, notes) : 0) +
         (overLimit ? 1 : 0);
       const goesOn =
         continuesAfter(outcome.stopReason, outcome.toolCalls) ||

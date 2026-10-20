@@ -31,7 +31,8 @@
  * with refused calls is fixing them and does not count.
  */
 import { isAskCall } from "./ask";
-import { createNoteExpander, type ExpandedCall, type NoteExpander } from "./compactNotes";
+import { isClipCopy } from "./clipReuse";
+import type { ExpandedCall, NoteExpander } from "./compactNotes";
 import { isLessonCall } from "./lessonTool";
 import { isRememberCall } from "./memory";
 import type { AssistantStopReason, AssistantToolCall } from "./protocol";
@@ -64,21 +65,43 @@ export const MAX_CHANGE_STEPS = 2;
 /** What a change call past {@link MAX_CHANGE_STEPS} is told. */
 export const CHANGE_STEPS_SPENT = `Refused, not added to the proposal: a proposal takes at most ${MAX_CHANGE_STEPS} responses of changes, and this one has had them. Send no more changes; finish with what the proposal has, calling explain_change for it if you have not.`;
 
+/** The order a change call's new note IDs follow (see {@link addedResult}). */
+export type AddedOrder = "given" | "duplicate" | "copy";
+
+const ADDED_ORDER: Record<AddedOrder, string> = {
+  given: "in the order you gave them",
+  duplicate: "in time order of the notes copied (by start, then ID)",
+  copy: "the copied notes in time order (by start, then ID), then your new notes in the order you gave them",
+};
+
 /**
  * What a change call that joined the proposal is told: {@link ADDED_RESULT},
  * and the IDs its new notes were given (GRV-131), so a later step can update,
  * remove or duplicate them. They count up from the first, so the first and
- * the last say them all.
+ * the last say them all. A placement the gateway gave its ID (`clipReuse`)
+ * is told that ID too. With `clipReuse`, the order the IDs follow is not
+ * always the order the call gave its notes in: the copies of a
+ * `notes_duplicate` the gateway gave IDs (the only way such a call has
+ * gateway note IDs) take them in the command's order, by start and then ID;
+ * a copied clip's copies take them in that order too, before its new notes.
  */
-export function addedResult(noteIds: readonly string[]): string {
+export function addedResult(
+  noteIds: readonly string[],
+  placementId?: string,
+  order: AddedOrder = "given",
+): string {
   const [first] = noteIds;
   const last = noteIds.at(-1);
-  if (first === undefined || last === undefined) return ADDED_RESULT;
-  const ids =
-    noteIds.length === 1
-      ? `Its note's ID is ${first}.`
-      : `Its ${noteIds.length} notes' IDs, in the order you gave them, count up from ${first} to ${last}.`;
-  return `${ADDED_RESULT} ${ids}`;
+  const said = [ADDED_RESULT];
+  if (first !== undefined && last !== undefined) {
+    said.push(
+      noteIds.length === 1
+        ? `Its note's ID is ${first}.`
+        : `Its ${noteIds.length} notes' IDs, ${ADDED_ORDER[order]}, count up from ${first} to ${last}.`,
+    );
+  }
+  if (placementId !== undefined) said.push(`Its placement's ID is ${placementId}.`);
+  return said.join(" ");
 }
 
 /**
@@ -229,7 +252,15 @@ export function answerStep(
     return {
       type: "tool_result",
       tool_use_id: call.id,
-      content: addedResult(expanded.noteIds),
+      content: addedResult(
+        expanded.noteIds,
+        expanded.placementId,
+        expanded.call.name === "notes_duplicate"
+          ? "duplicate"
+          : isClipCopy(call)
+            ? "copy"
+            : "given",
+      ),
     };
   });
   return { kept, results, targets: known, misaimed };
@@ -270,15 +301,20 @@ export function goesOnToReaim(
 /**
  * How many of a step's change calls {@link answerStep} would refuse for not
  * fitting their tool, or for a note ID in the gateway's counter, without
- * numbering any of the turn's notes: each is written out by an expander of
- * its own, since whether a call fits does not depend on its notes' IDs.
+ * numbering any of the turn's notes: they are written out in order by a fork
+ * of the turn's expander, so a call that builds on one before it (a
+ * placement of a clip the step makes, a step string on a track it makes) is
+ * judged as {@link answerStep} would judge it.
  */
-export function refusedIn(calls: readonly AssistantToolCall[], stem: string): number {
+export function refusedIn(
+  calls: readonly AssistantToolCall[],
+  notes: NoteExpander,
+): number {
+  const trial = notes.fork();
   return calls.filter((call) => {
     if (!isChangeCall(call)) return false;
-    const notes = createNoteExpander(stem);
-    if (notes.refuseGatewayIds(call) !== null) return true;
-    return !notes.expand(call, (written) => {
+    if (trial.refuseGatewayIds(call) !== null) return true;
+    return !trial.expand(call, (written) => {
       const resolution = resolveToolCall(written.name, written.input);
       return resolution.ok ? null : resolution.message;
     }).ok;
