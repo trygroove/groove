@@ -1595,10 +1595,14 @@ use.
 5. Press it. The step asks for the boom bap kick: on beat 1 and on the "and"
    of beat 3. Press "boom bap" in it: what it means is shown under the step,
    and the step is still there.
-6. Open the Sequence view and, on BD's row, turn on step 11. "The kick
-   pattern" is marked done, with nothing pressed in the lesson, and
-   Coproducer's reply about it follows.
-7. Go on to "Hear it" and press Play. It is marked done. Stop.
+6. Open the Sequence view and, on BD's row, turn on step 11: the bite is not
+   done yet, because the starter's kicks on steps 5, 9 and 13 are still on.
+   Turn those three off. "The kick pattern" is marked done, with nothing
+   pressed in the lesson, and Coproducer's reply about it follows.
+7. Go on to "Hear it". It asks for boom bap's tempo, 90 BPM: type 90 in the
+   tempo field. Then press Play. It is marked done. Stop. (Playing is
+   asserted in Chromium only, the gap CF-001 names: in other browsers the
+   song never starts, so the bite is skipped there to go on.)
 8. Go on to "The backbeat" and press Show me. A Snare pad joins BD's drum
    machine with hits on beats 2 and 4, and the bite is marked done.
 9. Go on to "Hats" and press Skip. It is marked skipped.
@@ -1606,8 +1610,8 @@ use.
     bars on the arrangement, and the bite is marked done.
 11. That was the chapter's last bite: the lesson leaves the panel, and
     Coproducer's wrap-up follows in the conversation.
-12. Reload the page. The beat is still there: BD's step 11 is on, and the
-    Snare pad is on BD's drum machine.
+12. Reload the page. The beat is still there: BD's step 11 is on and step 5
+    off, the tempo is 90 BPM, and the Snare pad is on BD's drum machine.
 
 **Outcome:** a new producer went from the welcome to a beat of their own, one
 bite at a time in their own project, doing some bites themselves and having
