@@ -14,6 +14,7 @@ export const ASSISTANT_FEATURE_KEYS = [
   "assistant",
   "assistant_message",
   "assistant_proposal",
+  "assistant_proposal_part",
   "assistant_recommendation",
   "assistant_ask",
   "assistant_retention",
@@ -163,6 +164,9 @@ export const ASSISTANT_SAD_RATES = ["full", "hard"] as const;
 /** The most issues `assistant_proposal_rejected` counts (`MAX_TRANSCRIPT_ISSUES`). */
 const MAX_PROPOSAL_ISSUES = 20;
 
+/** The most parts one proposal has (`MAX_PROPOSAL_COMMANDS`). */
+const MAX_PROPOSAL_PARTS = 100;
+
 /** The most sounds one recommendation suggests (`ASSISTANT_LIBRARY_LIMITS`). */
 const MAX_RECOMMENDED_SOUNDS = 3;
 
@@ -218,6 +222,31 @@ export const ASSISTANT_EVENTS = {
       capability: enumParam(ASSISTANT_PROPOSAL_CAPABILITIES),
       command_count_bucket: bucketParam("command_count"),
       seconds_to_decision_bucket: bucketParam("elapsed_seconds"),
+    },
+  },
+
+  /**
+   * The first part of a proposal streamed part by part reached its card
+   * (GRV-144): how long after the message was sent, bucketed. Once per
+   * proposal.
+   */
+  assistant_proposal_first_part_shown: {
+    phase: 3,
+    owners: ["GRV-144"],
+    params: { elapsed_ms_bucket: bucketParam("elapsed_ms") },
+  },
+
+  /**
+   * One part of a streamed proposal was applied on its own (GRV-144): its
+   * place among the proposal's parts, from 0, and whether the turn was still
+   * writing the rest.
+   */
+  assistant_proposal_part_applied: {
+    phase: 3,
+    owners: ["GRV-144"],
+    params: {
+      part_index: countParam(MAX_PROPOSAL_PARTS),
+      turn_running: boolParam(),
     },
   },
 
