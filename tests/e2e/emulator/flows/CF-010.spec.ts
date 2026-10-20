@@ -1,4 +1,5 @@
 import { walkthrough } from "../../support/walkthrough";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 
 /**
@@ -244,7 +245,7 @@ test.describe("CF-010", () => {
     await expect(page.locator(".save-status")).toHaveText("Saved", {
       timeout: 10_000,
     });
-    await page.reload();
+    await reloadPage(page);
 
     // 5. The project reopens exactly as step 3 left it: both tracks are
     //    still there, "BD" has only its clip in bar 1, and "Sampler" has no

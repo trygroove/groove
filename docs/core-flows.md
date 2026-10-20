@@ -1212,8 +1212,8 @@ account has already answered the assistant's disclosure (GRV-8).
    BD's volume fader sits at the proposed level, and swing reads 58%.
 6. Press Cancel. The editor goes back to the arrangement. Swing reads what it
    did before, and BD's volume is where it was. There is nothing to undo.
-7. Press Preview again, then Apply. The proposal says it was applied. Swing
-   reads 58%, and BD's volume is at the proposed level.
+7. Press Preview again, then Apply all. The proposal says it was applied.
+   Swing reads 58%, and BD's volume is at the proposed level.
 8. Undo once. Both changes are gone. Redo once. Both are back.
 9. Reload the page. Swing still reads 58%, and BD's volume is still at the
    proposed level.
@@ -1228,7 +1228,8 @@ a proposal that goes out of date under an edit, and "Why this works", which are
 tested at the component and emulator layers. The outlines that mark previewed
 and changed controls, which are component-layer. That a preview is audible. No
 headless browser records audio. Pack and video recommendations, which are other
-issues.
+issues. Applying a proposal one part at a time as its parts arrive (GRV-144),
+which is component-layer.
 
 ### CF-028 — The assistant stays where a producer puts it
 
@@ -1543,7 +1544,7 @@ Hat pad, in that order. The library holds a kick, a snare and a hat.
    reply follows it.
 3. Only the proposal is shown. It says there are 3 more after this. No
    recommended pack is on screen yet.
-4. Press Apply. The proposal says it was applied. Then the first recommended
+4. Press Apply all. The proposal says it was applied. Then the first recommended
    pack appears, on its own: its header names BD's track and pad (BD · BD), it
    offers to try its sound on BD, and it says there are 2 more after this.
 5. Press Try on BD, then Keep. The card says the sound was kept, and BD's

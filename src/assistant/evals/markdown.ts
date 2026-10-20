@@ -211,7 +211,7 @@ function numberLines(
     `- Tool set version: ${report.toolsetVersion}`,
     `- Runs per case: ${report.runsPerCase}; cases: ${report.caseIds.length}; turns: ${report.scorecard.headline.turns}; errored turns: ${report.summary.errored.total}`,
     "",
-    "Pass rates count the proposals a check could judge. A reply with no proposal, or one that did not apply, fails check 1 and is not judged by checks 2 to 5 or 7. A turn that errored (the provider or the transport failed, or it timed out) is not judged by any check and is counted apart. Check 6 is judged on extreme cases only, and check 7 on the sketch cases only (the ones that name the parts they ask for). Check 8 judges every case: a proposal, or, where the case expects one, a question and no proposal; a case that expects a question is judged by checks 1 to 7 only if it proposed something anyway. Checks 16 and 20 judge every proposal that applied, because a proposal that stops partway (notes cleared and never written, a clip made and never placed) applies cleanly and passes the rest; the other checks from 9 on are judged only on the cases that name them, and 18 and 19 judge the basic production actions. Nothing gates on the descriptive numbers.",
+    "Pass rates count the proposals a check could judge. A reply with no proposal, or one that did not apply, fails check 1 and is not judged by checks 2 to 5 or 7. A turn that errored (the provider or the transport failed, or it timed out) is not judged by any check and is counted apart. Check 6 is judged on extreme cases only, and check 7 on the sketch cases only (the ones that name the parts they ask for). Check 8 judges every case: a proposal, or, where the case expects one, a question and no proposal; a case that expects a question is judged by checks 1 to 7 only if it proposed something anyway. Checks 16 and 20 judge every proposal that applied, because a proposal that stops partway (notes cleared and never written, a clip made and never placed) applies cleanly and passes the rest; the other checks from 9 on are judged only on the cases that name them, and 18 and 19 judge the basic production actions. Checks 22 and 23 read only the reply's text, so they judge a turn that proposed nothing as well. Nothing gates on the descriptive numbers.",
     "",
     ...erroredLines(report),
     ...headlineLines(report.scorecard),
@@ -280,7 +280,7 @@ export function renderMarkdown(report: EvalReport, baseline?: MarkdownBaseline):
         continue;
       }
       lines.push(
-        `**Run ${record.run}** (${Math.round(record.durationMs / 1000)} s${record.firstTextMs != null ? `, first text ${Math.round(record.firstTextMs / 1000)} s` : ""}, stop: ${record.stopReason ?? "none"}): ${statsLine(record)}`,
+        `**Run ${record.run}** (${Math.round(record.durationMs / 1000)} s${record.firstTextMs != null ? `, first text ${Math.round(record.firstTextMs / 1000)} s` : ""}${record.firstPartMs != null ? `, first part ${Math.round(record.firstPartMs / 1000)} s` : ""}, stop: ${record.stopReason ?? "none"}): ${statsLine(record)}`,
       );
       lines.push("");
       const tokensText = tokensLine(record);

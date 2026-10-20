@@ -5,6 +5,7 @@ import { createDrumMachineFixtureProject } from "../domain/fixtures";
 import { createSeededIdFactory } from "../domain/ids";
 import { TICKS_PER_SIXTEENTH } from "../domain/time";
 import { previewRow, rowCommands, rowNotes } from "./generatedRow";
+import { createStarterProject } from "./starterProject";
 import { PRESETS, type PresetId, presetHits } from "./stepGenerators";
 
 const preset = (id: PresetId) => {
@@ -54,6 +55,35 @@ describe("writing a generated row (#643)", () => {
     expect(clear.map((command) => command.type)).toEqual(["note.remove"]);
     const empty = { ...clip, content: { kind: "notes" as const, events: [] } };
     expect(rowCommands(empty, clap, [], ids)).toEqual([]);
+  });
+
+  it("writes nothing when the row already holds exactly the generated hits", () => {
+    const { project, clip, clap } = setup();
+    const history = new CommandHistory(project);
+    const hits = presetHits(preset("offbeats"), 16);
+    history.execute(rowCommands(clip, clap, hits, createSeededIdFactory(3)));
+    const written = clipOf(history.project, clip);
+    const revision = history.project.metadata.revision;
+
+    expect(rowCommands(written, clap, hits, createSeededIdFactory(4))).toEqual([]);
+    // A different velocity is a real change and still writes.
+    const louder = hits.map((hit) => ({
+      ...hit,
+      velocity: hit.velocity === 1 ? 0.5 : 1,
+    }));
+    expect(rowCommands(written, clap, louder, createSeededIdFactory(5)).length).toBe(2);
+    expect(history.project.metadata.revision).toBe(revision);
+  });
+
+  it("writes nothing for Four on the floor on a new project's BD row (GRV-154)", () => {
+    const project = createStarterProject("user_1");
+    const clip = project.clips[0] as Clip;
+    const track = project.song.tracks[0];
+    if (track.instrument?.kind !== "drumMachine") throw new Error("no drum machine");
+    const bd: NoteTrigger = { kind: "pad", padId: track.instrument.pads[0].id };
+    const hits = presetHits(preset("four_on_the_floor"), 16);
+
+    expect(rowCommands(clip, bd, hits, createSeededIdFactory(6))).toEqual([]);
   });
 
   it("drops hits past the end of the clip", () => {

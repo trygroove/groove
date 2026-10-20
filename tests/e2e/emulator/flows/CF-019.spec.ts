@@ -1,4 +1,5 @@
 import { walkthrough } from "../../support/walkthrough";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 import { backToArrangement, expectView, sequenceView } from "../support/views";
 
@@ -230,7 +231,7 @@ test.describe("CF-019", () => {
     // completed, so the reload tests persistence rather than a race (CF-016).
     await backToArrangement(page);
     await expect(page.locator(".save-status")).toHaveText("Saved", { timeout: 10_000 });
-    await page.reload();
+    await reloadPage(page);
     await expect(page).toHaveURL(projectUrl);
     await page.getByTestId("arrangement-view-ready").waitFor();
     await expect(trackList(page)).toHaveText(["BD", "Synth"]);
