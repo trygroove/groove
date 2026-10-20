@@ -47,6 +47,29 @@ describe("pendingWrites (GRV-55)", () => {
     expect(await flushPendingWrites(5)).toBe("unsaved");
   });
 
+  it("counts stuck entries as unsaved without trying to write them", async () => {
+    let flushed = 0;
+    holdPendingWrites({
+      pending: () => 0,
+      stuck: () => 2,
+      flush: async () => {
+        flushed += 1;
+      },
+    });
+    expect(unsavedWriteCount()).toBe(2);
+    expect(await flushPendingWrites()).toBe("unsaved");
+    expect(flushed).toBe(0);
+  });
+
+  it("writes what it can beside a stuck entry, and still says unsaved", async () => {
+    const writable = holder(1, "writes");
+    holdPendingWrites(writable);
+    holdPendingWrites({ pending: () => 0, stuck: () => 1, flush: async () => {} });
+    expect(await flushPendingWrites()).toBe("unsaved");
+    expect(writable.pending()).toBe(0);
+    expect(unsavedWriteCount()).toBe(1);
+  });
+
   it("forgets a holder once it is released", async () => {
     const release = holdPendingWrites(holder(4, "fails"));
     release();

@@ -4,6 +4,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Analytics } from "../analytics/analytics";
 import { ConsentStore } from "../analytics/consent";
 import { createRecordingTransport } from "../analytics/transport";
+import {
+  __resetPendingWritesForTests,
+  flushPendingWrites,
+  holdPendingWrites,
+} from "../shared/pendingWrites";
 import { expectNoContent, recordErrorReports } from "../testing/errorReports";
 import { memoryStorage } from "../testing/storage";
 import AppErrorFallback from "./AppErrorFallback";
@@ -188,5 +193,30 @@ describe("AppErrorFallback's Reload (GRV-55)", () => {
     expect(reload).toHaveBeenCalledOnce();
     expect(reloaded()).toEqual([expect.objectContaining({ save_outcome: "unsaved" })]);
     expect(firstUses()).toEqual([expect.objectContaining({ feature: "crash_reload" })]);
+  });
+
+  it("warns about an edit no write can land instead of reloading it away", async () => {
+    let tried = 0;
+    const release = holdPendingWrites({
+      pending: () => 0,
+      stuck: () => 1,
+      flush: async () => {
+        tried += 1;
+      },
+    });
+    try {
+      const { reload, reloaded } = setUp(() => flushPendingWrites());
+
+      await userEvent.click(screen.getByRole("button", { name: "Reload" }));
+
+      expect(tried).toBe(0);
+      expect(reload).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Reload anyway" })).toBeVisible();
+      await userEvent.click(screen.getByRole("button", { name: "Reload anyway" }));
+      expect(reloaded()).toEqual([expect.objectContaining({ save_outcome: "unsaved" })]);
+    } finally {
+      release();
+      __resetPendingWritesForTests();
+    }
   });
 });

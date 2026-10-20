@@ -92,9 +92,31 @@ function watchNavigationFlush(getSession: () => EditorSession | null): void {
  * connection coming back nor the crash screen keeps trying them.
  */
 function writablePending(autosave: EditorSession["autosave"]): number {
-  const { pending, state, failure } = autosave.status;
-  if (state === "failed" && !failure?.retryable) return 0;
-  return pending;
+  return isStuck(autosave) ? 0 : autosave.status.pending;
+}
+
+/**
+ * How many queued edits no write can land: the rest of `pending`. Never
+ * retried, but still unsaved, so the crash screen warns before a reload
+ * discards them (GRV-55).
+ */
+function stuckPending(autosave: EditorSession["autosave"]): number {
+  return isStuck(autosave) ? autosave.status.pending : 0;
+}
+
+function isStuck(autosave: EditorSession["autosave"]): boolean {
+  const { state, failure } = autosave.status;
+  return state === "failed" && !failure?.retryable;
+}
+
+/**
+ * Keeps `count` edits a closed session could never write on the crash
+ * screen's books for the rest of the page (GRV-55): nothing will try them
+ * again, but a reload would lose them, so Reload says so first.
+ */
+function holdStuckWrites(count: number): void {
+  if (count === 0) return;
+  holdPendingWrites({ pending: () => 0, stuck: () => count, flush: async () => {} });
 }
 
 /**
@@ -104,6 +126,7 @@ function writablePending(autosave: EditorSession["autosave"]): number {
 function holdSessionWrites(session: EditorSession): () => void {
   return holdPendingWrites({
     pending: () => writablePending(session.autosave),
+    stuck: () => stuckPending(session.autosave),
     flush: () => session.autosave.flush(),
   });
 }
@@ -113,11 +136,13 @@ function holdSessionWrites(session: EditorSession): () => void {
  * that write left edits unwritten (the connection dropped), the session goes
  * but its autosave and their queue stay held: written when the browser is back
  * online, or by the crash screen's Reload, and only then let go. A queued
- * edit is never dropped because its project closed.
+ * edit is never dropped because its project closed. One no write can land is
+ * not retried, but stays counted as unsaved for the crash screen.
  */
 function retireSession(session: EditorSession, release: () => void): void {
   release();
   if (writablePending(session.autosave) === 0) {
+    holdStuckWrites(stuckPending(session.autosave));
     session.dispose();
     return;
   }
@@ -125,15 +150,18 @@ function retireSession(session: EditorSession, release: () => void): void {
   const { autosave } = session;
   const flush = async () => {
     await autosave.flush();
-    // Landed, or failed in a way no further write can clear: let go.
+    // Landed, or failed in a way no further write can clear: let go of the
+    // autosave, keeping count of any edit it could never write.
     if (writablePending(autosave) === 0) {
       releaseRetired();
+      holdStuckWrites(stuckPending(autosave));
       autosave.dispose();
     }
   };
   const onOnline = () => void flush();
   const releaseHeld = holdPendingWrites({
     pending: () => writablePending(autosave),
+    stuck: () => stuckPending(autosave),
     flush,
   });
   const releaseRetired = () => {

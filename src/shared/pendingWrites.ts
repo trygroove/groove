@@ -17,8 +17,15 @@
 import type { CrashSaveOutcome } from "../analytics/catalog";
 
 export interface PendingWriter {
-  /** How many entries are still unwritten. */
+  /** How many entries are still unwritten and another write could land. */
   pending(): number;
+  /**
+   * How many entries are unwritten for good: their write failed in a way no
+   * retry clears (a document too large, a refused permission). They are
+   * never flushed again, but the crash screen still counts them as unsaved,
+   * so its Reload warns rather than discarding them silently. Zero if absent.
+   */
+  stuck?(): number;
   /** Tries to write them. Resolves when that attempt settles, landed or not. */
   flush(): Promise<unknown>;
 }
@@ -33,10 +40,10 @@ export function holdPendingWrites(writer: PendingWriter): () => void {
   };
 }
 
-/** How many entries every holder has unwritten. */
+/** How many entries every holder has unwritten, whether or not a write could still land them. */
 export function unsavedWriteCount(): number {
   let total = 0;
-  for (const writer of writers) total += safePending(writer);
+  for (const writer of writers) total += safePending(writer) + safeStuck(writer);
   return total;
 }
 
@@ -45,15 +52,16 @@ export const FLUSH_TIMEOUT_MS = 10_000;
 
 /**
  * Writes everything every holder has queued, and says how that went:
- * `nothing_queued` when there was nothing to write, `saved` when it all
- * landed, `unsaved` when some is still unwritten (the write failed, or did
- * not settle within `timeoutMs`). Never rejects.
+ * `nothing_queued` when nothing was unwritten, `saved` when it all landed,
+ * `unsaved` when some is still unwritten (the write failed, did not settle
+ * within `timeoutMs`, or was stuck and never tried). Never rejects.
  */
 export async function flushPendingWrites(
   timeoutMs: number = FLUSH_TIMEOUT_MS,
 ): Promise<CrashSaveOutcome> {
   if (unsavedWriteCount() === 0) return "nothing_queued";
-  const attempts = [...writers].map((writer) =>
+  const writable = [...writers].filter((writer) => safePending(writer) > 0);
+  const attempts = writable.map((writer) =>
     Promise.resolve()
       .then(() => writer.flush())
       .catch(() => undefined),
@@ -70,6 +78,14 @@ export async function flushPendingWrites(
 function safePending(writer: PendingWriter): number {
   try {
     return writer.pending();
+  } catch {
+    return 0;
+  }
+}
+
+function safeStuck(writer: PendingWriter): number {
+  try {
+    return writer.stuck?.() ?? 0;
   } catch {
     return 0;
   }
