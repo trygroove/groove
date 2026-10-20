@@ -17,6 +17,7 @@ import {
   createTestFactoryContext,
 } from "../commands/testProjects";
 import {
+  createDrumPad,
   createNoteEvent,
   SONG_TEMPO,
   TICKS_PER_SIXTEENTH,
@@ -540,5 +541,69 @@ describe("analytics", () => {
       expect(text).not.toContain(fx.clipAId);
       expect(text).not.toMatch(/transpose|Transpose/);
     }
+  });
+});
+
+describe("an instrument change that adds pads (GRV-138)", () => {
+  /** What a model sends: the drum machine's pads, the old ones with no sound. */
+  function addPadsProposal() {
+    const track = fx.project.song.tracks.find(
+      (candidate) => candidate.id === fx.trackBId,
+    );
+    if (track?.instrument?.kind !== "drumMachine") throw new Error("fixture changed");
+    const context = createTestFactoryContext("grv138");
+    const newPad = createDrumPad(context, { name: "Rim" });
+    const existing = track.instrument.pads.map((pad) => ({
+      ...pad,
+      assetId: null,
+      mixer: { ...pad.mixer, volume: 0 },
+    }));
+    return {
+      baseRevision: fx.project.metadata.revision,
+      intent: "Add a rim pad",
+      calls: [
+        call({
+          type: "instrument.change",
+          version: 1,
+          payload: {
+            trackId: fx.trackBId,
+            instrument: { ...track.instrument, pads: [...existing, newPad] },
+          },
+        }),
+      ],
+      newPadId: newPad.id,
+    };
+  }
+
+  function drumPads(project: typeof fx.project) {
+    const track = project.song.tracks.find((candidate) => candidate.id === fx.trackBId);
+    return track?.instrument?.kind === "drumMachine" ? track.instrument.pads : [];
+  }
+
+  it("keeps the samples of the pads it already has, and undoes as one step", () => {
+    const before = drumPads(fx.project);
+    const { newPadId, ...input } = addPadsProposal();
+    const handle = propose(input);
+    expect(handle.apply().ok).toBe(true);
+    const after = drumPads(history.project);
+    expect(after.map((pad) => pad.id)).toEqual([
+      ...before.map((pad) => pad.id),
+      newPadId,
+    ]);
+    expect(after.slice(0, before.length)).toEqual(before);
+    expect(after[before.length].assetId).toBeNull();
+    expect(history.entries).toHaveLength(1);
+    expect(handle.undo().ok).toBe(true);
+    expect(drumPads(history.project)).toEqual(before);
+  });
+
+  it("takes a sound the proposal gives an existing pad", () => {
+    const { newPadId: _, ...input } = addPadsProposal();
+    const call0 = input.calls[0].input as {
+      instrument: { pads: { id: string; assetId: string | null }[] };
+    };
+    call0.instrument.pads[1].assetId = fx.assetIds.pad;
+    propose(input).apply();
+    expect(drumPads(history.project)[1].assetId).toBe(fx.assetIds.pad);
   });
 });

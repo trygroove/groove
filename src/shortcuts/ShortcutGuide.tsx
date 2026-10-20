@@ -14,6 +14,7 @@ import {
 } from "./registry";
 import type { ShortcutContext } from "./types";
 import { SHORTCUT_GROUP_LABELS } from "./types";
+import { useShortcutScope } from "./useShortcutScope";
 import "./ShortcutGuide.css";
 
 export interface ShortcutGuideProps {
@@ -26,6 +27,9 @@ export interface ShortcutGuideProps {
   readonly analytics?: Analytics;
   onClose(): void;
 }
+
+/** The guide is a modal: only `dialog` keys reach it. */
+const GUIDE_CONTEXTS: readonly ShortcutContext[] = ["dialog"];
 
 /** Whether a query matches an action name or one of its key combinations. */
 function matchesQuery(
@@ -62,10 +66,12 @@ const FOCUSABLE =
  * key combination — so the guide reflects the current platform's labels, the
  * contexts active behind it, and which actions actually have a handler.
  *
- * `Escape` is *not* handled here: it is `view.close_surface` in the registry,
- * dispatched by the same controller as every other shortcut, which is what
- * keeps "closes it from anywhere" a single rule rather than a per-modal
- * listener. Focus is captured on open and restored on close.
+ * `Escape` is not compared here: it is `view.close_surface` in the registry,
+ * which the guide registers as a modal shortcut scope (GRV-186), dispatched by
+ * the same controller as every other shortcut. Being modal, the scope hides
+ * every surface behind the guide, so nothing under it hears a key while it is
+ * open and none of them has to know it is. Focus is captured on open and
+ * restored on close.
  */
 export default function ShortcutGuide(props: ShortcutGuideProps): JSX.Element {
   const titleId = createUniqueId();
@@ -74,6 +80,13 @@ export default function ShortcutGuide(props: ShortcutGuideProps): JSX.Element {
   const [contextOnly, setContextOnly] = createSignal(false);
   let dialog: HTMLDivElement | undefined;
   let search: HTMLInputElement | undefined;
+
+  useShortcutScope({
+    modal: true,
+    handlers: () => ({ "view.close_surface": { run: () => props.onClose() } }),
+    contexts: () => GUIDE_CONTEXTS,
+    analytics: props.analytics,
+  });
 
   const platform = createMemo(() => props.platform ?? detectPlatform());
   const resolved = createMemo(() => resolveContexts(props.contexts));

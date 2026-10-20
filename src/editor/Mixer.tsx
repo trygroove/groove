@@ -62,7 +62,7 @@ import {
 import { useTrackDrag } from "./useTrackDrag";
 import "./Mixer.css";
 import { ariaBool } from "../shared/aria";
-import { type ShortcutHandlers, useShortcuts } from "../shortcuts";
+import { type ShortcutHandlers, useShortcutScope } from "../shortcuts";
 
 /** Pan travels in the parameter's own bipolar range, in 1% steps. */
 const PAN_RANGE = {
@@ -236,7 +236,7 @@ export default function Mixer(props: MixerProps): JSX.Element {
   // The keyboard's way to do what dragging a strip does (#447): the arrow
   // keys, while a strip's Edit control has focus. Anywhere else — a fader, the
   // pan, a name being typed — they keep their own meaning.
-  useShortcuts({
+  useShortcutScope({
     handlers: (): ShortcutHandlers => ({
       "track.move_left": {
         run: () => moveFocused(-1),

@@ -601,5 +601,30 @@ export function drawInteractionLayer(
     ctx.moveTo(x, rulerTop - RULER_HEIGHT_PX);
     ctx.lineTo(x, viewport.height);
     ctx.stroke();
+    drawPlayheadHead(ctx, x, rulerTop - RULER_HEIGHT_PX);
   }
+}
+
+/** Width and height of the playhead's head, in CSS pixels. */
+export const PLAYHEAD_HEAD_WIDTH_PX = 11;
+export const PLAYHEAD_HEAD_HEIGHT_PX = 8;
+
+/**
+ * The playhead's head (GRV-189): a downward-pointing triangle at the top of the
+ * ruler, where the line enters it, so the playhead is easy to find. It is
+ * edged in the ground colour so it still reads over a switched-on loop brace,
+ * which is as bright as the playhead itself.
+ */
+function drawPlayheadHead(ctx: CanvasRenderingContext2D, x: number, top: number): void {
+  const half = PLAYHEAD_HEAD_WIDTH_PX / 2;
+  ctx.beginPath();
+  ctx.moveTo(x - half, top);
+  ctx.lineTo(x + half, top);
+  ctx.lineTo(x, top + PLAYHEAD_HEAD_HEIGHT_PX);
+  ctx.closePath();
+  ctx.fillStyle = colors().playhead;
+  ctx.fill();
+  ctx.strokeStyle = colors().background;
+  ctx.lineWidth = 1;
+  ctx.stroke();
 }

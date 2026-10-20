@@ -1,6 +1,6 @@
-import { type Accessor, Show } from "solid-js";
+import { type Accessor, createMemo, Show } from "solid-js";
 import type { SaveStatus as SaveStatusValue } from "../persistence/autosave";
-import type { SaveFailureReason } from "../persistence/projectRepository";
+import type { SaveFailure, SaveFailureReason } from "../persistence/projectRepository";
 
 const SAVE_STATUS_LABEL: Record<string, string> = {
   idle: "",
@@ -36,6 +36,11 @@ export const OFFLINE_MESSAGE = "Offline. Reconnect to save.";
 export const OFFLINE_DETAIL =
   "You're offline. Your changes are kept here and save when you reconnect.";
 
+/** A write that failed for want of a connection, which a later write can clear. */
+function isConnectionFailure(failure: SaveFailure | null | undefined): boolean {
+  return failure?.reason === "unavailable" && failure.retryable;
+}
+
 export interface SaveStatusProps {
   readonly saveStatus: Accessor<SaveStatusValue | null>;
   readonly onRetry: () => void;
@@ -51,18 +56,42 @@ export interface SaveStatusProps {
  */
 export default function SaveStatus(props: SaveStatusProps) {
   const offline = () => props.online?.() === false;
+  /**
+   * The failure to show. A retry of a write the connection dropped clears the
+   * autosave's failure while it is in flight, which can take half a minute
+   * offline; the alert keeps saying why until a write lands (GRV-55).
+   */
+  const saveFailure = createMemo<SaveFailure | null>((previous) => {
+    const status = props.saveStatus();
+    if (!status || status.state === "saved" || status.state === "idle") return null;
+    if (status.failure) return status.failure;
+    return previous && isConnectionFailure(previous) ? previous : null;
+  });
   /** Offline with an edit not yet written: waiting for the connection. */
   const waitingOffline = () => {
     const status = props.saveStatus();
-    return offline() && (status?.pending ?? 0) > 0 && status?.state !== "failed";
+    if ((status?.pending ?? 0) === 0 || status?.state === "failed") return false;
+    // The browser's own word can be wrong (GRV-55), so a write that already
+    // failed for want of a connection says so too until the next one starts.
+    return (
+      offline() || (status?.state === "pending" && isConnectionFailure(saveFailure()))
+    );
   };
   const saveStatusLabel = () =>
     waitingOffline()
       ? OFFLINE_LABEL
       : SAVE_STATUS_LABEL[props.saveStatus()?.state ?? "idle"];
-  const saveFailure = () => props.saveStatus()?.failure;
-  /** A failure for want of a connection, while the browser says it has none. */
-  const offlineFailure = () => offline() && saveFailure()?.reason === "unavailable";
+  /**
+   * A failure for want of a connection: one a retry can clear, or any
+   * unreachable backend while the browser says it is offline. Not decided by
+   * `navigator.onLine` alone, which can say online while nothing gets through.
+   */
+  const offlineFailure = () => {
+    const failure = saveFailure();
+    return (
+      isConnectionFailure(failure) || (offline() && failure?.reason === "unavailable")
+    );
+  };
   const saveFailureMessage = () => {
     const failure = saveFailure();
     if (!failure) return null;

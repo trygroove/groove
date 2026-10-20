@@ -34,7 +34,7 @@ function Readout(props: {
   return (
     <div
       class={["export-slot", { loose: props.loose === true }]}
-      style={{ width: `${props.widthPx}px` }}
+      style={{ "--slot-width": `${props.widthPx}px` }}
     >
       <span class="export-label">{props.label}</span>
       {props.children}

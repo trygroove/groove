@@ -24,7 +24,9 @@ function failure(reason: SaveFailure["reason"], retryable = true): SaveFailure {
 describe("SaveStatus's failure states (GRV-55)", () => {
   afterEach(cleanup);
 
-  it("asks the producer to check their connection when a write fails online, with Retry", () => {
+  it("says a write the connection dropped is waiting to reconnect, even when the browser claims to be online", () => {
+    // QA (GRV-55): DevTools' offline throttling left `navigator.onLine` true,
+    // and the failure read "Check your connection." instead.
     const onRetry = vi.fn();
     render(() => (
       <SaveStatus
@@ -38,10 +40,50 @@ describe("SaveStatus's failure states (GRV-55)", () => {
 
     expect(screen.getByText("Save failed")).toBeInTheDocument();
     const alert = screen.getByRole("alert");
-    expect(alert).toHaveTextContent("Check your connection.");
+    expect(alert).toHaveTextContent("Offline. Reconnect to save.");
+    expect(alert).toHaveAttribute("title", OFFLINE_DETAIL);
     expect(alert).not.toHaveTextContent("backend text");
     clickAndFlush(screen.getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it("asks the producer to check their connection when a write is refused online", () => {
+    render(() => (
+      <SaveStatus
+        saveStatus={() =>
+          status({ state: "failed", pending: 1, failure: failure("unavailable", false) })
+        }
+        onRetry={() => {}}
+        online={() => true}
+      />
+    ));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Check your connection.");
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
+  it("keeps saying it is offline while a retry is in flight, and while an edit waits after it", () => {
+    const [value, setValue] = createSignal(
+      status({ state: "failed", pending: 1, failure: failure("unavailable") }),
+    );
+    render(() => (
+      <SaveStatus saveStatus={value} onRetry={() => {}} online={() => true} />
+    ));
+
+    // A retry clears the autosave's failure while it is in flight.
+    setValue(status({ state: "saving", pending: 1 }));
+    flush();
+    expect(screen.getByText("Saving…")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Offline. Reconnect to save.");
+
+    setValue(status({ state: "pending", pending: 1, failure: failure("unavailable") }));
+    flush();
+    expect(screen.getByText("Offline")).toBeInTheDocument();
+
+    setValue(status({ state: "saved", revision: 4 }));
+    flush();
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("says it is offline and that the changes are kept, while an edit waits", () => {

@@ -16,6 +16,8 @@ import {
   drawInteractionLayer,
   gridStepBars,
   MIN_GRID_SPACING_PX,
+  PLAYHEAD_HEAD_HEIGHT_PX,
+  PLAYHEAD_HEAD_WIDTH_PX,
   RULER_HEIGHT_PX,
   resetArrangementPalette,
 } from "./canvasRenderer";
@@ -44,6 +46,7 @@ type FakeContext = CanvasRenderingContext2D & {
   fillRectCalls: number;
   strokeRectCalls: number;
   moveToXs: number[];
+  lineTos: { x: number; y: number }[];
   strokes: Stroke[];
 };
 
@@ -51,6 +54,7 @@ function fakeContext(): FakeContext {
   const fillRectSpy = vi.fn();
   const strokeRectSpy = vi.fn();
   const moveToXs: number[] = [];
+  const lineTos: { x: number; y: number }[] = [];
   const strokes: Stroke[] = [];
   const fills: { y: number; alpha: number }[] = [];
   let dash: readonly number[] = [];
@@ -72,7 +76,11 @@ function fakeContext(): FakeContext {
     moveTo: (x: number) => {
       moveToXs.push(x);
     },
-    lineTo: vi.fn(),
+    lineTo: (x: number, y: number) => {
+      lineTos.push({ x, y });
+    },
+    closePath: vi.fn(),
+    fill: vi.fn(),
     stroke: vi.fn(),
     fillText: vi.fn(),
     fillStyle: "",
@@ -88,6 +96,7 @@ function fakeContext(): FakeContext {
       return strokeRectSpy.mock.calls.length;
     },
     moveToXs,
+    lineTos,
     strokes,
     fills,
   };
@@ -251,6 +260,38 @@ describe("drawInteractionLayer", () => {
     // The playhead moveTo x is the tick converted to a pixel (0.08 px/tick).
     const expectedX = Math.round(TICKS_PER_BAR * 2 * 0.08) + 0.5;
     expect(env.ctx.moveToXs).toContain(expectedX);
+  });
+
+  it("caps the playhead with a downward triangle at the top of the ruler (GRV-189)", () => {
+    const env = envFor(baseViewport({ scrollLeft: 0 }));
+    drawInteractionLayer(env, {
+      playheadTicks: TICKS_PER_BAR * 2,
+      band: null,
+      point: null,
+      hoverPlacementId: null,
+      selectedPlacementIds: new Set(),
+    });
+    const x = Math.round(TICKS_PER_BAR * 2 * 0.08) + 0.5;
+    const half = PLAYHEAD_HEAD_WIDTH_PX / 2;
+    expect(env.ctx.fill).toHaveBeenCalledTimes(1);
+    // Its base runs along the top edge of the ruler, centred on the line…
+    expect(env.ctx.moveToXs).toContain(x - half);
+    expect(env.ctx.lineTos).toContainEqual({ x: x + half, y: 0 });
+    // …and it points down at the line, inside the ruler.
+    expect(env.ctx.lineTos).toContainEqual({ x, y: PLAYHEAD_HEAD_HEIGHT_PX });
+    expect(PLAYHEAD_HEAD_HEIGHT_PX).toBeLessThan(RULER_HEIGHT_PX);
+  });
+
+  it("draws no playhead triangle when there is no playhead", () => {
+    const env = envFor(baseViewport());
+    drawInteractionLayer(env, {
+      playheadTicks: null,
+      band: null,
+      point: null,
+      hoverPlacementId: null,
+      selectedPlacementIds: new Set(),
+    });
+    expect(env.ctx.fill).not.toHaveBeenCalled();
   });
 
   it("is a no-op clear when there is no playhead, selection, or hover", () => {

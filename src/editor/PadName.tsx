@@ -5,7 +5,7 @@ import type { RawCommandInput, TransactionResult } from "../commands";
 import { renamePad } from "../commands";
 import type { DrumPad, Track } from "../domain/entities";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
-import { useShortcuts } from "../shortcuts";
+import { useShortcutScope } from "../shortcuts";
 import { MAX_DISPLAY_NAME_LENGTH } from "./displayNameLimit";
 import "./PadName.css";
 
@@ -47,7 +47,7 @@ export default function PadName(props: PadNameProps): JSX.Element {
     });
   }
 
-  useShortcuts({
+  useShortcutScope({
     handlers: () => ({
       "view.close_surface": {
         run: () => {

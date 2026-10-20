@@ -239,6 +239,10 @@ describe("the theme is the only place a colour is written down", () => {
       "--assistant-bar-height",
       "--assistant-inset",
       "--assistant-clearance",
+      // The Export dialog's readout widths and done-screen height (GRV-156),
+      // set from TSX so a phone-width media query can override them.
+      "--slot-width",
+      "--done-height",
     ]);
     const declared = new Set(
       Object.values(stylesheets).flatMap((source) =>

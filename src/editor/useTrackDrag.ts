@@ -1,6 +1,6 @@
 import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
 import type { TrackId } from "../domain/ids";
-import { useShortcuts } from "../shortcuts/useShortcuts";
+import { useShortcutScope } from "../shortcuts/useShortcutScope";
 import { createSlide, type DragLift, liftItem } from "./dragLift";
 import "./dragLift.css";
 import { dropSlot, slotToIndex } from "./trackReorder";
@@ -74,7 +74,7 @@ export function useTrackDrag<Id extends string = TrackId>(
 
   // Escape puts the held track back (`view.close_surface`, never a key read here).
   let cancelDrag: (() => void) | null = null;
-  useShortcuts({
+  useShortcutScope({
     handlers: () => ({
       "view.close_surface": {
         run: () => cancelDrag?.(),

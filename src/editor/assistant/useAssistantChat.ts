@@ -23,6 +23,7 @@ import { memoryContext } from "../../memory/memoryEdits";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import type { Suggestion } from "../../projection/projectAnalysisProjection";
 import { type Clock, systemClock } from "../../shared/clock";
+import type { Scheduler } from "../../shared/scheduler";
 import type { EditorViewName } from "../editorViews";
 import type { AskEditorLink } from "./askReferences";
 import { type AssistantLibrary, libraryContext } from "./assistantLibrary";
@@ -56,6 +57,7 @@ import {
 } from "./useAssistantRecommendations";
 import { type AssistantRetention, useAssistantRetention } from "./useAssistantRetention";
 import { type CueNudge, useCueNudge } from "./useCueNudge";
+import { useFollowUp } from "./useFollowUp";
 import { type AssistantMemoryProposals, useMemoryProposals } from "./useMemoryProposals";
 
 /** Who is here to talk: a signed-in account, or someone who must sign in. */
@@ -129,6 +131,11 @@ export interface UseAssistantChatOptions {
    * no memory.
    */
   readonly profile?: ProducerProfileStore;
+  /**
+   * What times the quiet after an Apply before the assistant follows up
+   * (GRV-195); the real timers by default.
+   */
+  readonly scheduler?: Scheduler;
 }
 
 export interface AssistantChat {
@@ -235,9 +242,11 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         refresh: (entryId, shown) => conversation.refresh(entryId, shown),
         continueRest: (entryId, shown) => conversation.continueProposal(entryId, shown),
         clock: options.clock,
+        onApplied: (entryId) => followUp.applied(entryId),
         onOutcome: (entryId, outcome, issues) => {
           // The conversation is made just below; an outcome only comes later.
           conversation.recordProposalOutcome(entryId, outcome);
+          if (outcome === "undone") followUp.undone(entryId);
           const turnId = turnOfEntry.get(entryId);
           if (turnId) retention?.reportOutcome(turnId, outcome, issues);
           const sessionTurn = sessionTurnOfEntry.get(entryId);
@@ -299,6 +308,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     analytics: options.analytics,
     committedProject: options.committedProject,
     clock: options.clock,
+    onTurnStarted: () => followUp.turnStarted(),
     onProposalPart: proposals
       ? (entryId, part, origin, baseRevision) => {
           // The first part shows the card, which fills in as the rest land
@@ -404,6 +414,15 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         }
       : undefined,
     health,
+  });
+
+  // Applying a proposal has the assistant say what next (GRV-195). The cards
+  // and the conversation above tell it of each Apply and turn, only ever
+  // after this is made.
+  const followUp = useFollowUp({
+    streaming: conversation.streaming,
+    send: () => conversation.followUp(),
+    scheduler: options.scheduler,
   });
 
   const nudge = profile

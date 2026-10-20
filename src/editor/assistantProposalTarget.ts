@@ -19,6 +19,7 @@ export function assistantProposalTarget(session: EditorSession): ProposalTarget 
     get latestCorrelationId() {
       return session.latestCorrelationId;
     },
+    commandTypesSince: (revision) => session.commandTypesSince(revision),
     execute: (commands, options) => session.dispatch(commands, options),
     undo: () => session.undo("assistant"),
   };
