@@ -53,6 +53,27 @@ const libraryAssetFixture = {
   bars: null,
 } as unknown as LibraryAsset;
 
+/** The registry owners of a project's graphs: its ID and which graph it is. */
+function graphOwners(
+  runtime: import("../audio/AudioRuntime").AudioRuntime,
+  project: Project,
+): string[] {
+  return [...new Set(runtime.registry.snapshot().map((entry) => entry.owner))].filter(
+    (owner) => owner.startsWith(`${project.metadata.id}/`),
+  );
+}
+
+/** How many resources a project's graphs hold. */
+function ownedCount(
+  runtime: import("../audio/AudioRuntime").AudioRuntime,
+  project: Project,
+): number {
+  return graphOwners(runtime, project).reduce(
+    (sum, owner) => sum + runtime.registry.countForOwner(owner),
+    0,
+  );
+}
+
 function fakeAnalytics() {
   const transport = createRecordingTransport();
   const consent = new ConsentStore(memoryStorage());
@@ -152,10 +173,16 @@ describe("useProjectAudio", () => {
       runtime.ensureContext();
     });
     const project = createSliceFixtureProject();
-    const owner = project.metadata.id;
     const { analytics, transport } = fakeAnalytics();
+    const recorded = recordErrorReports();
     const { result } = renderHook(
-      () => useProjectAudioModule.useProjectAudio(() => project, { runtime, analytics }),
+      () =>
+        useProjectAudioModule.useProjectAudio(() => project, {
+          runtime,
+          analytics,
+          reportError: recorded.report,
+          leaks: { sampleRate: 1, warn: () => {} },
+        }),
       {},
     );
     void result.isPlaying();
@@ -166,7 +193,7 @@ describe("useProjectAudio", () => {
     const ownedIds = () =>
       runtime.registry
         .snapshot()
-        .filter((entry) => entry.owner === owner)
+        .filter((entry) => entry.owner.startsWith(`${project.metadata.id}/`))
         .map((entry) => entry.id);
     const oldGraph = ownedIds();
     expect(oldGraph.length).toBeGreaterThan(0);
@@ -187,6 +214,12 @@ describe("useProjectAudio", () => {
     const newGraph = ownedIds();
     expect(newGraph.length).toBeGreaterThan(0);
     expect(newGraph.some((id) => oldGraph.includes(id))).toBe(false);
+    // The graph built in its place for the same project is not the old one's leak.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(transport.named("resources_leaked")).toHaveLength(0);
+    expect(recorded.reports.filter((report) => report.code === "resource_leak")).toEqual(
+      [],
+    );
     result.stop();
   });
 
@@ -370,7 +403,7 @@ describe("useProjectAudio", () => {
 
     const afterMount = runtime.diagnostics().resources;
     expect(afterMount.byType.node ?? 0).toBeGreaterThan(0);
-    expect(afterMount.byOwner[project.metadata.id]).toBeGreaterThan(0);
+    expect(ownedCount(runtime, project)).toBeGreaterThan(0);
 
     cleanupHook();
     await Promise.resolve();
@@ -380,7 +413,7 @@ describe("useProjectAudio", () => {
     // The graph's own resources (nodes, schedules, subscriptions, buffers)
     // are all released; only the shared context — which this project graph
     // never owned and disposal must never touch (PRD AUD-07) — remains.
-    expect(afterDispose.byOwner[project.metadata.id]).toBeUndefined();
+    expect(ownedCount(runtime, project)).toBe(0);
     expect(afterDispose.byType.node ?? 0).toBe(0);
     expect(afterDispose.byType.schedule ?? 0).toBe(0);
     expect(afterDispose.byType.subscription ?? 0).toBe(0);
@@ -683,9 +716,7 @@ describe("useProjectAudio", () => {
       );
       await Promise.resolve();
       cleanupHook();
-      await vi.waitFor(() =>
-        expect(runtime.registry.countForOwner(project.metadata.id)).toBe(0),
-      );
+      await vi.waitFor(() => expect(ownedCount(runtime, project)).toBe(0));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(
         recorded.reports.filter((report) => report.code === "resource_leak"),
@@ -709,7 +740,8 @@ describe("useProjectAudio", () => {
       );
       await Promise.resolve();
       // A node allocated as the project closes, which nothing will dispose.
-      const scope = runtime.openProjectScope(project.metadata.id);
+      const [owner] = graphOwners(runtime, project);
+      const scope = runtime.openProjectScope(owner);
       cleanupHook();
       const late = scope.register("node", () => {});
       await vi.waitFor(() => expect(transport.named("resources_leaked")).toHaveLength(1));

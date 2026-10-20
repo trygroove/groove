@@ -69,9 +69,9 @@ const AppErrorFallback: Component<AppErrorFallbackProps> = (props) => {
 
   const [reloadState, setReloadState] = createSignal<ReloadState>("idle");
   function reloadNow(outcome: CrashSaveOutcome): void {
-    (props.analytics ?? defaultAnalytics).log("crash_reloaded", {
-      save_outcome: outcome,
-    });
+    const analytics = props.analytics ?? defaultAnalytics;
+    analytics.log("crash_reloaded", { save_outcome: outcome });
+    analytics.logFeatureFirstUse("crash_reload");
     (props.reload ?? (() => window.location.reload()))();
   }
   async function reload(): Promise<void> {

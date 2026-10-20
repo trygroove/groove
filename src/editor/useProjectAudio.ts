@@ -281,6 +281,13 @@ export function useProjectAudio(
   let transport: TransportController | null = null;
   let metronome: TransportMetronome | null = null;
   let ownerId: string | null = null;
+  /**
+   * The registry owner of the current graph: the project's ID and which
+   * graph this is for it, so a graph rebuilt for the same project (a new
+   * context, GRV-55) never has its resources counted as the last one's leaks.
+   */
+  let graphOwner: string | null = null;
+  let graphsBuilt = 0;
   /** The runtime's context generation the graph was built on. */
   let graphGeneration: number | undefined;
   let lastProjection: AudioSongProjection | undefined;
@@ -439,7 +446,7 @@ export function useProjectAudio(
     metronome = null;
     transport = null;
     const closing = graph;
-    const closingOwner = ownerId;
+    const closingOwner = graphOwner;
     graph = null;
     if (closing && closingOwner) {
       // Once the project's scope is disposed, anything still registered under
@@ -489,7 +496,9 @@ export function useProjectAudio(
     if (!graph || ownerId !== current.metadata.id) {
       tearDown();
       ownerId = current.metadata.id;
-      graph = new ProjectAudioGraph(runtime, ownerId, {
+      graphsBuilt += 1;
+      graphOwner = `${ownerId}/${graphsBuilt}`;
+      graph = new ProjectAudioGraph(runtime, graphOwner, {
         underrunMonitor: underrunMonitor(),
         onAssetLoadFailure: reportAssetLoadFailure,
       });

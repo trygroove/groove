@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Analytics } from "../analytics/analytics";
 import { ConsentStore } from "../analytics/consent";
 import { createRecordingTransport } from "../analytics/transport";
+import { expectNoContent, recordErrorReports } from "../testing/errorReports";
 import { memoryStorage } from "../testing/storage";
 import AppErrorFallback from "./AppErrorFallback";
 
@@ -77,6 +78,37 @@ describe("AppErrorFallback (PRD OPS-03: a boundary is a capture point)", () => {
     expect(screen.getByText(/Midnight Drive/)).toBeInTheDocument();
   });
 
+  it("sends the crash once, fatal and coded, with no project content (GRV-55)", () => {
+    const recorded = recordErrorReports();
+    const error = new TypeError(
+      `Track "Bassline Wobble" of 'Midnight Drive' has no sound at https://storage.example.com/u/abc/Warm%20Pad.wav`,
+    );
+    render(() => (
+      <AppErrorFallback
+        error={error}
+        reset={() => {}}
+        area="editor"
+        report={recorded.report}
+      />
+    ));
+
+    expect(recorded.reports).toHaveLength(1);
+    const [payload] = recorded.payloads();
+    expect(payload.tags).toMatchObject({
+      area: "editor",
+      error_code: "unknown",
+      fatal: true,
+    });
+    expectNoContent(payload, [
+      "Bassline Wobble",
+      "Midnight Drive",
+      "Warm%20Pad",
+      "storage.example.com",
+    ]);
+    // The producer still sees their own message.
+    expect(screen.getByText(/Midnight Drive/)).toBeInTheDocument();
+  });
+
   it("renders a non-error throw without crashing itself", () => {
     render(() => (
       <AppErrorFallback error="a bare string" reset={() => {}} report={() => true} />
@@ -107,11 +139,13 @@ describe("AppErrorFallback's Reload (GRV-55)", () => {
       />
     ));
     const reloaded = () => transport.named("crash_reloaded").map((event) => event.params);
-    return { reload, flush, reloaded };
+    const firstUses = () =>
+      transport.named("feature_first_use").map((event) => event.params);
+    return { reload, flush, reloaded, firstUses };
   }
 
   it("says Reload saves first, writes queued edits, then reloads", async () => {
-    const { reload, flush, reloaded } = setUp(async () => "saved");
+    const { reload, flush, reloaded, firstUses } = setUp(async () => "saved");
     expect(screen.getByRole("status")).toHaveTextContent(
       "Reload to carry on. Any change still waiting to save is saved first.",
     );
@@ -121,6 +155,7 @@ describe("AppErrorFallback's Reload (GRV-55)", () => {
     expect(flush).toHaveBeenCalledOnce();
     expect(reload).toHaveBeenCalledOnce();
     expect(reloaded()).toEqual([expect.objectContaining({ save_outcome: "saved" })]);
+    expect(firstUses()).toEqual([expect.objectContaining({ feature: "crash_reload" })]);
   });
 
   it("reloads straight away when nothing was waiting to save", async () => {
@@ -135,7 +170,7 @@ describe("AppErrorFallback's Reload (GRV-55)", () => {
   });
 
   it("does not reload an unsaved edit away: it says so, and offers Reload anyway", async () => {
-    const { reload, flush, reloaded } = setUp(async () => "unsaved");
+    const { reload, flush, reloaded, firstUses } = setUp(async () => "unsaved");
 
     await userEvent.click(screen.getByRole("button", { name: "Reload" }));
 
@@ -152,5 +187,6 @@ describe("AppErrorFallback's Reload (GRV-55)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Reload anyway" }));
     expect(reload).toHaveBeenCalledOnce();
     expect(reloaded()).toEqual([expect.objectContaining({ save_outcome: "unsaved" })]);
+    expect(firstUses()).toEqual([expect.objectContaining({ feature: "crash_reload" })]);
   });
 });

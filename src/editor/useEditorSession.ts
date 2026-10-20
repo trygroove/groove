@@ -86,12 +86,24 @@ function watchNavigationFlush(getSession: () => EditorSession | null): void {
 }
 
 /**
+ * How many of an autosave's queued edits another write could still land
+ * (GRV-55): none once its failure is one no retry clears (a document too
+ * large, a refused permission, a conflict GRV-88 settles), so neither the
+ * connection coming back nor the crash screen keeps trying them.
+ */
+function writablePending(autosave: EditorSession["autosave"]): number {
+  const { pending, state, failure } = autosave.status;
+  if (state === "failed" && !failure?.retryable) return 0;
+  return pending;
+}
+
+/**
  * Holds a session's queued edits where the crash screen can write them
  * (GRV-55). Returns the release.
  */
 function holdSessionWrites(session: EditorSession): () => void {
   return holdPendingWrites({
-    pending: () => session.autosave.status.pending,
+    pending: () => writablePending(session.autosave),
     flush: () => session.autosave.flush(),
   });
 }
@@ -105,7 +117,7 @@ function holdSessionWrites(session: EditorSession): () => void {
  */
 function retireSession(session: EditorSession, release: () => void): void {
   release();
-  if (session.autosave.status.pending === 0) {
+  if (writablePending(session.autosave) === 0) {
     session.dispose();
     return;
   }
@@ -113,14 +125,15 @@ function retireSession(session: EditorSession, release: () => void): void {
   const { autosave } = session;
   const flush = async () => {
     await autosave.flush();
-    if (autosave.status.pending === 0) {
+    // Landed, or failed in a way no further write can clear: let go.
+    if (writablePending(autosave) === 0) {
       releaseRetired();
       autosave.dispose();
     }
   };
   const onOnline = () => void flush();
   const releaseHeld = holdPendingWrites({
-    pending: () => autosave.status.pending,
+    pending: () => writablePending(autosave),
     flush,
   });
   const releaseRetired = () => {

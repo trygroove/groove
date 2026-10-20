@@ -8,6 +8,7 @@ import type { Project } from "../domain/entities";
 import { createReferenceProject, createSliceFixtureProject } from "../domain/fixtures";
 import type { ClipId } from "../domain/ids";
 import { createInMemoryProjectRepository } from "../persistence/inMemoryProjectRepository";
+import { saveFailure } from "../persistence/projectRepository";
 import {
   __resetPendingWritesForTests,
   flushPendingWrites,
@@ -267,6 +268,28 @@ describe("useEditorSession's queued edits outlive the editor (GRV-55)", () => {
     window.dispatchEvent(new Event("online"));
     await vi.waitFor(async () => expect(await saved()).toBe(true));
     expect(unsavedWriteCount()).toBe(0);
+  });
+
+  it("lets go of an edit no write can land, rather than retrying it for ever", async () => {
+    const { repository, hook, edit } = await openSession();
+    let refused = 0;
+    repository.saveChanges = async () => {
+      refused += 1;
+      return saveFailure("document_too_large", "Injected persistence failure");
+    };
+    edit();
+    // Live, the crash screen has nothing it could write.
+    await vi.waitFor(() => expect(refused).toBeGreaterThan(0), { timeout: 5_000 });
+    expect(unsavedWriteCount()).toBe(0);
+
+    hook.cleanup();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const attempts = refused;
+    expect(unsavedWriteCount()).toBe(0);
+    window.dispatchEvent(new Event("online"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(refused).toBe(attempts);
+    expect(await flushPendingWrites()).toBe("nothing_queued");
   });
 
   it("lets go of a closed session whose last write landed", async () => {
