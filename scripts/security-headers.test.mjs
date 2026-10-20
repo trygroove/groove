@@ -43,6 +43,17 @@ describe("firebase.json's security headers", () => {
     expect(destinations).toEqual(["/index.html", "/app.html"]);
   });
 
+  it("serve the app shell to extensionless paths only, so a missing asset is a 404 (GRV-137)", () => {
+    const [, deepLink] = firebaseJson.hosting.rewrites;
+    const matches = new RegExp(deepLink.regex);
+    for (const path of ["/projects", "/projects/prj_abc-123_x/arrangement", "/welcome"]) {
+      expect(matches.test(path), path).toBe(true);
+    }
+    for (const path of ["/assets/firestoreProjectRepository-CurEdI1i.js", "/x.map"]) {
+      expect(matches.test(path), path).toBe(false);
+    }
+  });
+
   it("enforce a policy with no 'unsafe-inline' or 'unsafe-eval' anywhere", () => {
     expect(csp()).not.toMatch(/unsafe-inline|unsafe-eval|unsafe-hashes/);
     expect(served[0].headers.map((entry) => entry.key)).not.toContain(
@@ -90,6 +101,15 @@ describe("firebase.json's security headers", () => {
     // (GRV-136). script-src already allows the host; connect-src must too, or
     // the browser blocks the beacon and files a CSP report.
     expect(directiveSources(csp(), "connect-src")).toContain("https://apis.google.com");
+  });
+
+  it("allow where that beacon redirects in connect-src", () => {
+    // apis.google.com/js/gen_204 answers 302 to www.google.com/images/cleardot.gif.
+    // The redirect is checked against connect-src as well, and the report names
+    // only the first URL, so a missing source looks like apis.google.com refused.
+    expect(directiveSources(csp(), "connect-src")).toContain(
+      "https://www.google.com/images/cleardot.gif",
+    );
   });
 
   it("allow the Firebase services the production project is configured for", () => {

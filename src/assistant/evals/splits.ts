@@ -36,6 +36,8 @@ export const HELDOUT_CASE_IDS = [
   "sketch-track-scope",
   "noop-bd-only",
   "snare-hats-sounds",
+  // projectContext (GRV-150): one of two.
+  "context-cancelled-hat",
   // relativeLevel: two of six.
   "db-turn-down",
   "db-stale-undone",
@@ -68,6 +70,7 @@ export const TRAIN_CASE_IDS = [
   "sketch-whole-song",
   "resketch-extreme",
   "first-beat-lesson",
+  "context-applied-snare",
   "db-nudge-down",
   "db-lower",
   "db-turn-up",

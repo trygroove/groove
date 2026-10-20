@@ -1,4 +1,5 @@
 import { walkthrough } from "../../support/walkthrough";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 
 /**
@@ -189,7 +190,7 @@ test.describe("CF-013", () => {
     await expect(page.locator(".save-status")).toHaveText("Saved", {
       timeout: 10_000,
     });
-    await page.reload();
+    await reloadPage(page);
     await expect(page).toHaveURL(instrumentUrl);
     await expect(devices(page)).toHaveText([/Reverb/, /Reverb/, /Overdrive/]);
     await expect(bypass(devices(page).nth(2))).toHaveAttribute("aria-pressed", "true");

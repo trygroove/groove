@@ -1,5 +1,6 @@
 import { walkthrough } from "../../support/walkthrough";
 import { library } from "../support/library";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 import { expectView } from "../support/views";
 
@@ -246,7 +247,7 @@ test.describe("CF-007", () => {
     await expect(page.locator(".save-status")).toHaveText("Saved", {
       timeout: 10_000,
     });
-    await page.reload();
+    await reloadPage(page);
     // The view is part of the address (#304), so the reload lands back on the
     // mixer; only the strip selection, which is UI state and deliberately not
     // persisted, has to be made again.

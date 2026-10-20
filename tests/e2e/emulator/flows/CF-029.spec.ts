@@ -1,4 +1,5 @@
 import { walkthrough } from "../../support/walkthrough";
+import { reloadPage } from "../support/reload";
 import { expect, type Locator, type Page, test } from "../support/test";
 
 /**
@@ -175,7 +176,7 @@ test.describe("CF-029", () => {
     await expect(page.locator(".save-status")).toHaveText("Saved", {
       timeout: 10_000,
     });
-    await page.reload();
+    await reloadPage(page);
 
     // 8. The project reopens exactly as step 6 left it: "BD" and "Sampler"
     //    are there, with no clips.

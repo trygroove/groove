@@ -4,7 +4,8 @@
  * Nothing above this module knows that the gateway is a Cloud Function, that
  * the reply arrives as a stream of callable chunks, or that a provider exists
  * at all. A component sends an {@link AssistantTurnRequest} and receives a
- * typed sequence of {@link AssistantStreamEvent}s: `text`, then at most one
+ * typed sequence of {@link AssistantStreamEvent}s: `text` and `part` (each
+ * change call as the gateway accepts it, GRV-144), then at most one
  * `proposal`, then at most one `ask`, then at most one `videos`, then exactly
  * one terminal `done` or `error`.
  *
@@ -43,6 +44,7 @@ import {
   type AssistantErrorDetails,
   AssistantGatewayError,
   type AssistantProposal,
+  type AssistantProposalPart,
   type AssistantStopReason,
   type AssistantTurnRequest,
 } from "./protocol";
@@ -52,6 +54,11 @@ import { type AssistantVideo, assistantVideoSchema, VIDEO_LIMITS } from "./video
 export type AssistantStreamEvent =
   /** A piece of the reply, as it is written. */
   | { readonly type: "text"; readonly text: string }
+  /**
+   * One change call the gateway accepted, as soon as it did (GRV-144), in
+   * call order. The turn's `proposal` still follows, with every call in it.
+   */
+  | { readonly type: "part"; readonly part: AssistantProposalPart }
   /** The changes the turn proposes, once it is complete. */
   | { readonly type: "proposal"; readonly proposal: AssistantProposal }
   /** A question for the producer (GRV-42), once the turn is complete. */
@@ -110,7 +117,23 @@ export type AssistantTurnTransport = (
   options: { readonly signal: AbortSignal },
 ) => Promise<AssistantTurnStream>;
 
-const chunkSchema = z.looseObject({ type: z.literal("text"), text: z.string() });
+const partSchema = z.looseObject({
+  index: z.int().min(0),
+  toolsetVersion: z.int().min(0),
+  call: z.looseObject({
+    id: z.string(),
+    name: z.string(),
+    input: z.unknown(),
+    refusal: z.string().optional(),
+  }),
+});
+
+const chunkSchema = z.looseObject({
+  type: z.literal("text"),
+  text: z.string(),
+  // Optional, so a gateway from before GRV-144 still streams well-formed.
+  part: partSchema.optional(),
+});
 
 const proposalSchema = z.looseObject({
   baseRevision: z.int().min(0),
@@ -217,6 +240,8 @@ export function createAssistantClient(
       const controller = new AbortController();
       let settled = false;
       let silence: ReturnType<typeof setTimeout> | undefined;
+      /** How many proposal parts have arrived (GRV-144). */
+      let parts = 0;
 
       /** Terminal events close the turn, so nothing can be emitted after one. */
       const emit = (event: AssistantStreamEvent): void => {
@@ -255,6 +280,15 @@ export function createAssistantClient(
             heard();
             const parsed = chunkSchema.safeParse(chunk);
             if (!parsed.success) return malformed();
+            const { part } = parsed.data;
+            if (part) {
+              // Parts come in call order, each once, on an empty chunk.
+              if (part.index !== parts || parsed.data.text.length > 0) {
+                return malformed();
+              }
+              parts += 1;
+              emit({ type: "part", part: part as AssistantProposalPart });
+            }
             // An empty chunk is the gateway's heartbeat: alive, nothing to show.
             if (parsed.data.text.length > 0) {
               emit({ type: "text", text: parsed.data.text });

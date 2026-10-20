@@ -10,6 +10,7 @@ import {
   toolUseEvents,
 } from "../../testing/scriptedAssistantProvider";
 import { askTranscript } from "../ask";
+import { proposalNote } from "../history";
 import type { AssistantProvider } from "../provider";
 import { continuesTurn, type ProviderMessagesRequest } from "../providerRequest";
 import { toolNameFor } from "../tools";
@@ -135,7 +136,7 @@ describe("an assistant:try session", () => {
     expect(() => undo(undone.session)).toThrow("No applied proposal to undo");
   });
 
-  it("cancels without changing the song, and resends cancelled and undone replies", async () => {
+  it("cancels without changing the song, and resends cancelled and undone replies with what became of them (GRV-150)", async () => {
     const session = started();
     const provider = createScriptedAssistantProvider([
       toolUseEvents("The Bass down to -6 dB.", [volumeCall(session, "Bass", -6)]),
@@ -154,9 +155,15 @@ describe("an assistant:try session", () => {
     await ask(undone, { text: "Thanks" }, deps(provider));
     expect(opened(provider)[2].messages).toEqual([
       { role: "user", content: "Bass down" },
-      { role: "assistant", content: "The Bass down to -6 dB." },
+      {
+        role: "assistant",
+        content: `The Bass down to -6 dB.\n\n${proposalNote("cancelled")}`,
+      },
       { role: "user", content: "Lead down" },
-      { role: "assistant", content: "The Lead down to -3 dB." },
+      {
+        role: "assistant",
+        content: `The Lead down to -3 dB.\n\n${proposalNote("undone")}`,
+      },
       { role: "user", content: "Thanks" },
     ]);
   });
@@ -405,7 +412,10 @@ describe("save-case", () => {
     expect(loaded.expect).toBe("ask");
     expect(loaded.history).toEqual([
       { role: "user", text: "Bass down" },
-      { role: "assistant", text: "The Bass down to -6 dB." },
+      {
+        role: "assistant",
+        text: `The Bass down to -6 dB.\n\n${proposalNote("applied")}`,
+      },
     ]);
     expect(stringifyProject(loaded.fixture())).toBe(stringifyProject(applied.project));
   });

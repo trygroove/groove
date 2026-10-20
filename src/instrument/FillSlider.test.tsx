@@ -3,8 +3,8 @@ import { createSignal, flush } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deviceTypeDefinition } from "../domain/devices";
 import { SYNTH_FILTER_CUTOFF } from "../domain/parameters";
+import { formatReadout } from "../domain/valueFormat";
 import FillSlider from "./FillSlider";
-import { formatInstrumentValue } from "./formatValue";
 
 afterEach(() => cleanup());
 
@@ -17,7 +17,7 @@ function renderSlider(start = 1000) {
     <FillSlider
       definition={SYNTH_FILTER_CUTOFF}
       value={value()}
-      displayValue={formatInstrumentValue(SYNTH_FILTER_CUTOFF, value())}
+      displayValue={formatReadout(SYNTH_FILTER_CUTOFF, value())}
       onInput={(next) => {
         onInput(next);
         setValue(next);
@@ -78,7 +78,7 @@ describe("FillSlider value field (#447)", () => {
       <FillSlider
         definition={time}
         value={value()}
-        displayValue={formatInstrumentValue(time, value())}
+        displayValue={formatReadout(time, value())}
         onInput={setValue}
         onCommit={onCommit}
       />

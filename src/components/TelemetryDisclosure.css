@@ -6,7 +6,10 @@
   /* Clear of the assistant panel while it is open (#849); zero otherwise. */
   right: calc(8px + var(--assistant-clearance, 0px));
   bottom: 26px;
-  z-index: 1000;
+  /* Page chrome, so under every modal scrim (dialogs 80, confirm 100): the
+     Privacy panel must not draw over a dialog's text when it is open under one
+     (GRV-182). Above the view dock (60), as the release badge is (GRV-167). */
+  z-index: 70;
   max-width: min(340px, calc(100vw - 24px - var(--assistant-clearance, 0px)));
   font-size: var(--font-size-small);
   color: var(--color-foreground);

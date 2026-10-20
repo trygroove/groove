@@ -215,8 +215,14 @@ export function renderExperimentMarkdown(
   const goal = GOAL_METRICS[experiment.goal];
   const control = result.train.reports[CONTROL];
   const lines = [
-    `# Experiment \`${experiment.id}\`: ${result.verdict}`,
+    `# Experiment \`${experiment.id}\`: ${result.failed ? "run failed" : result.verdict}`,
     "",
+    ...(result.failed
+      ? [
+          `**The run failed, so this is not a verdict.** ${result.failed} The card is Blocked; rerun the experiment once the cause is fixed. The numbers below are what ran before it stopped.`,
+          "",
+        ]
+      : []),
     `> ${experiment.hypothesis}`,
     "",
     `- Card: ${experiment.card}`,
@@ -254,7 +260,7 @@ export function renderExperimentMarkdown(
     `- Spend: $${result.spentUsd.toFixed(2)} of a $${result.budgetUsd.toFixed(2)} budget`,
     `- Generated: ${result.generatedAt}`,
     "",
-    ...(result.stopped
+    ...(result.stopped && !result.failed
       ? [`**Unfinished.** ${result.stopped} What follows is what it has.`, ""]
       : []),
     "## Train",
@@ -356,6 +362,7 @@ export function experimentJson(result: ExperimentResult, links: ExperimentLinks)
     keptCuts: result.keptCuts,
     cuts: result.cuts,
     stopped: result.stopped,
+    failed: result.failed,
     model: result.model,
     generatedAt: result.generatedAt,
     budgetUsd: result.budgetUsd,

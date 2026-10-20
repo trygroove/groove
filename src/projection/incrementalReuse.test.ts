@@ -1,9 +1,8 @@
 /**
  * HARD-006 performance regression guard.
  *
- * Both projection builders are on the per-edit hot path: `useProjectAudio`
- * rebuilds the audio projection on every project change, and the arrangement
- * renderer rebuilds its projection whenever the project revision moves. The
+ * The audio projection builder is on the per-edit hot path: `useProjectAudio`
+ * rebuilds the audio projection on every project change, and the
  * PRD's section 9.3 acceptance requires "frame cost proportional primarily to
  * visible objects, not total project duration or total offscreen clips", and
  * section 10 targets a 50 ms pointer-edit response on the 50-track reference
@@ -19,6 +18,15 @@
  * automation lane, return, and asset — so a one-note edit on the 50-track
  * reference project ran thousands of stable-stringify+hash passes it did not
  * need. This guard fails if that regresses.
+ *
+ * Two halves. The audio half (`buildAudioProjection`) takes a `previous`
+ * projection and reuses entries, so it counts fingerprint calls. The live
+ * arrangement builder (`src/arrangement/projection.ts`) has no `previous`
+ * reuse argument: it rebuilds every time and leans on object-identity
+ * `revisionOf` counters for downstream caches. Its guard is therefore a time
+ * budget on the 50-track reference project plus revision stability: untouched
+ * placements keep their revision after a one-placement edit with structural
+ * sharing, and the edited one changes.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,9 +44,12 @@ vi.mock("./fingerprint", async () => {
   };
 });
 
+import type { RowMetrics } from "../arrangement/geometry";
+import { buildArrangementProjection } from "../arrangement/projection";
+import { revisionOf } from "../arrangement/revision";
 import type { Placement, Project, Track } from "../domain/entities";
 import { createReferenceProject } from "../domain/fixtures";
-import { buildArrangementProjection } from "./arrangementProjection";
+import { toTicks } from "../domain/time";
 import { buildAudioProjection } from "./audioProjection";
 
 beforeEach(() => {
@@ -68,19 +79,6 @@ function replaceTrack(project: Project, next: Track): Project {
     song: {
       ...project.song,
       tracks: project.song.tracks.map((track) => (track.id === next.id ? next : track)),
-    },
-  };
-}
-
-function replacePlacement(project: Project, next: Placement): Project {
-  return {
-    ...project,
-    metadata: { ...project.metadata, revision: project.metadata.revision + 1 },
-    song: {
-      ...project.song,
-      placements: project.song.placements.map((placement) =>
-        placement.id === next.id ? next : placement,
-      ),
     },
   };
 }
@@ -132,66 +130,69 @@ describe("audio projection incremental rebuild", () => {
   });
 });
 
-describe("arrangement projection incremental rebuild", () => {
-  it("re-fingerprints nothing when the project object is unchanged", () => {
+const rowMetrics: RowMetrics = { trackHeightPx: 32, headerHeightPx: 32 };
+
+/** Replaces one placement the way the command layer does: new song, new array, one new element. */
+function replacePlacement(project: Project, next: Placement): Project {
+  return {
+    ...project,
+    metadata: { ...project.metadata, revision: project.metadata.revision + 1 },
+    song: {
+      ...project.song,
+      placements: project.song.placements.map((p) => (p.id === next.id ? next : p)),
+    },
+  };
+}
+
+describe("arrangement projection on the reference project", () => {
+  it("builds inside a generous time budget", () => {
     const project = referenceProject();
-    const before = buildArrangementProjection(project);
-    fingerprintCalls = 0;
+    expect(project.song.tracks).toHaveLength(50);
+    expect(project.song.placements).toHaveLength(2500);
 
-    const after = buildArrangementProjection(project, before);
-
-    expect(fingerprintCalls).toBe(0);
-    for (let i = 0; i < after.placements.length; i += 1) {
-      expect(after.placements[i]).toBe(before.placements[i]);
+    // PRD section 10 targets 50 ms for a pointer edit. Wall-clock time on a
+    // shared CI runner is noisy, so warm up, take the best of several runs
+    // (noise only ever adds time), and assert 10x the target. That still
+    // catches an accidental quadratic walk (seconds), not a slow neighbour.
+    buildArrangementProjection(project, rowMetrics);
+    let best = Number.POSITIVE_INFINITY;
+    for (let run = 0; run < 5; run += 1) {
+      const start = performance.now();
+      buildArrangementProjection(project, rowMetrics);
+      best = Math.min(best, performance.now() - start);
     }
+    expect(best).toBeLessThan(500);
   });
 
-  it("re-fingerprints only the one edited placement, not all 2,500", () => {
+  it("keeps revisions of untouched placements stable after a one-placement edit", () => {
     const project = referenceProject();
-    const before = buildArrangementProjection(project);
-    expect(before.placements.length).toBeGreaterThanOrEqual(2500);
+    const before = buildArrangementProjection(project, rowMetrics);
 
-    const target = project.song.placements[100];
+    const target = project.song.placements[1200];
     const edited = replacePlacement(project, {
       ...target,
-      startTicks: (target.startTicks + 192) as typeof target.startTicks,
+      startTicks: toTicks(target.startTicks + 192),
     });
-    expect(edited.song.placements[100]).not.toBe(target);
+    expect(edited.song.placements[0]).toBe(project.song.placements[0]);
 
-    fingerprintCalls = 0;
-    const after = buildArrangementProjection(edited, before);
-
-    // Exactly one placement is re-fingerprinted.
-    expect(fingerprintCalls).toBe(1);
-
-    const editedId = edited.song.placements[100].id;
-    expect(after.placementsById.get(editedId)).not.toBe(
-      before.placementsById.get(editedId),
-    );
-    for (const placement of edited.song.placements) {
-      if (placement.id === editedId) continue;
-      expect(after.placementsById.get(placement.id)).toBe(
-        before.placementsById.get(placement.id),
+    expect(revisionOf(edited.song.placements[1200])).not.toBe(revisionOf(target));
+    for (let i = 0; i < project.song.placements.length; i += 1) {
+      if (i === 1200) continue;
+      expect(revisionOf(edited.song.placements[i])).toBe(
+        revisionOf(project.song.placements[i]),
       );
     }
-  });
+    for (let i = 0; i < project.song.tracks.length; i += 1) {
+      expect(revisionOf(edited.song.tracks[i])).toBe(revisionOf(project.song.tracks[i]));
+    }
 
-  it("still detects a change when a track rename shifts row layout", () => {
-    // A row's fingerprint depends on layout position, not just the track
-    // object. This guards the one dep-list that carries scalars: renaming a
-    // track must still produce a fresh row (its name changed) even though the
-    // fast path keys partly on identity.
-    const project = referenceProject();
-    const before = buildArrangementProjection(project);
-
-    const edited = replaceTrack(project, {
-      ...project.song.tracks[0],
-      name: "Renamed",
-    });
-
-    const after = buildArrangementProjection(edited, before);
-    const rowId = edited.song.tracks[0].id;
-    expect(after.rowsById.get(rowId)).not.toBe(before.rowsById.get(rowId));
-    expect(after.rowsById.get(rowId)?.name).toBe("Renamed");
+    const after = buildArrangementProjection(edited, rowMetrics);
+    expect(after.placementsById.get(target.id)?.revision).not.toBe(
+      before.placementsById.get(target.id)?.revision,
+    );
+    for (const [id, geometry] of before.placementsById) {
+      if (id === target.id) continue;
+      expect(after.placementsById.get(id)?.revision).toBe(geometry.revision);
+    }
   });
 });

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { seedRegisteredSession } from "./support/authSession";
+import { reloadPage } from "./support/reload";
 
 /**
  * Proves {@link seedRegisteredSession} — the harness plumbing that gets a flow
@@ -44,7 +45,7 @@ test.describe("a seeded registered session", { tag: "@sanity" }, () => {
 
     // The step every flow ends on. If the session only lived in the page's
     // memory, this is where it would be sent back to the landing page.
-    await page.reload();
+    await reloadPage(page);
 
     await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
     await expect(page.getByText(GUEST_NOTICE)).toHaveCount(0);

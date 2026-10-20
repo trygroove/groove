@@ -4,6 +4,7 @@ import {
   ASSISTANT_TRANSCRIPTS_COLLECTION,
   preferenceDocPath,
 } from "../../../../src/assistant/transcripts";
+import { reloadPage } from "./reload";
 
 /**
  * Shared steps and locators for the assistant's core flows (CF-027, CF-028).
@@ -23,8 +24,9 @@ import {
  *  - the composer: a textbox named "Message Coproducer", and a button named
  *    "Scope: <what>" that says what the assistant reads and may change;
  *  - the conversation: a log named "Conversation";
- *  - a proposal: a region named "Proposal" with "Preview", "Apply" and "Cancel"
- *    buttons, which says "Applied" once it has been;
+ *  - a proposal: a region named "Proposal" with "Preview", "Apply all" and
+ *    "Cancel" buttons, which says "Applied" once it has been. It fills in part
+ *    by part as the turn streams (GRV-144), each part its own "Apply …";
  *  - a recommended pack (GRV-23, CF-034): a region named "Recommended pack:
  *    <pack>", with a list named "Sounds" whose items each hold a "Hear <sound>"
  *    button, and "Try on <slot>", "Keep", "Put back", "Pack demo" and "Open in
@@ -82,7 +84,7 @@ export async function goToView(page: Page, name: "Arrangement" | "Mixer"): Promi
 /** Wait for the last edit to be written, then reload. */
 export async function reloadSaved(page: Page): Promise<void> {
   await expect(page.locator(".save-status")).toHaveText("Saved", { timeout: 10_000 });
-  await page.reload();
+  await reloadPage(page);
 }
 
 // --- The assistant -----------------------------------------------------------
@@ -206,8 +208,9 @@ export const proposal = (page: Page): Locator =>
 
 export const proposalButton = (
   page: Page,
-  name: "Preview" | "Apply" | "Cancel",
-): Locator => proposal(page).getByRole("button", { name: new RegExp(`^${name}\\b`) });
+  /** "Apply" is a whole proposal's, as one restored after a reload is (GRV-135). */
+  name: "Preview" | "Apply" | "Apply all" | "Cancel",
+): Locator => proposal(page).getByRole("button", { name, exact: true });
 
 /** The newest recommended pack in the conversation (GRV-23). */
 export const recommendation = (page: Page): Locator =>

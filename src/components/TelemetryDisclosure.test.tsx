@@ -1,8 +1,10 @@
 import { cleanup, render, screen } from "@solidjs/testing-library";
+import { type JSX, Show } from "@solidjs/web";
 import userEvent from "@testing-library/user-event";
-import { flush } from "solid-js";
-import { afterEach, describe, expect, it } from "vitest";
+import { createSignal, flush } from "solid-js";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConsentStore } from "../analytics/consent";
+import { type ShortcutHandlers, useShortcuts } from "../shortcuts";
 import { memoryStorage } from "../testing/storage";
 import TelemetryDisclosure from "./TelemetryDisclosure";
 
@@ -199,4 +201,92 @@ describe("TelemetryDisclosure (PRD OPS-02, section 10 Security and privacy)", ()
     });
     expect(toggle).toHaveAttribute("aria-describedby", "telemetry-disclosure-note");
   });
+});
+
+// GRV-148: Escape closes the panel and gives focus back to the Privacy item,
+// through the registry's `view.close_surface`, as every other popover does.
+describe("TelemetryDisclosure Escape (GRV-148)", () => {
+  async function openPanel() {
+    setup();
+    const user = userEvent.setup();
+    const summary = screen.getByText("Privacy");
+    await user.click(summary);
+    const details = summary.closest("details") as HTMLDetailsElement;
+    await vi.waitFor(() => expect(details.open).toBe(true));
+    return { user, summary, details };
+  }
+
+  it("closes on Escape and returns focus to the summary", async () => {
+    const { user, summary, details } = await openPanel();
+    await user.keyboard("{Escape}");
+    await vi.waitFor(() => expect(details.open).toBe(false));
+    expect(summary).toHaveFocus();
+  });
+
+  it("closes on Escape pressed on the checkbox inside", async () => {
+    const { user, summary, details } = await openPanel();
+    screen.getByRole("checkbox").focus();
+    await user.keyboard("{Escape}");
+    await vi.waitFor(() => expect(details.open).toBe(false));
+    expect(summary).toHaveFocus();
+  });
+});
+
+// GRV-148 QA: a modal dialog opened over the panel (the shortcuts guide in the
+// studio) is the topmost surface, so one Escape closes the dialog alone and
+// the panel waits for the next one, whichever controller hears the key first.
+// In the studio the editor's controller is mounted long before the panel's.
+describe("TelemetryDisclosure Escape under a modal dialog (GRV-148)", () => {
+  /** A modal's Escape owner, like the editor's: it closes the dialog when open. */
+  function ModalOwner(props: { open: boolean; onClose(): void }): JSX.Element {
+    useShortcuts({
+      handlers: (): ShortcutHandlers => ({
+        "view.close_surface": { run: () => props.onClose() },
+      }),
+      contexts: () => [],
+    });
+    return (
+      <Show when={props.open}>
+        <div role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" />
+      </Show>
+    );
+  }
+
+  async function openBoth(ownerFirst: boolean) {
+    const store = new ConsentStore(memoryStorage());
+    const [dialogOpen, setDialogOpen] = createSignal(false);
+    const [ownerLate, setOwnerLate] = createSignal(false);
+    const owner = () => (
+      <ModalOwner open={dialogOpen()} onClose={() => setDialogOpen(false)} />
+    );
+    render(() => (
+      <>
+        <Show when={ownerFirst}>{owner()}</Show>
+        <TelemetryDisclosure store={store} />
+        <Show when={ownerLate()}>{owner()}</Show>
+      </>
+    ));
+    const user = userEvent.setup();
+    const summary = screen.getByText("Privacy");
+    await user.click(summary);
+    const details = summary.closest("details") as HTMLDetailsElement;
+    await vi.waitFor(() => expect(details.open).toBe(true));
+    if (!ownerFirst) setOwnerLate(true);
+    setDialogOpen(true);
+    flush();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    return { user, details, dialogOpen };
+  }
+
+  for (const ownerFirst of [true, false]) {
+    it(`one Escape closes only the dialog (its controller attached ${ownerFirst ? "before" : "after"} the panel's)`, async () => {
+      const { user, details, dialogOpen } = await openBoth(ownerFirst);
+      await user.keyboard("{Escape}");
+      flush();
+      expect(dialogOpen()).toBe(false);
+      expect(details.open).toBe(true);
+      await user.keyboard("{Escape}");
+      await vi.waitFor(() => expect(details.open).toBe(false));
+    });
+  }
 });

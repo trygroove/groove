@@ -9,7 +9,9 @@ import {
 import { controlsTouchedBy } from "../commands/controls";
 import { setParameter } from "../commands/definitions/parameters";
 import { createCommandTestProject } from "../commands/testProjects";
+import { createDevice } from "../domain/devices";
 import type { Project, Track } from "../domain/entities";
+import type { DeviceId } from "../domain/ids";
 import { SAMPLER_PITCH } from "../domain/parameters";
 import { readControl } from "./readControl";
 
@@ -101,6 +103,23 @@ describe("readControl (GRV-5)", () => {
       label: `Bass ${SAMPLER_PITCH.label.toLowerCase()}`,
       value: "+5 st",
     });
+  });
+
+  it("reads a device parameter as its proposal row always has", () => {
+    const device = {
+      ...createDevice("dev_comp" as DeviceId, "compressor", 0),
+      parameters: { ratio: 4, threshold: -6, attack: 0.02 },
+    };
+    const project = withTrack(fx.project, fx.trackAId, (track) => ({
+      ...track,
+      devices: [device],
+    }));
+    const read = (param: string) =>
+      readControl(project, controlAddress(device.id, param))?.value;
+    // A ratio is a bare number here, not the knob's "4.0:1" (GRV-179 kept it).
+    expect(read("ratio")).toBe("4");
+    expect(read("threshold")).toBe("-6.0 dB");
+    expect(read("attack")).toBe("20 ms");
   });
 
   it("reads a drum pad and a clip's notes", () => {
