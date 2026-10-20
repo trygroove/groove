@@ -6,7 +6,6 @@
  * It names tracks and pads by their names, as the project context the
  * assistant already reads does; it never goes near analytics.
  */
-import { formatParameterValue } from "../commands/definitions/parameters";
 import type { Clip, DrumPad, NoteEvent, Project, Track } from "../domain/entities";
 import {
   instrumentParameters,
@@ -15,6 +14,7 @@ import {
   synthWaveform,
 } from "../domain/parameters";
 import { TICKS_PER_BAR, TICKS_PER_SIXTEENTH } from "../domain/time";
+import { formatSummary } from "../domain/valueFormat";
 import { coveredTicks } from "./beat";
 
 /** The most lines a description runs to. */
@@ -177,7 +177,7 @@ function parameterLines(before: Track, after: Track): string[] {
   const show = (definition: typeof SYNTH_WAVEFORM, value: number) =>
     definition === SYNTH_WAVEFORM
       ? synthWaveform(value)
-      : formatParameterValue(definition, value);
+      : formatSummary(definition, value);
   const old = before.instrument;
   return instrumentParameters(instrument.kind).flatMap((definition) => {
     const was = readInstrumentParameter(definition, old?.parameters ?? {});
