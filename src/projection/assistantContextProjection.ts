@@ -53,6 +53,13 @@ export interface AssistantPlacementSummary {
   readonly startTicks: number;
   readonly durationTicks: number;
   readonly looped: boolean;
+  /**
+   * How long the placed clip is, which is not how long it plays: a one-bar
+   * clip looped for four bars plays 3,072 ticks and holds notes only in its
+   * first 768. Without it the model wrote a clip's notes across the whole
+   * placement, past the clip's end (GRV-116).
+   */
+  readonly clipLengthTicks: number;
 }
 
 export interface AssistantPadSummary {
@@ -121,6 +128,7 @@ function summarizeTrack(track: Track, project: Project): AssistantTrackSummary {
     (placement) => placement.trackId === track.id,
   );
   const clips = project.clips.filter((clip) => clip.trackId === track.id);
+  const clipLengths = new Map(clips.map((clip) => [clip.id, clip.lengthTicks]));
   return {
     id: track.id,
     name: track.name,
@@ -144,6 +152,8 @@ function summarizeTrack(track: Track, project: Project): AssistantTrackSummary {
         startTicks: placement.startTicks,
         durationTicks: placement.durationTicks,
         looped: placement.looped,
+        // A placement always names a clip of its own track (`parseProject`).
+        clipLengthTicks: clipLengths.get(placement.clipId) ?? 0,
       }))
       .sort((a, b) => a.startTicks - b.startTicks),
   };

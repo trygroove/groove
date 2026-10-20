@@ -123,6 +123,13 @@
  * with pointers at a chapter's end, and how to answer the moments a turn
  * waited with, in `earlier`) and the lesson as JSON. The fixed prompt
  * is unchanged, so a turn outside a lesson reads what it did.
+ *
+ * 2026-10-20.2 (GRV-116): on a kick-only project, a request to rework the
+ * kick came back as a proposal that could not be applied: the BD's one-bar
+ * clip loops for four bars, and the model, told only the placement's length,
+ * wrote four bars of notes into it. Each placement in the description now
+ * gives its clip's length, and the time rule says a clip's notes start
+ * before it, lengthened with clip_update to hold more.
  */
 import { customAlphabet } from "nanoid";
 import { ASSISTANT_NAME } from "../../site.config.mjs";
@@ -153,7 +160,7 @@ import type { AssistantContextPayload, AssistantLibraryContext } from "./protoco
 import type { ProviderTextBlock } from "./providerRequest";
 import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-20.1";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-20.2";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",
@@ -382,13 +389,13 @@ const ADDRESSING_IDS_AND_NOTES: PromptPassage = {
 /** Drop group `toolAddressing`: the bullets after the tactics' added lines. */
 const ADDRESSING_PARAMETERS_AND_TIME: PromptPassage = {
   full: `- parameter_set takes the full parameter ID at song, track, master, send and return scope: ${SONG_TEMPO.id} (${SONG_TEMPO.min} to ${SONG_TEMPO.max}) and ${SONG_SWING.id} (${SONG_SWING.min} straight to ${SONG_SWING.max}) on the song; ${TRACK_VOLUME.id} (${TRACK_VOLUME.min} to ${TRACK_VOLUME.max} dB) and ${TRACK_PAN.id} on a track; ${MASTER_VOLUME.id} on the master; ${TRACK_SEND_LEVEL.id} (0 to 1) on a send; ${RETURN_VOLUME.id} and ${RETURN_PAN.id} on a return. At instrument and device scope it takes the bare key listed below (cutoff, threshold).
-- A bar of 4/4 is ${TICKS_PER_BAR} ticks and a sixteenth ${TICKS_PER_SIXTEENTH}. A clip's notes sit at ticks inside the clip; a clip is at most ${MAX_CLIP_LENGTH_BARS} bars long. A placement puts a clip on its track's timeline at startTicks for durationTicks, and looped: true repeats the clip to fill it. Placements on one track may not overlap: each track's placements are in the description, so put a new one where nothing on its track is playing, or shorten or move the one in the way with placement_update in the same call.
+- A bar of 4/4 is ${TICKS_PER_BAR} ticks and a sixteenth ${TICKS_PER_SIXTEENTH}. A clip's notes sit at ticks inside the clip; a clip is at most ${MAX_CLIP_LENGTH_BARS} bars long. A placement puts a clip on its track's timeline at startTicks for durationTicks, and looped: true repeats the clip to fill it. Each placement in the description gives its clip's own length, clipLengthTicks, which a looped placement plays for longer: every note of a clip starts before its clip's length, so to write more bars into a clip that exists, lengthen it with clip_update first in the same proposal, or write one clip's worth and let the loop repeat it. Placements on one track may not overlap: each track's placements are in the description, so put a new one where nothing on its track is playing, or shorten or move the one in the way with placement_update in the same call.
 - A track's order runs from 0 and a new one goes at the end, at the number of tracks the description lists. A device's order is its place in its chain; 0 puts it first, which is always valid.`,
   moderate: `- parameter_set takes the full parameter ID at song, track, master, send and return scope: ${SONG_TEMPO.id} (${SONG_TEMPO.min} to ${SONG_TEMPO.max}) and ${SONG_SWING.id} (${SONG_SWING.min} straight to ${SONG_SWING.max}); ${TRACK_VOLUME.id} (${TRACK_VOLUME.min} to ${TRACK_VOLUME.max} dB) and ${TRACK_PAN.id}; ${MASTER_VOLUME.id}; ${TRACK_SEND_LEVEL.id} (0 to 1) on a send; ${RETURN_VOLUME.id} and ${RETURN_PAN.id}. At instrument and device scope it takes the bare key listed below (cutoff, threshold).
-- A 4/4 bar is ${TICKS_PER_BAR} ticks, a sixteenth ${TICKS_PER_SIXTEENTH}; notes sit at ticks inside their clip, which is at most ${MAX_CLIP_LENGTH_BARS} bars. A placement puts a clip on its track at startTicks for durationTicks, and looped: true repeats it to fill that. Placements on a track may not overlap: put a new one where its track is silent (the description lists each track's placements), or move or shorten the one in the way with placement_update in the same call.
+- A 4/4 bar is ${TICKS_PER_BAR} ticks, a sixteenth ${TICKS_PER_SIXTEENTH}; notes sit at ticks inside their clip, which is at most ${MAX_CLIP_LENGTH_BARS} bars. A placement puts a clip on its track at startTicks for durationTicks, and looped: true repeats it to fill that. Each placement listed gives its clip's own length (clipLengthTicks): a clip's notes start before it, so lengthen an existing clip with clip_update first to write more bars into it, or write one clip's worth and let the loop repeat it. Placements on a track may not overlap: put a new one where its track is silent (the description lists each track's placements), or move or shorten the one in the way with placement_update in the same call.
 - Track order runs from 0, and a new track's is the number of tracks listed (the end). A device's order is its place in its chain; 0, first, is always valid.`,
   aggressive: `- parameter_set takes full IDs at song, track, master, send and return scope (${SONG_TEMPO.id} ${SONG_TEMPO.min} to ${SONG_TEMPO.max}, ${SONG_SWING.id} ${SONG_SWING.min} to ${SONG_SWING.max}, ${TRACK_VOLUME.id} ${TRACK_VOLUME.min} to ${TRACK_VOLUME.max} dB, ${TRACK_PAN.id}, ${MASTER_VOLUME.id}, ${TRACK_SEND_LEVEL.id} 0 to 1, ${RETURN_VOLUME.id}, ${RETURN_PAN.id}), and the bare keys below (cutoff) at instrument and device scope.
-- A 4/4 bar is ${TICKS_PER_BAR} ticks, a sixteenth ${TICKS_PER_SIXTEENTH}; notes are clip-relative; a clip is at most ${MAX_CLIP_LENGTH_BARS} bars; a placement plays a clip at startTicks for durationTicks, and looped: true fills it. A track's placements may not overlap (the description lists them): use free space, or move or shorten the one in the way (placement_update) in the same call.
+- A 4/4 bar is ${TICKS_PER_BAR} ticks, a sixteenth ${TICKS_PER_SIXTEENTH}; notes are clip-relative; a clip is at most ${MAX_CLIP_LENGTH_BARS} bars; a placement plays a clip at startTicks for durationTicks, and looped: true fills it. A clip's notes start before its clipLengthTicks (listed on each placement): lengthen it (clip_update) first to write more bars. A track's placements may not overlap (the description lists them): use free space, or move or shorten the one in the way (placement_update) in the same call.
 - Track order runs from 0, a new one's is the track count; device order is the chain position, and 0 is always valid.`,
 };
 
