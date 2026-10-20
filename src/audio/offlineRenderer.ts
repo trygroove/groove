@@ -1,5 +1,6 @@
 import type * as Tone from "tone";
 import type { AudioSongProjection } from "../projection/audioProjection";
+import { isOutOfMemory } from "../shared/outOfMemory";
 import type { Scheduler } from "../shared/scheduler";
 import type { AssetBufferLoader } from "./AudioBufferCache";
 import type { InstrumentNodeFactory } from "./InstrumentGraph";
@@ -160,9 +161,13 @@ export async function renderProjectOffline(
     };
   } catch (error) {
     if (error instanceof OfflineRenderError) throw error;
-    throw new OfflineRenderError("internal", "The offline render failed", {
-      cause: error,
-    });
+    // The render itself failed (GRV-55): out of memory for a long one, or the
+    // graph threw while it ran.
+    throw new OfflineRenderError(
+      isOutOfMemory(error) ? "out_of_memory" : "render_failed",
+      "The offline render failed",
+      { cause: error },
+    );
   } finally {
     await session.release();
     // A render cancelled or failed part-way finishes, as silence now the graph is gone.

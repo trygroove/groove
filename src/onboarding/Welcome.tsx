@@ -25,7 +25,7 @@ import { scrollBehavior } from "../shared/motion";
 import { useShortcuts } from "../shortcuts/useShortcuts";
 import CueMark from "./CueMark";
 import { MemoryCard } from "./MemoryCard";
-import { fitRunout } from "./runout";
+import { centreRegion, fitRunout } from "./runout";
 import { type Onboarding, useOnboarding } from "./useOnboarding";
 import "../editor/assistant/AssistantPanel.css";
 import "./Welcome.css";
@@ -130,37 +130,41 @@ export default function Welcome(props: WelcomeProps): JSX.Element {
     },
   );
 
-  // A resize changes the room centring needs; it re-sizes the run-out
-  // without scrolling.
+  // Once the questions are done, the summary (the memory card down to Open
+  // the studio) takes the question's place in the middle of the screen. Keyed
+  // on the conversation and the save too, so it follows Coproducer's last
+  // reply and the button in rather than dropping to the screen's bottom edge.
+  let log: HTMLDivElement | undefined;
+  let actions: HTMLDivElement | undefined;
+  const centreSummary = (behavior: ScrollBehavior) => {
+    if (!log || !actions || !runout) return;
+    const summary = log.querySelector<HTMLElement>(".memory-card") ?? actions;
+    centreRegion(summary, actions, runout, behavior);
+  };
+  createEffect(
+    () =>
+      onboarding.stage() === "asking"
+        ? undefined
+        : `${onboarding.stage()}:${onboarding.entries().length}:${onboarding.streaming()}`,
+    (summary) => {
+      if (summary === undefined) return;
+      // A frame on, once the memory card and the button have laid out.
+      const frame = requestAnimationFrame(() => centreSummary(scrollBehavior()));
+      return () => cancelAnimationFrame(frame);
+    },
+  );
+
+  // A resize changes the room centring needs: a question's run-out is
+  // re-sized without scrolling, and the summary is centred again.
   createEffect(
     () => undefined,
     () => {
       const refit = () => {
-        if (askSlot && runout && onboarding.pendingAsk()) fitRunout(askSlot, runout);
+        if (onboarding.stage() !== "asking") centreSummary("auto");
+        else if (askSlot && runout && onboarding.pendingAsk()) fitRunout(askSlot, runout);
       };
       window.addEventListener("resize", refit);
       return () => window.removeEventListener("resize", refit);
-    },
-  );
-
-  // Once the answers are saved there is nothing left to centre: the run-out
-  // goes, and Open the studio scrolls up clear of the screen's bottom edge.
-  // Keyed on the conversation too, so it follows Coproducer's last reply in.
-  let actions: HTMLDivElement | undefined;
-  createEffect(
-    () =>
-      (onboarding.stage() === "saved" || onboarding.stage() === "save_failed") &&
-      !onboarding.streaming()
-        ? onboarding.entries().length
-        : 0,
-    (settled) => {
-      if (!settled) return;
-      if (runout) runout.style.height = "0px";
-      // A frame on, once the memory card and the button have laid out.
-      const frame = requestAnimationFrame(() =>
-        actions?.scrollIntoView?.({ block: "nearest", behavior: scrollBehavior() }),
-      );
-      return () => cancelAnimationFrame(frame);
     },
   );
 
@@ -194,6 +198,7 @@ export default function Welcome(props: WelcomeProps): JSX.Element {
       <div class="welcome-body">
         <div
           class="assistant-panel-log welcome-log"
+          ref={log}
           role="log"
           aria-live="polite"
           aria-label="Conversation"

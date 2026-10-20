@@ -10,8 +10,8 @@ import {
 } from "../commands";
 import type { ReturnBus, Send, Track } from "../domain/entities";
 import { TRACK_SEND_LEVEL } from "../domain/parameters";
+import { formatReadout } from "../domain/valueFormat";
 import FillSlider from "../instrument/FillSlider";
-import { formatInstrumentValue } from "../instrument/formatValue";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 
 export interface TrackSendsProps {
@@ -125,7 +125,7 @@ function SendLevel(props: {
       ariaLabel={`Send level from ${props.track.name} to ${props.returnBus.name}`}
       orientation="horizontal"
       value={props.level}
-      displayValue={formatInstrumentValue(TRACK_SEND_LEVEL, props.level)}
+      displayValue={formatReadout(TRACK_SEND_LEVEL, props.level)}
       onInput={(value) => control.input(value)}
       onCommit={(value, settle) => {
         control.commit(value, settle);

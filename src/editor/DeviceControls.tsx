@@ -17,13 +17,13 @@ import {
   clampParameterValue,
   type ParameterDefinition,
 } from "../domain/parameters";
+import { formatReadout } from "../domain/valueFormat";
 import ControlGroup from "../instrument/ControlGroup";
 import FillSlider from "../instrument/FillSlider";
 import OptionGroup from "../instrument/OptionGroup";
 import {
   deviceChoices,
   deviceParameterTarget,
-  formatDeviceValue,
   readDeviceControl,
   readDeviceParameter,
 } from "./deviceControlModel";
@@ -192,7 +192,7 @@ function DeviceSlider(props: {
         ariaLabel={
           props.label === props.definition.label ? undefined : props.definition.label
         }
-        displayValue={formatDeviceValue(props.definition, props.value)}
+        displayValue={formatReadout(props.definition, props.value)}
         disabled={props.derived}
         onInput={(next) => control.input(next)}
         onCommit={(next, settle) => control.commit(next, settle)}

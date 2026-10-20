@@ -18,6 +18,7 @@ import type { NoteTrigger, Project } from "../domain/entities";
 import type { AssetId, DeviceId, PadId, TrackId } from "../domain/ids";
 import { toLibrarySample } from "../library/insertion";
 import type { LibraryAsset } from "../library/manifest";
+import { audioContextStateKey } from "../monitoring/errorContext";
 import { CodedError, codeFor, reportError } from "../monitoring/errorReporting";
 import type { AudioAssetProjection } from "../projection/audioProjection";
 import {
@@ -31,6 +32,7 @@ import {
   previewAssetId,
 } from "../projection/previewOverride";
 import { createDeviceMeters } from "./deviceMeters";
+import { type LeakReportOptions, reportAudioLeaks } from "./leakReport";
 import { createTrackLevels, type TrackLevel } from "./trackLevels";
 
 /**
@@ -52,6 +54,17 @@ export interface AudioStartFailure {
   readonly attempt: number;
 }
 
+/**
+ * Sounds of this project that could not be loaded to play (GRV-55): missing,
+ * unreachable or undecodable. `count` is how many distinct sounds; `attempt`
+ * grows with each failure, so a notice the producer dismissed comes back for
+ * the next one.
+ */
+export interface SoundLoadFailure {
+  readonly count: number;
+  readonly attempt: number;
+}
+
 export interface ProjectAudioControls {
   readonly isPlaying: Accessor<boolean>;
   /**
@@ -59,6 +72,8 @@ export interface ProjectAudioControls {
    * started. Set by the same failures that report `audio_start_failed`.
    */
   readonly startFailure: Accessor<AudioStartFailure | null>;
+  /** The project's sounds that failed to load, or `null` while none has (GRV-55). */
+  readonly loadFailure: Accessor<SoundLoadFailure | null>;
   /** The playhead position in ticks, updated per animation frame while playing. */
   readonly positionTicks: Accessor<number>;
   /**
@@ -177,6 +192,10 @@ export interface UseProjectAudioOptions {
    * `AudioContext`, and a play gesture reports `not_supported`.
    */
   readonly webAudioAvailable?: boolean;
+  /** The error-reporting boundary; tests inject a recorder (GRV-55). */
+  readonly reportError?: typeof reportError;
+  /** How a project's leaked audio resources are reported (GRV-55); tests pin sampling. */
+  readonly leaks?: Pick<LeakReportOptions, "random" | "sampleRate" | "warn">;
 }
 
 /**
@@ -192,6 +211,14 @@ export const DEFAULT_RESUME_TIMEOUT_MS = 5_000;
  * reset `is_first_play_in_session` (PRD OPS-02).
  */
 let firstPlayInSession = true;
+
+/**
+ * How many project graphs this page has built: the second half of each
+ * graph's registry owner (GRV-55). Module-wide, not per hook, so an editor
+ * that remounts on the same project never reuses the owner of the graph still
+ * being disposed.
+ */
+let graphsBuilt = 0;
 
 /** Test-only: reset the session-first-play flag between tests. */
 export function __resetFirstPlayInSessionForTests(): void {
@@ -239,10 +266,18 @@ export function useProjectAudio(
     ((callback, delayMs) => setTimeout(callback, delayMs) as unknown as number);
   const clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle));
   const audioAvailable = options.webAudioAvailable ?? webAudioAvailable();
+  const report = options.reportError ?? reportError;
+  /** The context's state for a report: what the browser says, or why there is none. */
+  const audioContextState = () =>
+    audioAvailable ? audioContextStateKey(runtime.contextState?.()) : "unavailable";
 
   const [isPlaying, setIsPlaying] = createSignal(false);
   const [startFailure, setStartFailure] = createSignal<AudioStartFailure | null>(null);
   let startFailures = 0;
+  const [loadFailure, setLoadFailure] = createSignal<SoundLoadFailure | null>(null);
+  /** The sounds of the open project that failed to load, and how many failures. */
+  const failedAssets = new Set<string>();
+  let loadFailures = 0;
   const [positionTicks, setPositionTicks] = createSignal(0);
   const [loopEnabled, setLoopEnabled] = createSignal(false);
   const [loop, setLoop] = createSignal<LoopRange | null>(null);
@@ -254,6 +289,17 @@ export function useProjectAudio(
   let transport: TransportController | null = null;
   let metronome: TransportMetronome | null = null;
   let ownerId: string | null = null;
+  /**
+   * The registry owner of the current graph: the project's ID and which
+   * graph this is for it, so a graph built again for the same project (the
+   * hook remounting, or the project reopened) never has its resources
+   * counted as the last one's leaks.
+   */
+  let graphOwner: string | null = null;
+  /** Stops listening for the browser closing the context, once listening. */
+  let stopWatchingClose: (() => void) | null = null;
+  /** Whether a closed context has been reported: it is one failure, however many presses of Play meet it. */
+  let closeReported = false;
   let lastProjection: AudioSongProjection | undefined;
   let frameHandle: number | null = null;
   let preview: PreviewOverride | null = null;
@@ -320,10 +366,22 @@ export function useProjectAudio(
    * telemetry.
    */
   function reportAssetLoadFailure(asset: AudioAssetProjection, error: unknown): void {
+    const code = codeFor(error);
     analytics.log("asset_load_failed", {
       asset_type: assetLoadFailureType(asset.kind),
-      error_code: codeFor(error),
+      error_code: code,
     });
+    // Monitoring gets the code and the context's state, never the loader's
+    // own error: its message can carry the sound's URL or storage path.
+    report(new CodedError(code, "A sound could not be loaded"), {
+      area: "audio",
+      fatal: false,
+      code,
+      context: { audio_context_state: audioContextState() },
+    });
+    failedAssets.add(asset.id);
+    loadFailures += 1;
+    setLoadFailure({ count: failedAssets.size, attempt: loadFailures });
   }
 
   interface PeakWatcher {
@@ -397,9 +455,24 @@ export function useProjectAudio(
     metronome?.dispose();
     metronome = null;
     transport = null;
-    void graph?.dispose();
+    const closing = graph;
+    const closingOwner = graphOwner;
     graph = null;
+    if (closing && closingOwner) {
+      // Once the project's scope is disposed, anything still registered under
+      // it is a leak (GRV-55).
+      void closing.dispose().then(() =>
+        reportAudioLeaks(runtime.ownedResources?.(closingOwner) ?? [], {
+          ...options.leaks,
+          analytics,
+          report,
+        }),
+      );
+    }
     preview = null;
+    // A new project starts with none of the last one's failed sounds.
+    failedAssets.clear();
+    setLoadFailure(null);
   }
 
   // Split effect. `project()` is the effect's only reactive read, so the
@@ -425,10 +498,13 @@ export function useProjectAudio(
       if (!graph || ownerId !== current.metadata.id) {
         tearDown();
         ownerId = current.metadata.id;
-        graph = new ProjectAudioGraph(runtime, ownerId, {
+        graphsBuilt += 1;
+        graphOwner = `${ownerId}/${graphsBuilt}`;
+        graph = new ProjectAudioGraph(runtime, graphOwner, {
           underrunMonitor: underrunMonitor(),
           onAssetLoadFailure: reportAssetLoadFailure,
         });
+        stopWatchingClose ??= runtime.onContextClosed?.(handleContextClosed) ?? null;
         stopGraphTriggers = graph.watchTriggers(triggers.publish);
         metronome = new TransportMetronome(
           liveTransportEngine,
@@ -460,7 +536,22 @@ export function useProjectAudio(
     },
   );
 
+  /**
+   * The browser closed the context under the editor (GRV-55): the output
+   * device went away. Nothing can resume it, so playback stops here and the
+   * producer is told at once, not on the next press of Play.
+   */
+  function handleContextClosed(): void {
+    stop();
+    const error = new Error("The audio context was closed by the browser.");
+    error.name = "InvalidStateError";
+    reportStartFailure(error);
+    explainStartFailure(error);
+  }
+
   onCleanup(() => {
+    stopWatchingClose?.();
+    stopWatchingClose = null;
     tearDown();
     triggers.dispose();
   });
@@ -570,11 +661,24 @@ export function useProjectAudio(
   /** One failed start, reported as `audio_start_failed` and to monitoring. */
   function reportStartFailure(error: unknown): void {
     const code = codeFor(error);
+    // A closed context stays closed until the page reloads: one report, not
+    // one per press of Play.
+    if (code === "context_closed") {
+      if (closeReported) return;
+      closeReported = true;
+    }
     analytics.log("audio_start_failed", {
       error_code: code,
       was_browser_blocked: code === "autoplay_blocked",
     });
-    reportError(error, { area: "audio", fatal: false, code });
+    // The code, never the browser's own error: its message can name what
+    // was playing, so monitoring gets a fixed one.
+    report(new CodedError(code, "Audio could not start"), {
+      area: "audio",
+      fatal: false,
+      code,
+      context: { audio_context_state: audioContextState() },
+    });
   }
 
   /**
@@ -667,6 +771,7 @@ export function useProjectAudio(
   return {
     isPlaying,
     startFailure,
+    loadFailure,
     positionTicks,
     loopEnabled,
     loop,

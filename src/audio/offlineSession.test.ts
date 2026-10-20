@@ -197,4 +197,26 @@ describe("openOfflineSession", () => {
       "not_supported",
     );
   });
+
+  it("reports a render too long for the memory left as out of memory (GRV-55)", () => {
+    const Native = globalThis.OfflineAudioContext;
+    class Exhausted extends Native {
+      constructor(...args: ConstructorParameters<typeof OfflineAudioContext>) {
+        if (args.length > 0) throw new RangeError("Array buffer allocation failed");
+        super(...args);
+      }
+    }
+    globalThis.OfflineAudioContext = Exhausted as typeof OfflineAudioContext;
+    let error: unknown;
+    try {
+      open(createPianoRollFixtureProject());
+    } catch (caught) {
+      error = caught;
+    } finally {
+      globalThis.OfflineAudioContext = Native;
+    }
+    expect((error as import("./offlineSession").OfflineRenderError).code).toBe(
+      "out_of_memory",
+    );
+  });
 });

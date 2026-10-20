@@ -148,8 +148,12 @@ if (!shell.includes('<script type="module"')) {
 
 // The rewrite that puts each of them where it belongs.
 const hosting = JSON.parse(readFileSync("firebase.json", "utf8")).hosting;
-const rewrites = hosting.rewrites?.map((rule) => `${rule.source} -> ${rule.destination}`);
-const expected = ["/ -> /index.html", "** -> /app.html"];
+// The deep-link rewrite is a regex that skips any path containing a dot, so a
+// missing `/assets/*.js` is a 404 and not the app shell (GRV-137).
+const rewrites = hosting.rewrites?.map(
+  (rule) => `${rule.source ?? `regex:${rule.regex}`} -> ${rule.destination}`,
+);
+const expected = ["/ -> /index.html", "regex:^/[^.]*$ -> /app.html"];
 if (JSON.stringify(rewrites) !== JSON.stringify(expected)) {
   fail(
     `firebase.json rewrites are ${JSON.stringify(rewrites)}, expected ${JSON.stringify(expected)}.`,

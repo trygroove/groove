@@ -4,6 +4,7 @@ import type {
   AudioAssetProjection,
   AudioSongProjection,
 } from "../projection/audioProjection";
+import { isOutOfMemory } from "../shared/outOfMemory";
 import { type Scheduler, timeoutScheduler } from "../shared/scheduler";
 import type { AssetBufferLoader } from "./AudioBufferCache";
 import type { AudioHost, AudioProjectScope } from "./AudioRuntime";
@@ -99,7 +100,10 @@ export interface OfflineSession {
   release(): Promise<void>;
 }
 
-/** Opens a session. Throws `not_supported` if no offline context can exist. */
+/**
+ * Opens a session. Throws `not_supported` if no offline context can exist,
+ * and `out_of_memory` if one this long cannot be allocated.
+ */
 export function openOfflineSession(
   projection: AudioSongProjection,
   options: OfflineSessionOptions,
@@ -112,6 +116,13 @@ export function openOfflineSession(
     // Native where it can be, so the render can run in step with its clock.
     context = createOfflineContext(RENDER_CHANNELS, frames, sampleRate);
   } catch (error) {
+    // A song too long for the memory left is not a browser without offline
+    // rendering (GRV-55): the producer can close tabs, not switch browsers.
+    if (isOutOfMemory(error)) {
+      throw new OfflineRenderError("out_of_memory", "The render ran out of memory", {
+        cause: error,
+      });
+    }
     throw new OfflineRenderError("not_supported", "Offline rendering is unavailable", {
       cause: error,
     });

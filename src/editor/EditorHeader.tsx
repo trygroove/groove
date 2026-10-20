@@ -27,6 +27,7 @@ import ProjectNameInput from "./ProjectNameInput";
 import SaveStatus from "./SaveStatus";
 import SwingButton from "./SwingButton";
 import type { UseEditorSessionResult } from "./useEditorSession";
+import { useOnline } from "./useOnline";
 import type { ProjectAudioControls } from "./useProjectAudio";
 
 /**
@@ -117,6 +118,7 @@ export default function EditorHeader(props: EditorHeaderProps) {
   const analytics = () => props.analytics ?? defaultAnalytics;
   const [renaming, setRenaming] = createSignal(false);
   const [exporting, setExporting] = createSignal(false);
+  const online = useOnline();
   createEffect(exporting, (open) => {
     props.onExportOpenChange?.(open);
     return () => props.onExportOpenChange?.(false);
@@ -269,6 +271,7 @@ export default function EditorHeader(props: EditorHeaderProps) {
         <SaveStatus
           saveStatus={() => history().saveStatus}
           onRetry={() => void props.session.retry()}
+          online={online}
         />
         <Show when={props.assistant}>
           {(assistant) => (

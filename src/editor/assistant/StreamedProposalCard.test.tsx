@@ -79,6 +79,27 @@ const PLACEMENT: AssistantToolCall = {
   name: "placement_create",
   input: CREATE_EXAMPLES.placement,
 };
+/** Two more new tracks, each at the end of the song once the ones before it are in. */
+const HATS: AssistantToolCall = {
+  id: "toolu_hats",
+  name: "track_create",
+  input: {
+    ...CREATE_EXAMPLES.track,
+    id: "trk_HatsTrack000000000001",
+    name: "Hats",
+    order: 2,
+  },
+};
+const PAD: AssistantToolCall = {
+  id: "toolu_pad",
+  name: "track_create",
+  input: {
+    ...CREATE_EXAMPLES.track,
+    id: "trk_PadTrack0000000000001",
+    name: "Pad",
+    order: 3,
+  },
+};
 const EXPLAIN: AssistantToolCall = {
   id: "toolu_why",
   name: EXPLAIN_TOOL_NAME,
@@ -371,6 +392,35 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
     expect(applyAt(2)).toHaveAccessibleDescription("Needs Bass · 1 bar first");
   });
 
+  it("keeps a new track placed after another new one waiting for it, not out of date (QA of GRV-144)", async () => {
+    const { ask, part, finish, session } = await setUp();
+    await ask();
+    part(TRACK);
+    // At the end of the song once Bass is in: position 2 of 1 without it.
+    part(HATS);
+    part(PAD);
+    expect(within(card()).queryByText("Out of date")).toBeNull();
+    expect(applyOf("Bass · new track")).toBeEnabled();
+    expect(applyAt(1)).toBeDisabled();
+    expect(applyAt(1)).toHaveAccessibleDescription("Needs Bass first");
+    expect(applyAt(2)).toBeDisabled();
+    expect(applyAt(2)).toHaveAccessibleDescription("Needs Hats first");
+
+    await press(applyOf("Bass · new track"));
+    expect(applyOf("Hats · new track")).toBeEnabled();
+    expect(applyAt(2)).toHaveAccessibleDescription("Needs Hats first");
+    finish([TRACK, HATS, PAD]);
+    expect(cardStatus()).not.toHaveTextContent("out of date");
+    await press(cardButton("Apply all"));
+    expect(session.committedProject.song.tracks.map((track) => track.name)).toEqual([
+      "BD",
+      "Bass",
+      "Hats",
+      "Pad",
+    ]);
+    expect(session.history.entries).toHaveLength(2);
+  });
+
   it("applies only the rest with Apply all, as one undo step", async () => {
     const { ask, part, finish, session, swing, hasBass } = await setUp();
     await ask();
@@ -440,6 +490,31 @@ describe("a proposal that arrives part by part (GRV-144)", () => {
       ])}`,
     );
     expect(hasBass()).toBe(true);
+  });
+
+  it("tells Refresh a part applied and then removed is no longer in the song (QA of GRV-144)", async () => {
+    const { ask, part, finish, session, client } = await setUp();
+    await ask();
+    part(TRACK);
+    part(CLIP);
+    await press(applyOf("Bass · new track"));
+    // The producer deletes the track the part made: the clip on it goes stale.
+    const bass = session.committedProject.song.tracks.find(
+      (track) => track.name === "Bass",
+    );
+    if (!bass) throw new Error("Bass was not applied");
+    fireAndFlush(() => session.dispatch(removeTrack(bass.id)));
+    finish([TRACK, CLIP]);
+    expect(
+      within(lines()[1] as HTMLElement).getByText("Out of date"),
+    ).toBeInTheDocument();
+    await press(cardButton("Refresh"));
+    expect(client.turns[1]?.request.messages.at(-1)?.text).toBe(
+      `Add a bassline\n\n${refreshNote([
+        { text: "Bass · new track", applied: true, removed: true },
+        { text: "Bass · 1 bar", applied: false },
+      ])}`,
+    );
   });
 
   it("goes out of date when another streamed card applies a change to what a part touches", async () => {
