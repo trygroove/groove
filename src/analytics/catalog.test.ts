@@ -107,6 +107,7 @@ describe("event names", () => {
         "assistant_session_sad",
         "assistant_session_started",
         "assistant_suggestion_clicked",
+        "assistant_turn_failed",
         "assistant_video_expanded",
         "assistant_video_failed",
         "assistant_video_played",

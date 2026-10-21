@@ -433,6 +433,8 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
       ask.id === LESSON_OFFER_ASK_ID &&
       answer.picked.includes(LESSON_OFFER_YES) &&
       lesson.start(chapterForGoal(profile?.profile()?.memory.goal ?? null), "onboarding"),
+    // The offer goes once they type something else (GRV-206).
+    lapsesOnSend: (ask) => ask.id === LESSON_OFFER_ASK_ID,
     persistence: options.conversationKey
       ? {
           key: options.conversationKey,

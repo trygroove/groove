@@ -128,6 +128,38 @@ describe("createAssistantHandler", () => {
     },
   );
 
+  it("reports a provider down for everyone to error monitoring once, until a turn gets through (GRV-206)", async () => {
+    const errorLog = vi.spyOn(logger, "error").mockImplementation(() => {});
+    try {
+      const outOfCredit: CallScript = [
+        { fail: "rejected", status: 400, outOfCredit: true },
+      ];
+      const { handle } = handler([
+        outOfCredit,
+        outOfCredit,
+        replyEvents(["Back."]),
+        outOfCredit,
+      ]);
+      const ask = () =>
+        handle(
+          callable({ uid: "u", provider: "google.com" }),
+          streamingResponse().response,
+        );
+      const first = await httpsErrorOf(ask());
+      expect(first.code).toBe("unavailable");
+      expect(first.details).toEqual({ code: "provider_unavailable", retryable: true });
+      await httpsErrorOf(ask());
+      expect(errorLog).toHaveBeenCalledTimes(1);
+      expect(errorLog.mock.calls[0]?.[1]).toEqual({ failure_kind: "out_of_credit" });
+
+      await ask();
+      await httpsErrorOf(ask());
+      expect(errorLog).toHaveBeenCalledTimes(2);
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
   it("logs an unexpected error's name and code, never its message, as internal", async () => {
     const errorLog = vi.spyOn(logger, "error").mockImplementation(() => {});
     try {

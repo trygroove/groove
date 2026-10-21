@@ -21,7 +21,9 @@
  * `assistant_session_started`, on any transport.
  *
  * Signals come from the paths that already exist (the turn's end, a
- * proposal's outcome, the rating control); nothing here logs anything else.
+ * proposal's outcome, the rating control). The one other event here is
+ * `assistant_turn_failed`, once for every turn that ends in an error other
+ * than a cancel (GRV-206), so an alert can count failures by their code.
  * Framework-free, with the clock injected. A new conversation resets it, and
  * from then on a signal from one of the old conversation's turns (a late
  * error, an outcome on one of its cards) counts for nothing.
@@ -80,6 +82,7 @@ export type TurnEnding =
 export function turnSadReason(ending: TurnEnding): SadReason | null {
   if (ending.kind === "error") {
     if (ending.code === "cancelled") return null;
+    if (ending.code === "refused") return "refusal";
     return ending.code === "reply_too_long" ? "max_tokens" : "turn_error";
   }
   if (ending.stopped) return null;
@@ -175,6 +178,18 @@ export function createSessionHealth(options: SessionHealthOptions): SessionHealt
       return { session, index: turns };
     },
     turnEnded(ending, turn) {
+      // Every failed turn, sad session or not, old conversation or new
+      // (GRV-206): what an alert on a failing provider counts.
+      if (ending.kind === "error" && ending.code !== "cancelled") {
+        try {
+          options.analytics().log("assistant_turn_failed", {
+            code: ending.code,
+            turn_index_bucket: bucketOf("turn_index", turn.index),
+          });
+        } catch {
+          // As above.
+        }
+      }
       const reason = turnSadReason(ending);
       if (reason) signal(reason, turn);
     },

@@ -415,10 +415,15 @@ export interface AssistantTurnResult {
  * - `invalid_request`: the request did not parse, or its context cannot fit.
  * - `timeout`: the provider went quiet for longer than an attempt may.
  * - `cancelled`: the browser went away; the provider call was abandoned.
- * - `provider_unavailable`: rate limited, overloaded or down, after retries.
+ * - `provider_unavailable`: rate limited, overloaded or down, after retries;
+ *   or down for everyone, with the account out of credit or no API key
+ *   (GRV-206).
  * - `provider_error`: the provider refused the request itself (a 4xx), or
  *   ended the reply for a reason a turn never has (`pause_turn`, a reason
- *   newer than this code); retrying fixes neither.
+ *   newer than this code); retrying fixes neither. Not the model refusing.
+ * - `refused`: the model itself refused, with nothing else to show
+ *   (`stopReason: "refusal"` and no text). Only the browser's client raises
+ *   it (`assistantClient.ts`, GRV-206).
  * - `malformed_response`: the provider's stream broke, or its reply failed
  *   validation.
  * - `reply_too_long`: the reply ran out of room (`max_tokens`) before it
@@ -436,6 +441,7 @@ export const ASSISTANT_ERROR_CODES = [
   "cancelled",
   "provider_unavailable",
   "provider_error",
+  "refused",
   "malformed_response",
   "reply_too_long",
   "quota_exceeded",

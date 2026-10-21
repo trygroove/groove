@@ -338,6 +338,14 @@ export interface UseAssistantConversationOptions {
    * Coproducer instead.
    */
   readonly takeAnswer?: (ask: AssistantAsk, answer: AskAnswer) => boolean;
+  /**
+   * Whether a question still waiting lapses when the producer sends a message
+   * of their own instead of answering it, as dismissed. The welcome's offer
+   * of a first lesson does (GRV-206): they have moved on, and the model never
+   * read the offer. A question the model asked does not: it is in the
+   * conversation, and the answer may still come.
+   */
+  readonly lapsesOnSend?: (ask: AssistantAsk) => boolean;
   /** Hears each memory proposal as it arrives, under its entry's ID (GRV-25). */
   readonly onMemoryProposal?: (entryId: string, proposal: MemoryProposal) => void;
   /** Hears that Coproducer asked a question skipped in onboarding (GRV-25). */
@@ -886,6 +894,8 @@ export function useAssistantConversation(
   function send(text: string, suggestion?: SuggestionId): boolean {
     const message = text.trim();
     if (!canStart() || message.length === 0) return false;
+    const waiting = pendingAsk();
+    if (waiting && options.lapsesOnSend?.(waiting.ask)) dismissAsk();
     if (suggestion) {
       options
         .analytics()

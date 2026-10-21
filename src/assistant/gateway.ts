@@ -33,7 +33,13 @@
  *    completed or failed, when the browser said product analytics is allowed
  *    (GRV-126, `traces.ts`), with the request and reply in it only for an
  *    account whose conversations are kept. Tracing never fails or changes
- *    the turn either.
+ *    the turn either;
+ * 11. ends a turn the provider failed at its own end with one
+ *    `assistant_provider_down` event to the same sink, whatever the
+ *    producer's consent (GRV-206, `traces.ts`). An account out of credit, or
+ *    a function with no API key, refuses every turn alike: that is the
+ *    provider unavailable for everyone (`provider_unavailable`, never
+ *    "refused"), and it is reported to error monitoring too.
  *
  * Every turn offers the model the assistant's tool set (GRV-4) and
  * `ask_producer` (GRV-42). A turn that stops for `tool_use` returns its
@@ -100,7 +106,13 @@ import {
   type AssistantTurnResult,
   assistantTurnRequestSchema,
 } from "./protocol";
-import { type AssistantProvider, ProviderFailure } from "./provider";
+import {
+  type AssistantProvider,
+  downForEveryone,
+  type ProviderDownKind,
+  ProviderFailure,
+  providerDownKind,
+} from "./provider";
 import {
   buildProviderRequest,
   continuesTurn,
@@ -148,6 +160,7 @@ import {
   type GenerationCall,
   type GenerationResult,
   generationEvents,
+  providerDownEvent,
   traceConsent,
 } from "./traces";
 import { permitsRetention, type TranscriptStore } from "./transcripts";
@@ -226,6 +239,12 @@ export interface AssistantGatewayDeps {
   readonly traces?: AssistantTraceSink;
   /** A fresh trace ID for a turn whose request names no session; random by default. */
   readonly traceId?: () => string;
+  /**
+   * Hears that a turn failed because the provider is down for everyone
+   * (GRV-206): the account out of credit, or no API key. The Cloud Function
+   * reports it to error monitoring. A kind, never the provider's message.
+   */
+  readonly onProviderDown?: (kind: ProviderDownKind) => void;
 }
 
 export interface AssistantTurnOptions {
@@ -508,7 +527,15 @@ function addUsage(a: ProviderUsage, b: ProviderUsage): ProviderUsage {
   };
 }
 
+const PROVIDER_DOWN_MESSAGE =
+  "The assistant is unavailable right now. Everything else in Groove works as usual.";
+
 function errorForFailure(failure: ProviderFailure): AssistantGatewayError {
+  // Every account is refused the same way until someone at Groove acts: the
+  // provider is unavailable, not this request refused (GRV-206).
+  if (downForEveryone(providerDownKind(failure))) {
+    return new AssistantGatewayError("provider_unavailable", PROVIDER_DOWN_MESSAGE);
+  }
   switch (failure.kind) {
     case "rejected":
       return new AssistantGatewayError(
@@ -855,6 +882,29 @@ export async function runAssistantTurn(
       }),
     );
 
+  /**
+   * A turn that ends on a provider-level failure says so to PostHog, as the
+   * server and whatever the producer's consent, since it is about Groove's
+   * account and carries nothing of theirs (`traces.ts`); one that is down for
+   * everyone is reported to error monitoring as well (GRV-206). Neither ever
+   * fails or changes the turn.
+   */
+  const reportProviderDown = (failure: ProviderFailure) => {
+    const kind = providerDownKind(failure);
+    if (kind === null) return;
+    try {
+      deps.traces?.capture(providerDownEvent(kind, failure.status));
+    } catch {
+      // As a trace: never the turn's failure.
+    }
+    if (!downForEveryone(kind)) return;
+    try {
+      deps.onProviderDown?.(kind);
+    } catch {
+      // As above.
+    }
+  };
+
   const stopHeartbeat = startHeartbeat(
     options.onChunk,
     limits.heartbeatIntervalMs ?? ASSISTANT_HEARTBEAT_INTERVAL_MS,
@@ -955,7 +1005,10 @@ export async function runAssistantTurn(
           outcome.failure.transient &&
           !outcome.streamedText &&
           attempts < limits.maxAttempts;
-        if (!retry) throw errorForFailure(outcome.failure);
+        if (!retry) {
+          reportProviderDown(outcome.failure);
+          throw errorForFailure(outcome.failure);
+        }
         try {
           await sleep(limits.retryBackoffMs * 2 ** (attempts - 1), options.signal);
         } catch {

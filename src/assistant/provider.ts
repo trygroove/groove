@@ -78,6 +78,11 @@ export class ProviderFailure extends Error {
    * message, which is never kept. The evals stop on it (`evals/run.ts`).
    */
   readonly outOfCredit: boolean;
+  /**
+   * The provider was built with no API key (the secret unset or empty), so
+   * it refuses every call before reaching the API (GRV-206).
+   */
+  readonly noApiKey: boolean;
   /** Why the provider refused, where the evals kept it; otherwise `null`. */
   readonly reason: ProviderRejection | null;
 
@@ -86,6 +91,7 @@ export class ProviderFailure extends Error {
     status: number | null = null,
     options: {
       readonly outOfCredit?: boolean;
+      readonly noApiKey?: boolean;
       readonly reason?: ProviderRejection | null;
     } = {},
   ) {
@@ -94,6 +100,7 @@ export class ProviderFailure extends Error {
     this.kind = kind;
     this.status = status;
     this.outOfCredit = options.outOfCredit ?? false;
+    this.noApiKey = options.noApiKey ?? false;
     this.reason = options.reason ?? null;
   }
 
@@ -108,4 +115,47 @@ export function failureKindForStatus(status: number): ProviderFailureKind {
   if (status === 529) return "overloaded";
   if (status >= 500) return "server_error";
   return "rejected";
+}
+
+/**
+ * How a provider is failing every account at once, as `assistant_provider_down`
+ * names it (GRV-206): the account out of credit, no API key, or a refusal,
+ * overload, rate limit or server error that a turn could not get past.
+ */
+export const PROVIDER_DOWN_KINDS = [
+  "out_of_credit",
+  "no_api_key",
+  "rejected",
+  "overloaded",
+  "rate_limited",
+  "server_error",
+] as const;
+export type ProviderDownKind = (typeof PROVIDER_DOWN_KINDS)[number];
+
+/**
+ * The provider-level failure `failure` is, or `null` for one that says
+ * nothing about the provider: the network, a garbled stream, a stop reason a
+ * turn never has.
+ */
+export function providerDownKind(failure: ProviderFailure): ProviderDownKind | null {
+  if (failure.outOfCredit) return "out_of_credit";
+  if (failure.noApiKey) return "no_api_key";
+  switch (failure.kind) {
+    case "rejected":
+    case "overloaded":
+    case "rate_limited":
+    case "server_error":
+      return failure.kind;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Whether a failure stops the provider for every account until someone at
+ * Groove acts (tops up the credit, sets the key): told apart from a request
+ * this turn alone got wrong, and reported to error monitoring.
+ */
+export function downForEveryone(kind: ProviderDownKind | null): boolean {
+  return kind === "out_of_credit" || kind === "no_api_key";
 }

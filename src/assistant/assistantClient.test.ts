@@ -362,7 +362,9 @@ describe("the assistant client: every turn ends (GRV-42)", () => {
   it.each([
     ["end_turn", "malformed_response"],
     ["tool_use", "malformed_response"],
-    ["refusal", "provider_error"],
+    // The model's own refusal has its own code (GRV-206): `provider_error`
+    // is the provider failing, which its card no longer blames on the model.
+    ["refusal", "refused"],
   ])(
     "fails a %s turn with no text, proposal or question as %s",
     async (stopReason, code) => {

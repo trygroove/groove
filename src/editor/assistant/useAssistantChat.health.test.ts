@@ -166,8 +166,41 @@ async function setUp() {
           : "started",
       );
 
-  return { chat: theChat, client: fake, clock, session, setKey, propose, health };
+  /** Each `assistant_turn_failed` so far, by its code (GRV-206). */
+  const failedTurns = () =>
+    transport.events
+      .filter((event) => event.name === "assistant_turn_failed")
+      .map((event) => event.params.code);
+
+  return {
+    chat: theChat,
+    client: fake,
+    clock,
+    session,
+    setKey,
+    propose,
+    health,
+    failedTurns,
+  };
 }
+
+describe("a chat's failed turns (GRV-206)", () => {
+  it("logs assistant_turn_failed once per failed turn, and not for one that answered", async () => {
+    const { chat, client, failedTurns } = await setUp();
+    for (const text of ["so what do I do now", "make a beat"]) {
+      expect(chat.conversation.send(text)).toBe(true);
+      await settle();
+      client.last().fail({ code: "provider_error", retryable: false });
+      flush();
+    }
+    expect(chat.conversation.send("hello")).toBe(true);
+    await settle();
+    client.last().text("Hi.");
+    client.last().done();
+    flush();
+    expect(failedTurns()).toEqual(["provider_error", "provider_error"]);
+  });
+});
 
 describe("a chat's sad sessions (GRV-103)", () => {
   it("counts a proposal rejected as stale", async () => {

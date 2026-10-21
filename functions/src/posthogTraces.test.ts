@@ -8,7 +8,11 @@ import { describe, expect, it, vi } from "vitest";
 import { createInMemoryGuardStores } from "../../src/assistant/inMemoryGuardStores";
 import { createInMemoryTranscriptStore } from "../../src/assistant/inMemoryTranscriptStore";
 import type { AssistantTurnRequest } from "../../src/assistant/protocol";
-import type { AiGenerationEvent } from "../../src/assistant/traces";
+import {
+  type AiGenerationEvent,
+  ASSISTANT_SERVER_DISTINCT_ID,
+  providerDownEvent,
+} from "../../src/assistant/traces";
 import {
   createScriptedAssistantProvider,
   MINIMAL_ASSISTANT_CONTEXT,
@@ -68,6 +72,22 @@ describe("createPostHogTraces", () => {
     traces(client).sink.capture(EVENT);
     expect(client.captured).toEqual([
       { distinctId: "uid-1", event: "$ai_generation", properties: EVENT.properties },
+    ]);
+  });
+
+  it("sends assistant_provider_down as the server, with no person (GRV-206)", () => {
+    const client = fakeClient();
+    traces(client).sink.capture(providerDownEvent("out_of_credit", 400));
+    expect(client.captured).toEqual([
+      {
+        distinctId: ASSISTANT_SERVER_DISTINCT_ID,
+        event: "assistant_provider_down",
+        properties: {
+          failure_kind: "out_of_credit",
+          http_status: 400,
+          $process_person_profile: false,
+        },
+      },
     ]);
   });
 
@@ -177,6 +197,9 @@ describe("the assistant callable's traces", () => {
     }));
     await expect(handle(request)).rejects.toMatchObject({ code: "failed-precondition" });
     expect(flush).toHaveBeenCalledTimes(1);
-    expect(client.captured).toHaveLength(1);
+    // The call's trace, and the provider's refusal as the server (GRV-206).
+    expect(
+      (client.captured as { event: string }[]).map((event) => event.event).sort(),
+    ).toEqual(["$ai_generation", "assistant_provider_down"]);
   });
 });

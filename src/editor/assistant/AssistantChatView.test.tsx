@@ -346,6 +346,29 @@ describe("the assistant's inline errors", () => {
     });
   }
 
+  it("says a provider error is Coproducer being unavailable, with nothing about the model refusing (GRV-206)", async () => {
+    const { client } = renderChat();
+    await send("so what do I do now");
+    fireAndFlush(() => client.last().fail({ code: "provider_error", retryable: false }));
+    const alert = within(log()).getByRole("alert");
+    expect(alert.querySelector("b")).toHaveTextContent(
+      /^Coproducer is unavailable right now\.$/,
+    );
+    expect(alert.querySelector("span")?.textContent).toBe(ERROR_REASSURANCE);
+    expect(alert).not.toHaveTextContent(/couldn't reply|refused|model/);
+  });
+
+  it("keeps the model-refusal wording for the model's own refusal (GRV-206)", async () => {
+    const { client } = renderChat();
+    await send("Help");
+    fireAndFlush(() => client.last().fail({ code: "refused", retryable: false }));
+    const alert = within(log()).getByRole("alert");
+    expect(alert.querySelector("b")).toHaveTextContent(/^Coproducer couldn't reply\.$/);
+    expect(alert.querySelector("span")?.textContent).toBe(
+      `Its model refused the request. ${ERROR_REASSURANCE}`,
+    );
+  });
+
   it("tries the same turn again, and the reply takes the error's place", async () => {
     const { client, transport } = renderChat();
     await send("Help");

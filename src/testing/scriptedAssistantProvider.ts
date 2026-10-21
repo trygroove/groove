@@ -19,6 +19,8 @@ export type ScriptStep =
       readonly status?: number;
       /** The account is out of API credit (`ProviderFailure.outOfCredit`). */
       readonly outOfCredit?: boolean;
+      /** The provider has no API key (`ProviderFailure.noApiKey`). */
+      readonly noApiKey?: boolean;
     }
   /** Never yields again until the call is aborted. */
   | { readonly hang: true }
@@ -207,6 +209,7 @@ export function createScriptedAssistantProvider(
           } else if ("fail" in step) {
             throw new ProviderFailure(step.fail, step.status ?? null, {
               outOfCredit: step.outOfCredit,
+              noApiKey: step.noApiKey,
             });
           } else if ("wait" in step) {
             await new Promise<void>((resolve) => setTimeout(resolve, step.wait));

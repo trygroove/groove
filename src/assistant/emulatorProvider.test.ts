@@ -117,6 +117,12 @@ describe("the emulator's assistant provider", () => {
     expect((await second.result).text).toBe(EMULATOR_REPLY_CHUNKS.join(""));
   });
 
+  it("refuses [rejected] as a provider error before saying anything (GRV-206)", async () => {
+    const rejected = turn(gateway(), "so what do I do now [rejected]");
+    expect(await codeOf(rejected.result)).toBe("provider_error");
+    expect(rejected.chunks.filter((chunk) => chunk.text.length > 0)).toEqual([]);
+  });
+
   it("asks the memory it is given whether [flaky] failed before", async () => {
     const asked: string[] = [];
     const deps = {

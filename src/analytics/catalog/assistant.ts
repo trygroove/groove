@@ -1,6 +1,7 @@
 // The assistant: messages, suggestions, the questions it asks, and the
 // proposals it makes.
 
+import { ASSISTANT_ERROR_CODES } from "../../assistant/protocol";
 import {
   type AnalyticsEventDefinition,
   boolParam,
@@ -429,6 +430,23 @@ export const ASSISTANT_EVENTS = {
       signal_class: enumParam(ASSISTANT_SAD_SIGNAL_CLASSES),
       turn_index_bucket: bucketParam("turn_index"),
       counts_for: enumParam(ASSISTANT_SAD_RATES),
+    },
+  },
+
+  /**
+   * A turn failed (GRV-206): once per failed turn, with the gateway's (or the
+   * browser client's) error code, a fixed list and never the provider's
+   * words. A turn the producer stopped or cancelled is not one. What a
+   * PostHog alert on `provider_error` and `provider_unavailable` watches, for
+   * every producer whatever the assistant's traces may send.
+   * `turn_index_bucket` is the turn of the conversation that failed.
+   */
+  assistant_turn_failed: {
+    phase: 3,
+    owners: ["GRV-206"],
+    params: {
+      code: enumParam(ASSISTANT_ERROR_CODES),
+      turn_index_bucket: bucketParam("turn_index"),
     },
   },
 

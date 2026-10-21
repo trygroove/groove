@@ -237,3 +237,49 @@ describe("session health (GRV-103)", () => {
     expect(() => health.rated("down", one)).not.toThrow();
   });
 });
+
+describe("assistant_turn_failed (GRV-206)", () => {
+  const failures = (transport: ReturnType<typeof setup>["transport"]) =>
+    transport.events
+      .filter((event) => event.name === "assistant_turn_failed")
+      .map(({ params }) => ({
+        code: params.code,
+        turn_index_bucket: params.turn_index_bucket,
+      }));
+
+  it("fires once per failed turn, with its code and turn, every time", () => {
+    const { health, transport } = setup();
+    const one = health.messageSent();
+    health.turnEnded({ kind: "error", code: "provider_error" }, one);
+    const two = health.messageSent();
+    health.turnEnded({ kind: "error", code: "provider_error" }, two);
+    const three = health.messageSent();
+    health.turnEnded({ kind: "error", code: "refused" }, three);
+    expect(failures(transport)).toEqual([
+      { code: "provider_error", turn_index_bucket: "1" },
+      { code: "provider_error", turn_index_bucket: "2_3" },
+      { code: "refused", turn_index_bucket: "2_3" },
+    ]);
+  });
+
+  it("does not fire for a turn that completed, was stopped or was cancelled", () => {
+    const { health, transport } = setup();
+    const one = health.messageSent();
+    health.turnEnded({ kind: "done", stopped: false, stopReason: "end_turn" }, one);
+    const two = health.messageSent();
+    health.turnEnded({ kind: "done", stopped: true, stopReason: null }, two);
+    const three = health.messageSent();
+    health.turnEnded({ kind: "error", code: "cancelled" }, three);
+    expect(failures(transport)).toEqual([]);
+  });
+
+  it("counts the model refusing as a refusal, not a turn error", () => {
+    const { health, events } = setup();
+    health.turnEnded({ kind: "error", code: "refused" }, health.messageSent());
+    expect(events()).toEqual([
+      "started",
+      "sad:full:refusal:hard",
+      "sad:hard:refusal:hard",
+    ]);
+  });
+});
