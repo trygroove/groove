@@ -31,7 +31,7 @@ import {
   blurValueField,
   type FocusedValueField,
   focusValueField,
-} from "../composition/valueFieldFocus";
+} from "../composition/editorFocus";
 
 /** The transformations that act on the whole clip, whatever is selected. */
 const CLIP_WIDE: ReadonlySet<TransformKind> = new Set(["duplicate", "halve", "clear"]);
@@ -228,7 +228,7 @@ function rejectionMessage(kind: TransformKind): string {
  * A value you can type into. Enter or leaving the field commits what was
  * typed; anything that does not read as a value is refused, flagged, and put
  * back to the last good one. While it has focus the shortcut registry's
- * ↑/↓ nudge it (see `valueFieldFocus.ts`), and Esc closes the dialog as
+ * ↑/↓ nudge it (see `editorFocus.ts`), and Esc closes the dialog as
  * everywhere: the field never reads a key itself.
  */
 function ValueField<T>(props: {

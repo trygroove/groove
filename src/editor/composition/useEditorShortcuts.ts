@@ -20,14 +20,13 @@ import type { PianoRollActions } from "../pianoRoll/rollActions";
 import { deleteTrack, type TrackDeletionContext } from "../tracks/trackActions";
 import type { TrackSelection } from "../tracks/useTrackSelection";
 import type { SongControls } from "../transport/useSongControls";
-import { arrangementHasFocus } from "./arrangementFocus";
+import { arrangementHasFocus, focusedValueField } from "./editorFocus";
 import * as model from "./editorViewModel";
 import type { EditorViewName } from "./editorViews";
 import type { EditingSurfaces } from "./useEditingSurfaces";
 import type { EditorNavigation } from "./useEditorNavigation";
 import type { UseEditorSessionResult } from "./useEditorSession";
 import type { ProjectAudioControls } from "./useProjectAudio";
-import { focusedValueField } from "./valueFieldFocus";
 
 export interface UseEditorShortcutsOptions {
   /** The view on screen, which comes from the URL (`UI-001`). */
