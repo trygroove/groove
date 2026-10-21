@@ -319,7 +319,7 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends t
 - The three-tier Firestore layout is a contract: `projects/{projectId}` metadata, `projects/{projectId}/song/current`, `projects/{projectId}/clips/{clipId}`, and `projects/{projectId}/arrangement/{trackId}` chunks when the song document exceeds its budget. See [`docs/persistence.md`](./docs/persistence.md).
 - `src/persistence/documents.ts` owns every collection path and document body. No other module builds a Firestore path or document for a project.
 - Every write is revision-checked and every tier is written independently: a note edit writes one clip document, never song structure.
-- `ProjectRepository` has an in-memory and a Firestore implementation, and both run the same contract suite. Only `firestoreProjectRepository.ts` imports `firebase/firestore`, so it is not re-exported from the directory barrel.
+- `ProjectRepository` has an in-memory and a Firestore implementation, and both run the same contract suite. The Firestore implementation is one of the few modules allowed to import `firebase/firestore`; `src/projection/boundaries.test.ts` holds the list (see "Firestore Data Access" above).
 - Autosave (`autosave.ts`) coalesces rapid edits, exposes save state, keeps a failed write queued for retry, and ignores remote echoes at or below the local revision.
 
 ### Shared command layer (`src/commands`)
