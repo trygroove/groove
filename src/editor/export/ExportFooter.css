@@ -134,11 +134,17 @@
   background: var(--color-accent);
 }
 
-/* A narrow window (GRV-156, GRV-166): the readouts, the message and the actions
-   wrap onto their own rows at the window's width. Above this the two fixed
-   readouts and the 268px actions leave the message under 150px, so at 768-800px
-   it shrank to nothing; 820px keeps Groove's 768px minimum inside the rule. */
-@media (max-width: 820px) {
+/* A narrow footer (GRV-156, GRV-166): the readouts, the message and the actions
+   wrap onto their own rows. The two fixed readouts, the 268px actions, three
+   gaps and the padding take 838px of the row, so the message only gets a
+   readable 180px from a 1018px footer. The rule asks the footer's own width,
+   not the window's: the dialog's width follows the window by its margins, so a
+   window breakpoint left the message 0px wide just above it (821px). */
+.export-footer-frame {
+  container-type: inline-size;
+}
+
+@container (width < 1018px) {
   .export-footer {
     flex-wrap: wrap;
     align-items: flex-start;
