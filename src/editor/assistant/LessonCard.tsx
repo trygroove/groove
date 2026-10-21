@@ -36,7 +36,9 @@ export function endingWord(ending: BiteStatus): string {
 
 /** The card's eyebrow: where the lesson stands. */
 export function lessonPlace(state: LessonState): string {
-  const bites = `bite ${state.biteIndex + 1} of ${chapterOf(state).bites.length}`;
+  // A bite over waits for Next, so the place says it is done, not still to do.
+  const over = state.step === null ? " · done" : "";
+  const bites = `bite ${state.biteIndex + 1} of ${chapterOf(state).bites.length}${over}`;
   if (!state.track) return `Lesson · ${bites}`;
   const chapter = state.chapter as (typeof TRACK_CHAPTER_IDS)[number];
   return `${TRACK_TITLE} · chapter ${trackChapterNumber(chapter)} of ${TRACK_CHAPTER_IDS.length} · ${bites}`;
@@ -81,6 +83,9 @@ export default function LessonCard(props: {
     const ending = props.state.endings[id];
     if (ending) return ending;
     if (props.state.passed.includes(id)) return "passed";
+    // "Finish a track" passes over only what it says it does (GRV-44): a bite
+    // done in another lesson or song, and taught again here, is not done yet.
+    if (props.state.track) return props.state.behind.includes(id) ? "earlier" : null;
     return props.lesson.done().includes(id) ? "earlier" : null;
   };
   const definitionId = "lesson-definition";

@@ -49,9 +49,9 @@ src/
 ├── components/     # App-level UI: landing page, dashboard, dialogs
 ├── controls/       # The shared control registry and marks
 ├── domain/         # Canonical schema-v1 domain model (authoritative)
-├── editor/         # The project editor: session, audio wiring, panes and panels
+├── editor/         # The project editor, in feature folders (composition, devices, instrument, library, mixer, sequence, tracks, transport, plus assistant, export, pianoRoll): session, audio wiring, panes, device faceplates and panels
 ├── export/         # Stem export: rendering, batching and archives
-├── instrument/     # Instrument faceplate parts
+├── instrument/     # Faceplate parts shared by instruments and devices (Well, DragSurface, FilterWell, sliders) and the sampler/synth panels
 ├── lessons/        # Coproducer's lessons (GRV-43): the chapters and bites, each step's predicate and Show me, the glossary, the lesson session; pure, over a Project
 ├── library/        # Read side of the generated factory asset manifest
 ├── memory/         # What Coproducer remembers about the producer (GRV-25): the profile hook, memory proposals and their receipts, the Memory page, the daily nudge
@@ -61,7 +61,7 @@ src/
 ├── projection/     # Read-only projections of a Project for audio, arrangement, summary, assistant
 ├── routes/         # Page modules `router.tsx` points at (not file-based routing)
 ├── selection/      # UI-only selection and focus state, never persisted
-├── shared/         # Helpers production code and tests both use: ids, clock, scheduler, schema
+├── shared/         # Helpers production code and tests both use: clock, scheduler, aria, motion, pending writes (entity IDs live in `src/domain/ids.ts`)
 ├── shortcuts/      # The one keyboard-shortcut registry and its dispatch (see docs/shortcuts.md)
 ├── testing/        # Helpers only tests use
 ├── userData/       # What a user stores outside projects, and the usage cap (#282)
@@ -212,7 +212,7 @@ Actions tab ("Run workflow" on CI); a failed daily pass opens a bug, and tests
 that only passed on a retry open a flaky-tests bug. A green Chromium-only run is
 not the PRD section 10 gating evidence and must not be reported as one.
 
-See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends the app can run against (mock, Firebase Emulator, real project), and the day-to-day loop; [`docs/testing.md`](./docs/testing.md) for what each suite covers, how CI gates on them, and the shared test helpers (`src/shared/id.ts`, `src/shared/clock.ts`, `src/testing/fixtures.ts`).
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends the app can run against (mock, Firebase Emulator, real project), and the day-to-day loop; [`docs/testing.md`](./docs/testing.md) for what each suite covers, how CI gates on them, and the shared test helpers (`src/domain/ids.ts`, `src/shared/clock.ts`, `src/testing/fixtures.ts`).
 
 ## Code Style Guidelines
 
@@ -278,10 +278,12 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends t
 
 2. **Firestore Data Access**
    - **These import rules are enforced by `src/projection/boundaries.test.ts`** (domain/commands, `firebase/firestore`, `firebase/storage`, `tone`, assistant); its commented allowlists, not this prose, are the authority. Widening one is a deliberate edit to that test
-   - All Firestore operations go through the schema-v1 `ProjectRepository` boundary (`src/persistence`), obtained via `getProjectRepository()` (`src/projectRepositoryClient.ts`) — never call `firebase/firestore` directly outside `src/persistence/firestoreProjectRepository.ts`
-   - The one other module allowed to import `firebase/firestore`, and the only one allowed to import `firebase/storage`, is `src/userLibrary/firebaseUserLibraryRepository.ts`: the personal library's packs and audio (#282), behind `UserLibraryRepository` and obtained via `getUserLibraryRepository()`. It never hands out a download URL; audio is read back as the signed-in user with `readAudio`
+   - Project Firestore operations go through the schema-v1 `ProjectRepository` boundary (`src/persistence`), obtained via `getProjectRepository()` (`src/projectRepositoryClient.ts`). Only `src/persistence/firestoreProjectRepository.ts` and the modules below import `firebase/firestore`
+   - `src/userLibrary/firebaseUserLibraryRepository.ts` may import `firebase/firestore` too, and is the only module allowed to import `firebase/storage`: the personal library's packs and audio (#282), behind `UserLibraryRepository` and obtained via `getUserLibraryRepository()`. It never hands out a download URL; audio is read back as the signed-in user with `readAudio`
+   - `src/persistence/firestoreFavouritesRepository.ts` may import `firebase/firestore` too: a producer's favourite sounds, behind `FavouritesRepository`, with an in-memory twin, a shared contract suite and its document shapes in `src/persistence/favouriteDocuments.ts`
    - `src/access/firestoreAccessRepository.ts` may import `firebase/firestore` too: the alpha allowlist and its refused sign-ins (#854), behind `AccessRepository` and obtained via `getAccessRepository()` (`src/accessRepositoryClient.ts`). Only an `admin: true` claim gets past `firestore.rules` there
    - `src/persistence/firestoreProfileRepository.ts` may import `firebase/firestore` too: the producer's profile and memory at `users/{uid}/profile/current` (GRV-25), behind `ProfileRepository`. Only its owner may read or write it
+   - `src/firebaseConfig.ts` imports `firebase/firestore` only to create the Firestore instance and connect it to the emulator; it reads and writes nothing
    - Use `ProjectRepository.watchProject` for the metadata tier's live revision; `EditorSession` wires it into `ProjectAutosave`
    - Security rules enforce owner-based access (see firestore.rules)
 
@@ -317,7 +319,7 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends t
 - The three-tier Firestore layout is a contract: `projects/{projectId}` metadata, `projects/{projectId}/song/current`, `projects/{projectId}/clips/{clipId}`, and `projects/{projectId}/arrangement/{trackId}` chunks when the song document exceeds its budget. See [`docs/persistence.md`](./docs/persistence.md).
 - `src/persistence/documents.ts` owns every collection path and document body. No other module builds a Firestore path or document for a project.
 - Every write is revision-checked and every tier is written independently: a note edit writes one clip document, never song structure.
-- `ProjectRepository` has an in-memory and a Firestore implementation, and both run the same contract suite. Only `firestoreProjectRepository.ts` imports `firebase/firestore`, so it is not re-exported from the directory barrel.
+- `ProjectRepository` has an in-memory and a Firestore implementation, and both run the same contract suite. The Firestore implementation is one of the few modules allowed to import `firebase/firestore`; `src/projection/boundaries.test.ts` holds the list (see "Firestore Data Access" above).
 - Autosave (`autosave.ts`) coalesces rapid edits, exposes save state, keeps a failed write queued for retry, and ignores remote echoes at or below the local revision.
 
 ### Shared command layer (`src/commands`)
@@ -389,7 +391,7 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends t
 - Use `@solidjs/testing-library` for component tests
 - Use `@testing-library/jest-dom` for DOM assertions
 - Beyond unit/component tests, the project has a Firebase Emulator suite (`tests/emulator/`, `bun run test:emulator`) and a Playwright browser E2E suite against a local Firestore/Auth emulator (`tests/e2e/emulator/`, `bun run test:browser:emulator`) — see [`docs/testing.md`](./docs/testing.md) for what each covers and how CI gates on them. The in-memory mock backend (`bun run dev:mock`) is a development backend only; no browser suite runs against it
-- Use `src/shared/id.ts`'s `createId`/`createSeededIdFactory` for entity IDs and `src/shared/clock.ts`'s `Clock` for anything that needs the current time, rather than calling `nanoid()`/`Date.now()` directly, so tests can be deterministic
+- Use `src/domain/ids.ts`'s `createIdFactory`/`createSeededIdFactory` for entity IDs and `src/shared/clock.ts`'s `Clock` for anything that needs the current time, rather than calling `nanoid()`/`Date.now()` directly, so tests can be deterministic
 - Use `src/testing/fixtures.ts`'s builders (`buildProject`, `buildTrack`, ...) instead of hand-writing fixture literals in new tests
 
 ### `bun run test` needs an audio output device

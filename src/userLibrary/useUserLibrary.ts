@@ -6,7 +6,7 @@ import type { LibraryAsset, LibraryPackSummary } from "../library/manifest";
 import type { HeldPackRefs } from "../library/packUpgrade";
 import { type Clock, systemClock } from "../shared/clock";
 import {
-  formatBytes,
+  formatStorageSize,
   USER_DATA_CAP_BYTES,
   type UserDataUsage,
   usageStanding,
@@ -162,7 +162,7 @@ const RETRYABLE: ReadonlySet<ImportFailure> = new Set([
 export function allowanceNotice(usage: UserDataUsage): string | null {
   if (usageStanding(usage) === "ok") return null;
   const percent = Math.min(100, Math.floor((usage.usedBytes / usage.capBytes) * 100));
-  return `Your library is ${percent}% full (${formatBytes(usage.usedBytes)} of ${formatBytes(
+  return `Your library is ${percent}% full (${formatStorageSize(usage.usedBytes)} of ${formatStorageSize(
     usage.capBytes,
   )}). Delete sounds you no longer use to make room.`;
 }

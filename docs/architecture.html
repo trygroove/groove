@@ -188,9 +188,9 @@
         <h2>UI — SolidJS components &amp; routes</h2>
         <p class="desc">Components never mutate a <code>Project</code>; they build typed commands and read reactive state.</p>
         <div class="cards">
-          <div class="card"><b>Routes</b><span class="path">src/routes/</span><span>File-based: landing, dashboard, <code>projects/[id]</code> editor route.</span></div>
-          <div class="card"><b>Editor UI</b><span class="path">src/editor/</span><span>EditorView, StepGrid, ArrangementView, DrumMachinePanel, LoopInfo, piano-roll geometry/edits.</span></div>
-          <div class="card"><b>Instrument panels</b><span class="path">src/instrument/</span><span>Sampler/Synth panels, sliders, value formatting.</span></div>
+          <div class="card"><b>Routes</b><span class="path">src/routes/</span><span>An explicit table in <code>router.tsx</code>: a path and a lazy page module per entry (landing, dashboard, project editor).</span></div>
+          <div class="card"><b>Editor UI</b><span class="path">src/editor/</span><span>Feature folders: <code>composition/</code> (EditorView, session), <code>devices/</code> (device faceplates), <code>instrument/</code>, <code>library/</code>, <code>mixer/</code>, <code>sequence/</code>, <code>tracks/</code>, <code>transport/</code>, <code>pianoRoll/</code>, <code>assistant/</code>, <code>export/</code>.</span></div>
+          <div class="card"><b>Instrument panels</b><span class="path">src/instrument/</span><span>Faceplate parts shared by instruments and devices (Well, DragSurface, FilterWell, sliders) and the sampler/synth panels.</span></div>
           <div class="card"><b>App components</b><span class="path">src/components/</span><span>LandingPage, Dashboard, ProjectList, ConfirmDialog.</span></div>
           <div class="card"><b>Auth</b><span class="path">src/auth/</span><span>AuthProvider context + Firebase auth service wrapper.</span></div>
         </div>
@@ -242,7 +242,7 @@
         <p class="desc">Each consumer gets its own shape built from a <code>Project</code>; unchanged entries are reused across edits.</p>
         <div class="cards">
           <div class="card"><b>audioProjection</b><span class="path">src/projection/</span><span>The audio engine's song projection.</span></div>
-          <div class="card"><b>arrangementProjection</b><span class="path">src/projection/</span><span>The arrangement renderer's projection.</span></div>
+          <div class="card"><b>arrangementProjection</b><span class="path">src/arrangement/projection.ts</span><span>The arrangement renderer's projection (lives with the renderer, not under <code>src/projection/</code>).</span></div>
           <div class="card"><b>projectSummaryProjection</b><span class="path">src/projection/</span><span>Dashboard / persistence summary.</span></div>
           <div class="card"><b>assistantContextProjection</b><span class="path">src/projection/</span><span>Compact context for the AI assistant.</span></div>
           <div class="card"><b>fingerprint</b><span class="path">src/projection/fingerprint.ts</span><span>Deterministic content fingerprint for change detection.</span></div>
@@ -277,7 +277,7 @@
             <h2>Persistence — schema-v1 repository</h2>
             <p class="desc">Three-tier layout: metadata · <code>song/current</code> · per-clip docs (+ arrangement chunks).</p>
             <div class="cards">
-              <div class="card"><b>ProjectRepository</b><span class="path">src/persistence/projectRepository.ts</span><span>One contract, two stores: in-memory (tests/mock) and Firestore — the only <code>firebase/firestore</code> import.</span></div>
+              <div class="card"><b>ProjectRepository</b><span class="path">src/persistence/projectRepository.ts</span><span>One contract, two stores: in-memory (tests/mock) and Firestore. Favourites and the producer profile follow the same shape; the allowed <code>firebase/firestore</code> import sites are listed in <code>src/projection/boundaries.test.ts</code>.</span></div>
               <div class="card"><b>Autosave</b><span class="path">autosave.ts</span><span>Coalesced, revision-checked optimistic saves per tier; failed writes retry; remote echoes ignored.</span></div>
               <div class="card"><b>Documents &amp; migrations</b><span class="path">documents.ts · migrations.ts</span><span>Every Firestore path/body defined here; size budgets; forward migrations.</span></div>
             </div>
@@ -299,7 +299,7 @@
           <div class="card"><b>Analytics</b><span class="path">src/analytics/</span><span>Typed event catalog, consent, buckets, error codes; no names/user text in any parameter.</span></div>
           <div class="card"><b>Monitoring</b><span class="path">src/monitoring/</span><span>Error reporting with scrubbing, global handlers, Sentry sink.</span></div>
           <div class="card"><b>Telemetry &amp; release</b><span class="path">src/telemetry.ts · release.ts</span><span>Wires analytics + error boundaries to vendors; build stamped with the git SHA.</span></div>
-          <div class="card"><b>Shared kernel</b><span class="path">src/shared/</span><span>Prefixed-ID factory, injectable Clock and Scheduler, Zod parse helper — determinism for tests.</span></div>
+          <div class="card"><b>Shared kernel</b><span class="path">src/shared/</span><span>Injectable Clock and Scheduler and small UI helpers (aria, motion); the prefixed-ID factory is <code>src/domain/ids.ts</code>.</span></div>
         </div>
       </div>
     </div>
@@ -336,7 +336,7 @@
   <section class="notes">
     <h2>Load-bearing rules</h2>
     <ul class="invariants">
-      <li><b>Contracts are layered by import direction:</b> <code>domain</code> and <code>commands</code> import no Firebase, Tone, or Solid; only <code>firestoreProjectRepository.ts</code> imports <code>firebase/firestore</code>; all Tone code stays in <code>src/audio/</code>.</li>
+      <li><b>Contracts are layered by import direction:</b> <code>domain</code> and <code>commands</code> import no Firebase, Tone, or Solid; <code>firebase/firestore</code>, <code>firebase/storage</code> and <code>tone</code> are confined to the modules allowlisted in <code>src/projection/boundaries.test.ts</code> (the source of truth, not restated here); all Tone code stays in <code>src/audio/</code>.</li>
       <li><b>One write path:</b> registered commands via <code>executeTransaction</code> — no feature-specific mutation routes.</li>
       <li><b>Stable IDs everywhere:</b> persistent relationships use prefixed IDs; audio-graph reconciliation, undo replay, and Firestore documents all key on them.</li>
       <li><b>Musical time is integer ticks at 192 PPQ;</b> seconds, bars, and pixels are derived views.</li>
