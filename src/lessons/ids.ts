@@ -46,6 +46,14 @@ export const TRACK_CHAPTER_IDS = [
 ] as const satisfies readonly ChapterId[];
 export type TrackChapterId = (typeof TRACK_CHAPTER_IDS)[number];
 
+/**
+ * Saved with the bites done (`lessonsDone`) once "Finish a track" starts, so
+ * the lesson is under way, and resumable, even while it is still on "Make a
+ * beat", whose bites alone say nothing about it. Shaped like a bite ID, as
+ * the profile requires, and never one.
+ */
+export const TRACK_UNDER_WAY = "track-under-way";
+
 /** Every bite, chapter by chapter, in the order each chapter teaches them. */
 export const BITE_IDS = [
   "beat-library",
