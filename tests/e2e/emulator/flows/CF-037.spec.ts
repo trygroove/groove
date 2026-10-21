@@ -96,6 +96,20 @@ async function next(page: Page, name: string): Promise<void> {
   await expect(bite(page, name)).toHaveAttribute("aria-current", "step");
 }
 
+/**
+ * Whether a press of Play started the song. Outside Chromium it depends on
+ * the browser (HARD-001, issue #43): WebKit's context resumes and the button
+ * flips to "Stop playback", Firefox's resume never settles. The editor gives
+ * up on a resume after `DEFAULT_RESUME_TIMEOUT_MS` (5 s), so a song that has
+ * not started a little after that never will.
+ */
+async function startedWithinResumeTimeout(stopPlayback: Locator): Promise<boolean> {
+  return stopPlayback
+    .waitFor({ state: "visible", timeout: 7_000 })
+    .then(() => true)
+    .catch(() => false);
+}
+
 test.describe("CF-037", () => {
   // biome-ignore format: unparked by removing only test.fixme, so the frozen body keeps its lines
   test(
@@ -218,11 +232,11 @@ test.describe("CF-037", () => {
       // 7. Go on to "Hear it". It asks for boom bap's tempo, 90 BPM: type 90
       //    in the tempo field. Then press Play. It is marked done. Stop.
       //    (Playing is asserted in Chromium only, the gap CF-001 names: in
-      //    other browsers the song never starts, so the bite is skipped there
-      //    to go on.)
+      //    other browsers the song may never start, as in Firefox, so there
+      //    the bite is skipped to go on when it has not.)
       //
-      // That gap is HARD-001 (issue #43): elsewhere the context never
-      // resumes, so the song never plays.
+      // That gap is HARD-001 (issue #43): in Firefox the context never
+      // resumes, so the song never plays; WebKit's does.
       await next(page, BITES[2]);
       await expect(lesson(page)).toContainText(/90 BPM/);
       const tempo = page.getByRole("spinbutton", { name: "Tempo (BPM)" });
@@ -230,9 +244,15 @@ test.describe("CF-037", () => {
       await tempo.press("Enter");
       await expect(tempo).toHaveValue("90");
       await page.getByRole("button", { name: "Start playback" }).click();
+      const stopPlayback = page.getByRole("button", { name: "Stop playback" });
       if (browserName === "chromium") {
         await expect(bite(page, BITES[2])).toContainText("done");
-        await page.getByRole("button", { name: "Stop playback" }).click();
+        await stopPlayback.click();
+      } else if (await startedWithinResumeTimeout(stopPlayback)) {
+        // WebKit's context does resume here, so the song plays and the bite
+        // finishes by itself, taking its Skip button with it (GRV-203).
+        await expect(bite(page, BITES[2])).toContainText("done");
+        await stopPlayback.click();
       } else {
         await lessonButton(page, "Skip").click();
         await expect(bite(page, BITES[2])).toContainText("skipped");

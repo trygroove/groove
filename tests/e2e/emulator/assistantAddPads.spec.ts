@@ -51,9 +51,9 @@ test.describe("an assistant proposal that adds drum pads", () => {
     await assistantButton(page).click();
     await composer(page).fill("Add a clap pad and a closed hat pad [add-pads]");
     await page.keyboard.press("Enter");
-    await expect(proposalButton(page, "Apply")).toBeEnabled({ timeout: 15_000 });
+    await expect(proposalButton(page, "Apply all")).toBeEnabled({ timeout: 15_000 });
     await expect(proposal(page)).toContainText("BD");
-    await proposalButton(page, "Apply").click();
+    await proposalButton(page, "Apply all").click();
 
     await expect(
       kit(page).getByRole("button", { name: "Audition Closed Hat", exact: true }),
