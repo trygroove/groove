@@ -3,6 +3,10 @@
  * pattern, set the tempo and hear it, add the backbeat and the hats, and
  * loop it. The pattern
  * and the words follow the producer's genre (`style.ts`).
+ *
+ * It is also the first chapter of "Finish a track" (GRV-44), which passes
+ * over what the song already has: the whole chapter when the song has a beat
+ * ({@link beatMade}), and otherwise each bite whose part is in place already.
  */
 import { CONTROL_PARTS, controlAddress } from "../commands/controlAddress";
 import { parameterTargetControl, setParameter } from "../commands/definitions/parameters";
@@ -97,6 +101,7 @@ const library: LessonBite = {
   id: "beat-library",
   chapter: "beat",
   title: "Pick a kick",
+  made: (world) => beatMade(world),
   skill: "finding a sound in the Library by ear and putting it on a drum pad",
   quiz: "Where in Groove do you find a new sound for a pad? (The Library, key 4.)",
   steps: [
@@ -201,6 +206,7 @@ const kick: LessonBite = {
   id: "beat-kick",
   chapter: "beat",
   title: "The kick pattern",
+  made: (world, settings) => kickInPlace(world, settings) || beatMade(world),
   skill: "placing the kick on the steps that give a beat its feel",
   quiz: "In a bar of sixteen steps, which step is beat 3 on? (Step 9.)",
   steps: [
@@ -271,6 +277,7 @@ const play: LessonBite = {
   id: "beat-play",
   chapter: "beat",
   title: "Hear it",
+  made: (world) => beatMade(world),
   skill:
     "setting the tempo for the style, then playing the song and listening to what the beat does",
   quiz: "Which key starts and stops the song? (Space.)",
@@ -341,6 +348,9 @@ const snare: LessonBite = {
   id: "beat-snare",
   chapter: "beat",
   title: "The backbeat",
+  made: (world, settings) =>
+    anyOtherPadHits(world.project, BEAT_PATTERNS[settings.style].snare, "hats") ||
+    beatMade(world),
   skill: "answering the kick with a snare or clap",
   quiz: "Which beats does a backbeat usually land on? (2 and 4.)",
   steps: [
@@ -392,6 +402,9 @@ const hats: LessonBite = {
   id: "beat-hats",
   chapter: "beat",
   title: "Hats",
+  made: (world, settings) =>
+    anyOtherPadHits(world.project, BEAT_PATTERNS[settings.style].hats, "snare") ||
+    beatMade(world),
   skill: "keeping time with hi-hats",
   quiz: 'What do you call the point halfway between two beats? (The off-beat, or the "and".)',
   steps: [
@@ -504,6 +517,7 @@ const loop: LessonBite = {
   id: "beat-loop",
   chapter: "beat",
   title: "Loop it",
+  made: (world) => loopInPlace(world) || beatMade(world),
   skill: "looping a one-bar clip so the beat runs on in the arrangement",
   quiz: "How do you make one bar play for four on the arrangement? (Loop its clip, and stretch it.)",
   steps: [
@@ -556,6 +570,28 @@ const loop: LessonBite = {
     },
   ],
 };
+
+/**
+ * Whether the song already has a beat, in any style (GRV-44): a drum machine
+ * whose kick plays, two more pads playing beside it, and the beat running
+ * for {@link LOOP_BARS} bars. "Finish a track" passes the whole chapter over
+ * then.
+ */
+export function beatMade(world: LessonWorld): boolean {
+  const track = beatOf(world);
+  const kickPadNow = track ? kickPad(track) : null;
+  if (!track || !kickPadNow || padSilent(world.project, track, kickPadNow.id)) {
+    return false;
+  }
+  const others = world.project.song.tracks
+    .filter(isDrumTrack)
+    .flatMap((drums) =>
+      drums.instrument.pads.filter(
+        (pad) => pad.id !== kickPadNow.id && !padSilent(world.project, drums, pad.id),
+      ),
+    );
+  return others.length >= 2 && loopInPlace(world);
+}
 
 export const BEAT_CHAPTER: LessonChapter = {
   id: "beat",

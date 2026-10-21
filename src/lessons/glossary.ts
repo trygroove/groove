@@ -156,6 +156,99 @@ export const GLOSSARY = {
     definition:
       "The row of five view tiles. Each has a key, 1 to 5, that takes you there.",
   },
+  key: {
+    term: "key",
+    definition:
+      "The scale a song is written in: which notes belong. Pick one and every part agrees, so nothing clashes.",
+  },
+  "piano-roll": {
+    term: "piano roll",
+    definition:
+      "Where a synth's notes are written: pitch up the side, time along the bottom. Draw a note to add it.",
+  },
+  bassline: {
+    term: "bassline",
+    definition:
+      "The low part that holds a track up from under the beat. Locked to the kick, the two hit as one.",
+  },
+  root: {
+    term: "root",
+    definition: "The note a key is named after, its home: A in A minor.",
+  },
+  chord: {
+    term: "chord",
+    definition:
+      "Three or more notes played together. A loop of a few chords is what a track's harmony usually is.",
+  },
+  hook: {
+    term: "hook",
+    definition:
+      "The short, catchy part you hum after one listen: a melody, a riff, a vocal line.",
+  },
+  duplicate: {
+    term: "duplicate",
+    definition:
+      "Copies what is selected right after itself. Press it again and the copy is copied, so a loop doubles each time.",
+  },
+  intro: {
+    term: "intro",
+    definition:
+      "The start of a song, holding the hook back: the beat and the bass set the groove before everything arrives.",
+  },
+  breakdown: {
+    term: "breakdown",
+    definition:
+      "A stretch with the drums taken out, so what is left can breathe and the listener misses the beat.",
+  },
+  drop: {
+    term: "drop",
+    definition:
+      "The moment everything comes back at once after a breakdown, the biggest part of a dance track.",
+  },
+  outro: {
+    term: "outro",
+    definition:
+      "The end of a song, where parts drop away so it finishes rather than stops. DJs mix out of it.",
+  },
+  balance: {
+    term: "balance",
+    definition:
+      "How loud each part is against the others. Get it right and every part is heard in its place.",
+  },
+  fader: {
+    term: "fader",
+    definition: "The slider that sets a track's volume on its strip in the Mixer.",
+  },
+  pan: {
+    term: "pan",
+    definition:
+      "Where a sound sits between the left and right speakers. Moving parts apart gives each room.",
+  },
+  reverb: {
+    term: "reverb",
+    definition:
+      "The sound of a room: the reflections after a note that make it feel near or far, small or huge.",
+  },
+  return: {
+    term: "return",
+    definition:
+      "A strip in the Mixer for an effect any track can share: tracks send some of their sound to it.",
+  },
+  send: {
+    term: "send",
+    definition:
+      "How much of a track goes to a return's effect, beside its own sound. Turn it up for more of the effect.",
+  },
+  master: {
+    term: "master",
+    definition:
+      "Where every track ends up: the whole mix, on its own strip at the right of the Mixer. Its meter goes red if the mix clips.",
+  },
+  stems: {
+    term: "stems",
+    definition:
+      "The song exported as one audio file per track, all lined up from bar 1, so each part can be worked on alone.",
+  },
 } as const satisfies Record<string, GlossaryEntry>;
 
 export type TermId = keyof typeof GLOSSARY;

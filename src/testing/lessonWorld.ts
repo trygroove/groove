@@ -6,8 +6,18 @@ import { executeTransaction } from "../commands/execute";
 import type { Project } from "../domain/entities";
 import { createFactoryContext, type DomainFactoryContext } from "../domain/factories";
 import { createSeededIdFactory } from "../domain/ids";
+import { TICKS_PER_BAR } from "../domain/time";
 import { createStarterProject } from "../editor/composition/starterProject";
-import type { LessonWorld, ShowMe } from "../lessons/types";
+import { nextStep } from "../lessons/chapters";
+import type { LessonBite, LessonSettings, LessonWorld, ShowMe } from "../lessons/types";
+
+/** A world over `project`, at rest on the arrangement. */
+export function worldOf(
+  project: Project,
+  overrides: Partial<LessonWorld> = {},
+): LessonWorld {
+  return { ...starterWorld(overrides), project };
+}
 
 /** The starter project a new producer opens: BD with four on the floor. */
 export function starterWorld(overrides: Partial<LessonWorld> = {}): LessonWorld {
@@ -15,6 +25,10 @@ export function starterWorld(overrides: Partial<LessonWorld> = {}): LessonWorld 
     project: createStarterProject("owner-1", () => 0.5),
     view: "arrangement",
     playing: false,
+    bar: 0,
+    barsHeard: 0,
+    masterClips: 0,
+    stemExports: 0,
     ...overrides,
   };
 }
@@ -31,7 +45,16 @@ export function applyShowMe(world: LessonWorld, shown: ShowMe | null): LessonWor
     case "view":
       return { ...world, view: shown.view };
     case "play":
-      return { ...world, playing: true };
+      return {
+        ...world,
+        playing: true,
+        bar:
+          shown.from === undefined ? world.bar : Math.floor(shown.from / TICKS_PER_BAR),
+        barsHeard: 0,
+        masterClips: 0,
+      };
+    case "export":
+      return world;
     case "sound":
       throw new Error("A library sound is the editor's to put on a pad");
     case "commands": {
@@ -54,4 +77,35 @@ export function applied(
   const result = executeTransaction(project, commands);
   if (!result.ok) throw new Error(`Refused: ${JSON.stringify(result.issues)}`);
   return result.project;
+}
+
+let showSeed = 5_000;
+
+/**
+ * Every applicable step of `bite`, each done by its Show me, from `world`
+ * (GRV-44); throws when a step's Show me leaves it undone. A play runs on
+ * for four bars with the master clean, and an export is pressed.
+ */
+export function showBite(
+  bite: LessonBite,
+  world: LessonWorld,
+  settings: LessonSettings,
+): LessonWorld {
+  let now = world;
+  let at = nextStep(bite, now, settings);
+  while (at) {
+    const start = now;
+    const shown = at.step.showMe(now, settings, lessonContext(showSeed++));
+    if (shown?.kind === "export") now = { ...now, stemExports: now.stemExports + 1 };
+    else {
+      now = applyShowMe(now, shown);
+      if (shown?.kind === "play") now = { ...now, bar: now.bar + 4, barsHeard: 4 };
+    }
+    if (!at.step.done(now, start, settings)) {
+      throw new Error(`${bite.id}: Show me did not finish "${at.step.id}"`);
+    }
+    now = { ...now, playing: false };
+    at = nextStep(bite, now, settings, at.index);
+  }
+  return now;
 }

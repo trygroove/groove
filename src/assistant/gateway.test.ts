@@ -556,6 +556,8 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
       style: "boom_bap",
       quiz: null,
       next: [],
+      track: null,
+      passed: [],
       earlier: [],
     };
     const h = harness([replyEvents(["Nice kick."])]);

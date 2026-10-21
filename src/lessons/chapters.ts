@@ -1,11 +1,15 @@
 /**
- * Every chapter (GRV-43), and what the rest of the app asks of them: a bite
- * by ID, the chapter a producer's goal suggests, the next bite they have
- * not been through, and the steps of a bite that apply to their project.
+ * Every chapter (GRV-43, GRV-44), and what the rest of the app asks of them:
+ * a bite by ID, the chapter a producer's goal suggests, the next bite they
+ * have not been through, and the steps of a bite that apply to their project.
  */
 import type { ProducerGoal } from "../persistence/profileDocuments";
+import { ARRANGE_CHAPTER } from "./arrange";
+import { BASS_CHAPTER } from "./bass";
 import { BEAT_CHAPTER } from "./beat";
-import { type BiteId, CHAPTER_IDS, type ChapterId } from "./ids";
+import { CHORDS_CHAPTER } from "./chords";
+import { type BiteId, type ChapterId, SOLO_CHAPTER_IDS, type SoloChapterId } from "./ids";
+import { MIX_CHAPTER } from "./mix";
 import { SOUND_CHAPTER } from "./sound";
 import { TOUR_CHAPTER } from "./tour";
 import type {
@@ -16,11 +20,15 @@ import type {
   LessonWorld,
 } from "./types";
 
-/** The chapters, in the order they are offered. */
+/** Every chapter, in `CHAPTER_IDS`' order: the three taught alone, then "Finish a track"'s own. */
 export const CHAPTERS: readonly LessonChapter[] = [
   BEAT_CHAPTER,
   SOUND_CHAPTER,
   TOUR_CHAPTER,
+  BASS_CHAPTER,
+  CHORDS_CHAPTER,
+  ARRANGE_CHAPTER,
+  MIX_CHAPTER,
 ];
 
 export function chapter(id: ChapterId): LessonChapter {
@@ -38,7 +46,7 @@ export function bite(id: BiteId): LessonBite {
 }
 
 /** The chapter a goal from onboarding suggests starting with. */
-export function chapterForGoal(goal: ProducerGoal | null): ChapterId {
+export function chapterForGoal(goal: ProducerGoal | null): SoloChapterId {
   switch (goal) {
     case "first_track":
     case "video_or_game":
@@ -51,16 +59,17 @@ export function chapterForGoal(goal: ProducerGoal | null): ChapterId {
 }
 
 /**
- * The first bite not yet in `done`: in `from`'s chapter first, then in the
- * chapters after it, then those before. Null once every bite is done.
+ * The first bite not yet in `done` of the chapters taught on their own: in
+ * `from`'s chapter first, then in the chapters after it, then those before.
+ * Null once every one of their bites is done.
  */
 export function nextBite(
   done: readonly string[],
-  from: ChapterId = CHAPTER_IDS[0],
+  from: SoloChapterId = SOLO_CHAPTER_IDS[0],
 ): LessonBite | null {
   const finished = new Set(done);
-  const start = CHAPTER_IDS.indexOf(from);
-  const order = [...CHAPTER_IDS.slice(start), ...CHAPTER_IDS.slice(0, start)];
+  const start = SOLO_CHAPTER_IDS.indexOf(from);
+  const order = [...SOLO_CHAPTER_IDS.slice(start), ...SOLO_CHAPTER_IDS.slice(0, start)];
   for (const id of order) {
     const found = chapter(id).bites.find((one) => !finished.has(one.id));
     if (found) return found;

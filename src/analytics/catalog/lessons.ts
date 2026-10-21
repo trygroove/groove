@@ -1,5 +1,6 @@
 // Lessons with Coproducer (GRV-43): bite-sized chapters taught in the
-// producer's own project, and the daily nudge that names the next bite.
+// producer's own project, and the daily nudge that names the next bite; and
+// "Finish a track" (GRV-44), five chapters from a beat to stems.
 //
 // Every parameter is one of our own IDs (`src/lessons/ids.ts`): which chapter
 // and bite, how a bite ended and where it was started from. Never a step's
@@ -31,6 +32,21 @@ export const LESSON_EVENTS = {
     phase: 3,
     owners: ["GRV-43"],
     params: { ...bite, how: enumParam(BITE_ENDINGS) },
+  },
+
+  // A chapter's last bite over, however it ended (GRV-44): taught alone or
+  // as a chapter of "Finish a track".
+  lesson_chapter_completed: {
+    phase: 3,
+    owners: ["GRV-44"],
+    params: { chapter_id: enumParam(CHAPTER_IDS) },
+  },
+
+  // "Finish a track"'s last bite over (GRV-44): a whole track, to stems.
+  lesson_track_completed: {
+    phase: 3,
+    owners: ["GRV-44"],
+    params: {},
   },
 
   // The producer left the lesson part-way, during this bite.
