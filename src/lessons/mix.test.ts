@@ -107,6 +107,19 @@ describe("Mix and export (GRV-44)", () => {
     expect(
       watch.done({ ...midSong, barsHeard: 14, masterClips: 1 }, midSong, settings),
     ).toBe(false);
+    // Begun mid-song after the master clipped, and played again from the
+    // start (both counts start again): four clean bars of the new run do it.
+    const clipped = { ...midSong, masterClips: 1 };
+    expect(
+      watch.done(
+        { ...playing, barsHeard: WATCH_BARS, masterClips: 0 },
+        clipped,
+        settings,
+      ),
+    ).toBe(true);
+    expect(
+      watch.done({ ...playing, barsHeard: 12, masterClips: 0 }, clipped, settings),
+    ).toBe(true);
     // Show me plays the drop, the loudest part.
     expect(watch.showMe(world, settings, lessonContext())).toEqual({
       kind: "play",

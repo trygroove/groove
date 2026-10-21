@@ -150,7 +150,9 @@
  * pointers), say what to do with "passed" (what the song already had, so the
  * lesson skipped it) and with "track" (which chapter of the five this is, and
  * how the bite fits the song being built), and a track chapter's wrap-up names
- * the next chapter the card will start. The fixed prompt is unchanged.
+ * the next chapter the card will start. The bites the block may name gain
+ * "passed", and "track" gets its own allowance of a sentence more, the
+ * "earlier" one staying where it was. The fixed prompt is unchanged.
  */
 import { customAlphabet } from "nanoid";
 import { ASSISTANT_NAME } from "../../site.config.mjs";
