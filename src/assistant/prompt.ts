@@ -123,6 +123,13 @@
  * with pointers at a chapter's end, and how to answer the moments a turn
  * waited with, in `earlier`) and the lesson as JSON. The fixed prompt
  * is unchanged, so a turn outside a lesson reads what it did.
+ *
+ * 2026-10-21.1 (GRV-44): "Finish a track". The lesson block's rules gain the
+ * "track_done" moment (congratulate the finished track, in words, then
+ * pointers), say what to do with "passed" (what the song already had, so the
+ * lesson skipped it) and with "track" (which chapter of the five this is, and
+ * how the bite fits the song being built), and a track chapter's wrap-up names
+ * the next chapter the card will start. The fixed prompt is unchanged.
  */
 import { customAlphabet } from "nanoid";
 import { ASSISTANT_NAME } from "../../site.config.mjs";
@@ -153,7 +160,7 @@ import type { AssistantContextPayload, AssistantLibraryContext } from "./protoco
 import type { ProviderTextBlock } from "./providerRequest";
 import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-20.1";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-21.1";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",

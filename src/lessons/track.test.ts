@@ -3,7 +3,7 @@ import type { Project } from "../domain/entities";
 import { TICKS_PER_BAR } from "../domain/time";
 import { applyShowMe, lessonContext, starterWorld } from "../testing/lessonWorld";
 import { cueMessage, lessonCue, wrapUpPointers } from "./cue";
-import { BITE_IDS, TRACK_CHAPTER_IDS } from "./ids";
+import { BITE_IDS, TRACK_CHAPTER_IDS, TRACK_UNDER_WAY } from "./ids";
 import {
   biteOf,
   chapterFinished,
@@ -15,7 +15,13 @@ import {
   startNextBite,
   startTrack,
 } from "./session";
-import { madeBites, TRACK_CHAPTERS, trackChapterNumber, trackResume } from "./track";
+import {
+  madeBites,
+  TRACK_CHAPTERS,
+  trackChapterNumber,
+  trackResume,
+  withTrackUnderWay,
+} from "./track";
 import type { LessonSettings, LessonWorld, ShowMe } from "./types";
 
 const settings: LessonSettings = { style: "four_on_the_floor" };
@@ -91,6 +97,31 @@ describe("Finish a track (GRV-44)", () => {
     });
     const own = BITE_IDS.filter((id) => !/^(beat|sound|tour)-/.test(id));
     expect(trackResume(own)).toBeNull();
+  });
+
+  it("is under way from its first bite once started, Make a beat included", () => {
+    const started = withTrackUnderWay([]);
+    expect(started).toEqual([TRACK_UNDER_WAY]);
+    expect(withTrackUnderWay(started)).toEqual(started);
+    expect(trackResume(started)).toEqual({ chapter: "beat", biteId: "beat-library" });
+    // Part-way through the beat: the next beat bite, inside this lesson.
+    expect(trackResume([...started, "beat-library", "beat-kick"])).toEqual({
+      chapter: "beat",
+      biteId: "beat-play",
+    });
+    // The beat done and Bass not started: chapter 2.
+    const beat = BITE_IDS.filter((id) => id.startsWith("beat-"));
+    expect(trackResume([...started, ...beat])).toEqual({
+      chapter: "bass",
+      biteId: "bass-key",
+    });
+    // Once past the beat, a beat bite left undone is not gone back to.
+    expect(trackResume([...started, "bass-key"])).toEqual({
+      chapter: "bass",
+      biteId: "bass-line",
+    });
+    const own = BITE_IDS.filter((id) => !/^(beat|sound|tour)-/.test(id));
+    expect(trackResume([...started, ...own])).toBeNull();
   });
 
   it("passes over the kick the starter already plays, and teaches the rest of the beat", () => {

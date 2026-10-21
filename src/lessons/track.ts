@@ -5,16 +5,21 @@
  * arrangement, and the mix and export. Pure.
  *
  * - **Resumable.** Done bites are saved on the profile as every lesson's are,
- *   so once the producer has been through a bite of a chapter only this
- *   lesson teaches, and not all of them, the lesson is under way, and
- *   {@link trackResume} says where to pick it up.
+ *   and so is {@link TRACK_UNDER_WAY} once the lesson starts, so it is under
+ *   way from its first bite, "Make a beat" included, until every bite only it
+ *   teaches is done; {@link trackResume} says where to pick it up.
  * - **What the song has is passed over.** As each chapter starts, a bite
  *   whose part the song already has (`LessonBite.made`) is passed over: the
  *   whole of "Make a beat" when the song has a beat, or just its kick when the
  *   kick is already in place.
  */
 import { chapter } from "./chapters";
-import { type BiteId, TRACK_CHAPTER_IDS, type TrackChapterId } from "./ids";
+import {
+  type BiteId,
+  TRACK_CHAPTER_IDS,
+  TRACK_UNDER_WAY,
+  type TrackChapterId,
+} from "./ids";
 import type { LessonChapter, LessonSettings, LessonWorld } from "./types";
 
 /** The lesson's name, as the panel and Coproducer say it. */
@@ -40,18 +45,28 @@ export function nextTrackChapter(id: TrackChapterId): TrackChapterId | null {
 const OWN_CHAPTERS = TRACK_CHAPTERS.slice(1);
 
 /**
- * Where to pick the lesson up, by what `done` records: the first bite not
- * done of the first of its own chapters with one. Null when it is not under
- * way: none of its own bites done yet, or every one of them.
+ * Where to pick the lesson up, by what `done` records. It is under way once it
+ * has started ({@link TRACK_UNDER_WAY}) or a bite only it teaches is done, and
+ * until every one of those is. It picks up at the first bite not done, "Make
+ * a beat"'s included until the producer has moved past it to a chapter of the
+ * lesson's own. Null when it is not under way.
  */
 export function trackResume(
   done: readonly string[],
 ): { readonly chapter: TrackChapterId; readonly biteId: BiteId } | null {
   const finished = new Set(done);
   const own = OWN_CHAPTERS.flatMap((one) => one.bites);
-  if (!own.some((one) => finished.has(one.id))) return null;
-  const next = own.find((one) => !finished.has(one.id));
+  const ownStarted = own.some((one) => finished.has(one.id));
+  if (!ownStarted && !finished.has(TRACK_UNDER_WAY)) return null;
+  if (own.every((one) => finished.has(one.id))) return null;
+  const left = ownStarted ? own : TRACK_CHAPTERS.flatMap((one) => one.bites);
+  const next = left.find((one) => !finished.has(one.id));
   return next ? { chapter: next.chapter as TrackChapterId, biteId: next.id } : null;
+}
+
+/** `done` with "Finish a track" recorded as started, once. */
+export function withTrackUnderWay(done: readonly string[]): string[] {
+  return done.includes(TRACK_UNDER_WAY) ? [...done] : [...done, TRACK_UNDER_WAY];
 }
 
 /** The bites of `id` the song already has, as the chapter starts in `world`. */
