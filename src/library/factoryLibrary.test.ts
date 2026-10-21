@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFactoryContext } from "../domain/factories";
 import { derivePackDependencies } from "../domain/packs";
 import { assertProject } from "../domain/parse";
-import { createStarterProject } from "../editor/starterProject";
+import { createStarterProject } from "../editor/composition/starterProject";
 import {
   createFactoryAsset,
   factoryLibrary,

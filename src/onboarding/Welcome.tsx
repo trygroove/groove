@@ -16,7 +16,7 @@ import {
 } from "../editor/assistant/assistantPanelLayout";
 import { useAskDraft } from "../editor/assistant/useAskDraft";
 import type { ConversationEntry } from "../editor/assistant/useAssistantConversation";
-import { createStarterProject } from "../editor/starterProject";
+import { createStarterProject } from "../editor/composition/starterProject";
 import type { ProfileRepository } from "../persistence/profileRepository";
 import type { ProjectRepository } from "../persistence/projectRepository";
 import { getProfileRepository } from "../profileRepositoryClient";

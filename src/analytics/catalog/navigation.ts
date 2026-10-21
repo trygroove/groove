@@ -8,7 +8,7 @@ import { type AnalyticsEventDefinition, enumParam } from "./params";
  *
  * A view is a low-cardinality *place in the editor*, not a surface: `SURFACES`
  * stays `landing / dashboard / editor`, because every one of these is the
- * editor. `src/editor/editorViews.ts` builds the view table — label, URL
+ * editor. `src/editor/composition/editorViews.ts` builds the view table — label, URL
  * segment, dock order — over this list, so the analytics vocabulary and the
  * addresses cannot drift apart.
  */

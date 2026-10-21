@@ -8,7 +8,7 @@ import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
 import { flush } from "solid-js";
 import { afterEach, describe, expect, it } from "vitest";
 import { TICKS_PER_BAR } from "../domain/time";
-import { EditorSession } from "../editor/EditorSession";
+import { EditorSession } from "../editor/composition/EditorSession";
 import { createInMemoryProjectRepository } from "../persistence/inMemoryProjectRepository";
 import { createManualClock } from "../shared/clock";
 import { buildArrangementProject } from "../testing/arrangementProject";

@@ -6,8 +6,8 @@ import SignedInOnly from "../../auth/SignedInOnly";
 import { detectCapabilities } from "../../browser/capabilities";
 import AccountControl from "../../components/AccountControls";
 import ProjectNotFound from "../../components/ProjectNotFound";
-import EditorView from "../../editor/EditorView";
-import { editorViewFromPath, editorViewPath } from "../../editor/editorViews";
+import EditorView from "../../editor/composition/EditorView";
+import { editorViewFromPath, editorViewPath } from "../../editor/composition/editorViews";
 
 /**
  * Whether the signed-in account is internal or an admin (GRV-112), so the

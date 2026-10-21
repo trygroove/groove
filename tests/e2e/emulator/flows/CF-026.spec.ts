@@ -47,7 +47,7 @@ import { pressView } from "../support/views";
  *    counts one" is its text reading "Favourites" then 1.
  *
  * The way back to the dashboard is the editor header's "Projects" link, which
- * exists today (`src/editor/EditorHeader.tsx`).
+ * exists today (`src/editor/composition/EditorHeader.tsx`).
  *
  * **Fixture library.** Any kick will do, so the delivered library the emulator
  * suite serves already meets this flow's preconditions.

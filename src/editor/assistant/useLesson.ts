@@ -55,7 +55,7 @@ import {
 import { beatStyleFor } from "../../lessons/style";
 import type { LessonSettings, LessonWorld } from "../../lessons/types";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
-import type { EditorViewName } from "../editorViews";
+import type { EditorViewName } from "../composition/editorViews";
 import { type LessonStore, storedLesson } from "./lessonStore";
 import type { AssistantConversation } from "./useAssistantConversation";
 

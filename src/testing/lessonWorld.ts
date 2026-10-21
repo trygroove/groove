@@ -7,7 +7,7 @@ import type { Project } from "../domain/entities";
 import { createFactoryContext, type DomainFactoryContext } from "../domain/factories";
 import { createSeededIdFactory } from "../domain/ids";
 import { TICKS_PER_BAR } from "../domain/time";
-import { createStarterProject } from "../editor/starterProject";
+import { createStarterProject } from "../editor/composition/starterProject";
 import { nextStep } from "../lessons/chapters";
 import type { LessonBite, LessonSettings, LessonWorld, ShowMe } from "../lessons/types";
 

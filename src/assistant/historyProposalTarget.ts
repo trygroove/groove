@@ -1,6 +1,6 @@
 // A bare `CommandHistory` as an assistant proposal target.
 //
-// The editor hands the executor its session (`src/editor/assistantProposalTarget.ts`)
+// The editor hands the executor its session (`src/editor/composition/assistantProposalTarget.ts`)
 // so a proposal is autosaved; the executor's own tests and the assistant evals
 // (`src/assistant/evals/checks.ts`) only need the history.
 

@@ -10,7 +10,7 @@ import { createPianoRollFixtureProject } from "../../domain/fixtures";
 import { createInMemoryProjectRepository } from "../../persistence/inMemoryProjectRepository";
 import { createManualClock } from "../../shared/clock";
 import { memoryStorage } from "../../testing/storage";
-import { EditorSession } from "../EditorSession";
+import { EditorSession } from "../composition/EditorSession";
 import PianoRoll, { type PianoRollProps } from "./PianoRoll";
 
 /**

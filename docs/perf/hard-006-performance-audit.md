@@ -25,7 +25,7 @@ baseline device are the ones driven by *work per edit* and *work per frame*, so
 the audit walked the two paths that run on every project change:
 
 1. **The audio projection** (`src/projection/audioProjection.ts`), rebuilt by
-   `useProjectAudio`'s effect (`src/editor/useProjectAudio.ts:242`) on every
+   `useProjectAudio`'s effect (`src/editor/composition/useProjectAudio.ts:242`) on every
    change to the open project. This is on the section 10 "pointer-driven note
    and parameter edits target a visual response within 50 ms" path: an edit
    commits a revision, the effect re-runs, and the projection is rebuilt before

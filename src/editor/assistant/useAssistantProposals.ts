@@ -44,10 +44,10 @@ import { controlsTouchedBy } from "../../commands/controls";
 import type { RawCommandInput } from "../../commands/types";
 import type { Project } from "../../domain/entities";
 import type { Clock } from "../../shared/clock";
-import type { PreviewResult, SessionEdit } from "../EditorSession";
-import type { EditorControls, EditorLocation } from "../editorControls";
-import type { EditorViewName } from "../editorViews";
-import type { Preview } from "../sessionPreview";
+import type { PreviewResult, SessionEdit } from "../composition/EditorSession";
+import type { EditorControls, EditorLocation } from "../composition/editorControls";
+import type { EditorViewName } from "../composition/editorViews";
+import type { Preview } from "../composition/sessionPreview";
 import {
   explainProposal,
   type ProposalExplanation,

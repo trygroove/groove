@@ -1,6 +1,6 @@
 import type { JSX } from "@solidjs/web";
 import { For, flush, Match, Show, Switch } from "solid-js";
-import { editorViewSpec } from "../editorViews";
+import { editorViewSpec } from "../composition/editorViews";
 import { moreAfterThis } from "./cardQueue";
 import { ControlLink, Values } from "./ProposalCard";
 import type { AssistantProposals } from "./useAssistantProposals";

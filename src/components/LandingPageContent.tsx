@@ -1,7 +1,7 @@
 import type { JSX } from "@solidjs/web";
 import { For, Show } from "solid-js";
 import { requestAccessUrl } from "../../site.config.mjs";
-import { ViewIcon } from "../editor/viewIcons";
+import { ViewIcon } from "../editor/composition/viewIcons";
 import { AI_PRODUCER_ARRIVES, LANDING_FAQ } from "./landingCopy";
 import "./LandingPage.css";
 

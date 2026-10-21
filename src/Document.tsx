@@ -69,7 +69,7 @@ export default function Document() {
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        {/* The arrangement view's icon (`editor/viewIcons.tsx`), on every page:
+        {/* The arrangement view's icon (`editor/composition/viewIcons.tsx`), on every page:
             no `data-landing`, so deep links keep it. */}
         <link rel="icon" href="/favicon.ico" sizes="32x32" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />

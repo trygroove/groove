@@ -26,12 +26,12 @@ import {
   type FakeAssistantClient,
 } from "../../testing/fakeAssistantClient";
 import { memoryStorage } from "../../testing/storage";
-import { assistantProposalTarget } from "../assistantProposalTarget";
-import { EditorSession } from "../EditorSession";
-import type { EditorLocation } from "../editorControls";
-import type { EditorViewName } from "../editorViews";
-import { emptyPadSelection } from "../padSelection";
-import { createStarterProject } from "../starterProject";
+import { assistantProposalTarget } from "../composition/assistantProposalTarget";
+import { EditorSession } from "../composition/EditorSession";
+import type { EditorLocation } from "../composition/editorControls";
+import type { EditorViewName } from "../composition/editorViews";
+import { createStarterProject } from "../composition/starterProject";
+import { emptyPadSelection } from "../sequence/padSelection";
 import AssistantPanel, { TRYING_STATUS } from "./AssistantPanel";
 import { createAssistantLibrary } from "./assistantLibrary";
 import {

@@ -18,9 +18,9 @@ import { createManualClock } from "../../shared/clock";
 import { createFakeAssistantClient } from "../../testing/fakeAssistantClient";
 import { createFakeRetentionClient } from "../../testing/fakeRetentionClient";
 import { memoryStorage } from "../../testing/storage";
-import { assistantProposalTarget } from "../assistantProposalTarget";
-import { EditorSession } from "../EditorSession";
-import type { EditorLocation } from "../editorControls";
+import { assistantProposalTarget } from "../composition/assistantProposalTarget";
+import { EditorSession } from "../composition/EditorSession";
+import type { EditorLocation } from "../composition/editorControls";
 import { createConversationStore } from "./conversationStore";
 import { type AssistantChat, useAssistantChat } from "./useAssistantChat";
 

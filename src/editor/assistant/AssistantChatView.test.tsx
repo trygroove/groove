@@ -14,7 +14,7 @@ import {
   type FakeAssistantClient,
 } from "../../testing/fakeAssistantClient";
 import { memoryStorage } from "../../testing/storage";
-import type { EditorViewName } from "../editorViews";
+import type { EditorViewName } from "../composition/editorViews";
 import { SIGN_IN_NOTE, STILL_WRITING_NOTE, WRITING_STATUS } from "./AssistantChatView";
 import AssistantPanel from "./AssistantPanel";
 import { ERROR_REASSURANCE } from "./assistantErrorCopy";

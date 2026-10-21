@@ -5,7 +5,7 @@ import { createControlRegistry } from "../../controls/registry";
 import type { Project } from "../../domain/entities";
 import { BEAT_PATTERNS, beatStyleFor } from "../../lessons/style";
 import { starterWorld } from "../../testing/lessonWorld";
-import type { EditorViewName } from "../editorViews";
+import type { EditorViewName } from "../composition/editorViews";
 import { createLessonStore, type LessonStore } from "./lessonStore";
 import { type LessonEditorPort, SHOW_ME_SETTLE_MS, useLesson } from "./useLesson";
 
