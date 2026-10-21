@@ -10,6 +10,7 @@ import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import { emptyProfile, type ProducerProfile } from "../../persistence/profileDocuments";
 import { starterWorld } from "../../testing/lessonWorld";
 import type { EditorViewName } from "../editorViews";
+import { createLessonStore, type LessonStore } from "./lessonStore";
 import { type LessonEditorPort, SHOW_ME_SETTLE_MS, useLesson } from "./useLesson";
 
 /** `project` at `tempo` BPM, as a committed edit would leave it. */
@@ -39,7 +40,12 @@ function profileStore(lessonsDone: readonly string[]): ProducerProfileStore {
   };
 }
 
-function setup(editor?: LessonEditorPort, open = true, profile?: ProducerProfileStore) {
+function setup(
+  editor?: LessonEditorPort,
+  open = true,
+  profile?: ProducerProfileStore,
+  saved?: { key: () => string | null; store: LessonStore },
+) {
   const [project, setProject] = createSignal<Project | null>(
     open ? starterWorld().project : null,
   );
@@ -66,6 +72,7 @@ function setup(editor?: LessonEditorPort, open = true, profile?: ProducerProfile
       editor,
       profile,
       analytics: () => ({ log, logFeatureFirstUse: vi.fn() }),
+      saved,
     }),
   );
   return {
@@ -413,6 +420,76 @@ describe("the lesson under way (GRV-43)", () => {
     const h = setup();
     expect(h.lesson.canShowMe).toBe(false);
   });
+
+  it("does not count a skipped bite as done, so it is still the next unfinished one", () => {
+    const h = setup();
+    h.lesson.start("tour", "asked", "tour-sequence");
+    flush();
+    h.lesson.skip();
+    flush();
+    expect(h.lesson.state()?.endings).toEqual({ "tour-sequence": "skipped" });
+    expect(h.lesson.done()).toEqual([]);
+    h.lesson.leave();
+    h.lesson.start("tour", "asked");
+    flush();
+    expect(h.lesson.state()?.biteIndex).toBe(0);
+  });
+
+  it("comes back after a reload at the bite it was on, with how the others ended", () => {
+    const storage = new Map<string, string>();
+    const store = createLessonStore({
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => void storage.set(key, value),
+      removeItem: (key) => void storage.delete(key),
+    });
+    const saved = { key: () => "lesson-key", store };
+    const before = setup(undefined, true, undefined, saved);
+    before.lesson.start("tour", "asked", "tour-sequence");
+    flush();
+    before.lesson.skip();
+    flush();
+    before.lesson.next();
+    flush();
+    expect(before.lesson.state()?.biteIndex).toBe(2);
+
+    // The page reloads: a new lesson, over the same storage.
+    const after = setup(undefined, true, undefined, saved);
+    flush();
+    expect(after.lesson.state()).toMatchObject({
+      chapter: "tour",
+      biteIndex: 2,
+      endings: { "tour-sequence": "skipped" },
+    });
+    expect(after.lesson.state()?.step).not.toBeNull();
+    // Coming back is not a new start: nothing is said or logged.
+    expect(after.sendLesson).not.toHaveBeenCalled();
+    expect(after.log).not.toHaveBeenCalled();
+
+    // Leaving forgets it.
+    after.lesson.leave();
+    flush();
+    expect(storage.size).toBe(0);
+    const again = setup(undefined, true, undefined, saved);
+    flush();
+    expect(again.lesson.state()).toBeNull();
+  });
+
+  it("waits for the project before bringing a lesson back, and keeps it meanwhile", () => {
+    const storage = new Map<string, string>();
+    const store = createLessonStore({
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => void storage.set(key, value),
+      removeItem: (key) => void storage.delete(key),
+    });
+    store.save("lesson-key", { chapter: "beat", bite: "beat-kick", endings: {} });
+    const h = setup(undefined, false, undefined, { key: () => "lesson-key", store });
+    flush();
+    expect(h.lesson.state()).toBeNull();
+    expect(storage.size).toBe(1);
+    h.setProject(starterWorld().project);
+    flush();
+    expect(h.lesson.state()).toMatchObject({ chapter: "beat", biteIndex: 1 });
+  });
 });
 
 describe("Finish a track in the panel (GRV-44)", () => {
@@ -519,6 +596,37 @@ describe("Finish a track in the panel (GRV-44)", () => {
         source: "next",
       }),
     );
+  });
+
+  it("still offers the next chapter after a reload at a chapter's end (GRV-43 resume)", () => {
+    const storage = new Map<string, string>();
+    const store = createLessonStore({
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => void storage.set(key, value),
+      removeItem: (key) => void storage.delete(key),
+    });
+    const saved = { key: () => "lesson-key", store };
+    const before = setup(undefined, true, undefined, saved);
+    before.lesson.start("bass", "asked", "bass-sound");
+    flush();
+    before.lesson.skip();
+    flush();
+    before.lesson.skip();
+    flush();
+    expect(before.lesson.state()).toMatchObject({ chapter: "bass", step: null });
+
+    // The page reloads at Bass's end: the card is still "Finish a track".
+    const after = setup(undefined, true, undefined, saved);
+    flush();
+    expect(after.lesson.state()).toMatchObject({
+      chapter: "bass",
+      track: true,
+      step: null,
+    });
+    expect(after.lesson.upcoming()?.chapter).toBe("chords");
+    after.lesson.next();
+    flush();
+    expect(after.lesson.state()).toMatchObject({ chapter: "chords", track: true });
   });
 
   it("opens the Export dialog as the last bite starts, and ends the lesson once stems are exported", () => {

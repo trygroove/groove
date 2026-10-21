@@ -186,6 +186,11 @@ export type ConversationEntry =
        * the next turn tells the model whether the change is in the song.
        */
       readonly proposal?: HistoryProposal;
+      /**
+       * The lesson it started (GRV-43), resent with its text so the model
+       * reads that the call started it, not the sentence.
+       */
+      readonly lesson?: LessonChoice;
     }
   /**
    * A change the reply proposes, as the gateway returned it, and the turn
@@ -692,7 +697,11 @@ export function useAssistantConversation(
           const started = splitLessonCalls(event.proposal);
           for (const call of started.lessons) {
             const chapter = parseLessonCall(call);
-            if (chapter) options.onStartLesson?.(chapter);
+            if (!chapter) continue;
+            update(replyId, (entry) =>
+              entry.kind === "reply" ? { ...entry, lesson: chapter } : entry,
+            );
+            options.onStartLesson?.(chapter);
           }
           if (!started.proposal) return;
           const remembered = splitMemoryProposals(started.proposal);

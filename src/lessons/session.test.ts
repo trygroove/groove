@@ -6,6 +6,7 @@ import {
   chapterFinished,
   markShown,
   observe,
+  resumeLesson,
   skip,
   startBite,
   startNextBite,
@@ -109,5 +110,31 @@ describe("a lesson as it runs (GRV-43)", () => {
     expect(biteOf(startBite("beat", "tour-mixer", world, settings).state).id).toBe(
       "beat-library",
     );
+  });
+});
+
+describe("resumeLesson (GRV-43)", () => {
+  const world = starterWorld({ view: "mixer" });
+
+  it("starts the bite under way again, keeping how the others ended", () => {
+    const state = resumeLesson("tour", "tour-library", world, settings, {
+      "tour-arrangement": "skipped",
+    });
+    expect(state).toMatchObject({
+      chapter: "tour",
+      biteIndex: 3,
+      endings: { "tour-arrangement": "skipped" },
+    });
+    expect(state?.step).not.toBeNull();
+  });
+
+  it("waits for Next after a bite that was over, and is gone after the last", () => {
+    const over = resumeLesson("tour", "tour-library", world, settings, {
+      "tour-library": "did_it",
+    });
+    expect(over).toMatchObject({ biteIndex: 3, step: null });
+    expect(
+      resumeLesson("tour", "tour-mixer", world, settings, { "tour-mixer": "did_it" }),
+    ).toBeNull();
   });
 });

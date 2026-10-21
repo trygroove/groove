@@ -16,8 +16,11 @@
  *   (`UI-004`) while it is under way, and what it belongs to is selected.
  * - **Show me** goes through the editor as the assistant: commands as one
  *   undoable change, a view switch, Play, or a library sound on a pad.
- * - **Done state** is saved on the producer's profile as each bite ends,
- *   however it ended (`lessonsDone`).
+ * - **Done state** is saved on the producer's profile as each bite is done,
+ *   by the producer or by Show me (`lessonsDone`). A skipped bite is not
+ *   done: it is still the next unfinished one.
+ * - **Where it stands** is kept beside the conversation (`lessonStore.ts`),
+ *   so a reload brings the card back at the bite it was on.
  *
  * Analytics: `lesson_bite_started` (where from), `lesson_bite_completed`
  * (how), `lesson_chapter_completed` and `lesson_track_completed` (GRV-44),
@@ -52,6 +55,7 @@ import {
   type LessonTransition,
   markShown,
   observe,
+  resumeLesson,
   skip as skipStep,
   startBite,
   startNextBite,
@@ -62,6 +66,7 @@ import { trackResume, withTrackUnderWay } from "../../lessons/track";
 import type { LessonSettings, LessonWorld, ShowMe } from "../../lessons/types";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import type { EditorViewName } from "../editorViews";
+import { type LessonStore, storedLesson } from "./lessonStore";
 import type { AssistantConversation } from "./useAssistantConversation";
 
 /** What Show me does in the editor. */
@@ -106,6 +111,11 @@ export interface UseLessonOptions {
   readonly analytics: () => Pick<Analytics, "log" | "logFeatureFirstUse">;
   /** Makes Show me's new IDs; fresh ones by default. */
   readonly factoryContext?: () => DomainFactoryContext;
+  /**
+   * Where the lesson under way is kept across a reload, under `key`, or
+   * null while there is nowhere to keep it. Without it, it is not kept.
+   */
+  readonly saved?: { readonly key: Accessor<string | null>; readonly store: LessonStore };
 }
 
 export interface Lesson {
@@ -241,7 +251,7 @@ export function useLesson(options: UseLessonOptions): Lesson {
     if (event.kind === "bite_done") {
       const analytics = options.analytics();
       analytics.log("lesson_bite_completed", { ...ids(next), how: event.how });
-      record(biteOf(next).id);
+      if (event.how !== "skipped") record(biteOf(next).id);
       if (event.chapterDone) {
         analytics.log("lesson_chapter_completed", { chapter_id: next.chapter });
       }
@@ -330,6 +340,36 @@ export function useLesson(options: UseLessonOptions): Lesson {
       if (!current || !now) return;
       const transition = observe(current, now, untrack(settings));
       if (transition) handle(transition);
+    },
+  );
+
+  // The lesson kept from before a reload comes back once there is a project
+  // to read it against, silently: the conversation already has its turns.
+  // Each key is read once, and only then is the lesson kept under it, so the
+  // empty lesson of a page still loading never wipes the one kept.
+  let restoredKey: string | null = null;
+  createEffect(
+    () => ({ key: options.saved?.key() ?? null, ready: world() !== null }),
+    ({ key, ready }) => {
+      const saved = options.saved;
+      if (!saved || !key || !ready || restoredKey === key) return;
+      restoredKey = key;
+      const kept = saved.store.load(key);
+      const now = untrack(world);
+      if (!kept || !now || untrack(state)) return;
+      setState(
+        resumeLesson(kept.chapter, kept.bite, now, untrack(settings), kept.endings, {
+          track: kept.track,
+          passed: kept.passed,
+        }),
+      );
+    },
+  );
+  createEffect(
+    () => ({ current: state(), key: options.saved?.key() ?? null }),
+    ({ current, key }) => {
+      if (!key || restoredKey !== key) return;
+      options.saved?.store.save(key, current ? storedLesson(current) : null);
     },
   );
 

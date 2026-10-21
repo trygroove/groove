@@ -78,6 +78,7 @@ export function buildAssistantPayload(
         startTicks: placement.startTicks,
         durationTicks: placement.durationTicks,
         looped: placement.looped,
+        clipLengthTicks: placement.clipLengthTicks,
       })),
     })),
     sections: context.sections.map((section) => ({

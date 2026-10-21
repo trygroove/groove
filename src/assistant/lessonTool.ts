@@ -26,7 +26,7 @@ export const startLessonInputSchema = z.strictObject({
 });
 
 const TOOL_DESCRIPTION =
-  "Start a lesson in the producer's own project, when they ask to learn or be taught something one of its chapters covers (making a beat or drums; shaping a synth sound; finding their way around Groove; finishing a whole track, from the beat to arranging, mixing and exporting stems). The lesson appears in the panel, one bite at a time, and each bite comes back to you to teach. Call it alone, with one short sentence before it, and only when they asked for a lesson or to learn: never in the middle of building something. For anything no chapter covers, teach it in the conversation instead.";
+  "Start a lesson in the producer's own project, when they ask to learn or be taught something one of its chapters covers (making a beat or drums; shaping a synth sound; finding their way around Groove; finishing a whole track, from the beat to arranging, mixing and exporting stems). The lesson appears in the panel, one bite at a time, and each bite comes back to you to teach. Call it alone, with one short sentence before it, and only when they asked for a lesson or to learn: never in the middle of building something. Saying you will start one starts nothing: only the call puts the lesson on screen, so call it every time they ask, even for a chapter they have finished or one the conversation went through before. For anything no chapter covers, teach it in the conversation instead.";
 
 /** The tool as the model is offered it. */
 export interface StartLessonToolDefinition {

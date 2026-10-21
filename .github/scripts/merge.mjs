@@ -111,7 +111,7 @@ export function openPrs() {
       "--limit",
       "500",
       "--json",
-      "id,number,headRefName,baseRefName,isCrossRepository,isDraft,body,labels,comments,autoMergeRequest",
+      "id,number,headRefName,headRefOid,baseRefName,isCrossRepository,isDraft,body,labels,comments,autoMergeRequest",
     ]),
   ).filter((p) => !p.isCrossRepository);
   return { prs };

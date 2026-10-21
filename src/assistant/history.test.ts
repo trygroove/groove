@@ -10,6 +10,7 @@ import {
   estimateTokens,
   type HistoryEntry,
   historyOf,
+  lessonNote,
   MAX_MESSAGE_CHARS,
 } from "./history";
 import type { AssistantMessage } from "./protocol";
@@ -118,5 +119,25 @@ describe("historyOf: what became of each proposal (GRV-150)", () => {
     ]);
     expect(reply.text).toHaveLength(MAX_MESSAGE_CHARS);
     expect(reply.text.endsWith("Nothing in it is in the song.]")).toBe(true);
+  });
+});
+
+describe("historyOf after a reply that started a lesson (GRV-43)", () => {
+  it("says the call started it, so a later ask calls it again", () => {
+    // QA: after a chapter, "teach me to shape a sound" got "Starting it now"
+    // and no card: the history showed only the sentence that started one.
+    const history = historyOf([
+      { kind: "message", text: "Teach me how to make a beat" },
+      { kind: "reply", text: 'Starting "Make a beat" now.', lesson: "beat" },
+      { kind: "message", text: 'Let\'s do "Pick a kick".' },
+      { kind: "reply", text: "Open the Library." },
+    ]);
+    expect(history[1]).toEqual(
+      assistant(`Starting "Make a beat" now.\n\n${lessonNote("beat")}`),
+    );
+    expect(lessonNote("beat")).toContain('start_lesson with chapter "beat"');
+    // "Finish a track" (GRV-44) is resent the same way.
+    expect(lessonNote("track")).toContain('start_lesson with chapter "track"');
+    expect(history[3]).toEqual(assistant("Open the Library."));
   });
 });

@@ -252,6 +252,45 @@ export function startTrack(
 }
 
 /**
+ * The lesson as it stood before a reload: bite `biteId` of `chapterId` with
+ * how the chapter's bites had ended, and in "Finish a track" (GRV-44) the
+ * bites its chapter passed over. A bite under way starts again from the world
+ * as it is now; one that was over waits for the producer to pull the next,
+ * or in "Finish a track" the next chapter. Null when that bite was the
+ * lesson's last and is over: the lesson had ended.
+ */
+export function resumeLesson(
+  chapterId: ChapterId,
+  biteId: BiteId,
+  world: LessonWorld,
+  settings: LessonSettings,
+  endings: LessonState["endings"],
+  course: { readonly track: boolean; readonly passed: readonly BiteId[] } = {
+    track: false,
+    passed: [],
+  },
+): LessonState | null {
+  const bites = chapter(chapterId).bites;
+  const index = Math.max(
+    0,
+    bites.findIndex((one) => one.id === biteId),
+  );
+  const track = course.track && isTrackChapterId(chapterId);
+  const { state } = startAt(
+    chapterId,
+    index,
+    world,
+    settings,
+    { track, passed: track ? course.passed : [], endings },
+    [],
+  );
+  if (!endings[biteOf(state).id]) return state;
+  const over: LessonState = { ...state, step: null };
+  if (!chapterFinished(over)) return over;
+  return followingChapter(over) === null ? null : over;
+}
+
+/**
  * The next bite, once the one before is over: the chapter's next not passed
  * over, or in "Finish a track", the next chapter's first after its last.
  * Null when there is none.

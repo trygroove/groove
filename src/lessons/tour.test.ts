@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EDITOR_VIEWS, type EditorViewName } from "../analytics/catalog";
 import { applyShowMe, lessonContext, starterWorld } from "../testing/lessonWorld";
 import { nextStep } from "./chapters";
-import { observe, startBite } from "./session";
+import { observe, skip, startBite } from "./session";
 import { TOUR_CHAPTER } from "./tour";
 
 describe("Tour the studio (GRV-43)", () => {
@@ -75,5 +75,17 @@ describe("Tour the studio (GRV-43)", () => {
     expect(
       biteFor("sequence").steps[0].showMe(sequence, settings, lessonContext()),
     ).toEqual({ kind: "view", view: "arrangement" });
+  });
+
+  it("moves on to the next bite when the step away is skipped (QA, GRV-43)", () => {
+    // The editor opens on the arrangement, so its bite asks to step away first.
+    const world = starterWorld();
+    const started = startBite("tour", "tour-arrangement", world, settings).state;
+    expect(started.step?.index).toBe(0);
+    const skipped = skip(started, world, settings);
+    // Still on the arrangement, there is nothing left to open: the bite is over.
+    expect(skipped?.event).toMatchObject({ kind: "bite_done", how: "skipped" });
+    expect(skipped?.state.step).toBeNull();
+    expect(skipped?.state.endings).toEqual({ "tour-arrangement": "skipped" });
   });
 });

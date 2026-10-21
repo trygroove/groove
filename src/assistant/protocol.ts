@@ -46,6 +46,12 @@ export const assistantPlacementContextSchema = z.strictObject({
   startTicks: ticks,
   durationTicks: ticks,
   looped: z.boolean(),
+  /**
+   * How long the placed clip is, apart from how long the placement plays it
+   * (GRV-116). Optional so a tab on an earlier bundle, which sends none, keeps
+   * working until it reloads.
+   */
+  clipLengthTicks: ticks.optional(),
 });
 
 /** One track, as the assistant sees it (ADR 0007 decision 1). */
