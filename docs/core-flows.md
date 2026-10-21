@@ -1665,9 +1665,10 @@ not use.
    Chromium Show me plays the drop while you watch it for four bars, then
    stop it; elsewhere it is skipped.
 7. The last bite, "Export the stems", opens the Export dialog by itself with
-   Stems (ZIP) chosen. Press Export. The bite is done and the lesson is over:
-   it leaves the panel. Close the dialog. Coproducer's wrap-up of the whole
-   track follows in the conversation.
+   Stems (ZIP) chosen and every track picked in its list. Press Export. The
+   bite is done and the lesson is over: it leaves the panel. Close the
+   dialog. Coproducer's wrap-up of the whole track follows in the
+   conversation.
 8. Reload the page. The track is still there: the Bass, Chords and Hook
    tracks, the Hook playing bars 9 to 28 and BD bars 1 to 8 and 17 to 28.
 
