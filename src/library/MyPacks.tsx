@@ -9,7 +9,7 @@ import { createEffect, createMemo, createSignal } from "solid-js";
 import UpgradeAccountPrompt from "../components/UpgradeAccountPrompt";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 import { ariaBool } from "../shared/aria";
-import { formatBytes } from "../userData/userData";
+import { formatStorageSize } from "../userData/userData";
 import {
   DROP_PACK_NAME,
   MAX_PACK_NAME_LENGTH,
@@ -206,8 +206,9 @@ export default function MyPacks(props: MyPacksProps): JSX.Element {
   const usageLine = createMemo(() => {
     const usage = library().usage();
     // An internal or admin account has no allowance to measure against (GRV-112).
-    if (!Number.isFinite(usage.capBytes)) return `${formatBytes(usage.usedBytes)} used`;
-    return `${formatBytes(usage.usedBytes)} of ${formatBytes(usage.capBytes)} used`;
+    if (!Number.isFinite(usage.capBytes))
+      return `${formatStorageSize(usage.usedBytes)} used`;
+    return `${formatStorageSize(usage.usedBytes)} of ${formatStorageSize(usage.capBytes)} used`;
   });
 
   return (

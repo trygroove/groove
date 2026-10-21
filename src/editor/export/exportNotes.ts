@@ -1,5 +1,5 @@
 import type { ErrorCode } from "../../analytics/errorCodes";
-import { formatBytes } from "./stemSelection";
+import { formatExportSize } from "./stemSelection";
 
 /**
  * The words in the Export footer's one-line message slot (EXP-004). Pure, so
@@ -26,7 +26,7 @@ export function stemsNote({ tracks, zips, bytes }: StemsNoteInput): string {
   if (tracks === 0) return "Turn on at least one track to export stems.";
   if (zips > 1) {
     return (
-      `${formatBytes(bytes)} is over the ${LIMIT_TEXT} browser limit, so stems come as ` +
+      `${formatExportSize(bytes)} is over the ${LIMIT_TEXT} browser limit, so stems come as ` +
       `${zips} ZIPs in track order, each downloaded when ready.`
     );
   }

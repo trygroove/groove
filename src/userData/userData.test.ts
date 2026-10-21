@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ADMIN_CLAIM, INTERNAL_CLAIM } from "../access/claims";
 import {
-  formatBytes,
+  formatStorageSize,
   IMPORT_CONTENT_TYPES,
   importContentType,
   MAX_IMPORT_FILE_BYTES,
@@ -71,10 +71,14 @@ describe("the allowance", () => {
   });
 
   it("reads sizes the way a producer does", () => {
-    expect(formatBytes(512)).toBe("512 bytes");
-    expect(formatBytes(1536)).toBe("1.5 KB");
-    expect(formatBytes(12.4 * 1024 ** 2)).toBe("12 MB");
-    expect(formatBytes(USER_DATA_CAP_BYTES)).toBe("1 GB");
+    expect(formatStorageSize(512)).toBe("512 bytes");
+    expect(formatStorageSize(1536)).toBe("1.5 KB");
+    expect(formatStorageSize(12.4 * 1024 ** 2)).toBe("12 MB");
+    expect(formatStorageSize(USER_DATA_CAP_BYTES)).toBe("1 GB");
+    expect(formatStorageSize(0)).toBe("0 bytes");
+    // One decimal below 10, whole numbers from 10 up.
+    expect(formatStorageSize(9.5 * 1024)).toBe("9.5 KB");
+    expect(formatStorageSize(10 * 1024 ** 2)).toBe("10 MB");
   });
 });
 

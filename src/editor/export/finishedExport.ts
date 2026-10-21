@@ -3,7 +3,7 @@ import type { ExportFacts } from "./exportFacts";
 import { exportFileName } from "./exportFileName";
 import type { ExportFormat } from "./FormatCards";
 import type { SleeveStripe } from "./sleeveCanvas";
-import { formatBytes } from "./stemSelection";
+import { formatExportSize } from "./stemSelection";
 import { stemsBatchFileName } from "./stemsExport";
 import type { TrackLaneView } from "./trackLanes";
 
@@ -58,10 +58,13 @@ export function finishedExport(input: FinishedExportInput): FinishedExport {
     format,
     fileName: stereo ? exportFileName(facts.name, date, "wav") : (names[0] ?? ""),
     zips: several
-      ? batches.map((_, i) => ({ name: names[i], size: formatBytes(input.fileBytes[i]) }))
+      ? batches.map((_, i) => ({
+          name: names[i],
+          size: formatExportSize(input.fileBytes[i]),
+        }))
       : [],
     count: stereo ? tracks.length : included.length,
-    size: formatBytes(bytes),
+    size: formatExportSize(bytes),
     bars: input.bars,
     stripes: tracks.flatMap((row) =>
       row.color ? [{ color: row.color, lanes: row.lanes }] : [],
