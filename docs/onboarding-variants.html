@@ -1,0 +1,1119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- A design study for the onboarding journey: five clickable UI variants (a reskin through a progressively unfolding studio), each with First beat / Choose sounds / Arrange screens that play, plus build notes and a comparison. Self-contained; open it in a browser. Its mocks carry their own palettes on purpose and do not follow src/theme.css. -->
+<title>First Beat Variants</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a tab bar of six studios across the top; under it one studio at a time,
+   three screens deep (First beat / Choose sounds / Arrange), the mock on the left
+   and its notes on the right; a comparison and the "no tutorial" rules at the end. */
+:root {
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --fg: #1b1a17;
+  --muted: #6b6760;
+  --line: #e2dfd7;
+  --accent: #c2410c;
+  --accent-soft: #fde9dd;
+  --code-bg: #efede7;
+  --display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --body: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15140f; --surface: #1f1d17; --fg: #ece8df; --muted: #a39d90;
+    --line: #35322a; --accent: #f28c5a; --accent-soft: #3a2418; --code-bg: #2a2720;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15140f; --surface: #1f1d17; --fg: #ece8df; --muted: #a39d90;
+  --line: #35322a; --accent: #f28c5a; --accent-soft: #3a2418; --code-bg: #2a2720;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 24px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--display); font-weight: 400; line-height: 1.1; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(36px, 5vw, 56px); }
+h2 { font-size: clamp(26px, 3vw, 34px); }
+h3 { font-size: 22px; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+code, kbd { font-family: var(--mono); font-size: .86em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+a { color: var(--accent); }
+.intro { display: grid; gap: 14px; margin-bottom: 28px; }
+.intro p { max-width: 72ch; color: var(--muted); font-size: 17px; }
+
+/* Studio tabs */
+.tabs { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 10px; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
+.tabs ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.tabs ul::-webkit-scrollbar { display: none; }
+.tabs button { font: inherit; font-weight: 600; font-size: 14px; color: var(--muted); background: transparent; border: 1px solid transparent; padding: 8px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap; display: flex; gap: 8px; align-items: center; }
+.tabs button .n { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }
+.tabs button:hover { color: var(--fg); }
+.tabs button[aria-selected="true"] { background: var(--surface); color: var(--fg); border-color: var(--line); box-shadow: 0 1px 0 var(--line); }
+.tabs button[aria-selected="true"] .n { background: var(--accent); color: #fff; border-color: var(--accent); }
+.tabs button:focus-visible, .screens button:focus-visible, .mock button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* A studio */
+.studio[hidden] { display: none; }
+.studio-head { display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 20px; }
+@media (min-width: 900px) { .studio-head { grid-template-columns: 1.3fr 1fr; align-items: end; } }
+.studio-head .lede { color: var(--muted); font-size: 16px; }
+.bold-meter { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.bold-meter .dots { display: flex; gap: 4px; }
+.bold-meter .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+.bold-meter .dots i.f { background: var(--accent); }
+
+.screens { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.screens button { font: inherit; font-size: 14px; font-weight: 600; padding: 7px 12px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 6px; cursor: pointer; }
+.screens button[aria-selected="true"] { color: var(--fg); border-color: var(--fg); }
+.screen[hidden] { display: none; }
+.screen { display: grid; gap: 18px; grid-template-columns: 1fr; }
+@media (min-width: 1000px) { .screen { grid-template-columns: minmax(0, 1fr) 320px; align-items: start; } }
+.notes { display: grid; gap: 12px; font-size: 14px; }
+.notes h3 { font-size: 20px; }
+.notes ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.notes li { max-width: 48ch; }
+.notes .try { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+.notes .try b { color: var(--accent); }
+
+/* Frame: the mock lives in a scrollable viewport so phones still see it whole-ish */
+.frame { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.frame > .mock { min-width: 820px; }
+.frame.phone { max-width: 420px; }
+.frame.phone > .mock { min-width: 0; }
+
+/* Build notes per studio */
+.build { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 14px; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .build { grid-template-columns: 1fr 1fr 1fr; } }
+.build h4 { margin: 0 0 6px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.build ul { margin: 0; padding-left: 18px; font-size: 14px; display: grid; gap: 5px; }
+.build .size { font-family: var(--display); font-size: 26px; }
+
+/* Comparison + rules */
+.section { margin-top: 56px; display: grid; gap: 16px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 720px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+tbody tr:last-child td { border-bottom: 0; }
+td .pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--code-bg); }
+td .pill.hi { background: var(--accent); color: #fff; }
+.rules { display: grid; gap: 12px; grid-template-columns: 1fr; counter-reset: rule; }
+@media (min-width: 760px) { .rules { grid-template-columns: 1fr 1fr; } }
+.rule { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; }
+.rule h3 { font-size: 20px; }
+.rule p { font-size: 14px; color: var(--muted); }
+.rule .where { font-size: 12px; color: var(--fg); }
+
+/* ===================== The mocks ===================== */
+.mock { --m-bg: #000; --m-panel: #141414; --m-card: #292929; --m-line: #292929; --m-text: #f6f6f6; --m-muted: #a6a6a6; --m-dim: #919191;
+  --m-accent: #fff; --m-on-accent: #000; --m-radius: 0px; --m-font: var(--body); --m-ctrl: 30px;
+  background: var(--m-bg); color: var(--m-text); font-family: var(--m-font); font-size: 13px; line-height: 1.3; position: relative; overflow: hidden; }
+.mock * { box-sizing: border-box; }
+:where(.mock button) { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; border-radius: var(--m-radius); }
+.m-top { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; background: var(--m-panel); border-bottom: 1px solid var(--m-line); }
+.m-top .name { font-weight: 700; }
+.m-top .sp { flex: 1; }
+.m-top .grp { display: flex; gap: 4px; align-items: center; }
+.m-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--m-ctrl); padding: 0 12px; background: var(--m-card); color: var(--m-text); border-radius: var(--m-radius); font-weight: 600; font-size: 12px; white-space: nowrap; }
+.m-btn.primary { background: var(--m-accent); color: var(--m-on-accent); }
+.m-btn.ghost { background: transparent; border: 1px solid var(--m-line); }
+.m-btn.sq { width: var(--m-ctrl); padding: 0; }
+.m-btn.playing { background: var(--m-accent); color: var(--m-on-accent); }
+.m-body { display: flex; min-height: 440px; }
+.m-side { width: 190px; flex: none; background: var(--m-panel); border-right: 1px solid var(--m-line); display: flex; flex-direction: column; }
+.m-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.m-title { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--m-muted); border-bottom: 1px solid var(--m-line); }
+.m-title .sp { flex: 1; }
+.m-hint { font-size: 12px; color: var(--m-muted); padding: 6px 12px; }
+.m-label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--m-muted); }
+
+/* Track rows (arrangement header column + lanes) */
+.tracks { display: flex; flex-direction: column; }
+.trk { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 10px; border-bottom: 1px solid var(--m-line); border-left: 4px solid var(--c, #888); }
+.trk .nm { font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trk .kd { font-size: 11px; color: var(--m-muted); }
+.trk .ms { display: flex; gap: 2px; }
+.trk .ms b { width: 18px; height: 18px; display: grid; place-items: center; font-size: 10px; background: var(--m-card); border-radius: var(--m-radius); }
+.trk.sel { background: var(--m-accent); color: var(--m-on-accent); }
+.trk.sel .kd { color: var(--m-on-accent); opacity: .7; }
+.trk.sel .ms b { background: var(--m-on-accent); color: var(--m-accent); }
+.trk.hole { background: #000; color: #fff; }
+.trk.hole .kd { color: #a6a6a6; }
+
+/* Step grid */
+.steps { display: grid; gap: 6px; padding: 10px 12px; }
+.srow { display: grid; grid-template-columns: 110px repeat(16, minmax(0, 1fr)); gap: 3px; align-items: center; }
+.srow .lab { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; padding-right: 8px; min-width: 0; }
+.srow .lab i { width: 10px; height: 10px; background: var(--c); flex: none; border-radius: var(--m-radius); }
+.srow .lab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step { aspect-ratio: 1; min-height: 22px; background: var(--m-card); border-radius: var(--m-radius); position: relative; transition: transform .05s; }
+.step:nth-child(4n+2) { background: color-mix(in srgb, var(--m-card) 70%, var(--m-bg)); }
+.step.on { background: var(--c, var(--m-accent)); }
+.step.now { outline: 2px solid var(--m-accent); outline-offset: -2px; }
+.step:active { transform: scale(.94); }
+.steps.beats { padding-top: 0; }
+.beat-ruler { display: grid; grid-template-columns: 110px repeat(16, minmax(0, 1fr)); gap: 3px; padding: 6px 12px 0; font-size: 10px; color: var(--m-muted); font-family: var(--mono); }
+.beat-ruler span:nth-child(4n+2) { color: var(--m-text); }
+
+/* Dock (today's five tiles) */
+.dock { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 2px; padding: 4px; background: var(--m-bg); box-shadow: 0 10px 30px rgb(0 0 0 / .45); }
+.dock button { width: 52px; height: 52px; background: var(--m-card); display: grid; place-items: center; position: relative; color: var(--m-text); }
+.dock button .k { position: absolute; top: 4px; left: 6px; font-size: 10px; font-family: var(--mono); }
+.dock button svg { width: 20px; height: 20px; }
+.dock button[aria-current] { background: var(--m-accent); color: var(--m-on-accent); }
+.dock.labelled button { width: 64px; height: 58px; grid-template-rows: 1fr auto; padding-bottom: 5px; gap: 2px; }
+.dock.labelled button .l { font-size: 10px; font-weight: 700; }
+
+/* Timeline / arrangement */
+.tl { display: grid; grid-template-columns: 180px 1fr; }
+.tl .ruler { display: grid; grid-template-columns: repeat(8, 1fr); height: 24px; border-bottom: 1px solid var(--m-line); font-family: var(--mono); font-size: 10px; color: var(--m-muted); }
+.tl .ruler span { padding: 5px 6px; border-left: 1px solid var(--m-line); }
+.tl .lane { display: grid; grid-template-columns: repeat(8, 1fr); height: 48px; border-bottom: 1px solid var(--m-line); position: relative; }
+.tl .lane span { border-left: 1px solid color-mix(in srgb, var(--m-line) 60%, transparent); }
+.clip { position: absolute; top: 5px; bottom: 5px; left: calc(var(--s) * 12.5% + 2px); width: calc(var(--w) * 12.5% - 4px); background: var(--c); border-radius: var(--m-radius); color: #000; font-size: 11px; font-weight: 700; padding: 3px 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: .92; }
+.clip.ghost { background: transparent; border: 1px dashed var(--m-dim); color: var(--m-muted); opacity: 1; font-weight: 500; }
+.tl .corner { height: 24px; border-bottom: 1px solid var(--m-line); }
+.playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--m-accent); left: var(--x, 0%); pointer-events: none; }
+
+/* Library list */
+.lib { display: grid; gap: 2px; padding: 8px; }
+.lib .snd { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 8px; border-radius: var(--m-radius); }
+.lib .snd:hover { background: var(--m-card); }
+.lib .snd.sel { background: var(--m-accent); color: var(--m-on-accent); }
+.lib .snd .w { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib .snd .meta { font-size: 11px; opacity: .7; font-family: var(--mono); }
+.lib .snd .pl { width: 22px; height: 22px; display: grid; place-items: center; background: var(--m-card); border-radius: var(--m-radius); flex: none; font-size: 10px; }
+.lib .snd.sel .pl { background: var(--m-on-accent); color: var(--m-accent); }
+.chips { display: flex; gap: 6px; padding: 8px 12px; flex-wrap: wrap; }
+.chip { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: calc(var(--m-radius) * 3); background: var(--m-card); color: var(--m-muted); }
+.chip.on { background: var(--m-accent); color: var(--m-on-accent); }
+.search { margin: 10px 12px 0; height: var(--m-ctrl); background: var(--m-card); border-radius: var(--m-radius); display: flex; align-items: center; padding: 0 10px; color: var(--m-muted); font-size: 12px; gap: 8px; }
+
+/* Tiles (sound-first browser) */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 12px; }
+.tile { aspect-ratio: 1.15; border-radius: var(--m-radius); padding: 12px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; text-align: left; background: var(--c); color: #fff; position: relative; overflow: hidden; }
+.tile b { font-size: 16px; }
+.tile small { font-size: 11px; opacity: .85; }
+.tile .ic { position: absolute; top: 10px; left: 12px; font-size: 22px; }
+.tile .lis { position: absolute; top: 10px; right: 10px; width: 28px; height: 28px; border-radius: 50%; background: rgb(255 255 255 / .25); display: grid; place-items: center; font-size: 10px; }
+.tile.sel { outline: 3px solid var(--m-accent); outline-offset: 2px; }
+.tile.big { aspect-ratio: 1.6; }
+
+/* Piano / scale grid */
+.notes-grid { display: grid; gap: 3px; padding: 10px 12px; }
+.nrow { display: grid; grid-template-columns: 70px repeat(16, minmax(0, 1fr)); gap: 3px; align-items: center; }
+.nrow .lab { font-size: 11px; font-family: var(--mono); color: var(--m-muted); display: flex; align-items: center; gap: 6px; }
+.nrow .lab.root { color: var(--m-text); font-weight: 700; }
+.nrow .step { min-height: 18px; aspect-ratio: auto; height: 20px; }
+.nrow.black .step { background: color-mix(in srgb, var(--m-card) 50%, var(--m-bg)); }
+
+/* Coach strip */
+.coach { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--m-coach, var(--m-card)); border-bottom: 1px solid var(--m-line); font-size: 13px; }
+.coach .av { width: 28px; height: 28px; border-radius: 50%; background: var(--m-accent); color: var(--m-on-accent); display: grid; place-items: center; font-weight: 800; font-size: 12px; flex: none; }
+.coach .txt { flex: 1; min-width: 0; }
+.coach .txt b { display: block; }
+.coach .prog { display: flex; gap: 4px; }
+.coach .prog i { width: 22px; height: 4px; background: var(--m-line); border-radius: 2px; }
+.coach .prog i.d { background: var(--m-accent); }
+
+/* Pattern blocks (channel rack playlist) */
+.pats { display: flex; gap: 6px; padding: 8px 12px; align-items: center; }
+.pat { height: 28px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px; background: var(--m-card); border-radius: var(--m-radius); }
+.pat i { width: 10px; height: 10px; background: var(--c); border-radius: 2px; }
+.pat.on { background: var(--m-accent); color: var(--m-on-accent); }
+.playlist { display: grid; grid-template-columns: 110px 1fr; }
+.playlist .prow { display: contents; }
+.playlist .pl-lab { height: 44px; display: flex; align-items: center; padding: 0 10px; font-weight: 700; font-size: 12px; border-bottom: 1px solid var(--m-line); gap: 6px; }
+.playlist .pl-lab i { width: 10px; height: 10px; background: var(--c); border-radius: 2px; }
+.playlist .pl-lane { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; padding: 4px 2px; border-bottom: 1px solid var(--m-line); }
+.playlist .cell { background: color-mix(in srgb, var(--m-card) 60%, var(--m-bg)); border-radius: var(--m-radius); min-height: 34px; }
+.playlist .cell:nth-child(4n+1) { background: var(--m-card); }
+.playlist .cell.on { background: var(--c); }
+
+/* Section cards (sound-first arrange) */
+.sections { display: flex; gap: 10px; padding: 14px 12px; overflow-x: auto; align-items: stretch; }
+.sec { flex: none; width: 170px; border-radius: var(--m-radius); background: var(--m-card); padding: 12px; display: grid; gap: 8px; align-content: start; text-align: left; }
+.sec b { font-size: 14px; }
+.sec .bars { font-size: 11px; color: var(--m-muted); }
+.sec .lanes { display: grid; gap: 3px; }
+.sec .lanes i { display: block; height: 7px; background: var(--c); border-radius: 2px; }
+.sec .lanes i.off { background: var(--m-line); }
+.sec.sel { outline: 2px solid var(--m-accent); }
+.sec.add { border: 1px dashed var(--m-dim); background: transparent; place-items: center; color: var(--m-muted); font-weight: 600; }
+
+/* Phone (unfolding studio) */
+.phone-ui { width: 100%; aspect-ratio: 9/18; max-height: 700px; display: flex; flex-direction: column; }
+.phone-ui .m-top { height: 48px; }
+.phone-ui .big-play { width: 72px; height: 72px; border-radius: 50%; background: var(--m-accent); color: var(--m-on-accent); font-size: 26px; display: grid; place-items: center; margin: 0 auto; box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
+.phone-ui .srow { grid-template-columns: 70px repeat(8, minmax(0, 1fr)); }
+.phone-ui .beat-ruler { grid-template-columns: 70px repeat(8, minmax(0, 1fr)); }
+.caption { padding: 10px 14px; font-size: 14px; }
+.caption b { display: block; font-size: 17px; margin-bottom: 2px; }
+.pads { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 10px 14px; }
+.pad { aspect-ratio: 1; border-radius: var(--m-radius); background: var(--m-card); display: grid; place-items: end start; padding: 8px; font-weight: 700; font-size: 12px; border-bottom: 4px solid var(--c, var(--m-line)); }
+.pad.sel { background: var(--c); color: #fff; }
+.stage { display: flex; gap: 6px; padding: 8px 14px 0; }
+.stage i { flex: 1; height: 4px; border-radius: 2px; background: var(--m-line); }
+.stage i.d { background: var(--m-accent); }
+.unfold { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 10px 12px; }
+.unfold .lvl { border: 1px solid var(--m-line); border-radius: var(--m-radius); padding: 10px; font-size: 12px; }
+.unfold .lvl b { display: block; font-size: 13px; margin-bottom: 4px; }
+.unfold .lvl.now { border-color: var(--m-accent); }
+.ghost-region { border: 1px dashed var(--m-dim); border-radius: var(--m-radius); color: var(--m-muted); display: grid; place-items: center; font-size: 12px; min-height: 60px; margin: 10px 12px; text-align: center; padding: 8px; }
+
+/* Per-variant skins */
+.mock.v1 { --m-bg: #f2f2f7; --m-panel: #ffffff; --m-card: #e9e9ee; --m-line: #dcdce2; --m-text: #1c1c1e; --m-muted: #6e6e73; --m-dim: #8e8e93;
+  --m-accent: #ff5a3c; --m-on-accent: #ffffff; --m-radius: 8px; --m-font: -apple-system, "SF Pro Text", "Instrument Sans", system-ui, sans-serif; }
+.mock.v1 .dock { background: #fff; border-radius: 14px; padding: 6px; gap: 4px; box-shadow: 0 10px 30px rgb(0 0 0 / .14); }
+.mock.v1 .dock button { border-radius: 10px; background: #f2f2f7; }
+.mock.v1 .step:nth-child(4n+2) { background: #dedee5; }
+.mock.v2 { --m-bg: #faf8f3; --m-panel: #ffffff; --m-card: #ece9e1; --m-line: #dcd8ce; --m-text: #1a1a1a; --m-muted: #6c685f; --m-dim: #948f84;
+  --m-accent: #0f766e; --m-on-accent: #ffffff; --m-radius: 6px; --m-coach: #fff6d6; }
+.mock.v3 { --m-bg: #24282c; --m-panel: #2f3439; --m-card: #40474f; --m-line: #1b1e22; --m-text: #eef1f4; --m-muted: #9aa3ad; --m-dim: #6f7881;
+  --m-accent: #ffb13d; --m-on-accent: #1b1e22; --m-radius: 3px; }
+.mock.v3 .step { background: #4b5440; }
+.mock.v3 .step:nth-child(4n+2), .mock.v3 .step:nth-child(4n+3), .mock.v3 .step:nth-child(4n+4), .mock.v3 .step:nth-child(4n+5) { background: #4b5440; }
+.mock.v3 .srow .step:nth-child(n+6):nth-child(-n+9), .mock.v3 .srow .step:nth-child(n+14):nth-child(-n+17) { background: #5a4a3c; }
+.mock.v3 .srow .step.on, .mock.v3 .nrow .step.on { background: var(--c); box-shadow: inset 0 0 0 2px rgb(255 255 255 / .35); }
+.mock.v4 { --m-bg: #ffffff; --m-panel: #f6f6f8; --m-card: #ececf1; --m-line: #e3e3ea; --m-text: #111118; --m-muted: #70707c; --m-dim: #9a9aa5;
+  --m-accent: #111118; --m-on-accent: #ffffff; --m-radius: 14px; }
+.mock.v5 { --m-bg: #ffffff; --m-panel: #ffffff; --m-card: #f1f1f4; --m-line: #e6e6ea; --m-text: #141418; --m-muted: #71717a; --m-dim: #a1a1aa;
+  --m-accent: #e1306c; --m-on-accent: #ffffff; --m-radius: 16px; }
+.mock.v5 .m-btn.primary { background: linear-gradient(90deg, #f58529, #dd2a7b, #8134af); }
+.mock.v5 .stage i.d { background: linear-gradient(90deg, #f58529, #dd2a7b); }
+@media (prefers-reduced-motion: reduce) { .step { transition: none; } }
+</style>
+<div class="wrap">
+<header class="intro">
+  <span class="eyebrow">Groove · design study · onboarding</span>
+  <h1>Five ways into a first beat</h1>
+  <p>Today's editor is a capable instrument panel that assumes you already know what a step sequencer, a piano roll and a sampler are. This study keeps the same three jobs on every variant (make the first beat, choose sounds, arrange it into a song) and changes how much the screen explains itself. Variant 1 only changes the skin. Each one after it changes more of the flow. Every mock plays: press Play, click squares, pick sounds.</p>
+</header>
+
+<nav class="tabs" aria-label="Variants">
+  <ul role="tablist">
+    <li><button role="tab" data-studio="now" aria-selected="true"><span class="n">0</span>Today</button></li>
+    <li><button role="tab" data-studio="v1"><span class="n">1</span>Daylight reskin</button></li>
+    <li><button role="tab" data-studio="v2"><span class="n">2</span>Guided studio</button></li>
+    <li><button role="tab" data-studio="v3"><span class="n">3</span>Channel rack</button></li>
+    <li><button role="tab" data-studio="v4"><span class="n">4</span>Sound first</button></li>
+    <li><button role="tab" data-studio="v5"><span class="n">5</span>Unfolding studio</button></li>
+    <li><button role="tab" data-studio="compare"><span class="n">=</span>Compare</button></li>
+  </ul>
+</nav>
+
+<!-- ============================ TODAY ============================ -->
+<section class="studio" id="now">
+  <div class="studio-head">
+    <div><span class="eyebrow">Baseline</span><h2>The editor as it is</h2></div>
+    <p class="lede">Monochrome, square, five views on an unlabelled dock reached by the keys 1 to 5. The starter project opens on the arrangement with one track, "BD", playing four on the floor. Nothing on screen says where the steps or the sounds are.</p>
+  </div>
+  <div class="screens" role="tablist"><button role="tab" aria-selected="true" data-screen="beat">First beat</button><button role="tab" data-screen="sounds">Choose sounds</button><button role="tab" data-screen="arr">Arrange</button></div>
+
+  <div class="screen" data-screen="beat">
+    <div class="frame"><div class="mock now">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="m-label">Saved</span><span class="sp"></span>
+        <div class="grp"><button class="m-btn sq play" aria-label="Play">▶</button><button class="m-btn sq">⟲</button><button class="m-btn">120 <span class="m-label">BPM</span></button><button class="m-btn sq">♩</button></div><span class="sp"></span>
+        <div class="grp"><button class="m-btn sq">↶</button><button class="m-btn sq">↷</button><button class="m-btn">Coproducer</button><button class="m-btn">Export</button><button class="m-btn sq">?</button></div></div>
+      <div class="m-body">
+        <div class="m-side"><div class="m-title">Sequence</div>
+          <div class="tracks"><div class="trk hole" style="--c:#ff5a3c"><span class="nm">BD</span><span class="kd">Drum machine</span><span class="ms"><b>M</b><b>S</b></span></div></div>
+          <div class="m-hint">Pads</div>
+          <div class="tracks"><div class="trk" style="--c:#ff5a3c"><span class="nm">BD</span></div><div class="trk" style="--c:#555"><span class="nm" style="color:var(--m-muted)">+ Pad</span></div></div></div>
+        <div class="m-main"><div class="m-title">Four on the floor <span class="sp"></span><span>1 bar</span><button class="m-btn ghost">Generate</button><button class="m-btn ghost">Transform</button></div>
+          <div class="beat-ruler" data-ruler></div>
+          <div class="steps" data-rows="BD|#ff5a3c|kick|1000100010001000"></div>
+          <div class="m-hint">Select a clip in the arrangement, then press 2 to edit its steps or notes.</div>
+        </div>
+      </div>
+      <div class="dock" data-dock="now" data-current="2"></div>
+      <div class="playhead" hidden></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What a first-timer meets</h3>
+      <ul>
+        <li>The project opens on the arrangement, not here. Getting to the steps means knowing the clip must be selected first, then pressing <kbd>2</kbd>, or reading the dock's hover tip.</li>
+        <li>The track is called "BD", the pad is called "BD", the clip is "Four on the floor". None of these words say "kick" or "drums".</li>
+        <li>Generate and Transform are strong tools with no hint of what they do until pressed.</li>
+        <li>Adding a hat means: Instrument view, Drum machine, + Pad, Library, pick, back to Sequence. Six moves across four views.</li>
+      </ul>
+      <div class="notes try"><b>Try it:</b> press Play, then click squares. This is the one thing that already works by feel.</div>
+    </aside>
+  </div>
+
+  <div class="screen" data-screen="sounds" hidden>
+    <div class="frame"><div class="mock now">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn sq play" aria-label="Play">▶</button><button class="m-btn">120 <span class="m-label">BPM</span></button></div><span class="sp"></span><div class="grp"><button class="m-btn">Coproducer</button><button class="m-btn">Export</button></div></div>
+      <div class="m-body">
+        <div class="m-side"><div class="m-title">Library · for BD</div>
+          <div class="search">⌕ Search sounds</div>
+          <div class="chips"><span class="chip on">All</span><span class="chip">Kicks</span><span class="chip">Snares</span><span class="chip">Hats</span><span class="chip">Loops</span></div>
+          <div class="m-hint">Techno Drums · 24 sounds</div>
+        </div>
+        <div class="m-main">
+          <div class="lib" data-lib="kick|Rounded Analog Kick|one-shot · 0.42s;kick|Driven Warehouse Kick|one-shot · 0.51s;kick|Soft 808 Kick|one-shot · 0.80s;snare|Hard Clap Wide|one-shot · 0.28s;hat|Metallic Closed Hat|one-shot · 0.09s;hat|Open Hat Long|one-shot · 0.40s;snare|Industrial Rim|one-shot · 0.12s"></div>
+          <div class="m-hint">Space auditions · Enter puts it on the pad · Esc goes back. Similar sounds: press ~</div>
+        </div>
+      </div>
+      <div class="dock" data-dock="now" data-current="4"></div>
+    </div></div>
+    <aside class="notes">
+      <h3>Choosing a sound today</h3>
+      <ul>
+        <li>The library is a view, reached by <kbd>4</kbd> or from a pad's sample slot. It is aimed at whatever was selected, which is invisible unless you read the title row.</li>
+        <li>You must already have decided on an instrument kind (sampler, drum machine, synth) before any sound is offered. The sound you want is downstream of a decision you cannot yet make.</li>
+        <li>The list is good once you are here: audition on Space, insert on Enter, similar sounds a key away.</li>
+      </ul>
+    </aside>
+  </div>
+
+  <div class="screen" data-screen="arr" hidden>
+    <div class="frame"><div class="mock now">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn sq play" aria-label="Play">▶</button><button class="m-btn sq">⟲</button><button class="m-btn">120 <span class="m-label">BPM</span></button></div><span class="sp"></span><div class="grp"><button class="m-btn">Coproducer</button><button class="m-btn">Export</button></div></div>
+      <div class="m-body"><div class="m-main">
+        <div class="m-title">Arrangement <span class="sp"></span><button class="m-btn ghost">Sampler</button><button class="m-btn ghost">Drum machine</button><button class="m-btn ghost">Synth</button><button class="m-btn ghost">Loop</button><button class="m-btn sq ghost">−</button><button class="m-btn sq ghost">+</button></div>
+        <div class="tl">
+          <div class="corner"></div><div class="ruler"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div>
+          <div class="trk hole" style="--c:#ff5a3c"><span class="nm">BD</span><span class="kd">Drum machine</span><span class="ms"><b>M</b><b>S</b></span></div>
+          <div class="lane"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><div class="clip" style="--s:0;--w:1;--c:#ff5a3c">Four on the floor</div></div>
+        </div>
+        <div class="m-hint" style="padding-top:40px;text-align:center">Double-click an empty bar to add a clip. Alt-drag copies. Drag the loop brace to set the span you are working in.</div>
+      </div></div>
+      <div class="dock" data-dock="now" data-current="1"></div>
+    </div></div>
+    <aside class="notes">
+      <h3>Arranging today</h3>
+      <ul>
+        <li>This is the screen a new project opens on. One clip, one bar, no words. The four new-track buttons name engines, not sounds.</li>
+        <li>Every gesture is right by DAW convention (double-click, Alt-drag, loop brace) and invisible without that convention.</li>
+        <li>There is no notion of a section or a pattern: a song is made by copying one-bar clips along a ruler.</li>
+      </ul>
+    </aside>
+  </div>
+  <div class="build">
+    <div><h4>Flows</h4><ul><li>CF-002 builds a five-part loop in 6 steps across 4 views.</li><li>CF-008 guards the dock and keys 1 to 5.</li><li>CF-037 is the only guided path, inside Coproducer's panel.</li></ul></div>
+    <div><h4>Where the design lives</h4><ul><li><code>docs/design.md</code>: square, monochrome, state is brightness.</li><li><code>src/theme.css</code> and <code>theme.test.ts</code> enforce it.</li><li><code>ViewDock.tsx</code>: five tiles, key in the corner, no label.</li></ul></div>
+    <div><h4>Cost of change</h4><div class="size">0</div><ul><li>Reference only.</li></ul></div>
+  </div>
+</section>
+
+<!-- ============================ V1 ============================ -->
+<section class="studio" id="v1" hidden>
+  <div class="studio-head">
+    <div><span class="eyebrow">Variant 1 · reskin only</span><h2>Daylight</h2></div>
+    <div><p class="lede">Same five views, same keys, same gestures. Light surfaces, soft corners, one warm accent, words under every icon, and plain names for the things a beginner touches first. Nothing a current user knows moves.</p><div class="bold-meter"><span>Boldness</span><span class="dots"><i class="f"></i><i></i><i></i><i></i><i></i></span></div></div>
+  </div>
+  <div class="screens" role="tablist"><button role="tab" aria-selected="true" data-screen="beat">First beat</button><button role="tab" data-screen="sounds">Choose sounds</button><button role="tab" data-screen="arr">Arrange</button></div>
+
+  <div class="screen" data-screen="beat">
+    <div class="frame"><div class="mock v1">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="m-label">Saved</span><span class="sp"></span>
+        <div class="grp"><button class="m-btn primary play" aria-label="Play">▶ Play</button><button class="m-btn">⟲ Loop</button><button class="m-btn">120 <span class="m-label">BPM</span></button><button class="m-btn">♩ Click</button></div><span class="sp"></span>
+        <div class="grp"><button class="m-btn sq">↶</button><button class="m-btn sq">↷</button><button class="m-btn">✦ Coproducer</button><button class="m-btn">Export</button><button class="m-btn sq">?</button></div></div>
+      <div class="m-body">
+        <div class="m-side"><div class="m-title">Steps · Kick</div>
+          <div class="tracks"><div class="trk sel" style="--c:#ff5a3c"><span class="nm">Kick</span><span class="kd">Drums</span><span class="ms"><b>M</b><b>S</b></span></div></div>
+          <div class="m-hint">Pads in this kit</div>
+          <div class="tracks"><div class="trk" style="--c:#ff5a3c"><span class="nm">Kick</span></div><div class="trk" style="--c:#aaa"><span class="nm" style="color:var(--m-accent)">+ Add a pad</span></div></div></div>
+        <div class="m-main"><div class="m-title">Beat 1 · 1 bar <span class="sp"></span><button class="m-btn ghost">✨ Fill a pattern</button><button class="m-btn ghost">Shuffle · Humanise</button></div>
+          <div class="beat-ruler" data-ruler></div>
+          <div class="steps" data-rows="Kick|#ff5a3c|kick|1000100010001000"></div>
+          <div class="m-hint">Click a square to put a hit on it. Each square is a sixteenth of the bar; the numbered ones are the beats.</div>
+        </div>
+      </div>
+      <div class="dock labelled" data-dock="v1" data-current="2"></div>
+      <div class="playhead" hidden></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>The dock keeps its five tiles and keys, and gains a word under each: Arrange, Steps, Sound, Sounds, Mix.</li>
+        <li>Play is a labelled primary button, not a square. Loop and Click say what they are.</li>
+        <li>The starter track is "Kick" of kind "Drums". Generate becomes "Fill a pattern"; the clip is "Beat 1".</li>
+        <li>One sentence of help sits under the grid, in the empty space it already has.</li>
+      </ul>
+      <div class="notes try"><b>Try it:</b> Play, then click. Identical behaviour to today, so CF-002 and CF-008 pass unchanged.</div>
+    </aside>
+  </div>
+
+  <div class="screen" data-screen="sounds" hidden>
+    <div class="frame"><div class="mock v1">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn primary play" aria-label="Play">▶ Play</button><button class="m-btn">120 <span class="m-label">BPM</span></button></div><span class="sp"></span><div class="grp"><button class="m-btn">✦ Coproducer</button><button class="m-btn">Export</button></div></div>
+      <div class="m-body">
+        <div class="m-side"><div class="m-title">Sounds</div>
+          <div class="search">⌕ Search 1,240 sounds</div>
+          <div class="chips"><span class="chip on">Kicks</span><span class="chip">Snares</span><span class="chip">Hats</span><span class="chip">Bass</span><span class="chip">Keys</span><span class="chip">Loops</span></div>
+          <div class="m-hint">Picking for: <b>Kick pad</b> on Kick</div>
+        </div>
+        <div class="m-main">
+          <div class="m-title">Kicks · Techno Drums <span class="sp"></span><button class="m-btn ghost">♥ Favourites</button><button class="m-btn ghost">Browse packs</button></div>
+          <div class="lib" data-lib="kick|Rounded Analog Kick|warm · short;kick|Driven Warehouse Kick|punchy;kick|Soft 808 Kick|deep · long;kick|Boxy Lo-fi Kick|dusty;kick|Clean Club Kick|tight"></div>
+          <div class="m-hint">Click ▶ to hear one. Click the name to use it. Press <b>Esc</b> or Steps to go back to the beat.</div>
+        </div>
+      </div>
+      <div class="dock labelled" data-dock="v1" data-current="4"></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>The same library, with the filter chips named by what a sound is for, not by pack. The pack stays as the subtitle.</li>
+        <li>"Picking for: Kick pad" is always visible, so the aimed target is never a mystery.</li>
+        <li>The keys still work; the help line says the mouse way first.</li>
+      </ul>
+    </aside>
+  </div>
+
+  <div class="screen" data-screen="arr" hidden>
+    <div class="frame"><div class="mock v1">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn primary play" aria-label="Play">▶ Play</button><button class="m-btn">⟲ Loop</button><button class="m-btn">120 <span class="m-label">BPM</span></button></div><span class="sp"></span><div class="grp"><button class="m-btn">✦ Coproducer</button><button class="m-btn">Export</button></div></div>
+      <div class="m-body"><div class="m-main">
+        <div class="m-title">Arrange <span class="sp"></span><span class="m-label">Add a track:</span><button class="m-btn ghost">🥁 Drums</button><button class="m-btn ghost">🎹 Keys &amp; bass</button><button class="m-btn ghost">〰 Synth</button><button class="m-btn ghost">⟳ Loop</button></div>
+        <div class="tl">
+          <div class="corner"></div><div class="ruler"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div>
+          <div class="trk sel" style="--c:#ff5a3c"><span class="nm">Kick</span><span class="kd">Drums</span><span class="ms"><b>M</b><b>S</b></span></div>
+          <div class="lane"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><div class="clip" style="--s:0;--w:1;--c:#ff5a3c">Beat 1</div><div class="clip ghost" style="--s:1;--w:1">Double-click to add</div></div>
+          <div class="trk" style="--c:#bbb"><span class="nm" style="color:var(--m-accent)">+ Add a track</span></div>
+          <div class="lane"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
+        <div class="m-hint" style="padding-top:30px;text-align:center">Each block is a clip. Drag its right edge to make it longer, or hold Alt and drag to copy it.</div>
+      </div></div>
+      <div class="dock labelled" data-dock="v1" data-current="1"></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>The new-track buttons are the same four kinds with friendlier names and a glyph: Drums (drum machine), Keys &amp; bass (sampler), Synth, Loop.</li>
+        <li>A dashed ghost after the last clip says what a double-click does, in the place it does it.</li>
+        <li>An "Add a track" row sits under the last track, where GarageBand and Ableton put it.</li>
+      </ul>
+    </aside>
+  </div>
+  <div class="build">
+    <div><h4>What it takes</h4><ul><li><code>src/theme.css</code>: a light ramp and one accent. <code>theme.test.ts</code> currently fails any hue and any radius, so both rules are rewritten, and <code>docs/design.md</code> §1–2 with them. This is a product-owner decision, not a styling detail.</li><li><code>ViewDock</code> gains a label row; <code>EmptyView</code>, <code>trackCreation</code>, <code>starterProject</code> get new copy ("Kick", "Drums", "Beat 1").</li></ul></div>
+    <div><h4>Contracts touched</h4><ul><li>None. Views, URLs, commands and schema unchanged.</li><li>Track names are user data, so the starter's "BD" rename only affects new projects.</li></ul></div>
+    <div><h4>Cost</h4><div class="size">S</div><ul><li>Two to three PRs: theme, dock labels, copy.</li><li>Every browser spec that asserts a name ("BD") is updated.</li></ul></div>
+  </div>
+</section>
+<!-- ============================ V2 ============================ -->
+<section class="studio" id="v2" hidden>
+  <div class="studio-head">
+    <div><span class="eyebrow">Variant 2 · one screen, a coach on top</span><h2>Guided studio</h2></div>
+    <div><p class="lede">GarageBand's shape: tracks and the timeline on top, an editor drawer underneath, always both. The five views become four labelled tabs on the drawer. Coproducer's lessons (which already exist) move out of the chat panel onto a strip that always names the next thing to do.</p><div class="bold-meter"><span>Boldness</span><span class="dots"><i class="f"></i><i class="f"></i><i></i><i></i><i></i></span></div></div>
+  </div>
+  <div class="screens" role="tablist"><button role="tab" aria-selected="true" data-screen="beat">First beat</button><button role="tab" data-screen="sounds">Choose sounds</button><button role="tab" data-screen="arr">Arrange</button></div>
+
+  <div class="screen" data-screen="beat">
+    <div class="frame"><div class="mock v2">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn primary play" aria-label="Play">▶ Play</button><button class="m-btn">⟲ Loop: bar 1</button><button class="m-btn">120 <span class="m-label">BPM</span></button></div><span class="sp"></span><div class="grp"><button class="m-btn sq">↶</button><button class="m-btn sq">↷</button><button class="m-btn">Export</button></div></div>
+      <div class="coach"><span class="av">C</span><div class="txt"><b>Step 2 of 6 · The kick pattern</b>Put a kick on beat 1 and on the "and" of 3. Turn off the ones on 5, 9 and 13.</div><span class="prog"><i class="d"></i><i class="d"></i><i></i><i></i><i></i><i></i></span><button class="m-btn ghost">Show me</button><button class="m-btn ghost">Skip</button></div>
+      <div class="tl" style="border-bottom:1px solid var(--m-line)">
+        <div class="corner"></div><div class="ruler"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div>
+        <div class="trk sel" style="--c:#e4572e"><span class="nm">Kick</span><span class="kd">Drums</span><span class="ms"><b>M</b><b>S</b></span></div>
+        <div class="lane"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><div class="clip" style="--s:0;--w:1;--c:#e4572e">Beat 1</div></div>
+        <div class="trk" style="--c:#bbb"><span class="nm" style="color:var(--m-accent)">+ Add a track</span></div>
+        <div class="lane"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      </div>
+      <div class="m-body" style="min-height:260px">
+        <div class="m-main">
+          <div class="m-title"><span class="chip on">Steps</span><span class="chip">Notes</span><span class="chip">Sound</span><span class="chip">Mix</span><span class="sp"></span><span>Editing: <b>Beat 1</b> on Kick</span><button class="m-btn ghost">✨ Fill a pattern</button></div>
+          <div class="beat-ruler" data-ruler></div>
+          <div class="steps" data-rows="Kick|#e4572e|kick|1000100010001000;+ Pad|#bbb|none|0000000000000000"></div>
+        </div>
+      </div>
+      <div class="playhead" hidden></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>No view switching for the first beat. The clip you can see is the clip you are editing, and the drawer says so: "Editing: Beat 1 on Kick".</li>
+        <li>The drawer's tabs are words. "Steps" and "Notes" are two halves of today's Sequence view, split by what the track plays; "Sound" is the instrument; "Mix" the mixer. The Library becomes a sheet, not a view.</li>
+        <li>The coach strip is CF-037's lesson, promoted from the chat panel to the top of the editor. The checkmarks fill as you do the step yourself.</li>
+        <li>The "+ Pad" row is in the grid, so adding a hat is one click where the hat will go.</li>
+      </ul>
+      <div class="notes try"><b>Try it:</b> clicking the "+ Pad" row's squares does nothing until it has a sound. In the real thing that click opens the sound sheet aimed at the new pad.</div>
+    </aside>
+  </div>
+
+  <div class="screen" data-screen="sounds" hidden>
+    <div class="frame"><div class="mock v2">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn primary play" aria-label="Play">▶ Play</button><button class="m-btn">120 <span class="m-label">BPM</span></button></div><span class="sp"></span><div class="grp"><button class="m-btn">Export</button></div></div>
+      <div class="coach"><span class="av">C</span><div class="txt"><b>Step 4 of 6 · The backbeat</b>Add a snare or clap on beats 2 and 4. Pick one you like the sound of; there is no wrong answer.</div><span class="prog"><i class="d"></i><i class="d"></i><i class="d"></i><i></i><i></i><i></i></span><button class="m-btn ghost">Show me</button></div>
+      <div class="m-body">
+        <div class="m-side" style="width:230px"><div class="m-title">Add a sound to Kick's kit</div>
+          <div class="search">⌕ Search</div>
+          <div class="chips"><span class="chip">Kicks</span><span class="chip on">Snares &amp; claps</span><span class="chip">Hats</span><span class="chip">Percussion</span></div>
+          <div class="m-hint">Suggested for this step</div>
+          <div class="lib" data-lib="snare|Hard Clap Wide|the house clap;snare|Tight Snare 909|classic;snare|Dusty Snare|lo-fi"></div>
+          <div class="m-hint">All snares &amp; claps · 61</div>
+        </div>
+        <div class="m-main">
+          <div class="m-title">Preview in the beat <span class="sp"></span><button class="m-btn primary">Use Hard Clap Wide</button></div>
+          <div class="beat-ruler" data-ruler></div>
+          <div class="steps" data-rows="Kick|#e4572e|kick|1000001000100000;Clap|#2e86ab|snare|0000100000001000"></div>
+          <div class="m-hint">The clap row is a preview on beats 2 and 4. Press Play to hear it with your kick, then Use it or pick another.</div>
+        </div>
+      </div>
+      <div class="playhead" hidden></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>The library opens as a sheet beside the beat, aimed by the coach ("Add a sound to Kick's kit"), with a "Suggested for this step" shortlist on top of the full list.</li>
+        <li>Auditioning plays the sound in the beat, on the steps the lesson asked for, not alone. CF-030 (try several kicks without leaving the library) already does the first half of this.</li>
+        <li>Use it commits: pad added, hits written, step marked done.</li>
+      </ul>
+    </aside>
+  </div>
+
+  <div class="screen" data-screen="arr" hidden>
+    <div class="frame"><div class="mock v2">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn primary play" aria-label="Play">▶ Play</button><button class="m-btn">⟲ Loop: bars 1–4</button><button class="m-btn">90 <span class="m-label">BPM</span></button></div><span class="sp"></span><div class="grp"><button class="m-btn">Export</button></div></div>
+      <div class="coach"><span class="av">C</span><div class="txt"><b>Step 6 of 6 · Loop it</b>Make the beat run for four bars: drag the right edge of Beat 1, or press Show me.</div><span class="prog"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i></i></span><button class="m-btn ghost">Show me</button></div>
+      <div class="tl">
+        <div class="corner"></div><div class="ruler"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div>
+        <div class="trk sel" style="--c:#e4572e"><span class="nm">Drums</span><span class="kd">Kick · Clap · Hat</span><span class="ms"><b>M</b><b>S</b></span></div>
+        <div class="lane"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><div class="clip" style="--s:0;--w:4;--c:#e4572e">Beat 1 · ×4 ▸</div></div>
+        <div class="trk" style="--c:#2e86ab"><span class="nm">Bass</span><span class="kd">Keys &amp; bass</span><span class="ms"><b>M</b><b>S</b></span></div>
+        <div class="lane"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><div class="clip ghost" style="--s:0;--w:4">Double-click to write a bassline</div></div>
+        <div class="trk" style="--c:#bbb"><span class="nm" style="color:var(--m-accent)">+ Add a track</span></div>
+        <div class="lane"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      </div>
+      <div class="m-body" style="min-height:200px"><div class="m-main">
+        <div class="m-title"><span class="chip on">Steps</span><span class="chip">Notes</span><span class="chip">Sound</span><span class="chip">Mix</span><span class="sp"></span><span>Editing: <b>Beat 1</b> on Drums · plays 4 times</span></div>
+        <div class="m-hint">Changing the steps here changes every repeat. To vary bar 4, split the clip there (right-click › Split) and edit that bar alone.</div>
+      </div></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>The timeline is where it always was. The lesson's last bite (Loop it, CF-037 step 10) is done on it, and the ghost on the empty Bass lane says what the next track wants.</li>
+        <li>A clip that repeats says "×4" on its face, and the drawer explains the one non-obvious rule: edits apply to every repeat.</li>
+      </ul>
+    </aside>
+  </div>
+  <div class="build">
+    <div><h4>What it takes</h4><ul><li><code>EditorView</code> lays out arrangement over a drawer; the view becomes a drawer tab. <code>editorViews.ts</code> ("the view is the URL") and the <code>view_changed</code> analytics contract change shape: the URL names the drawer tab, the arrangement is always on.</li><li>The lesson strip reads <code>src/lessons</code> directly; its Show me and done predicates are already there (GRV-43).</li><li>The Library becomes a modal sheet aimed by <code>useLibraryTarget</code>, with in-beat preview built on CF-030's audition-on-pad.</li></ul></div>
+    <div><h4>Contracts touched</h4><ul><li>Editor views and their URLs (CF-008 rewritten).</li><li>No domain or persistence change.</li><li>Theme: same decision as Variant 1 (light, radius) or stays monochrome; the layout works either way.</li></ul></div>
+    <div><h4>Cost</h4><div class="size">M</div><ul><li>Layout and routing first, then the strip, then the sheet. Three to five PRs.</li><li>The track rail / arrangement pixel-alignment test becomes moot because there is one track column.</li></ul></div>
+  </div>
+</section>
+
+<!-- ============================ V3 ============================ -->
+<section class="studio" id="v3" hidden>
+  <div class="studio-head">
+    <div><span class="eyebrow">Variant 3 · patterns, then a song</span><h2>Channel rack</h2></div>
+    <div><p class="lede">FL Studio's model: every sound is a channel, every channel has 16 steps, and a pattern is all of them together. You make patterns first and paint them into a playlist afterwards. The first beat is the first screen, with the kit already loaded.</p><div class="bold-meter"><span>Boldness</span><span class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i></span></div></div>
+  </div>
+  <div class="screens" role="tablist"><button role="tab" aria-selected="true" data-screen="beat">First beat</button><button role="tab" data-screen="sounds">Choose sounds</button><button role="tab" data-screen="arr">Arrange</button></div>
+
+  <div class="screen" data-screen="beat">
+    <div class="frame"><div class="mock v3">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn primary play" aria-label="Play">▶</button><button class="m-btn">▪</button><button class="m-btn">120 <span class="m-label">BPM</span></button><span class="chip on">Pattern</span><span class="chip">Song</span></div><span class="sp"></span><div class="grp"><button class="m-btn">Export</button></div></div>
+      <div class="pats"><span class="m-label">Patterns</span><button class="pat on"><i style="--c:#ffb13d"></i>Pattern 1</button><button class="pat"><i style="--c:#7cc4ff"></i>Pattern 2</button><button class="pat ghost" style="color:var(--m-muted)">+ New pattern</button><span class="sp" style="flex:1"></span><span class="m-label">1 bar · 16 steps</span></div>
+      <div class="m-body" style="min-height:300px"><div class="m-main">
+        <div class="beat-ruler" data-ruler></div>
+        <div class="steps" data-rows="Kick|#e4572e|kick|1000100010001000;Clap|#2e86ab|snare|0000100000001000;Hat|#f2c14e|hat|0010001000100010;Snare|#9b5de5|snare|0000000000000000;Bass|#06d6a0|bass|1000000010000000;+ Add channel|#777|none|0000000000000000"></div>
+        <div class="m-hint">Click a square to put a hit on it. The channel's name is a button: click it to change its sound or open its notes.</div>
+      </div></div>
+      <div class="playhead" hidden></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>The default template opens on a rack with Kick, Clap, Hat, Snare and Bass already there. Nothing to add before the first click lands.</li>
+        <li>All channels are on one grid: the hat goes "where the hat row is", not in another track's clip.</li>
+        <li>Pattern / Song is a two-position switch in the transport, which is the whole mental model in one control.</li>
+        <li>Pitched channels (Bass) show their steps too; the piano roll is a detail view opened from the channel name.</li>
+      </ul>
+      <div class="notes try"><b>Try it:</b> this is the full FL loop: play, click, hear. The Bass row plays a note per hit.</div>
+    </aside>
+  </div>
+
+  <div class="screen" data-screen="sounds" hidden>
+    <div class="frame"><div class="mock v3">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn primary play" aria-label="Play">▶</button><button class="m-btn">120 <span class="m-label">BPM</span></button><span class="chip on">Pattern</span><span class="chip">Song</span></div><span class="sp"></span><div class="grp"><button class="m-btn">Export</button></div></div>
+      <div class="m-body">
+        <div class="m-side" style="width:260px"><div class="m-title">Channel: Hat</div>
+          <div class="chips"><span class="chip on">Sound</span><span class="chip">Notes</span><span class="chip">Tune</span><span class="chip">Mix</span></div>
+          <div class="search">⌕ Search hats</div>
+          <div class="lib" data-lib="hat|Metallic Closed Hat|now on this channel;hat|Open Hat Long|;hat|Tiny Tick Hat|;hat|Trap Hat Roll|;hat|Vinyl Hat|"></div>
+          <div class="m-hint">▶ hears it. Clicking a name swaps the channel's sound and the pattern keeps playing.</div>
+        </div>
+        <div class="m-main">
+          <div class="beat-ruler" data-ruler></div>
+          <div class="steps" data-rows="Kick|#e4572e|kick|1000100010001000;Clap|#2e86ab|snare|0000100000001000;Hat|#f2c14e|hat|0010001000100010;Bass|#06d6a0|bass|1000000010000000"></div>
+          <div class="m-hint">The channel being edited is highlighted. Everything else keeps playing.</div>
+        </div>
+      </div>
+      <div class="playhead" hidden></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>A channel's sound, notes, tuning and mix are tabs on one panel opened from its name. There is no separate Instrument view and no separate Library view.</li>
+        <li>Swapping a sound is a live replace while the pattern loops, the way FL's channel sampler works.</li>
+        <li>"+ Add channel" asks for a sound, not an engine: pick a hat and the channel is a drum pad; pick a bass and it is a sampler with notes.</li>
+      </ul>
+    </aside>
+  </div>
+
+  <div class="screen" data-screen="arr" hidden>
+    <div class="frame"><div class="mock v3">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn primary play" aria-label="Play">▶</button><button class="m-btn">120 <span class="m-label">BPM</span></button><span class="chip">Pattern</span><span class="chip on">Song</span></div><span class="sp"></span><div class="grp"><button class="m-btn">Export</button></div></div>
+      <div class="pats"><span class="m-label">Paint with</span><button class="pat on" data-paint="#ffb13d"><i style="--c:#ffb13d"></i>Pattern 1</button><button class="pat" data-paint="#7cc4ff"><i style="--c:#7cc4ff"></i>Pattern 2 (no bass)</button><button class="pat" data-paint="#f28ac9"><i style="--c:#f28ac9"></i>Pattern 3 (fill)</button><span class="sp" style="flex:1"></span><span class="m-label">8 bars</span></div>
+      <div class="m-body" style="min-height:240px"><div class="m-main">
+        <div class="tl" style="grid-template-columns:110px 1fr"><div class="corner"></div><div class="ruler"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div></div>
+        <div class="playlist" data-playlist="Lane 1|#ffb13d|11111111;Lane 2|#7cc4ff|00000000;Lane 3|#f28ac9|00000000"></div>
+        <div class="m-hint">Click a bar to paint the chosen pattern there; click again to clear it. Lanes are just rows: a pattern can go on any of them. Press Play in Song to hear the whole thing.</div>
+      </div></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>Arranging is painting: pick a pattern, click bars. A song of three patterns over eight bars is a dozen clicks, and the beginner never meets a clip edge or an Alt-drag.</li>
+        <li>Patterns can overlap on different lanes (a fill over the main beat), which is how FL makes breakdowns cheap.</li>
+        <li>What is lost: per-track clips of different lengths and the arrangement's clip editing (CF-009 to CF-016). Those would survive as an "advanced" timeline behind the song view.</li>
+      </ul>
+      <div class="notes try"><b>Try it:</b> choose a pattern chip, then click cells in the playlist.</div>
+    </aside>
+  </div>
+  <div class="build">
+    <div><h4>What it takes</h4><ul><li>A <b>Pattern</b> in the domain: a named set of clips, one per track, sharing a length. Today a clip belongs to one track and a placement puts one clip at one bar; a pattern is a placement of many clips at once. That is new in <code>src/domain</code>, new commands (<code>pattern.create/paint/clear</code>), new persistence documents and a new audio projection path.</li><li>A rack view that shows every track's current clip as a row (today's Sequence shows one clip).</li><li>A channel panel merging Instrument, Library and the track's mixer strip.</li></ul></div>
+    <div><h4>Contracts touched</h4><ul><li>Domain schema, command registry, persistence layout, audio and arrangement projections. All of them.</li><li>Most arrangement flows (CF-009 to CF-016) move behind an advanced timeline or are retired.</li></ul></div>
+    <div><h4>Cost</h4><div class="size">XL</div><ul><li>A milestone, not a sequence of PRs. The cheapest honest version: a rack <i>view</i> over existing clips (every track's bar-1 clip as a row) with no pattern entity, which gives the first-beat screen but not the song mode.</li></ul></div>
+  </div>
+</section>
+<!-- ============================ V4 ============================ -->
+<section class="studio" id="v4" hidden>
+  <div class="studio-head">
+    <div><span class="eyebrow">Variant 4 · pick a sound, not an engine</span><h2>Sound first</h2></div>
+    <div><p class="lede">GarageBand's browser crossed with Ableton's Learning Music. You never choose a sampler or a drum machine: you choose Drums, Bass, Keys, Lead or a Loop, from big tiles that play when you hover. Pitched parts write on a grid that only shows notes in the song's key. The song is a row of sections you copy and tweak.</p><div class="bold-meter"><span>Boldness</span><span class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i></span></div></div>
+  </div>
+  <div class="screens" role="tablist"><button role="tab" aria-selected="true" data-screen="beat">First beat</button><button role="tab" data-screen="sounds">Choose sounds</button><button role="tab" data-screen="arr">Arrange</button></div>
+
+  <div class="screen" data-screen="beat">
+    <div class="frame"><div class="mock v4">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn primary play" aria-label="Play">▶ Play</button><button class="m-btn">120 <span class="m-label">BPM</span></button><button class="m-btn">Key: C minor</button></div><span class="sp"></span><div class="grp"><button class="m-btn">✦ Ask Coproducer</button><button class="m-btn">Share</button></div></div>
+      <div class="m-body"><div class="m-main">
+        <div class="m-title"><span class="chip on">Beat</span><span class="chip">Song</span><span class="sp"></span><span>Section: <b>Loop</b> · 1 bar</span></div>
+        <div class="beat-ruler" data-ruler></div>
+        <div class="steps" data-rows="Kick|#f26b3a|kick|1000100010001000;Clap|#3a7df2|snare|0000100000001000;Hat|#f2b63a|hat|1010101010101010"></div>
+        <div class="m-hint" style="padding-left:12px"><span class="m-label">Bass · Mellow Sub · notes in C minor</span></div>
+        <div class="notes-grid" data-notes="G|#2fbf71|bass|0000000000001000;F|#2fbf71|bass|0000000010000000;Eb|#2fbf71|bass|0000000000000000;D|#2fbf71|bass|0000000000000000;C|#2fbf71|bass|1000100000000000" data-root="C"></div>
+        <div class="tiles" style="padding-top:0"><button class="tile big" style="--c:#8a8a95;background:var(--m-card);color:var(--m-text)"><span class="ic">＋</span><b>Add a sound</b><small>Drums · Bass · Keys · Lead · Loop</small></button></div>
+      </div></div>
+      <div class="playhead" hidden></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>One page called Beat. Drum rows on top, and under them a note grid for each pitched sound showing only the five or seven notes of the song's key, lowest at the bottom. No piano, no black keys, no wrong notes (CF-018's key is set at project creation, with a default).</li>
+        <li>The instrument is gone as a concept. "Mellow Sub" is a sound; what engine plays it is the library's business (a factory asset on a sampler, a preset on a synth).</li>
+        <li>The transport shows the key beside the tempo, because a beginner's second question after "how fast" is "why does that note sound wrong".</li>
+      </ul>
+      <div class="notes try"><b>Try it:</b> click in the bass grid. Every note you can click is in key.</div>
+    </aside>
+  </div>
+
+  <div class="screen" data-screen="sounds" hidden>
+    <div class="frame"><div class="mock v4">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn primary play" aria-label="Play">▶ Play</button><button class="m-btn">120 <span class="m-label">BPM</span></button></div><span class="sp"></span><div class="grp"><button class="m-btn">Share</button></div></div>
+      <div class="m-body"><div class="m-main">
+        <div class="m-title">Add a sound <span class="sp"></span><span>Hover to hear it in your beat · click to add</span></div>
+        <div class="tiles" data-tiles="Drums|Kits that fit 120 BPM|🥁|#f26b3a|kick;Bass|Subs, plucks, 808s|◉|#2fbf71|bass;Keys|Pianos, Rhodes, chords|🎹|#7a5af8|chord;Lead|Something to hum|〰|#e14bb3|chord;Pad|Wide and slow|☁|#3a9bdc|chord;Loop|A finished phrase|⟳|#f2b63a|hat"></div>
+        <div class="m-title">Drums · 12 kits <span class="sp"></span><span class="chip on">For 120 BPM</span><span class="chip">All</span></div>
+        <div class="tiles" data-tiles="Warehouse|Techno · hard|▶|#5b5b66|kick;Boom Bap|Hip hop · dusty|▶|#6d5a4b|kick;Garage|UK · shuffled|▶|#4b6d5a|hat;Pop|Clean · tight|▶|#4b5a6d|snare"></div>
+      </div></div>
+      <div class="playhead" hidden></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>Six roles, not three engines and 1,240 files. A role tile opens that role's kits or presets; a kit adds a whole row set (Kick, Clap, Hat) at once.</li>
+        <li>Hover auditions <i>in the beat</i>: the kit plays your pattern. The library's existing audition (CF-023, CF-030) does the per-sound half of this.</li>
+        <li>Sorting "for 120 BPM" and "in C minor" is a filter on the pack manifest, which already carries tempo for loops and would need key and role tags for sounds.</li>
+      </ul>
+      <div class="notes try"><b>Try it:</b> click a tile; a role or kit tile plays a hit.</div>
+    </aside>
+  </div>
+
+  <div class="screen" data-screen="arr" hidden>
+    <div class="frame"><div class="mock v4">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn primary play" aria-label="Play">▶ Play</button><button class="m-btn">120 <span class="m-label">BPM</span></button></div><span class="sp"></span><div class="grp"><button class="m-btn">Share</button></div></div>
+      <div class="m-body"><div class="m-main">
+        <div class="m-title"><span class="chip">Beat</span><span class="chip on">Song</span><span class="sp"></span><span>32 bars · 1:04</span></div>
+        <div class="sections" data-sections="Intro|8 bars|0111;Verse|8 bars|1111;Chorus|8 bars|1111;Breakdown|4 bars|0011;Chorus 2|8 bars|1111"></div>
+        <div class="m-hint">A section is a copy of your beat with some rows on and some off. Click one to edit it; Duplicate makes the next; drag to reorder. The rows are Drums, Clap, Hat, Bass.</div>
+        <div class="m-title">Editing: <b>Intro</b> <span class="sp"></span><button class="m-btn ghost">Duplicate</button><button class="m-btn ghost">Rename</button><button class="m-btn ghost">8 bars ▾</button></div>
+        <div class="steps" data-rows="Kick|#f26b3a|kick|0000000000000000;Clap|#3a7df2|snare|0000100000001000;Hat|#f2b63a|hat|1010101010101010"></div>
+      </div></div>
+      <div class="playhead" hidden></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>The song is a row of named sections, the way Learning Music's "Song structure" chapter teaches it. Each is a variation of the beat: same rows, different hits, some rows muted.</li>
+        <li>Intro / Verse / Chorus is the vocabulary people arrive with. Bars and clip edges are hidden inside a section.</li>
+        <li>This was ARR-003 (structure templates, dropped with #61). It fits here because the section, not the clip, is the unit a beginner thinks in.</li>
+      </ul>
+      <div class="notes try"><b>Try it:</b> click sections to switch which one the grid edits.</div>
+    </aside>
+  </div>
+  <div class="build">
+    <div><h4>What it takes</h4><ul><li><b>Roles over engines:</b> a table in <code>src/library</code> mapping role → engine + default asset/preset, and role, key and tempo tags on the manifest (the builders in <code>scripts/starter-library</code>). <code>trackCreation</code> adds by role.</li><li><b>Scale-locked grid:</b> a filter over <code>src/editor/pianoRoll</code> rows using the project key (CF-018). Mostly a view change.</li><li><b>Sections:</b> either real structure (a Section entity grouping placements, a contract change) or a convention (sections are aligned 8-bar clips named the same on every track, which the commands can keep in step). The convention ships in weeks; the entity is Variant 3's cost.</li></ul></div>
+    <div><h4>Contracts touched</h4><ul><li>Library manifest and the Pack schema (tags). Editor views. Possibly the domain, if sections become an entity.</li><li>Instrument view survives as a "Tune" sheet for people who want the faders.</li></ul></div>
+    <div><h4>Cost</h4><div class="size">L</div><ul><li>Roles + scale grid: M. Sections as a convention: M. Sections as an entity: XL.</li></ul></div>
+  </div>
+</section>
+
+<!-- ============================ V5 ============================ -->
+<section class="studio" id="v5" hidden>
+  <div class="studio-head">
+    <div><span class="eyebrow">Variant 5 · the interface grows with you</span><h2>Unfolding studio</h2></div>
+    <div><p class="lede">The boldest: on day one the whole app is one row of squares and a Play button, shaped like a phone story. Coproducer's caption names the one next thing. Finish a step and the next region of the real editor unfolds in place: more rows, then sounds, then the song. By the end of the first lesson you are in the full editor without having been moved to it.</p><div class="bold-meter"><span>Boldness</span><span class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></span></div></div>
+  </div>
+  <div class="screens" role="tablist"><button role="tab" aria-selected="true" data-screen="beat">First beat</button><button role="tab" data-screen="sounds">Choose sounds</button><button role="tab" data-screen="arr">Arrange</button></div>
+
+  <div class="screen" data-screen="beat">
+    <div class="frame phone"><div class="mock v5 phone-ui">
+      <div class="m-top"><span class="name">Your first beat</span><span class="sp"></span><button class="m-btn sq">✕</button></div>
+      <div class="stage"><i class="d"></i><i></i><i></i><i></i></div>
+      <div class="caption"><b>Tap the squares. That's the kick.</b>Four of them are already on: one on every beat. Try taking one off, or adding one between.</div>
+      <div class="beat-ruler" data-ruler data-count="8"></div>
+      <div class="steps" data-rows="Kick|#dd2a7b|kick|10001000" data-count="8"></div>
+      <div style="padding:16px"><button class="big-play play" aria-label="Play">▶</button></div>
+      <div class="ghost-region">When the kick sounds right, the next row appears here.</div>
+      <div style="padding:10px 14px;display:flex;gap:8px"><button class="m-btn primary" style="flex:1">Sounds right, next</button><button class="m-btn ghost">Do it for me</button></div>
+      <div class="playhead" hidden></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>Stage 1 is eight squares and Play. One sentence from Coproducer, one primary button. Nothing else exists yet.</li>
+        <li>Eight steps, not sixteen: half a bar at phone width, doubled at stage 2 once the idea has landed.</li>
+        <li>"Do it for me" is Show me (CF-037). The lesson already has the predicate that decides when "the kick sounds right".</li>
+        <li>The desktop layout is the same column with the unfolded regions beside it, see Arrange.</li>
+      </ul>
+      <div class="notes try"><b>Try it:</b> Play, then tap. The dashed box is the next region, announced before it appears so nothing jumps.</div>
+    </aside>
+  </div>
+
+  <div class="screen" data-screen="sounds" hidden>
+    <div class="frame phone"><div class="mock v5 phone-ui">
+      <div class="m-top"><span class="name">Your first beat</span><span class="sp"></span><button class="m-btn sq">✕</button></div>
+      <div class="stage"><i class="d"></i><i class="d"></i><i></i><i></i></div>
+      <div class="caption"><b>Pick a clap or snare for beats 2 and 4.</b>Tap one to hear it with your kick. Swipe for more.</div>
+      <div class="pads" data-pads="Hard Clap|snare|#dd2a7b|sel;909 Snare|snare|#8134af;Dusty Snare|snare|#f58529;Rim|snare|#515BD4;Finger Snap|snare|#dd2a7b;Clap Stack|snare|#8134af;Trap Snare|snare|#f58529;More…|none|#aaa"></div>
+      <div class="beat-ruler" data-ruler data-count="8"></div>
+      <div class="steps" data-rows="Kick|#dd2a7b|kick|10001000;Clap|#8134af|snare|00100010" data-count="8"></div>
+      <div style="padding:10px 16px"><button class="big-play play" aria-label="Play">▶</button></div>
+      <div style="padding:10px 14px;display:flex;gap:8px"><button class="m-btn primary" style="flex:1">Use Hard Clap</button><button class="m-btn ghost">Skip</button></div>
+      <div class="playhead" hidden></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>Choosing a sound is a pad grid, eight at a time, each a real sound from the library's "snares &amp; claps" with the hits already on 2 and 4. Tapping plays it in the beat; "Use" keeps it.</li>
+        <li>No search, no packs, no filters at this stage. "More…" opens the full browser (Variant 4's tiles, or today's list) once the person wants it.</li>
+        <li>The row appears under the kick as soon as a pad is tapped, so the choice is heard in context, never alone.</li>
+      </ul>
+      <div class="notes try"><b>Try it:</b> tap pads; each plays a different hit.</div>
+    </aside>
+  </div>
+
+  <div class="screen" data-screen="arr" hidden>
+    <div class="frame"><div class="mock v5">
+      <div class="m-top"><span class="name">Mood Energy</span><span class="sp"></span><div class="grp"><button class="m-btn primary play" aria-label="Play">▶ Play</button><button class="m-btn">120 <span class="m-label">BPM</span></button></div><span class="sp"></span><div class="grp"><button class="m-btn">✦ Coproducer</button><button class="m-btn">Share</button></div></div>
+      <div class="coach"><span class="av">C</span><div class="txt"><b>Stage 4 of 4 · Make it a song</b>Your beat is the first block. Tap + to add another and change a few squares in it. Three or four blocks is a song.</div><span class="prog"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i></span></div>
+      <div class="unfold">
+        <div class="lvl"><b>Stage 1 · Kick</b>One row, Play. Unlocked by: pressing Play.</div>
+        <div class="lvl"><b>Stage 2–3 · Rows and sounds</b>More rows, a pad grid of sounds, the tempo. Unlocked by: using a sound.</div>
+        <div class="lvl now"><b>Stage 4 · Song</b>Blocks of the beat in a row; Share. Unlocked by: a second block. What's still folded: mixer, faders, piano roll, export stems.</div>
+      </div>
+      <div class="sections" data-sections="Beat 1|8 bars|1111;Beat 2|8 bars|1101;Drop|8 bars|1111"></div>
+      <div class="m-title">Editing: <b>Beat 2</b> <span class="sp"></span><button class="m-btn ghost">Copy block</button><button class="m-btn ghost">8 bars ▾</button><button class="m-btn ghost">More tools ▾</button></div>
+      <div class="beat-ruler" data-ruler></div>
+      <div class="steps" data-rows="Kick|#dd2a7b|kick|1000100010001000;Clap|#8134af|snare|0000100000001000;Hat|#f58529|hat|0010001000100010;Bass|#515BD4|bass|1000000010010000"></div>
+      <div class="playhead" hidden></div>
+    </div></div>
+    <aside class="notes">
+      <h3>What changed</h3>
+      <ul>
+        <li>On a desktop the column widens into today's editor, region by region. The three stage cards show what unfolded when, and what is still folded ("More tools" is where Mix, Tune and the piano roll wait).</li>
+        <li>Arranging is Variant 4's blocks, because blocks are what a phone can do and what a beginner means by "a song".</li>
+        <li>Stages are remembered on the profile (<code>src/memory</code>) so the app opens at the stage the producer reached, and an "Unfold everything" switch skips it for people who know a DAW.</li>
+      </ul>
+      <div class="notes try"><b>Try it:</b> click a block to edit it; play the beat.</div>
+    </aside>
+  </div>
+  <div class="build">
+    <div><h4>What it takes</h4><ul><li>A <b>stage model</b>: which regions of the editor are shown, driven by lesson predicates (<code>src/lessons</code>) and saved on the profile. Regions are today's panes behind a gate; the gate is new, the panes are not.</li><li>A <b>narrow layout</b>: the editor stops at 768px today (<code>EditorView.css</code>). Stages 1–3 need a 390px layout; stage 4 can insist on a laptop.</li><li>Sections as in Variant 4, and the pad-grid sound picker over the library's audition.</li></ul></div>
+    <div><h4>Contracts touched</h4><ul><li>Editor views (what is on screen is a stage, not a URL). Profile schema (<code>firestoreProfileRepository</code>: stage reached). Possibly sections.</li><li>Domain untouched if sections stay a convention.</li></ul></div>
+    <div><h4>Cost</h4><div class="size">L–XL</div><ul><li>Stage gate + phone layout for stage 1–3: L. With Variant 4's roles and sections underneath: XL.</li><li>Gets the most from what exists: lessons, Show me, profile memory, the audition engine.</li></ul></div>
+  </div>
+</section>
+<!-- ============================ COMPARE ============================ -->
+<section class="studio" id="compare" hidden>
+  <div class="studio-head">
+    <div><span class="eyebrow">Side by side</span><h2>What each one buys, and what it costs</h2></div>
+    <p class="lede">Counted from a fresh project to a kick, clap and hat playing, by mouse, with no prior DAW knowledge. "Views" is how many different screens that journey crosses.</p>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Variant</th><th>Clicks to kick + clap + hat</th><th>Views crossed</th><th>Decides an engine?</th><th>Contracts changed</th><th>Keeps today's flows</th><th>Cost</th></tr></thead>
+    <tbody>
+      <tr><td><b>0 · Today</b></td><td>≈ 14, two of them keys (<kbd>3</kbd>, <kbd>4</kbd>)</td><td>4</td><td>Yes, first</td><td>none</td><td>all</td><td><span class="pill">0</span></td></tr>
+      <tr><td><b>1 · Daylight</b></td><td>≈ 14, all labelled</td><td>4</td><td>Yes, in plain words</td><td>theme rules</td><td>all</td><td><span class="pill">S</span></td></tr>
+      <tr><td><b>2 · Guided studio</b></td><td>≈ 8, the coach names each</td><td>1 + a sheet</td><td>Yes, when adding a track</td><td>views / URLs</td><td>all but CF-008</td><td><span class="pill">M</span></td></tr>
+      <tr><td><b>3 · Channel rack</b></td><td>≈ 6 (kit is preloaded)</td><td>1</td><td>No</td><td>domain, commands, persistence, projections</td><td>loop flows; arrangement flows retired</td><td><span class="pill hi">XL</span></td></tr>
+      <tr><td><b>4 · Sound first</b></td><td>≈ 7 (a kit adds three rows)</td><td>1 + the browser</td><td>No</td><td>library manifest, views; domain only for sections</td><td>most; piano roll becomes the scale grid</td><td><span class="pill">L</span></td></tr>
+      <tr><td><b>5 · Unfolding</b></td><td>≈ 6, one at a time</td><td>1, growing</td><td>No</td><td>views, profile; sections as in 4</td><td>all, behind the fold</td><td><span class="pill hi">L–XL</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="section" style="margin-top:36px">
+    <div><span class="eyebrow">A path, not a pick</span><h2>These compose</h2></div>
+    <p>Variant 1 is a skin, and every other variant can wear it. Variant 2 is a layout, and Variants 4 and 5 both assume it (the beat and the song on one page, the tools in a drawer). Variant 4's two ideas, roles instead of engines and a grid that only shows the key, are independent of each other and of everything else. Variant 5 is a gate in front of whatever editor exists. Variant 3 is the one that does not compose: a pattern entity is a different song model, and it is the choice to make deliberately or not at all.</p>
+    <p>So the order that gets a beginner furthest soonest: <b>1</b> (one decision about the theme rules), then <b>2</b> (the layout and the coach strip, which reuses the lessons), then <b>4</b>'s roles and scale grid, then <b>5</b>'s stages on top. Sections (4 and 5's song view) come when the structure question is settled: a convention over aligned clips first, an entity only if the convention breaks.</p>
+  </div>
+
+  <div class="section">
+    <div><span class="eyebrow">The real brief</span><h2>What it takes so nobody needs a tutorial video</h2></div>
+    <p>A tutorial video exists to say what the screen does not. Each rule below is one thing the screen can say instead, with the variant that does it best and the place in the code it would live.</p>
+    <div class="rules">
+      <div class="rule"><h3>Open on the thing you came to do</h3><p>The first screen is the beat, playing, with the squares you will click already in front of you. Today the project opens on an arrangement with one block on it.</p><span class="where">Best in 3 and 5 · <code>DEFAULT_EDITOR_VIEW</code>, <code>starterProject.ts</code></span></div>
+      <div class="rule"><h3>Every control has a word on it</h3><p>Icons alone are a memory test. A label under the dock, "Play" on the play button, "Fill a pattern" instead of Generate. The hover tip is for the second visit, not the first.</p><span class="where">All variants from 1 · <code>ViewDock</code>, <code>EditorHeader</code>, <code>GeneratePanel</code></span></div>
+      <div class="rule"><h3>Name things by what they are for</h3><p>Kick, not BD. Drums, not drum machine. Keys &amp; bass, not sampler. The engine is an implementation detail until someone asks for the faders.</p><span class="where">1 renames; 4 and 5 remove the engine · <code>trackCreation.ts</code>, <code>instrumentKinds.ts</code>, the manifest</span></div>
+      <div class="rule"><h3>The empty space teaches</h3><p>A dashed ghost where the next clip goes. One sentence under the grid. A "+ Pad" row in the grid, not a button in another view. The help is in the place the action happens.</p><span class="where">1, 2 and 4 · <code>EmptyView</code>, the arrangement canvas, <code>StepEditor</code></span></div>
+      <div class="rule"><h3>One next thing, always visible</h3><p>Coproducer's lesson already knows the next bite and can do it for you. Put that sentence where the eye rests, not in a side panel you have to open.</p><span class="where">2 and 5 · <code>src/lessons</code>, <code>AssistantPanel</code> → a coach strip</span></div>
+      <div class="rule"><h3>Hear every choice in context</h3><p>A sound auditioned alone tells you nothing about whether it fits. Audition it in the beat, on the steps it will play, with the loop running.</p><span class="where">2, 4 and 5 · <code>audition.ts</code>, CF-030's try-on-pad</span></div>
+      <div class="rule"><h3>Fewer screens, more tabs with words</h3><p>Five views on number keys is a keyboard shortcut dressed as navigation. A drawer with Steps · Notes · Sound · Mix is the same five jobs with the structure on show.</p><span class="where">2 onwards · <code>editorViews.ts</code>, <code>EditorView.tsx</code></span></div>
+      <div class="rule"><h3>Show only what the person can use yet</h3><p>Faders, sends, returns, stem export and the piano roll are right for week three. On day one they are noise. Unfold them when a step needs them, and remember where the person got to.</p><span class="where">5 · a stage gate over the panes, <code>src/memory</code></span></div>
+      <div class="rule"><h3>No wrong notes on the first day</h3><p>A grid that shows only the key's notes turns a bassline from a theory exam into pattern-making. The key is already a project property.</p><span class="where">4 · <code>pianoRoll/rows.ts</code>, CF-018's key</span></div>
+      <div class="rule"><h3>Undo is always one click away</h3><p>Exploration needs a safety net the person can see. Today it is there (↶) and unlabelled; it should read "Undo" and be the first thing the coach mentions.</p><span class="where">All · <code>EditorHeader</code>, <code>CommandHistory</code></span></div>
+    </div>
+  </div>
+</section>
+</div>
+
+<script>
+(() => {
+  // ---------- rendering the data-driven parts ----------
+  const q = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+
+  q('[data-ruler]').forEach(r => {
+    const n = +(r.dataset.count || 16);
+    r.style.gridTemplateColumns = (r.closest('.phone-ui') ? '70px' : '110px') + ` repeat(${n}, minmax(0,1fr))`;
+    r.appendChild(el('span', '', ''));
+    for (let i = 0; i < n; i++) r.appendChild(el('span', '', i % 4 === 0 ? String(i / 4 + 1) : '·'));
+  });
+
+  const buildRow = (name, color, sound, pattern, cls = 'srow', labCls = 'lab') => {
+    const row = el('div', cls);
+    row.style.setProperty('--c', color);
+    row.dataset.sound = sound;
+    const lab = el('div', labCls, `<i></i><span>${name}</span>`);
+    row.appendChild(lab);
+    for (const ch of pattern) {
+      const s = el('button', 'step' + (ch === '1' ? ' on' : ''));
+      s.setAttribute('aria-label', `${name} step`);
+      s.setAttribute('aria-pressed', ch === '1' ? 'true' : 'false');
+      row.appendChild(s);
+    }
+    return row;
+  };
+  q('[data-rows]').forEach(g => {
+    const n = +(g.dataset.count || 16);
+    g.dataset.rows.split(';').forEach(spec => {
+      const [name, color, sound, pattern] = spec.split('|');
+      const row = buildRow(name, color, sound, pattern.slice(0, n));
+      row.style.gridTemplateColumns = (g.closest('.phone-ui') ? '70px' : '110px') + ` repeat(${n}, minmax(0,1fr))`;
+      if (sound === 'none') row.querySelector('.lab').style.color = 'var(--m-muted)';
+      g.appendChild(row);
+    });
+  });
+  const NOTE = { C: 65.41, D: 73.42, Eb: 77.78, F: 87.31, G: 98.0 };
+  q('[data-notes]').forEach(g => {
+    g.dataset.notes.split(';').forEach(spec => {
+      const [name, color, sound, pattern] = spec.split('|');
+      const row = buildRow(name, color, sound, pattern, 'nrow', 'lab' + (name === g.dataset.root ? ' root' : ''));
+      row.dataset.freq = NOTE[name] || 65.41;
+      g.appendChild(row);
+    });
+  });
+  q('[data-lib]').forEach(l => {
+    l.dataset.lib.split(';').forEach((spec, i) => {
+      const [sound, name, meta] = spec.split('|');
+      const item = el('button', 'snd' + (i === 0 ? ' sel' : ''), `<span class="pl">▶</span><span class="w">${name}</span><span class="meta">${meta || ''}</span>`);
+      item.dataset.sound = sound;
+      l.appendChild(item);
+    });
+  });
+  q('[data-tiles]').forEach(t => {
+    t.dataset.tiles.split(';').forEach(spec => {
+      const [name, sub, ic, color, sound] = spec.split('|');
+      const tile = el('button', 'tile', `<span class="ic">${ic}</span><span class="lis">▶</span><b>${name}</b><small>${sub}</small>`);
+      tile.style.setProperty('--c', color); tile.dataset.sound = sound;
+      t.appendChild(tile);
+    });
+  });
+  q('[data-pads]').forEach(p => {
+    p.dataset.pads.split(';').forEach(spec => {
+      const [name, sound, color, sel] = spec.split('|');
+      const pad = el('button', 'pad' + (sel ? ' sel' : ''), name);
+      pad.style.setProperty('--c', color); pad.dataset.sound = sound;
+      p.appendChild(pad);
+    });
+  });
+  const LANE_COLORS = ['#f26b3a', '#3a7df2', '#f2b63a', '#2fbf71'];
+  q('[data-sections]').forEach(s => {
+    s.dataset.sections.split(';').forEach((spec, i) => {
+      const [name, bars, lanes] = spec.split('|');
+      const sec = el('button', 'sec' + (i === 0 ? ' sel' : ''), `<b>${name}</b><span class="bars">${bars}</span>`);
+      const ln = el('div', 'lanes');
+      [...lanes].forEach((on, j) => { const bar = el('i', on === '1' ? '' : 'off'); bar.style.setProperty('--c', LANE_COLORS[j]); ln.appendChild(bar); });
+      sec.appendChild(ln);
+      s.appendChild(sec);
+    });
+    s.appendChild(el('button', 'sec add', '+ Duplicate'));
+  });
+  q('[data-playlist]').forEach(p => {
+    p.dataset.playlist.split(';').forEach(spec => {
+      const [name, color, cells] = spec.split('|');
+      const lab = el('div', 'pl-lab', `<i></i>${name}`); lab.style.setProperty('--c', color);
+      const lane = el('div', 'pl-lane');
+      [...cells].forEach(on => { const c = el('button', 'cell' + (on === '1' ? ' on' : '')); c.style.setProperty('--c', color); c.setAttribute('aria-label', `${name} bar`); lane.appendChild(c); });
+      p.appendChild(lab); p.appendChild(lane);
+    });
+  });
+  const ICONS = {
+    arr: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 5h9M2 10h16M2 15h6"/></svg>',
+    seq: '<svg viewBox="0 0 20 20" fill="currentColor"><rect x="2" y="2" width="4" height="4"/><rect x="8" y="2" width="4" height="4" opacity=".4"/><rect x="14" y="2" width="4" height="4"/><rect x="2" y="8" width="4" height="4" opacity=".4"/><rect x="8" y="8" width="4" height="4"/><rect x="14" y="8" width="4" height="4" opacity=".4"/><rect x="2" y="14" width="4" height="4"/><rect x="8" y="14" width="4" height="4" opacity=".4"/><rect x="14" y="14" width="4" height="4"/></svg>',
+    inst: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16V8M10 16V4M16 16v-6"/><circle cx="4" cy="8" r="1.6" fill="currentColor"/><circle cx="10" cy="4" r="1.6" fill="currentColor"/><circle cx="16" cy="10" r="1.6" fill="currentColor"/></svg>',
+    lib: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3h5l2 2h7v12H3z"/></svg>',
+    mix: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 3v14M10 3v14M16 3v14"/><rect x="2" y="9" width="4" height="3" fill="currentColor"/><rect x="8" y="5" width="4" height="3" fill="currentColor"/><rect x="14" y="12" width="4" height="3" fill="currentColor"/></svg>'
+  };
+  const DOCKS = { now: ['Arrangement', 'Sequence', 'Instrument', 'Library', 'Mixer'], v1: ['Arrange', 'Steps', 'Sound', 'Sounds', 'Mix'] };
+  q('[data-dock]').forEach(d => {
+    const names = DOCKS[d.dataset.dock]; const keys = ['arr', 'seq', 'inst', 'lib', 'mix'];
+    names.forEach((n, i) => {
+      const b = el('button', '', `<span class="k">${i + 1}</span>${ICONS[keys[i]]}` + (d.classList.contains('labelled') ? `<span class="l">${n}</span>` : ''));
+      b.setAttribute('aria-label', n);
+      if (String(i + 1) === d.dataset.current) b.setAttribute('aria-current', 'page');
+      d.appendChild(b);
+    });
+  });
+
+  // ---------- tiny synth ----------
+  let ctx;
+  const audio = () => { if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)(); if (ctx.state === 'suspended') ctx.resume(); return ctx; };
+  let noiseBuf;
+  const noise = (c) => { if (!noiseBuf) { noiseBuf = c.createBuffer(1, c.sampleRate, c.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } const s = c.createBufferSource(); s.buffer = noiseBuf; return s; };
+  const env = (c, g, peak, decay, t) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + decay); };
+  function play(sound, when, freq) {
+    if (!sound || sound === 'none') return;
+    let c; try { c = audio(); } catch { return; }
+    const t = when ?? c.currentTime;
+    const g = c.createGain(); g.connect(c.destination);
+    if (sound === 'kick') {
+      const o = c.createOscillator(); o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12); o.connect(g); env(c, g, 0.9, 0.28, t); o.start(t); o.stop(t + 0.3);
+    } else if (sound === 'snare') {
+      const n = noise(c); const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1800; n.connect(f); f.connect(g); env(c, g, 0.5, 0.16, t); n.start(t); n.stop(t + 0.2);
+      const o = c.createOscillator(); const g2 = c.createGain(); o.frequency.setValueAtTime(190, t); o.connect(g2); g2.connect(c.destination); env(c, g2, 0.35, 0.09, t); o.start(t); o.stop(t + 0.1);
+    } else if (sound === 'hat') {
+      const n = noise(c); const f = c.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 7000; n.connect(f); f.connect(g); env(c, g, 0.25, 0.05, t); n.start(t); n.stop(t + 0.06);
+    } else if (sound === 'bass') {
+      const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = freq || 65.41; const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(900, t); f.frequency.exponentialRampToValueAtTime(200, t + 0.2); o.connect(f); f.connect(g); env(c, g, 0.35, 0.22, t); o.start(t); o.stop(t + 0.25);
+    } else if (sound === 'chord') {
+      [261.63, 311.13, 392.0].forEach(fr => { const o = c.createOscillator(); o.type = 'triangle'; o.frequency.value = fr; o.connect(g); o.start(t); o.stop(t + 0.5); }); env(c, g, 0.18, 0.45, t);
+    }
+  }
+
+  // ---------- sequencer: one per mock ----------
+  const running = new Map();
+  const stop = (mock) => { const r = running.get(mock); if (!r) return; clearInterval(r.timer); running.delete(mock); q('.step.now', mock).forEach(s => s.classList.remove('now')); q('.play', mock).forEach(b => { b.classList.remove('playing'); b.textContent = b.classList.contains('big-play') ? '▶' : (b.textContent.includes('Play') ? '▶ Play' : '▶'); }); };
+  const stopAll = () => Array.from(running.keys()).forEach(stop);
+  function start(mock) {
+    stopAll();
+    const rows = q('.srow, .nrow', mock);
+    if (!rows.length) return;
+    const n = rows[0].querySelectorAll('.step').length;
+    let i = 0;
+    const tick = () => {
+      let c; try { c = audio(); } catch { return; }
+      const t = c.currentTime + 0.02;
+      q('.step.now', mock).forEach(s => s.classList.remove('now'));
+      rows.forEach(r => { const s = r.querySelectorAll('.step')[i]; if (!s) return; s.classList.add('now'); if (s.classList.contains('on')) play(r.dataset.sound, t, +r.dataset.freq || undefined); });
+      i = (i + 1) % n;
+    };
+    tick();
+    running.set(mock, { timer: setInterval(tick, 125) });
+    q('.play', mock).forEach(b => { b.classList.add('playing'); b.textContent = b.classList.contains('big-play') ? '■' : (b.textContent.includes('Play') ? '■ Stop' : '■'); });
+  }
+
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    const mock = t.closest('.mock');
+    if (t.classList.contains('play') && mock) { running.has(mock) ? stop(mock) : start(mock); return; }
+    if (t.classList.contains('step')) {
+      const row = t.closest('.srow, .nrow');
+      if (row.dataset.sound === 'none') return;
+      const on = !t.classList.contains('on');
+      t.classList.toggle('on', on); t.setAttribute('aria-pressed', String(on));
+      if (on) play(row.dataset.sound, undefined, +row.dataset.freq || undefined);
+      return;
+    }
+    if (t.classList.contains('snd') || t.classList.contains('tile') || t.classList.contains('pad')) {
+      const group = t.parentElement; q('.sel', group).forEach(x => x.classList.remove('sel'));
+      if (t.dataset.sound !== 'none') t.classList.add('sel');
+      play(t.dataset.sound); return;
+    }
+    if (t.classList.contains('sec')) { if (t.classList.contains('add')) return; q('.sel', t.parentElement).forEach(x => x.classList.remove('sel')); t.classList.add('sel'); return; }
+    if (t.dataset.paint) { q('.pat', t.parentElement).forEach(x => x.classList.remove('on')); t.classList.add('on'); return; }
+    if (t.classList.contains('cell')) {
+      const chip = q('.pat.on', mock).find(p => p.dataset.paint);
+      const color = chip ? chip.dataset.paint : getComputedStyle(t).getPropertyValue('--c');
+      if (t.classList.contains('on') && t.style.getPropertyValue('--c').trim() === color.trim()) t.classList.remove('on');
+      else { t.style.setProperty('--c', color); t.classList.add('on'); }
+      return;
+    }
+  });
+
+  // ---------- tabs ----------
+  const studios = q('.studio');
+  const studioTabs = q('.tabs [data-studio]');
+  function showStudio(id) {
+    stopAll();
+    studios.forEach(s => s.hidden = s.id !== id);
+    studioTabs.forEach(b => b.setAttribute('aria-selected', String(b.dataset.studio === id)));
+    try { history.replaceState(null, '', '#' + id); } catch {}
+  }
+  studioTabs.forEach(b => b.addEventListener('click', () => showStudio(b.dataset.studio)));
+  q('.screens').forEach(bar => {
+    const studio = bar.closest('.studio');
+    q('[data-screen]', bar).forEach(b => b.addEventListener('click', () => {
+      stopAll();
+      q('[data-screen]', bar).forEach(x => x.setAttribute('aria-selected', String(x === b)));
+      q('.screen', studio).forEach(s => s.hidden = s.dataset.screen !== b.dataset.screen);
+    }));
+  });
+  const initial = location.hash.replace('#', '');
+  if (studios.some(s => s.id === initial)) showStudio(initial);
+})();
+</script>
+
+</body>
+</html>
