@@ -615,11 +615,13 @@ export function ciFailureDue(p, ciRuns, now) {
 const UNFINISHED = ["in_progress", "queued", "waiting", "pending", "requested"];
 
 /**
- * `gh api --paginate` over a list endpoint, with a jq filter that prints one
- * JSON value per line: every line, parsed.
+ * `gh api --paginate` over a list endpoint with a jq filter: every value the
+ * filter yields, parsed. `gh --jq` prints a string result raw, without its
+ * quotes, so the filter is wrapped in `tojson` to make every line JSON
+ * whatever the filter yields (a bare job name broke the sweep, GRV-197).
  */
-const ghLines = (path, jq) =>
-  gh(["api", "--paginate", path, "--jq", jq])
+export const ghLines = (path, jq, run = gh) =>
+  run(["api", "--paginate", path, "--jq", `(${jq}) | tojson`])
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line));
@@ -679,8 +681,10 @@ async function pollSweep(index, skip, ciRuns) {
   let runs;
   try {
     runs = activeRuns();
-  } catch {
-    return console.warn("Could not list the running workflows; not sweeping");
+  } catch (error) {
+    return console.warn(
+      `Could not list the running workflows; not sweeping: ${error.message}`,
+    );
   }
   const now = Date.now();
   for (const card of await linear.list({

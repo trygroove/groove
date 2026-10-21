@@ -3,6 +3,7 @@ import {
   actedOn,
   activeRuns,
   ciFailureDue,
+  ghLines,
   handoffAwaiting,
   mentionRequest,
   PICKUP,
@@ -367,6 +368,37 @@ describe("mentionRequest", () => {
       "**Back to Ready.** #812 merged; @claude",
     ])
       expect(mentionRequest(body)).toBe(false);
+  });
+});
+
+describe("ghLines", () => {
+  it("reads a filter that yields bare strings, which gh prints without quotes", () => {
+    // What `gh api --jq` prints: a string result raw, anything else as JSON.
+    // A board run's job names came back as `mention GRV-197`, which threw and
+    // stopped every idle sweep (GRV-197's QA).
+    const printed = (values) =>
+      values.map((v) => (typeof v === "string" ? v : JSON.stringify(v))).join("\n");
+    const filters = [];
+    const run = (args) => {
+      const jq = args[args.indexOf("--jq") + 1];
+      filters.push(jq);
+      // `tojson` turns each value into a string holding its JSON.
+      const values = ["mention GRV-197", "ship GRV-7"];
+      return printed(
+        jq.endsWith("| tojson") ? values.map((v) => JSON.stringify(v)) : values,
+      );
+    };
+    expect(ghLines("repos/o/r/actions/runs/7/jobs", ".jobs[] | .name", run)).toEqual([
+      "mention GRV-197",
+      "ship GRV-7",
+    ]);
+    expect(filters).toEqual(["(.jobs[] | .name) | tojson"]);
+  });
+
+  it("reads objects as before", () => {
+    // `tojson` yields a string, which gh prints raw: the object's JSON.
+    const run = () => `${JSON.stringify({ id: 7 })}\n`;
+    expect(ghLines("p", ".workflow_runs[] | {id}", run)).toEqual([{ id: 7 }]);
   });
 });
 
