@@ -209,8 +209,18 @@ export function usageStanding(
   return after >= usage.capBytes * 0.9 ? "near" : "ok";
 }
 
-/** "512 KB", "12.4 MB", "1 GB": sizes as a producer reads them. */
-export function formatBytes(bytes: number): string {
+/**
+ * The storage meter's size text: "512 bytes", "1.5 KB", "12 MB", "1 GB".
+ *
+ * It divides by 1024 at each step but prints the familiar "KB / MB / GB"
+ * labels, so the "1 GB" allowance is 1024³ bytes (`USER_DATA_CAP_BYTES`). It is
+ * not `formatExportSize` (`editor/export/stemSelection.ts`), which prints binary
+ * MiB / GiB. The meter keeps these labels because they are the product's wording
+ * for a producer's own storage; switching to GiB would change what the meter
+ * says, not just how it is named. Below 10 it keeps one decimal, from 10 up it
+ * rounds to whole numbers.
+ */
+export function formatStorageSize(bytes: number): string {
   const units = ["bytes", "KB", "MB", "GB"] as const;
   let value = Math.max(0, bytes);
   let unit = 0;

@@ -34,7 +34,7 @@ import {
 } from "./exportNotes";
 import FormatCards, { type ExportFormat } from "./FormatCards";
 import { finishedExport } from "./finishedExport";
-import { formatBytes } from "./stemSelection";
+import { formatExportSize } from "./stemSelection";
 import { exportStemsBatch, planStemsFiles } from "./stemsExport";
 import { exportStereoWav, type StereoExportOptions } from "./stereoExport";
 import TrackLanes from "./TrackLanes";
@@ -346,10 +346,10 @@ export default function ExportDialog(props: ExportDialogProps): JSX.Element {
   const stemsBytes = () => plan().reduce((sum, batch) => sum + batch.expectedBytes, 0);
   const sizeText = () => {
     if (emptySong()) return "Nothing to export";
-    if (format() === "stereo") return `${formatBytes(stereoBytes())} · 1 file`;
+    if (format() === "stereo") return `${formatExportSize(stereoBytes())} · 1 file`;
     if (plan().length === 0) return "Nothing to export";
     const files = plan().reduce((sum, batch) => sum + batch.paths.length, 0);
-    return `${formatBytes(stemsBytes())} · ${files} ${files === 1 ? "file" : "files"}`;
+    return `${formatExportSize(stemsBytes())} · ${files} ${files === 1 ? "file" : "files"}`;
   };
   /** What is printing, `ZIP 2 of 3 · bar 79 of 160`, and how far along the whole is. */
   const printingText = () => {

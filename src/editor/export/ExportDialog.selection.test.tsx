@@ -7,7 +7,7 @@ import { stubCanvasContext } from "../../testing/canvas";
 import { clickAndFlush } from "../../testing/events";
 import { fakeStemsBatch } from "../../testing/stemsBatchFake";
 import ExportDialog from "./ExportDialog";
-import { formatBytes } from "./stemSelection";
+import { formatExportSize } from "./stemSelection";
 import type { StemsBatchRequest } from "./stemsExport";
 
 /** The stems dialog's track selection and size budget (EXP-003, #66), now made on
@@ -146,14 +146,16 @@ describe("ExportDialog: choosing the tracks in a stem export", () => {
   });
 });
 
-describe("formatBytes", () => {
+describe("formatExportSize", () => {
   it("formats sizes in binary units", () => {
-    expect(formatBytes(512)).toBe("1 MiB");
-    expect(formatBytes(300 * 1024 ** 2)).toBe("300 MiB");
-    expect(formatBytes(1.25 * 1024 ** 3)).toBe("1.25 GiB");
+    expect(formatExportSize(512)).toBe("1 MiB");
+    expect(formatExportSize(300 * 1024 ** 2)).toBe("300 MiB");
+    expect(formatExportSize(1.25 * 1024 ** 3)).toBe("1.25 GiB");
     // Two decimals, so a ZIP under the limit never rounds up to it.
-    expect(formatBytes(1.96 * 1024 ** 3)).toBe("1.96 GiB");
-    expect(formatBytes(4.57 * 1024 ** 3)).toBe("4.57 GiB");
-    expect(formatBytes(2 * 1024 ** 3)).toBe("2 GiB");
+    expect(formatExportSize(1.96 * 1024 ** 3)).toBe("1.96 GiB");
+    expect(formatExportSize(4.57 * 1024 ** 3)).toBe("4.57 GiB");
+    expect(formatExportSize(2 * 1024 ** 3)).toBe("2 GiB");
+    // The floor: an empty or tiny export still reads as 1 MiB.
+    expect(formatExportSize(0)).toBe("1 MiB");
   });
 });

@@ -1,7 +1,7 @@
 import type { IdFactory } from "../domain/ids";
 import type { Clock } from "../shared/clock";
 import {
-  formatBytes,
+  formatStorageSize,
   importContentType,
   MAX_IMPORT_FILE_BYTES,
   MAX_PACK_SOUNDS,
@@ -55,7 +55,7 @@ export function importFailureMessage(reason: ImportFailure): string {
     case "unsupported_type":
       return "Not an audio file we can import. Use WAV, AIFF, FLAC, MP3, OGG or M4A.";
     case "too_large":
-      return `Too large to import. Files can be up to ${formatBytes(MAX_IMPORT_FILE_BYTES)}.`;
+      return `Too large to import. Files can be up to ${formatStorageSize(MAX_IMPORT_FILE_BYTES)}.`;
     case "over_allowance":
       return "Your library is full. Delete sounds you no longer use to make room.";
     case "pack_full":

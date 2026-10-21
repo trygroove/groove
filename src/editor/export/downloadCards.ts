@@ -2,7 +2,7 @@ import type { StemBatch } from "../../export/stems/stemBatches";
 import type { DownloadCard, DownloadState } from "./DownloadsRow";
 import { exportFileName } from "./exportFileName";
 import type { ExportFormat } from "./FormatCards";
-import { formatBytes } from "./stemSelection";
+import { formatExportSize } from "./stemSelection";
 import { stemsBatchFileName } from "./stemsExport";
 
 /**
@@ -49,7 +49,7 @@ export function downloadCards(input: DownloadCardsInput): DownloadCard[] {
     return [
       {
         name: exportFileName(input.projectName, input.date, "wav"),
-        detail: `1 file · ${formatBytes(input.stereoBytes)}`,
+        detail: `1 file · ${formatExportSize(input.stereoBytes)}`,
         ...cardState(0, input.progress),
       },
     ];
@@ -60,7 +60,7 @@ export function downloadCards(input: DownloadCardsInput): DownloadCard[] {
     return {
       name: count > 1 ? `ZIP ${index + 1} of ${count}` : name,
       title: name,
-      detail: `${files(batch.paths.length)} · ${formatBytes(batch.expectedBytes)}`,
+      detail: `${files(batch.paths.length)} · ${formatExportSize(batch.expectedBytes)}`,
       ...cardState(index, input.progress),
     };
   });
