@@ -3,6 +3,7 @@ import {
   createLessonStore,
   LESSON_STORAGE_PREFIX,
   lessonStorageKey,
+  type StoredLesson,
 } from "./lessonStore";
 
 function memory() {
@@ -29,10 +30,37 @@ describe("the kept lesson (GRV-43)", () => {
       endings: { "beat-library": "skipped" },
     } as const;
     store.save(key, lesson);
-    expect(store.load(key)).toEqual(lesson);
+    // A lesson kept without them is a chapter alone.
+    expect(store.load(key)).toEqual({ ...lesson, track: false, passed: [], behind: [] });
     store.save(key, null);
     expect(items.size).toBe(0);
     expect(store.load(key)).toBeNull();
+  });
+
+  it("keeps that it is Finish a track, and what its chapter passed over (GRV-44)", () => {
+    const { storage } = memory();
+    const store = createLessonStore(storage);
+    const lesson: StoredLesson = {
+      chapter: "beat",
+      bite: "beat-play",
+      endings: { "beat-library": "did_it" },
+      track: true,
+      passed: ["beat-kick"],
+      behind: [],
+    };
+    store.save("key", lesson);
+    expect(store.load("key")).toEqual(lesson);
+    // And the bites it passed over as the producer had done them.
+    const back: StoredLesson = {
+      chapter: "bass",
+      bite: "bass-sound",
+      endings: {},
+      track: true,
+      passed: [],
+      behind: ["bass-key", "bass-line"],
+    };
+    store.save("key", back);
+    expect(store.load("key")).toEqual(back);
   });
 
   it("drops what it cannot read back", () => {

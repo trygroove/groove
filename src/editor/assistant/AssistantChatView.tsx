@@ -2,6 +2,7 @@ import { Errored, type JSX } from "@solidjs/web";
 import { createEffect, For, Match, onSettled, Show, Switch } from "solid-js";
 import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import { SendIcon, SparkIcon, StopIcon } from "../../components/icons";
+import { nudgeWords } from "../../memory/nudge";
 import AssistantAskCard from "./AssistantAskCard";
 import {
   RETENTION_LOADING,
@@ -234,7 +235,7 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
         >
           {(bite) => (
             <section class="assistant-card cue-nudge" aria-label={NUDGE_LABEL}>
-              <b>Want to try "{bite().title}"?</b>
+              <b>{nudgeWords(bite(), props.chat.lesson.done())}</b>
               <div class="memory-proposal-actions">
                 <button
                   type="button"

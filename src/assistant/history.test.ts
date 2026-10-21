@@ -136,6 +136,8 @@ describe("historyOf after a reply that started a lesson (GRV-43)", () => {
       assistant(`Starting "Make a beat" now.\n\n${lessonNote("beat")}`),
     );
     expect(lessonNote("beat")).toContain('start_lesson with chapter "beat"');
+    // "Finish a track" (GRV-44) is resent the same way.
+    expect(lessonNote("track")).toContain('start_lesson with chapter "track"');
     expect(history[3]).toEqual(assistant("Open the Library."));
   });
 });

@@ -9,7 +9,7 @@
  * Firebase-free and SDK-free, like the rest of `src/assistant`.
  */
 import { z } from "zod";
-import { CHAPTER_IDS, type ChapterId } from "../lessons/ids";
+import { LESSON_CHOICES, type LessonChoice } from "../lessons/ids";
 import type { AssistantProposal, AssistantToolCall } from "./protocol";
 import { makesChanges } from "./tools";
 
@@ -19,14 +19,14 @@ export const START_LESSON_TOOL_NAME = "start_lesson";
 /** What `start_lesson` takes. */
 export const startLessonInputSchema = z.strictObject({
   chapter: z
-    .enum(CHAPTER_IDS)
+    .enum(LESSON_CHOICES)
     .describe(
-      'Which chapter: "beat" (Make a beat: kick, backbeat, hats, a loop), "sound" (Shape a sound: a synth\'s wave, filter and envelope into a pluck) or "tour" (Tour the studio: the five views).',
+      'Which lesson: "beat" (Make a beat: kick, backbeat, hats, a loop), "sound" (Shape a sound: a synth\'s wave, filter and envelope into a pluck), "tour" (Tour the studio: the five views) or "track" (Finish a track: the long one, five chapters from a beat through bass, chords and a hook, arranging and mixing to exported stems; it picks up where they left it).',
     ),
 });
 
 const TOOL_DESCRIPTION =
-  "Start a lesson in the producer's own project, when they ask to learn or be taught something one of its chapters covers (making a beat or drums; shaping a synth sound; finding their way around Groove). The lesson appears in the panel, one bite at a time, and each bite comes back to you to teach. Call it alone, with one short sentence before it, and only when they asked for a lesson or to learn: never in the middle of building something. Saying you will start one starts nothing: only the call puts the lesson on screen, so call it every time they ask, even for a chapter they have finished or one the conversation went through before. For anything no chapter covers, teach it in the conversation instead.";
+  "Start a lesson in the producer's own project, when they ask to learn or be taught something one of its chapters covers (making a beat or drums; shaping a synth sound; finding their way around Groove; finishing a whole track, from the beat to arranging, mixing and exporting stems). The lesson appears in the panel, one bite at a time, and each bite comes back to you to teach. Call it alone, with one short sentence before it, and only when they asked for a lesson or to learn: never in the middle of building something. Saying you will start one starts nothing: only the call puts the lesson on screen, so call it every time they ask, even for a chapter they have finished or one the conversation went through before. For anything no chapter covers, teach it in the conversation instead.";
 
 /** The tool as the model is offered it. */
 export interface StartLessonToolDefinition {
@@ -57,8 +57,8 @@ export function isLessonCall(call: Pick<AssistantToolCall, "name">): boolean {
   return call.name === START_LESSON_TOOL_NAME;
 }
 
-/** The chapter a call starts, or null when it is not a valid one. */
-export function parseLessonCall(call: AssistantToolCall): ChapterId | null {
+/** The lesson a call starts, or null when it is not a valid one. */
+export function parseLessonCall(call: AssistantToolCall): LessonChoice | null {
   const parsed = startLessonInputSchema.safeParse(call.input);
   return parsed.success ? parsed.data.chapter : null;
 }

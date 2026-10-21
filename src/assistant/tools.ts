@@ -110,8 +110,10 @@ import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
  *    GRV-131).
  * 10: a turn that carries the producer's memory is offered `start_lesson`
  *    (`lesson.ts`, GRV-43).
+ * 11: `start_lesson` takes "track" as well as a chapter: "Finish a track",
+ *    from wherever it was left (`lessonTool.ts`, GRV-44).
  */
-export const ASSISTANT_TOOLSET_VERSION = 10;
+export const ASSISTANT_TOOLSET_VERSION = 11;
 
 /** The song's own parameters the assistant may set: its tempo and its swing. */
 const SONG_PARAMETER_IDS: readonly string[] = [SONG_TEMPO.id, SONG_SWING.id];
@@ -756,9 +758,9 @@ export const TOOL_TEXT: Readonly<Record<string, TrimmedText>> = {
   },
   start_lesson: {
     moderate:
-      "Start a lesson in the producer's project when they ask to learn something a chapter covers (a beat or drums; shaping a synth sound; finding their way around Groove). Call it alone, after one short sentence, and only when they asked to learn. Only the call starts it, so call it every time they ask, even for a chapter done before. Teach anything else in the conversation.",
+      "Start a lesson in the producer's project when they ask to learn something a chapter covers (a beat or drums; shaping a synth sound; finding their way around Groove; finishing a whole track to stems). Call it alone, after one short sentence, and only when they asked to learn. Only the call starts it, so call it every time they ask, even for a chapter done before. Teach anything else in the conversation.",
     aggressive:
-      "Start a lesson when they ask to learn what a chapter covers (beat, sound, tour). Alone, after one sentence. Only the call starts it, every time.",
+      "Start a lesson when they ask to learn what a chapter covers (beat, sound, tour, a whole track). Alone, after one sentence. Only the call starts it, every time.",
   },
   remember_producer: {
     moderate:
@@ -901,11 +903,11 @@ export const SCHEMA_TEXT: Readonly<Record<string, TrimmedText>> = {
     moderate: "One short line on what the producer will learn.",
     aggressive: "One line on what they will learn.",
   },
-  'Which chapter: "beat" (Make a beat: kick, backbeat, hats, a loop), "sound" (Shape a sound: a synth\'s wave, filter and envelope into a pluck) or "tour" (Tour the studio: the five views).':
+  'Which lesson: "beat" (Make a beat: kick, backbeat, hats, a loop), "sound" (Shape a sound: a synth\'s wave, filter and envelope into a pluck), "tour" (Tour the studio: the five views) or "track" (Finish a track: the long one, five chapters from a beat through bass, chords and a hook, arranging and mixing to exported stems; it picks up where they left it).':
     {
       moderate:
-        'Which chapter: "beat" (a beat: kick, backbeat, hats, loop), "sound" (a synth pluck) or "tour" (the five views).',
-      aggressive: '"beat", "sound" or "tour".',
+        'Which lesson: "beat" (a beat: kick, backbeat, hats, loop), "sound" (a synth pluck), "tour" (the five views) or "track" (a whole track, beat to stems; picks up where they left it).',
+      aggressive: '"beat", "sound", "tour" or "track".',
     },
   '"note" to remember a note, "field" to set one of memory\'s fields.': {
     moderate: '"note" to remember a note, "field" to set a memory field.',

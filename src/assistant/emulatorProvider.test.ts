@@ -245,6 +245,33 @@ describe("the emulator's assistant provider", () => {
     ]);
   });
 
+  it("starts Finish a track for [track-lesson] (GRV-44, CF-038)", async () => {
+    const memory: AssistantMemoryContext = {
+      taste: [],
+      artists: "",
+      experience: null,
+      goal: null,
+      learn: [],
+      gear: [],
+      notes: [],
+      askLater: null,
+    };
+    const reply = await turn(
+      gateway(),
+      "Teach me to finish a track [track-lesson]",
+      new AbortController().signal,
+      createReferenceProject(),
+      undefined,
+      memory,
+    ).result;
+    expect(reply.proposal?.calls).toEqual([
+      expect.objectContaining({
+        name: START_LESSON_TOOL_NAME,
+        input: { chapter: "track" },
+      }),
+    ]);
+  });
+
   it("answers a lesson's turn naming its bite, or the chapter at its end (CF-037)", async () => {
     const world = starterWorld();
     const settings = { style: "boom_bap" } as const;

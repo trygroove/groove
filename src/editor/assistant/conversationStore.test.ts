@@ -246,6 +246,11 @@ describe("the conversation across a reload (GRV-42)", () => {
     expect(parseConversation(serializeConversation([reply], null))?.entries).toEqual([
       reply,
     ]);
+    // "Finish a track" (GRV-44) is kept the same way.
+    const track = { ...reply, lesson: "track" } as const;
+    expect(parseConversation(serializeConversation([track], null))?.entries).toEqual([
+      track,
+    ]);
   });
 
   it("keeps what became of a reply's proposal, so the next turn still says it (GRV-150)", () => {

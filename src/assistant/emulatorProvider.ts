@@ -56,6 +56,7 @@
  * - `[lesson]` (GRV-43): a short reply that ends in `start_lesson`, starting
  *   "Make a beat". Like `remember_producer`, it is offered only on a turn
  *   that carries memory.
+ * - `[track-lesson]` (GRV-44, CF-038): the same, starting "Finish a track".
  * - a turn during a lesson (GRV-43, CF-037), whatever its message: a short
  *   reply that names the bite it is about, or for the chapter's end the
  *   chapter, from the lesson block the turn carries ({@link lessonReply}),
@@ -724,6 +725,13 @@ function startLessonReply(): Step[] {
   ]);
 }
 
+/** `[track-lesson]`'s reply: one `start_lesson` call, for "Finish a track" (GRV-44). */
+function startTrackLessonReply(): Step[] {
+  return proposalReply("Let's finish a track together.", [
+    { id: "toolu_lesson", name: START_LESSON_TOOL_NAME, input: { chapter: "track" } },
+  ]);
+}
+
 /**
  * What a lesson's turn is answered with (CF-037): one short line naming the
  * bite it is about, or the chapter at its end, as a model's reply would.
@@ -875,6 +883,7 @@ export function createEmulatorAssistantProvider(
     if (message.includes("[ask]")) return askReply(false);
     if (message.includes("[remember]")) return rememberReply();
     if (message.includes("[lesson]")) return startLessonReply();
+    if (message.includes("[track-lesson]")) return startTrackLessonReply();
     if (message.includes("[video]")) return videoReply();
     return lessonReply(request) ?? textReply(EMULATOR_REPLY_CHUNKS);
   }

@@ -7,6 +7,10 @@
  * `sessionStorage`, one entry per account and project, so it survives a
  * reload but not the tab. A lesson that ended, or was left, is removed.
  * Whatever cannot be read back is dropped, never repaired.
+ *
+ * "Finish a track" (GRV-44) keeps that it is the track, and the bites its
+ * chapter passed over, so after a reload a chapter's end still offers the
+ * next chapter. A lesson kept before those were is a chapter alone.
  */
 import { z } from "zod";
 import { BITE_ENDINGS, BITE_IDS, CHAPTER_IDS } from "../../lessons/ids";
@@ -25,10 +29,16 @@ const storedLessonSchema = z.object({
   chapter: z.enum(CHAPTER_IDS),
   bite: z.enum(BITE_IDS),
   endings: z.partialRecord(z.enum(BITE_IDS), z.enum(BITE_ENDINGS)),
+  track: z.boolean().default(false),
+  passed: z.array(z.enum(BITE_IDS)).default([]),
+  behind: z.array(z.enum(BITE_IDS)).default([]),
 });
 
 /** A lesson as it is kept. */
-export type StoredLesson = Omit<z.infer<typeof storedLessonSchema>, "version">;
+export type StoredLesson = Omit<z.output<typeof storedLessonSchema>, "version">;
+
+/** A lesson to keep: outside "Finish a track", `track`, `passed` and `behind` may be left out. */
+export type LessonToKeep = Omit<z.input<typeof storedLessonSchema>, "version">;
 
 /** What is kept of `state`. */
 export function storedLesson(state: LessonState): StoredLesson {
@@ -36,6 +46,9 @@ export function storedLesson(state: LessonState): StoredLesson {
     chapter: state.chapter,
     bite: biteOf(state).id,
     endings: { ...state.endings },
+    track: state.track,
+    passed: [...state.passed],
+    behind: [...state.behind],
   };
 }
 
@@ -43,7 +56,7 @@ export function storedLesson(state: LessonState): StoredLesson {
 export interface LessonStore {
   load(key: string): StoredLesson | null;
   /** Keeps `lesson`, or with `null` forgets the one kept. */
-  save(key: string, lesson: StoredLesson | null): void;
+  save(key: string, lesson: LessonToKeep | null): void;
 }
 
 /** This tab's `sessionStorage`, or `null` where there is none or reading it throws. */

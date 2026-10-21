@@ -60,6 +60,7 @@ import { recommendationSlot } from "../assistant/recommendationCardModel";
 import { useAskEditorLink } from "../assistant/useAskEditorLink";
 import { useAssistantChat } from "../assistant/useAssistantChat";
 import { useAssistantPanel } from "../assistant/useAssistantPanel";
+import { useLessonListening } from "../assistant/useLessonListening";
 import {
   DeviceSpectrumContext,
   type DeviceSpectrumSource,
@@ -87,7 +88,7 @@ import ArrangementPane from "./ArrangementPane";
 import CompatibilityNotice from "./CompatibilityNotice";
 import { compatibilityNoticeItems } from "./compatibilityNoticeItems";
 import { controlHome } from "./controlReveal";
-import EditorHeader from "./EditorHeader";
+import EditorHeader, { type ExportRequest } from "./EditorHeader";
 import { type EditorControls, EditorControlsContext } from "./editorControls";
 import { type EditorViewName, editorViewSpec } from "./editorViews";
 import { installFocusRescue } from "./focusRescue";
@@ -234,6 +235,8 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
 
   // The Export dialog is a modal over the editor, so the editor's keys stand down.
   const [exportOpen, setExportOpen] = createSignal(false);
+  // A lesson's last bite opens the Export dialog on stems (GRV-44).
+  const [exportRequest, setExportRequest] = createSignal<ExportRequest | null>(null);
 
   // The one shared library client, so the Library view and the
   // pack-upgrade check (#892) share its cached index and manifests.
@@ -458,12 +461,21 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
   });
   // The conversation (GRV-26): one per editor, kept while the panel is
   // closed, and across a reload of the same project in this tab (GRV-42).
+  const lessonListening = useLessonListening({
+    playing: () => audio.isPlaying(),
+    positionTicks: audio.positionTicks,
+    masterLevel: audio.masterLevel,
+    loop: () => (audio.loopEnabled() ? audio.loop() : null),
+  });
   const chat = useAssistantChat({
     profile: producerProfile,
     project,
     // A lesson's "Hear it" waits for the song to play, and its Show me works
     // through the editor as the assistant (GRV-43).
     playing: () => audio.isPlaying(),
+    // "Finish a track" listens to the playhead, the master meter and the
+    // stems exported (GRV-44).
+    lessonListening,
     lessonEditor: {
       apply(commands) {
         const target = session.proposalTarget();
@@ -487,7 +499,11 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
         if (home.placementId !== undefined)
           trackSelection.selectPlacement(home.placementId);
       },
-      play: () => audio.play(),
+      play(from) {
+        if (from !== undefined) audio.seekTicks(from);
+        return audio.play();
+      },
+      openExport: () => setExportRequest({ format: "stems" }),
       async putSound(role, trackId, padId) {
         const catalog = await assistantLibrary.load();
         const current = project();
@@ -684,6 +700,8 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
                     onSwingCommit={song.commitSwing}
                     onOpenGuide={() => setGuideOpen(true)}
                     onExportOpenChange={setExportOpen}
+                    exportRequest={exportRequest}
+                    onExportStart={(format) => lessonListening.exported(format)}
                     keyHint={keyHint}
                     account={props.account}
                     assistant={{

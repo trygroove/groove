@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Analytics } from "../../analytics/analytics";
 import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
+import { ASSISTANT_TOOLSET_VERSION } from "../../assistant/tools";
 import { executeTransaction } from "../../commands/execute";
 import type { RawCommandInput } from "../../commands/types";
 import type { Project } from "../../domain/entities";
@@ -43,7 +44,9 @@ function producer(taste: string[] = ["Hip hop"]): ProducerProfile {
  * commands apply to it as the editor's would, and its view and transport are
  * signals the test can move.
  */
-async function renderLesson(options: { putSound?: boolean } = {}) {
+async function renderLesson(
+  options: { putSound?: boolean; profile?: ProducerProfile } = {},
+) {
   const client = createFakeAssistantClient();
   const transport = createRecordingTransport();
   const analytics = new Analytics({
@@ -52,7 +55,7 @@ async function renderLesson(options: { putSound?: boolean } = {}) {
     storage: memoryStorage(),
   });
   const profiles = new InMemoryProfileRepository();
-  await profiles.saveProfile(UID, producer());
+  await profiles.saveProfile(UID, options.profile ?? producer());
   const [project, setProject] = createSignal<Project>(starterWorld().project);
   const [view, setView] = createSignal<EditorViewName>("arrangement");
   const [playing, setPlaying] = createSignal(false);
@@ -81,6 +84,7 @@ async function renderLesson(options: { putSound?: boolean } = {}) {
     return true;
   });
   const point = vi.fn();
+  const openExport = vi.fn();
   const apply = vi.fn((commands: readonly RawCommandInput[]) => {
     const result = executeTransaction(project(), commands, { actor: "assistant" });
     if (result.ok) setProject(result.project);
@@ -115,6 +119,7 @@ async function renderLesson(options: { putSound?: boolean } = {}) {
           setPlaying(true);
         },
         putSound,
+        openExport,
       },
     });
     return <AssistantPanel panel={panel} chat={chat} />;
@@ -141,6 +146,7 @@ async function renderLesson(options: { putSound?: boolean } = {}) {
     apply,
     point,
     putSound,
+    openExport,
     lesson: () => screen.getByRole("region", { name: LESSON_LABEL }),
     bite: (title: string) =>
       within(screen.getByRole("list", { name: "Bites" }))
@@ -354,7 +360,7 @@ describe("a lesson in the panel (GRV-43)", () => {
       type: "proposal",
       proposal: {
         baseRevision: 0,
-        toolsetVersion: 10,
+        toolsetVersion: ASSISTANT_TOOLSET_VERSION,
         calls: [{ id: "t1", name: "start_lesson", input: { chapter: "sound" } }],
       },
     });
@@ -369,5 +375,59 @@ describe("a lesson in the panel (GRV-43)", () => {
       chapterId: "sound",
       moment: "under_way",
     });
+  });
+});
+
+describe("Finish a track in the panel (GRV-44)", () => {
+  const place = (h: Awaited<ReturnType<typeof renderLesson>>) =>
+    within(h.lesson()).getByText(/^Finish a track ·/);
+
+  it("starts when Coproducer names it, saying the chapter and what the song already has", async () => {
+    const h = await renderLesson({ profile: producer(["House"]) });
+    h.chat.conversation.send("Teach me to finish a track");
+    await waitFor(() => expect(h.client.turns).toHaveLength(1));
+    h.client.last().emit({
+      type: "proposal",
+      proposal: {
+        baseRevision: 0,
+        toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+        calls: [{ id: "t1", name: "start_lesson", input: { chapter: "track" } }],
+      },
+    });
+    h.client.last().done();
+    const lesson = await screen.findByRole("region", { name: LESSON_LABEL });
+    expect(within(lesson).getByRole("heading", { name: "Make a beat" })).toBeVisible();
+    expect(place(h)).toHaveTextContent("Finish a track · chapter 1 of 5 · bite 1 of 6");
+    // House's kick is the starter's four on the floor: already there.
+    expect(h.bite("The kick pattern")).toHaveTextContent("already in your song");
+    expect(h.bite("Pick a kick")).toHaveAttribute("aria-current", "step");
+  });
+
+  it("picks the lesson up where it was left", async () => {
+    const h = await renderLesson({
+      profile: { ...producer(), lessonsDone: ["bass-key", "bass-line", "bass-sound"] },
+    });
+    h.start("track", "nudge");
+    expect(
+      within(h.lesson()).getByRole("heading", { name: "Chords and hook" }),
+    ).toBeVisible();
+    expect(place(h)).toHaveTextContent("chapter 3 of 5 · bite 1 of 3");
+  });
+
+  it("offers the next chapter once one is over, and goes on to it", async () => {
+    const h = await renderLesson();
+    h.start("bass", "asked", "bass-sound");
+    // No Bass track in the starter: adding one comes first. Skip both steps.
+    clickAndFlush(within(h.lesson()).getByRole("button", { name: "Skip" }));
+    clickAndFlush(within(h.lesson()).getByRole("button", { name: "Skip" }));
+    const next = await within(h.lesson()).findByRole("button", {
+      name: "Next chapter: Chords and hook",
+    });
+    clickAndFlush(next);
+    expect(
+      within(h.lesson()).getByRole("heading", { name: "Chords and hook" }),
+    ).toBeVisible();
+    expect(h.bite("A chord loop")).toHaveAttribute("aria-current", "step");
+    expect(h.transport.named("lesson_chapter_completed")).toHaveLength(1);
   });
 });
