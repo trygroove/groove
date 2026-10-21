@@ -212,7 +212,7 @@ Actions tab ("Run workflow" on CI); a failed daily pass opens a bug, and tests
 that only passed on a retry open a flaky-tests bug. A green Chromium-only run is
 not the PRD section 10 gating evidence and must not be reported as one.
 
-See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends the app can run against (mock, Firebase Emulator, real project), and the day-to-day loop; [`docs/testing.md`](./docs/testing.md) for what each suite covers, how CI gates on them, and the shared test helpers (`src/shared/id.ts`, `src/shared/clock.ts`, `src/testing/fixtures.ts`).
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends the app can run against (mock, Firebase Emulator, real project), and the day-to-day loop; [`docs/testing.md`](./docs/testing.md) for what each suite covers, how CI gates on them, and the shared test helpers (`src/domain/ids.ts`, `src/shared/clock.ts`, `src/testing/fixtures.ts`).
 
 ## Code Style Guidelines
 
@@ -278,11 +278,12 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends t
 
 2. **Firestore Data Access**
    - **These import rules are enforced by `src/projection/boundaries.test.ts`** (domain/commands, `firebase/firestore`, `firebase/storage`, `tone`, assistant); its commented allowlists, not this prose, are the authority. Widening one is a deliberate edit to that test
-   - All Firestore operations go through the schema-v1 `ProjectRepository` boundary (`src/persistence`), obtained via `getProjectRepository()` (`src/projectRepositoryClient.ts`) — never call `firebase/firestore` directly outside `src/persistence/firestoreProjectRepository.ts`
-   - The complete list of modules that may import `firebase/firestore`, `firebase/storage` or `tone` is the commented allowlist in `src/projection/boundaries.test.ts`; the bullets below say what each is for. `src/persistence/firestoreFavouritesRepository.ts` is the favourites repository (behind `FavouritesRepository`, with an in-memory twin and `favouriteDocuments.ts`), and `src/firebaseConfig.ts` only initialises the Firestore instance and its emulator hookup
-   - Besides the project repository, the only module allowed to import `firebase/storage`, and one that imports `firebase/firestore`, is `src/userLibrary/firebaseUserLibraryRepository.ts`: the personal library's packs and audio (#282), behind `UserLibraryRepository` and obtained via `getUserLibraryRepository()`. It never hands out a download URL; audio is read back as the signed-in user with `readAudio`
+   - Project Firestore operations go through the schema-v1 `ProjectRepository` boundary (`src/persistence`), obtained via `getProjectRepository()` (`src/projectRepositoryClient.ts`). Only `src/persistence/firestoreProjectRepository.ts` and the modules below import `firebase/firestore`
+   - `src/userLibrary/firebaseUserLibraryRepository.ts` may import `firebase/firestore` too, and is the only module allowed to import `firebase/storage`: the personal library's packs and audio (#282), behind `UserLibraryRepository` and obtained via `getUserLibraryRepository()`. It never hands out a download URL; audio is read back as the signed-in user with `readAudio`
+   - `src/persistence/firestoreFavouritesRepository.ts` may import `firebase/firestore` too: a producer's favourite sounds, behind `FavouritesRepository`, with an in-memory twin, a shared contract suite and its document shapes in `src/persistence/favouriteDocuments.ts`
    - `src/access/firestoreAccessRepository.ts` may import `firebase/firestore` too: the alpha allowlist and its refused sign-ins (#854), behind `AccessRepository` and obtained via `getAccessRepository()` (`src/accessRepositoryClient.ts`). Only an `admin: true` claim gets past `firestore.rules` there
    - `src/persistence/firestoreProfileRepository.ts` may import `firebase/firestore` too: the producer's profile and memory at `users/{uid}/profile/current` (GRV-25), behind `ProfileRepository`. Only its owner may read or write it
+   - `src/firebaseConfig.ts` imports `firebase/firestore` only to create the Firestore instance and connect it to the emulator; it reads and writes nothing
    - Use `ProjectRepository.watchProject` for the metadata tier's live revision; `EditorSession` wires it into `ProjectAutosave`
    - Security rules enforce owner-based access (see firestore.rules)
 
