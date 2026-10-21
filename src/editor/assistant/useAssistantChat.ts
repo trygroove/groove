@@ -267,11 +267,11 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         refresh: (entryId, shown) => conversation.refresh(entryId, shown),
         continueRest: (entryId, shown) => conversation.continueProposal(entryId, shown),
         clock: options.clock,
-        onApplied: (entryId) => followUp.applied(entryId),
+        onApplied: (_entryId, applyId) => followUp.applied(applyId),
+        onApplyUndone: (applyId) => followUp.undone(applyId),
         onOutcome: (entryId, outcome, issues) => {
           // The conversation is made just below; an outcome only comes later.
           conversation.recordProposalOutcome(entryId, outcome);
-          if (outcome === "undone") followUp.undone(entryId);
           const turnId = turnOfEntry.get(entryId);
           if (turnId) retention?.reportOutcome(turnId, outcome, issues);
           const sessionTurn = sessionTurnOfEntry.get(entryId);
