@@ -3,12 +3,20 @@
  * was, in plain words, and for a quota when it resets (ADR 0006 decision 5).
  * Every one is followed by the same reassurance, because none of them
  * touches the song.
+ *
+ * A `provider_error` is the provider failing Groove, not the model judging
+ * the producer's message, so its card says only that Coproducer is
+ * unavailable (GRV-206). The model refusing has its own code, `refused`, and
+ * is the one card that says so.
  */
 import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import type { AssistantErrorDetails } from "../../assistant/protocol";
 
 /** The heading every inline error shares. */
 export const ERROR_HEADING = `${ASSISTANT_NAME} couldn't reply.`;
+
+/** The heading of a `provider_error`, which blames neither the model nor the message. */
+export const UNAVAILABLE_HEADING = `${ASSISTANT_NAME} is unavailable right now.`;
 
 /** The line under every failure's own words. */
 export const ERROR_REASSURANCE = "Your song is unchanged, and editing still works.";
@@ -41,6 +49,9 @@ export function errorMessage(
     case "provider_unavailable":
       return "Its model is busy or can't be reached right now.";
     case "provider_error":
+      // Its heading says it all (`errorCopy`).
+      return "";
+    case "refused":
       return "Its model refused the request.";
     case "malformed_response":
       return "Its reply came back broken.";
@@ -61,4 +72,22 @@ export function errorMessage(
     case "cancelled":
       return "The request was cancelled.";
   }
+}
+
+/** An inline error's heading and its own words, which may be empty. */
+export interface ErrorCopy {
+  readonly heading: string;
+  readonly message: string;
+}
+
+/** What the card for `error` says above the reassurance. */
+export function errorCopy(
+  error: AssistantErrorDetails,
+  now: Date = new Date(),
+  locale?: string,
+): ErrorCopy {
+  return {
+    heading: error.code === "provider_error" ? UNAVAILABLE_HEADING : ERROR_HEADING,
+    message: errorMessage(error, now, locale),
+  };
 }

@@ -16,6 +16,9 @@
  *   chunk, which the gateway cannot retry and reports as
  *   `provider_unavailable` (retryable); every later turn with it succeeds.
  *   Make the message unique per test.
+ * - `[rejected]` (GRV-206): the provider refuses the request before saying
+ *   anything, a 400 the gateway never retries and reports as
+ *   `provider_error`, whose card says Coproducer is unavailable.
  * - `[propose]`: a short reply that ends in a tool call, so the turn returns
  *   a proposal: the tempo to 100 BPM.
  * - `[misfit]` (GRV-98): a proposal that does not fit the song, a sampler
@@ -100,7 +103,8 @@ type Step =
   | { readonly event: unknown }
   | { readonly wait: number }
   | { readonly hang: true }
-  | { readonly fail: true };
+  | { readonly fail: true }
+  | { readonly reject: true };
 
 /** A later step that ends the turn with nothing more to say (`gateway.ts`). */
 function finishedReply(): Step[] {
@@ -872,6 +876,7 @@ export function createEmulatorAssistantProvider(
     if (message.includes("[flaky]") && firstTime(message)) {
       return [...textReply([EMULATOR_REPLY_CHUNKS[0]]).slice(0, 3), { fail: true }];
     }
+    if (message.includes("[rejected]")) return [{ reject: true }];
     if (message.includes("[propose]")) return tempoProposal();
     if (message.includes("[misfit]")) return misfitProposal(request);
     if (/loosen the beat/i.test(message)) return loosenProposal(request);
@@ -914,6 +919,8 @@ export function createEmulatorAssistantProvider(
               else signal.addEventListener("abort", () => resolve(), { once: true });
             });
             return;
+          } else if ("reject" in step) {
+            throw new ProviderFailure("rejected", 400);
           } else {
             throw new ProviderFailure("server_error", 500);
           }

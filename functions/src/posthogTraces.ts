@@ -1,8 +1,10 @@
 /**
  * The assistant's traces to PostHog's AI Observability (GRV-126, ADR 0011
  * decision 4), over `posthog-node`. The gateway decides what each
- * `$ai_generation` event says (`src/assistant/traces.ts`); this queues them,
- * and sends them when the turn has ended.
+ * `$ai_generation` event says (`src/assistant/traces.ts`), and the one
+ * `assistant_provider_down` event a provider-level failure sends whatever the
+ * producer's consent (GRV-206); this queues them, and sends them when the
+ * turn has ended.
  *
  * Sending never delays or fails a turn: `capture` only queues, and `flush`,
  * which the callable runs once the turn is over, gives up after
@@ -10,7 +12,10 @@
  * logged as a code only: an error's message could quote what was sent.
  */
 import { PostHog } from "posthog-node";
-import type { AiGenerationEvent, AssistantTraceSink } from "../../src/assistant/traces";
+import type {
+  AssistantServerEvent,
+  AssistantTraceSink,
+} from "../../src/assistant/traces";
 
 /** How long a turn's events may hold the callable open once the turn is over. */
 export const TRACE_FLUSH_TIMEOUT_MS = 2_000;
@@ -57,7 +62,7 @@ export function createPostHogTraces(options: PostHogTracesOptions): FlushableTra
     // Without the listener a failed send goes unlogged; nothing else changes.
   }
   return {
-    capture(event: AiGenerationEvent) {
+    capture(event: AssistantServerEvent) {
       try {
         client.capture({
           distinctId: event.distinctId,

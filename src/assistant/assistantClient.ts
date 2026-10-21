@@ -312,9 +312,9 @@ export function createAssistantClient(
             // Nothing to show at all: say so rather than end on nothing.
             if (turn.data.text.trim().length === 0) {
               return fail(
-                turn.data.stopReason === "refusal"
-                  ? "provider_error"
-                  : "malformed_response",
+                // The model's own refusal, told apart from the provider
+                // failing (GRV-206).
+                turn.data.stopReason === "refusal" ? "refused" : "malformed_response",
               );
             }
           }

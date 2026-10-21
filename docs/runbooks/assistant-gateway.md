@@ -204,6 +204,27 @@ To turn it on:
    code (`flush_timeout`, `flush_failed`, `send_failed`, `capture_failed`);
    the turn itself is unaffected, and the flush waits at most two seconds.
 
+## When the provider is down (GRV-206)
+
+A provider that refuses or fails every turn shows each producer the card
+"Coproducer is unavailable right now." Two events catch it before a producer
+reports it; set an alert on each in PostHog:
+
+- **`assistant_provider_down`**, at any count. `assistantTurn` sends it once
+  for every turn that ends on a provider-level failure, whatever the
+  producer's analytics consent, as the distinct ID `groove-assistant-gateway`
+  with no person and nothing of the producer's. `failure_kind` says why:
+  `out_of_credit` (top up the Anthropic account), `no_api_key` (set the
+  secret, see "Rotating the key"), `rejected` (a 4xx: look at the request),
+  or `overloaded`, `rate_limited`, `server_error` after retries.
+- **`assistant_turn_failed`** where `code` is `provider_error` or
+  `provider_unavailable`, above a handful an hour. The browser logs it once
+  per failed turn, with the producer's consent like every catalog event.
+
+`out_of_credit` and `no_api_key` are also logged to Cloud Logging as an error,
+`assistant provider is down for everyone`, once per function instance until a
+turn gets through again.
+
 ## Rotating the key
 
 ```bash

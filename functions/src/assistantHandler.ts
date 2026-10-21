@@ -19,6 +19,7 @@ import {
   type AssistantStreamChunk,
   type AssistantTurnResult,
 } from "../../src/assistant/protocol";
+import type { ProviderDownKind } from "../../src/assistant/provider";
 import type { FlushableTraceSink } from "./posthogTraces";
 
 /** How each gateway failure reaches the browser. */
@@ -29,6 +30,8 @@ const HTTPS_CODES: Record<AssistantErrorCode, FunctionsErrorCode> = {
   cancelled: "cancelled",
   provider_unavailable: "unavailable",
   provider_error: "failed-precondition",
+  // Raised only by the browser's client; here for completeness.
+  refused: "failed-precondition",
   malformed_response: "internal",
   reply_too_long: "out-of-range",
   quota_exceeded: "resource-exhausted",
@@ -60,7 +63,7 @@ export function toHttpsError(error: AssistantGatewayError): HttpsError {
 /** Everything but the provider is wired here; the provider needs the secret. */
 export type AssistantHandlerDeps = Omit<
   AssistantGatewayDeps,
-  "log" | "now" | "onTranscript" | "traces"
+  "log" | "now" | "onTranscript" | "traces" | "onProviderDown"
 > &
   Partial<Pick<AssistantGatewayDeps, "log" | "now" | "onTranscript">> & {
     /**
@@ -70,12 +73,37 @@ export type AssistantHandlerDeps = Omit<
     readonly traces?: FlushableTraceSink;
   };
 
+/**
+ * Reports a provider that is down for everyone (GRV-206: the account out of
+ * credit, or no API key) to error monitoring, once per kind until a turn gets
+ * through again, so an outage is one error rather than one per turn. Per
+ * function instance: a few instances may each report it once. A kind, never
+ * the provider's message.
+ */
+export function createProviderDownReporter(): {
+  readonly down: (kind: ProviderDownKind) => void;
+  readonly recovered: () => void;
+} {
+  const reported = new Set<ProviderDownKind>();
+  return {
+    down(kind) {
+      if (reported.has(kind)) return;
+      reported.add(kind);
+      logger.error("assistant provider is down for everyone", { failure_kind: kind });
+    },
+    recovered() {
+      reported.clear();
+    },
+  };
+}
+
 export function createAssistantHandler(
   deps: () => AssistantHandlerDeps,
 ): (
   request: CallableRequest<unknown>,
   response?: CallableResponse<AssistantStreamChunk>,
 ) => Promise<AssistantTurnResult> {
+  const reportDown = createProviderDownReporter();
   return async (request, response) => {
     const token = request.auth?.token as
       | ({ firebase?: { sign_in_provider?: unknown } } & Record<string, unknown>)
@@ -84,13 +112,14 @@ export function createAssistantHandler(
     let wired: AssistantHandlerDeps | undefined;
     try {
       wired = deps();
-      return await runAssistantTurn(
+      const result = await runAssistantTurn(
         {
           log: (record) => logger.info("assistant turn", record),
           // A code only: whether the turn was kept, never what it said.
           onTranscript: (write) => logger.info("assistant transcript", { write }),
           now: Date.now,
           ...wired,
+          onProviderDown: reportDown.down,
         },
         {
           uid: request.auth?.uid ?? null,
@@ -106,6 +135,8 @@ export function createAssistantHandler(
           onChunk: (chunk) => response?.sendChunk(chunk),
         },
       );
+      reportDown.recovered();
+      return result;
     } catch (error) {
       if (error instanceof AssistantGatewayError) throw toHttpsError(error);
       logger.error("assistant turn failed unexpectedly", describeUnexpectedError(error));

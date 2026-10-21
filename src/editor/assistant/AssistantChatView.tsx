@@ -9,7 +9,7 @@ import {
   RetentionDisclosure,
   RetentionSettings,
 } from "./AssistantRetention";
-import { ERROR_HEADING, ERROR_REASSURANCE, errorMessage } from "./assistantErrorCopy";
+import { ERROR_REASSURANCE, errorCopy } from "./assistantErrorCopy";
 import { skippedLine } from "./cardQueue";
 import { fitComposer } from "./composerHeight";
 import LessonCard from "./LessonCard";
@@ -515,9 +515,11 @@ function Entry(props: {
       <Match when={props.entry.kind === "error" && props.entry}>
         {(failure) => (
           <div class="assistant-error" role="alert">
-            <b>{ERROR_HEADING}</b>
+            <b>{errorCopy(failure().error).heading}</b>
             <span>
-              {errorMessage(failure().error)} {ERROR_REASSURANCE}
+              {[errorCopy(failure().error).message, ERROR_REASSURANCE]
+                .filter((part) => part.length > 0)
+                .join(" ")}
             </span>
             <Show when={props.canRetry}>
               <div>

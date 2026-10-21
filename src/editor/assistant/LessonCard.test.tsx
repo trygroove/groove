@@ -230,6 +230,32 @@ describe("a lesson in the panel (GRV-43)", () => {
     ).toHaveLength(1);
   });
 
+  it("lets the offer go once the producer types something else, and keeps a model's question (GRV-206)", async () => {
+    const h = await renderLesson();
+    h.chat.conversation.send("Hello");
+    await waitFor(() => expect(h.client.turns).toHaveLength(1));
+    h.client.last().emit({ type: "ask", ask: lessonOfferAsk("first_track") });
+    h.client.last().done();
+    expect(await screen.findByRole("button", { name: /Let's go/ })).toBeVisible();
+
+    expect(h.chat.conversation.send("so what do I do now")).toBe(true);
+    await waitFor(() => expect(h.client.turns).toHaveLength(2));
+    expect(h.chat.conversation.pendingAsk()).toBeNull();
+    expect(screen.queryByRole("button", { name: /Let's go/ })).toBeNull();
+    expect(
+      h.transport.named("assistant_ask_answered").map((event) => event.params.how),
+    ).toEqual(["dismissed"]);
+
+    // A question the model asked still waits for its answer.
+    const ask = { ...lessonOfferAsk("first_track"), id: "model-question" };
+    h.client.last().emit({ type: "ask", ask });
+    h.client.last().done();
+    await waitFor(() => expect(h.chat.conversation.pendingAsk()?.ask.id).toBe(ask.id));
+    expect(h.chat.conversation.send("make a beat")).toBe(true);
+    await waitFor(() => expect(h.client.turns).toHaveLength(3));
+    expect(h.chat.conversation.pendingAsk()?.ask.id).toBe(ask.id);
+  });
+
   it("sees a step done by hand, says so, and saves the bite as done", async () => {
     const h = await renderLesson();
     h.start("beat", "asked", "beat-kick");

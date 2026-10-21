@@ -90,7 +90,13 @@ function harness(
       sleep: async () => {},
       limits: { ...ASSISTANT_CALL_LIMITS, inactivityTimeoutMs: 200 },
       transcripts,
-      traces: { capture: (event) => events.push(event) },
+      // The `$ai_generation` events; `assistant_provider_down` has its own
+      // tests (`gateway.providerDown.test.ts`).
+      traces: {
+        capture: (event) => {
+          if (event.event === "$ai_generation") events.push(event);
+        },
+      },
       traceId: () => "generated-trace",
       ...overrides,
     },

@@ -22,13 +22,24 @@
  *   unchanged.
  * - Otherwise codes, counts and durations only, as the turn log
  *   (`telemetry.ts`) carries.
+ *
+ * Beside them, one event that is about Groove's own account rather than the
+ * producer (GRV-206): **`assistant_provider_down`**, sent once for a turn that
+ * ends on a provider-level failure (the account out of credit, no API key, a
+ * refusal, an overload, a rate limit or a server error the turn could not get
+ * past; {@link providerDownEvent}). It carries the `failure_kind` and the
+ * `http_status` and nothing else: no content, no turn, no session, and it is
+ * sent as {@link ASSISTANT_SERVER_DISTINCT_ID}, never the producer's UID, with
+ * no person profile. So it needs no consent, and it is sent whatever the
+ * producer said, for a PostHog alert to catch a provider that is down for
+ * everyone before a producer finds it.
  */
 import type {
   AssistantStopReason,
   AssistantToolCall,
   AssistantTurnRequest,
 } from "./protocol";
-import type { ProviderFailureKind } from "./provider";
+import type { ProviderDownKind, ProviderFailureKind } from "./provider";
 import type {
   ProviderAssistantBlock,
   ProviderMessage,
@@ -40,6 +51,15 @@ import type { AssistantTurnLog } from "./telemetry";
 
 /** PostHog's event for one model call. */
 export const AI_GENERATION_EVENT = "$ai_generation";
+
+/** The event for a provider that failed a turn at its own end (GRV-206). */
+export const PROVIDER_DOWN_EVENT = "assistant_provider_down";
+
+/**
+ * The distinct ID {@link PROVIDER_DOWN_EVENT} is sent as: the gateway itself,
+ * never a producer.
+ */
+export const ASSISTANT_SERVER_DISTINCT_ID = "groove-assistant-gateway";
 
 /** Who the gateway's model calls go to. */
 export const AI_PROVIDER = "anthropic";
@@ -102,12 +122,43 @@ export interface AiGenerationEvent {
   readonly properties: Readonly<Record<string, unknown>>;
 }
 
+/** `assistant_provider_down`, ready for `posthog-node`'s `capture`. */
+export interface ProviderDownEvent {
+  readonly distinctId: typeof ASSISTANT_SERVER_DISTINCT_ID;
+  readonly event: typeof PROVIDER_DOWN_EVENT;
+  readonly properties: {
+    readonly failure_kind: ProviderDownKind;
+    readonly http_status: number | null;
+    /** Sent as the server, so PostHog makes no person of it. */
+    readonly $process_person_profile: false;
+  };
+}
+
+/** Anything the gateway sends PostHog. */
+export type AssistantServerEvent = AiGenerationEvent | ProviderDownEvent;
+
 /**
  * Where a turn's events go. `capture` must not throw or wait: the Cloud
  * Function's sink queues them and sends them in the background.
  */
 export interface AssistantTraceSink {
-  capture(event: AiGenerationEvent): void;
+  capture(event: AssistantServerEvent): void;
+}
+
+/** The event for a turn that ended on a provider-level failure (GRV-206). */
+export function providerDownEvent(
+  kind: ProviderDownKind,
+  status: number | null,
+): ProviderDownEvent {
+  return {
+    distinctId: ASSISTANT_SERVER_DISTINCT_ID,
+    event: PROVIDER_DOWN_EVENT,
+    properties: {
+      failure_kind: kind,
+      http_status: status,
+      $process_person_profile: false,
+    },
+  };
 }
 
 /** Whether the browser said product analytics is allowed. Missing means no. */
