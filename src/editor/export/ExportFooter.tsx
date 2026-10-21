@@ -50,67 +50,78 @@ function Readout(props: {
  * lines rather than cutting it off (GRV-163). It sits in the row rather than under
  * it so an empty slot leaves no blank strip at the foot of the dialog. The alert is always
  * mounted and only its content changes, so a screen reader announces each one.
+ * The frame around it is what a narrow footer's stacked layout measures (GRV-166).
  */
 export default function ExportFooter(props: ExportFooterProps): JSX.Element {
   return (
-    <div class="export-footer">
-      <Readout label={props.printing ? "Printing" : "Size"} widthPx={230}>
-        <b class="export-value">{props.printing ? props.printing.text : props.size}</b>
-      </Readout>
-      <Readout
-        label={
-          props.printing ? "Progress" : props.format === "stereo" ? "Level" : "Downloads"
-        }
-        widthPx={220}
-        loose
-      >
-        <Show
-          when={props.printing}
-          fallback={
-            <Show
-              when={props.format === "stems"}
-              fallback={<span class="export-level">Project level, not normalized</span>}
-            >
-              <b class="export-value">
-                {props.zipCount === 0
-                  ? "None"
-                  : props.zipCount === 1
-                    ? "1 ZIP"
-                    : `${props.zipCount} ZIPs, each under 2 GiB`}
-              </b>
-            </Show>
+    <div class="export-footer-frame">
+      <div class="export-footer">
+        <Readout label={props.printing ? "Printing" : "Size"} widthPx={230}>
+          <b class="export-value">{props.printing ? props.printing.text : props.size}</b>
+        </Readout>
+        <Readout
+          label={
+            props.printing
+              ? "Progress"
+              : props.format === "stereo"
+                ? "Level"
+                : "Downloads"
           }
+          widthPx={220}
+          loose
         >
-          {(printing) => (
-            <progress aria-label="Export progress" max={1} value={printing().fraction} />
-          )}
-        </Show>
-      </Readout>
-      <div class="export-message">
-        <div
-          class={["export-alert", { shown: props.alert !== "" }]}
-          role="alert"
-          title={
-            props.alert === ""
-              ? undefined
-              : `${props.alertLead ?? ""} ${props.alert}`.trim()
-          }
-        >
-          <Show when={props.alertLead}>
-            <b>{props.alertLead}</b>{" "}
+          <Show
+            when={props.printing}
+            fallback={
+              <Show
+                when={props.format === "stems"}
+                fallback={<span class="export-level">Project level, not normalized</span>}
+              >
+                <b class="export-value">
+                  {props.zipCount === 0
+                    ? "None"
+                    : props.zipCount === 1
+                      ? "1 ZIP"
+                      : `${props.zipCount} ZIPs, each under 2 GiB`}
+                </b>
+              </Show>
+            }
+          >
+            {(printing) => (
+              <progress
+                aria-label="Export progress"
+                max={1}
+                value={printing().fraction}
+              />
+            )}
           </Show>
-          {props.alert}
+        </Readout>
+        <div class="export-message">
+          <div
+            class={["export-alert", { shown: props.alert !== "" }]}
+            role="alert"
+            title={
+              props.alert === ""
+                ? undefined
+                : `${props.alertLead ?? ""} ${props.alert}`.trim()
+            }
+          >
+            <Show when={props.alertLead}>
+              <b>{props.alertLead}</b>{" "}
+            </Show>
+            {props.alert}
+          </div>
+          <output
+            class="export-note"
+            id={EXPORT_NOTE_ID}
+            aria-live="polite"
+            title={props.note || undefined}
+          >
+            {props.note}
+          </output>
         </div>
-        <output
-          class="export-note"
-          id={EXPORT_NOTE_ID}
-          aria-live="polite"
-          title={props.note || undefined}
-        >
-          {props.note}
-        </output>
+        <div class="export-actions">{props.children}</div>
       </div>
-      <div class="export-actions">{props.children}</div>
     </div>
   );
 }
