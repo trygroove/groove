@@ -1665,7 +1665,7 @@ not use.
    Chromium Show me plays the drop while you watch it for four bars, then
    stop it; elsewhere it is skipped.
 7. The last bite, "Export the stems", opens the Export dialog by itself with
-   Stems (ZIP) chosen and every track picked in its list. Press Export. The
+   Stems (ZIP) chosen and every track included in its list. Press Export. The
    bite is done and the lesson is over: it leaves the panel. Close the
    dialog. Coproducer's wrap-up of the whole track follows in the
    conversation.
