@@ -55,7 +55,7 @@ function editsLeaveValid(
 
 /**
  * What the executor applies to. In the editor that is the editor session
- * (`src/editor/assistantProposalTarget.ts`), so an applied or undone proposal
+ * (`src/editor/composition/assistantProposalTarget.ts`), so an applied or undone proposal
  * is autosaved, counted as an edit and ends an open preview exactly as a
  * manual edit or undo does; nothing here reaches the history underneath it.
  */

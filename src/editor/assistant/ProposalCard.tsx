@@ -1,7 +1,7 @@
 import type { JSX } from "@solidjs/web";
 import { createMemo, For, Match, Show, Switch } from "solid-js";
 import { type ControlAddress, controlKey } from "../../commands/controlAddress";
-import { editorViewSpec } from "../editorViews";
+import { editorViewSpec } from "../composition/editorViews";
 import { moreAfterThis } from "./cardQueue";
 import type { ProposalRow } from "./proposalCardModel";
 import type { AssistantProposals, ProposalCard as Card } from "./useAssistantProposals";

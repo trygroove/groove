@@ -411,7 +411,7 @@ Ambient validates that the library does not assume a kick, fixed tempo, or conve
 
 ## 8. Genre starters (not planned)
 
-Genre starters and project templates are not planned (`LOOP-015`, closed as not planned). A new project starts from the one "New Project" starter (`src/editor/starterProject.ts`), and genre coverage is judged by what a user can build from the packs (section 7), not by bundled demo projects. This section keeps its number so the cross-references to later sections stay valid.
+Genre starters and project templates are not planned (`LOOP-015`, closed as not planned). A new project starts from the one "New Project" starter (`src/editor/composition/starterProject.ts`), and genre coverage is judged by what a user can build from the packs (section 7), not by bundled demo projects. This section keeps its number so the cross-references to later sections stay valid.
 
 ## 9. Asset metadata
 

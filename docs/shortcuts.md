@@ -337,7 +337,7 @@ the guide marks it "Not available here" from `controller.isEnabled()`.
 2. Add the ID to `SHORTCUT_ACTION_IDS` in both the registry and
    `src/analytics/catalog.ts`.
 3. Register a handler on the surface that owns the action with `useShortcutScope`
-   (see `src/editor/EditorView.tsx`, or `src/components/ConfirmDialog.tsx` for a
+   (see `src/editor/composition/EditorView.tsx`, or `src/components/ConfirmDialog.tsx` for a
    modal). Never add a `keydown` listener to a component. Nothing else changes:
    tooltips, the guide, and analytics pick the entry up automatically.
 4. Update the table above. `src/shortcuts/docs.test.ts` checks it.

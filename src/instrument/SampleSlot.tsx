@@ -2,7 +2,7 @@ import type { JSX } from "@solidjs/web";
 import { Show } from "solid-js";
 import type { ControlAddress } from "../commands/controlAddress";
 import { control as controlRef } from "../controls/control";
-import { ViewIcon } from "../editor/viewIcons";
+import { ViewIcon } from "../editor/composition/viewIcons";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 import { type SampleSlotId, useSampleSlotTargeting } from "./sampleSlotTargeting";
 import "./SampleSlot.css";

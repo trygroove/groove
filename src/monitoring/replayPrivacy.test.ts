@@ -131,48 +131,48 @@ const MASKED_NAMES: readonly {
     renders: "the new project name as it is typed",
   },
   {
-    file: "editor/EditorHeader.tsx",
+    file: "editor/composition/EditorHeader.tsx",
     anchor: "project-name",
     renders: "the open project's name",
   },
   {
-    file: "editor/ProjectNameInput.tsx",
+    file: "editor/composition/ProjectNameInput.tsx",
     anchor: "project-name-input",
     renders: "the project name as it is typed",
   },
   {
     // The one rename input the mixer strip and the track header share.
-    file: "editor/TrackNameInput.tsx",
+    file: "editor/tracks/TrackNameInput.tsx",
     anchor: "track-name-",
     renders: "the track name, editable in place",
   },
   {
-    file: "editor/ReturnStrip.tsx",
+    file: "editor/mixer/ReturnStrip.tsx",
     anchor: "return-name-",
     renders: "a return bus's name, editable in place on its mixer strip",
   },
   {
-    file: "editor/ReturnPanel.tsx",
+    file: "editor/mixer/ReturnPanel.tsx",
     anchor: "instrument-return-name",
     renders: "the selected return's name atop the instrument view's return mode",
   },
   {
-    file: "editor/TrackSends.tsx",
+    file: "editor/mixer/TrackSends.tsx",
     anchor: "mixer-send-name",
     renders: "the return a track's send feeds, on the track's mixer strip",
   },
   {
-    file: "editor/InstrumentHeader.tsx",
+    file: "editor/instrument/InstrumentHeader.tsx",
     anchor: "instrument-header-name",
     renders: "the track's name atop the instrument view",
   },
   {
-    file: "editor/DrumMachinePanel.tsx",
+    file: "editor/sequence/DrumMachinePanel.tsx",
     anchor: "pad-sample",
     renders: "the sound each pad plays, down the pad table",
   },
   {
-    file: "editor/TrackHeader.tsx",
+    file: "editor/tracks/TrackHeader.tsx",
     anchor: "track-header-name",
     renders: "track names down the arrangement's header column and the rail",
   },
@@ -187,7 +187,7 @@ const MASKED_NAMES: readonly {
     renders: "track names in the arrangement's accessible mirror",
   },
   {
-    file: "editor/LibraryModal.tsx",
+    file: "editor/library/LibraryModal.tsx",
     anchor: "library-modal-search",
     renders: "the sound search the user typed",
   },
@@ -227,7 +227,7 @@ const DELIBERATELY_UNMARKED: readonly {
     literal: 'class="arrangement-headers"',
   },
   {
-    file: "editor/Mixer.tsx",
+    file: "editor/mixer/Mixer.tsx",
     // Pinned as the bare quoted class name rather than `class="mixer-strip"`.
     // Solid 2 removed `classList`, so a static class and its conditional
     // siblings can no longer be two attributes -- they merge into one
@@ -248,11 +248,11 @@ const DELIBERATELY_UNMARKED: readonly {
     literal: 'class="piano-roll"',
   },
   {
-    file: "editor/StepEditor.tsx",
+    file: "editor/sequence/StepEditor.tsx",
     literal: 'class="step-lane"',
   },
   {
-    file: "editor/LoopInfo.tsx",
+    file: "editor/transport/LoopInfo.tsx",
     literal: 'class="loop-asset"',
   },
   {
@@ -293,8 +293,8 @@ describe("user-authored names are masked (ADR 0002 decision 2)", () => {
     // A hand-written "ph-mask" string would not be found by a rename and
     // would not be found by the check above either.
     for (const file of new Set(MASKED_NAMES.map((s) => s.file))) {
-      expect(read(file), `${file} should import its marking`).toContain(
-        'from "../monitoring/replayPrivacy"',
+      expect(read(file), `${file} should import its marking`).toMatch(
+        /from "(\.\.\/)+monitoring\/replayPrivacy"/,
       );
     }
   });

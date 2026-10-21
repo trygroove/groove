@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <!-- The arrangement view's icon (src/editor/viewIcons.tsx): staggered clip
+  <!-- The arrangement view's icon (src/editor/composition/viewIcons.tsx): staggered clip
        bars, the song. White on the black ground; square corners (docs/design.md). -->
   <rect width="24" height="24" fill="#000000"/>
   <g fill="#ffffff" transform="translate(1 0)">

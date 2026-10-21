@@ -55,10 +55,10 @@ import { HEAR_STEP_MS } from "../../library/PacksView";
 import { heardSounds } from "../../library/packCatalog";
 import type { PreviewSlot } from "../../projection/previewOverride";
 import { type Clock, systemClock } from "../../shared/clock";
-import type { SessionEdit } from "../EditorSession";
-import type { EditorControls, EditorLocation } from "../editorControls";
-import type { EditorViewName } from "../editorViews";
-import type { LibraryInsertOutcome } from "../libraryInsert";
+import type { SessionEdit } from "../composition/EditorSession";
+import type { EditorControls, EditorLocation } from "../composition/editorControls";
+import type { EditorViewName } from "../composition/editorViews";
+import type { LibraryInsertOutcome } from "../library/libraryInsert";
 import { type AssistantLibrary, projectHasPack } from "./assistantLibrary";
 import {
   editTouchesSlot,

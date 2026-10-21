@@ -21,13 +21,17 @@ import { createFactoryContext } from "../domain/factories";
 import { createIdFactory, type PlacementId, type TrackId } from "../domain/ids";
 import { TICKS_PER_BAR } from "../domain/time";
 import { createClipAt } from "./clipCreation";
-import "../editor/trackDrag.css";
-import TrackHeader from "../editor/TrackHeader";
-import { deleteTrack } from "../editor/trackDeletion";
-import type { TrackLevel } from "../editor/trackLevels";
-import { moveTrack, orderedTrackIds, previewTrackOrder } from "../editor/trackReorder";
-import type { TrackSelectionSource } from "../editor/trackSurface";
-import { useTrackDrag } from "../editor/useTrackDrag";
+import "../editor/tracks/trackDrag.css";
+import TrackHeader from "../editor/tracks/TrackHeader";
+import { deleteTrack } from "../editor/tracks/trackDeletion";
+import type { TrackLevel } from "../editor/tracks/trackLevels";
+import {
+  moveTrack,
+  orderedTrackIds,
+  previewTrackOrder,
+} from "../editor/tracks/trackReorder";
+import type { TrackSelectionSource } from "../editor/tracks/trackSurface";
+import { useTrackDrag } from "../editor/tracks/useTrackDrag";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";
 import {
   type ArrangementBand,

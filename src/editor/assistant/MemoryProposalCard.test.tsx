@@ -20,7 +20,7 @@ import { emptyProfile } from "../../persistence/profileDocuments";
 import { clickAndFlush, fireAndFlush } from "../../testing/events";
 import { createFakeAssistantClient } from "../../testing/fakeAssistantClient";
 import { memoryStorage } from "../../testing/storage";
-import type { EditorViewName } from "../editorViews";
+import type { EditorViewName } from "../composition/editorViews";
 import AssistantPanel from "./AssistantPanel";
 import { MEMORY_CARD_LABEL } from "./MemoryProposalCard";
 import { useAssistantChat } from "./useAssistantChat";

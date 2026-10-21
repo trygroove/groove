@@ -70,10 +70,10 @@ import { createCorrelationId } from "../../commands/execute";
 import type { RawCommandInput } from "../../commands/types";
 import type { Project } from "../../domain/entities";
 import { type Clock, systemClock } from "../../shared/clock";
-import type { SessionEdit } from "../EditorSession";
-import type { EditorControls, EditorLocation } from "../editorControls";
-import type { EditorViewName } from "../editorViews";
-import type { Preview } from "../sessionPreview";
+import type { SessionEdit } from "../composition/EditorSession";
+import type { EditorControls, EditorLocation } from "../composition/editorControls";
+import type { EditorViewName } from "../composition/editorViews";
+import type { Preview } from "../composition/sessionPreview";
 import {
   type ProposalExplanation,
   type ProposalRow,

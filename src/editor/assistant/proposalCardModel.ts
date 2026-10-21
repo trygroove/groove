@@ -10,8 +10,8 @@ import { CONTROL_PARTS, type ControlAddress } from "../../commands/controlAddres
 import { executeTransaction } from "../../commands/execute";
 import { readControl } from "../../controls/readControl";
 import type { Project } from "../../domain/entities";
-import { controlHome } from "../controlReveal";
-import type { EditorViewName } from "../editorViews";
+import { controlHome } from "../composition/controlReveal";
+import type { EditorViewName } from "../composition/editorViews";
 
 /** One control the proposal changes, as the card lists it. */
 export interface ProposalRow {

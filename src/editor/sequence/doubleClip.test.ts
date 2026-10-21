@@ -1,0 +1,135 @@
+import { describe, expect, it } from "vitest";
+import { executeTransaction, noteEventsOf } from "../../commands";
+import { MAX_CLIP_LENGTH_TICKS } from "../../domain/clipLength";
+import type { Placement, Project } from "../../domain/entities";
+import { createFactoryContext, createPlacement } from "../../domain/factories";
+import { createPianoRollFixtureProject } from "../../domain/fixtures";
+import { createSeededIdFactory } from "../../domain/ids";
+import { TICKS_PER_BAR, toTicks } from "../../domain/time";
+import { canDouble, doubleClip } from "./doubleClip";
+
+const BAR = TICKS_PER_BAR;
+
+/** The fixture's two-bar arpeggio, with its placements swapped for `placements`. */
+function withPlacements(
+  make: (clip: Project["clips"][number], trackId: string) => readonly Placement[],
+): Project {
+  const project = createPianoRollFixtureProject();
+  const [clip] = project.clips;
+  return {
+    ...project,
+    song: { ...project.song, placements: [...make(clip, clip.trackId)] },
+  };
+}
+
+const context = createFactoryContext({ ids: createSeededIdFactory("double-placements") });
+
+function place(
+  clip: Project["clips"][number],
+  trackId: string,
+  startBars: number,
+  durationBars: number,
+  extra: { looped?: boolean; clipOffsetBars?: number } = {},
+): Placement {
+  return createPlacement(context, {
+    clipId: clip.id,
+    trackId: trackId as Placement["trackId"],
+    startTicks: startBars * BAR,
+    durationTicks: durationBars * BAR,
+    clipOffsetTicks: (extra.clipOffsetBars ?? 0) * BAR,
+    looped: extra.looped,
+  });
+}
+
+function double(project: Project): Project {
+  const [clip] = project.clips;
+  const result = executeTransaction(
+    project,
+    doubleClip(project, clip, createSeededIdFactory("double")),
+  );
+  if (!result.ok) throw new Error(JSON.stringify(result.issues));
+  return result.project;
+}
+
+const bars = (placement: Placement) => placement.durationTicks / BAR;
+
+describe("Double (#647)", () => {
+  it("doubles the clip and copies every note into the new half, as one transaction", () => {
+    const project = createPianoRollFixtureProject();
+    const doubled = double(project);
+    const [clip] = doubled.clips;
+
+    expect(clip.lengthTicks).toBe(4 * BAR);
+    const starts = (noteEventsOf(clip) ?? []).map((note) => note.startTicks / 48);
+    expect(starts.sort((a, b) => a - b)).toEqual([0, 4, 8, 12, 32, 36, 40, 44]);
+    expect(doubled.metadata.revision).toBe(project.metadata.revision + 1);
+  });
+
+  it("stretches a placement that shows the clip's end by the added length", () => {
+    const doubled = double(withPlacements((clip, track) => [place(clip, track, 0, 2)]));
+    expect(doubled.song.placements.map(bars)).toEqual([4]);
+  });
+
+  it("stops a stretch at the next placement on the track", () => {
+    const doubled = double(
+      withPlacements((clip, track) => [
+        place(clip, track, 0, 2),
+        place(clip, track, 3, 2),
+      ]),
+    );
+    // The first grows one bar into the gap; the second has the track to itself.
+    expect(doubled.song.placements.map(bars)).toEqual([3, 4]);
+  });
+
+  it("merges tiled linked copies in pairs, so the region plays the clip in turn", () => {
+    // The fixture's clip is two bars; a right-edge drag tiles it (#493).
+    const doubled = double(
+      withPlacements((clip, track) =>
+        [0, 2, 4, 6].map((bar) => place(clip, track, bar, 2)),
+      ),
+    );
+    const spans = doubled.song.placements
+      .map((placement) => [placement.startTicks / BAR, bars(placement)])
+      .sort((a, b) => a[0] - b[0]);
+    // Eight bars of two-bar tiles become two four-bar placements of the
+    // doubled clip, covering the same eight bars.
+    expect(spans).toEqual([
+      [0, 4],
+      [4, 4],
+    ]);
+  });
+
+  it("grows an odd tile left over after the pairs into free space", () => {
+    const doubled = double(
+      withPlacements((clip, track) => [0, 2, 4].map((bar) => place(clip, track, bar, 2))),
+    );
+    const spans = doubled.song.placements
+      .map((placement) => [placement.startTicks / BAR, bars(placement)])
+      .sort((a, b) => a[0] - b[0]);
+    expect(spans).toEqual([
+      [0, 4],
+      [4, 4],
+    ]);
+  });
+
+  it("leaves looped placements and ones that show only part of the clip", () => {
+    const doubled = double(
+      withPlacements((clip, track) => [
+        place(clip, track, 0, 4, { looped: true }),
+        place(clip, track, 8, 1),
+      ]),
+    );
+    expect(doubled.song.placements.map(bars)).toEqual([4, 1]);
+  });
+
+  it("can double only while the result fits the longest clip", () => {
+    const [clip] = createPianoRollFixtureProject().clips;
+    expect(canDouble(clip)).toBe(true);
+    expect(canDouble({ ...clip, lengthTicks: toTicks(MAX_CLIP_LENGTH_TICKS / 2) })).toBe(
+      true,
+    );
+    expect(canDouble({ ...clip, lengthTicks: toTicks(MAX_CLIP_LENGTH_TICKS) })).toBe(
+      false,
+    );
+  });
+});

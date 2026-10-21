@@ -127,7 +127,7 @@ describe("the theme is the only place a colour is written down", () => {
     const readers = Object.entries(appStylesheets())
       .filter(([, source]) => /var\(--signal-/.test(source))
       .map(([path]) => path);
-    expect(readers).toEqual(["editor/LevelMeter.css"]);
+    expect(readers).toEqual(["editor/mixer/LevelMeter.css"]);
   });
 
   it("keeps the toast's dark red to the toast (GRV-88)", () => {

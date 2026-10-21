@@ -10,7 +10,7 @@ import { BEAT_PATTERNS, beatStyleFor } from "../../lessons/style";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import { emptyProfile, type ProducerProfile } from "../../persistence/profileDocuments";
 import { starterWorld } from "../../testing/lessonWorld";
-import type { EditorViewName } from "../editorViews";
+import type { EditorViewName } from "../composition/editorViews";
 import { createLessonStore, type LessonStore } from "./lessonStore";
 import { type LessonEditorPort, SHOW_ME_SETTLE_MS, useLesson } from "./useLesson";
 

@@ -17,7 +17,7 @@ import {
   type FakeRetentionClient,
 } from "../../testing/fakeRetentionClient";
 import { memoryStorage } from "../../testing/storage";
-import type { EditorViewName } from "../editorViews";
+import type { EditorViewName } from "../composition/editorViews";
 import { NUDGE_LABEL } from "./AssistantChatView";
 import AssistantPanel from "./AssistantPanel";
 import { DEFAULT_LAYOUT, float, saveLayout } from "./assistantPanelLayout";

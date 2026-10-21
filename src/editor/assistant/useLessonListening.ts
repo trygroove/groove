@@ -11,7 +11,7 @@ import { type Accessor, createEffect, createMemo, createSignal } from "solid-js"
 import type { LoopRange } from "../../audio/loopRange";
 import { TICKS_PER_BAR } from "../../domain/time";
 import type { ExportFormat } from "../export/FormatCards";
-import type { TrackLevel } from "../trackLevels";
+import type { TrackLevel } from "../tracks/trackLevels";
 import type { LessonListening } from "./useLesson";
 
 export interface UseLessonListeningOptions {

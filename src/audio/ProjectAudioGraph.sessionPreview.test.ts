@@ -3,7 +3,7 @@ import { setParameter } from "../commands";
 import { createReferenceProject } from "../domain/fixtures";
 import type { TrackId } from "../domain/ids";
 import { TRACK_VOLUME } from "../domain/parameters";
-import { EditorSession } from "../editor/EditorSession";
+import { EditorSession } from "../editor/composition/EditorSession";
 import { createInMemoryProjectRepository } from "../persistence/inMemoryProjectRepository";
 import {
   type AudioSongProjection,

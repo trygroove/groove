@@ -34,10 +34,10 @@ import {
   type FakeRetentionClient,
 } from "../../testing/fakeRetentionClient";
 import { memoryStorage } from "../../testing/storage";
-import { assistantProposalTarget } from "../assistantProposalTarget";
-import { EditorSession } from "../EditorSession";
-import type { EditorLocation } from "../editorControls";
-import type { EditorViewName } from "../editorViews";
+import { assistantProposalTarget } from "../composition/assistantProposalTarget";
+import { EditorSession } from "../composition/EditorSession";
+import type { EditorLocation } from "../composition/editorControls";
+import type { EditorViewName } from "../composition/editorViews";
 import AssistantPanel, { PREVIEWING_STATUS } from "./AssistantPanel";
 import {
   type ConversationStore,

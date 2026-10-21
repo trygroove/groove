@@ -3,7 +3,7 @@ import { assistantLibraryContextSchema } from "../../assistant/protocol";
 import { fixtureFetcher } from "../../library/__fixtures__/fixtures";
 import { LibraryClient } from "../../library/libraryClient";
 import { PACK_INDEX_PATH } from "../../library/manifest";
-import { createStarterProject } from "../starterProject";
+import { createStarterProject } from "../composition/starterProject";
 import { createAssistantLibrary, libraryContext } from "./assistantLibrary";
 
 const STARTER_KICK = "sg-one-shot-drums-kick-0001";

@@ -70,23 +70,23 @@ import {
 } from "../userLibrary/userPacks";
 import type { UserLibraryAccount } from "../userLibrary/useUserLibrary";
 import { LAYOUT_STORAGE_KEY } from "./assistant/assistantPanelLayout";
-import { editorViewFromPath, editorViewPath } from "./editorViews";
-import { createStarterProject } from "./starterProject";
-import { NEW_TRACK_KINDS } from "./trackCreation";
-import { focusedValueField } from "./valueFieldFocus";
+import { editorViewFromPath, editorViewPath } from "./composition/editorViews";
+import { createStarterProject } from "./composition/starterProject";
+import { focusedValueField } from "./composition/valueFieldFocus";
+import { NEW_TRACK_KINDS } from "./tracks/trackCreation";
 
 installWebAudioGlobals();
 
 let AudioRuntimeModule: typeof import("../audio/AudioRuntime");
 let inMemoryModule: typeof import("../persistence/inMemoryProjectRepository");
 let documentsModule: typeof import("../persistence/documents");
-let EditorViewModule: typeof import("./EditorView");
+let EditorViewModule: typeof import("./composition/EditorView");
 
 beforeAll(async () => {
   AudioRuntimeModule = await import("../audio/AudioRuntime");
   inMemoryModule = await import("../persistence/inMemoryProjectRepository");
   documentsModule = await import("../persistence/documents");
-  EditorViewModule = await import("./EditorView");
+  EditorViewModule = await import("./composition/EditorView");
 });
 
 afterEach(async () => {

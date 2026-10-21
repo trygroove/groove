@@ -7,7 +7,7 @@ import {
   createSliceFixtureProject,
 } from "../domain/fixtures";
 import { SONG_SWING } from "../domain/parameters";
-import { createStarterProject } from "../editor/starterProject";
+import { createStarterProject } from "../editor/composition/starterProject";
 import { foldTurns, lessonCue } from "../lessons/cue";
 import { skip, startBite } from "../lessons/session";
 import { buildAssistantLibrary, DRUM_PACK_ID } from "../testing/assistantLibrary";

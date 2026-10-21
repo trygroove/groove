@@ -26,7 +26,7 @@ import {
   type LibraryPackSummary,
 } from "../../library/manifest";
 import { packCounts } from "../../library/packCatalog";
-import { addedPackIds } from "../editorViewModel";
+import { addedPackIds } from "../composition/editorViewModel";
 
 /** One published pack and the sounds of it a recommendation may name. */
 export interface AssistantLibraryPackEntry {

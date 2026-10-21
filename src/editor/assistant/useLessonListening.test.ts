@@ -2,7 +2,7 @@ import { createRoot, createSignal, flush } from "solid-js";
 import { describe, expect, it } from "vitest";
 import type { LoopRange } from "../../audio/loopRange";
 import { TICKS_PER_BAR } from "../../domain/time";
-import type { TrackLevel } from "../trackLevels";
+import type { TrackLevel } from "../tracks/trackLevels";
 import { loopWrapped, useLessonListening } from "./useLessonListening";
 
 function setup() {
