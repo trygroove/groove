@@ -146,13 +146,35 @@ describe("an assistant-proposed drum machine track (GRV-192)", () => {
     expect(after[2].id).toBe(pads[1].id);
   });
 
-  it("gives a pad that matches no kit voice a kit sound too", () => {
-    const { trackId, input } = beatProposal(fx.project, ["Kick", "Tom"]);
+  it("gives a pad the kit does not open with the sound its name says", () => {
+    const names = ["Kick", "Clap", "Rim", "Open Hat", "Tom", "Crash", "Conga"];
+    const { trackId, pads, input } = beatProposal(fx.project, names);
     apply(input);
     const project = history.project;
-    for (const pad of padsOf(project, trackId)) {
-      expect(KIT_REFS).toContain(storageRefOf(project, pad.assetId));
-    }
+    const after = new Map(padsOf(project, trackId).map((pad) => [pad.id, pad]));
+    const sounds = pads.map((pad) =>
+      storageRefOf(project, after.get(pad.id)?.assetId ?? null),
+    );
+    expect(sounds).toEqual(
+      [
+        "starterKick",
+        "starterClap",
+        "starterRim",
+        "starterOpenHat",
+        "starterTom",
+        "starterCymbal",
+        "starterPercussion",
+      ].map((sound) => factoryLibraryEntry(sound).storageRef),
+    );
+    // An open hat is not the kit's closed hat, so the kit's HH is still added.
+    expect(padsOf(project, trackId).map((pad) => pad.name)).toContain("HH");
+  });
+
+  it("leaves a pad whose name says no voice without a sound, never another's", () => {
+    const { trackId, pads, input } = beatProposal(fx.project, ["Kick", "Zap"]);
+    apply(input);
+    const zap = padsOf(history.project, trackId).find((pad) => pad.id === pads[1].id);
+    expect(zap?.assetId).toBeNull();
   });
 
   it("keeps a sound the proposal names for a pad", () => {

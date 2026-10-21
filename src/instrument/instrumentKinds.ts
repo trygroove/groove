@@ -75,9 +75,30 @@ export function instrumentTypeKey(
 const STARTER_KIT = [
   { name: "BD", sound: "starterKick", matches: /kick|\bbd\b|bass ?drum/i },
   { name: "SD", sound: "starterSnare", matches: /snare|\bsd\b/i },
-  { name: "HH", sound: "starterHat", matches: /hat|\bhh\b/i },
+  { name: "HH", sound: "starterHat", matches: /(?<!open[\s-]?)hat|\bhh\b|\bch\b/i },
   { name: "CP", sound: "starterClap", matches: /clap|\bcp\b/i },
 ] as const;
+
+/**
+ * Voices a beat may name that the kit does not open with, each with a factory
+ * sound of its own. A pad named for one ("Rim", "Open Hat") takes that sound,
+ * never another voice's: a rim pattern on a kick sample plays a second kick
+ * (GRV-192).
+ */
+const OTHER_VOICES = [
+  { sound: "starterRim", matches: /rim|side ?stick|\brs\b/i },
+  { sound: "starterOpenHat", matches: /open|\boh\b/i },
+  { sound: "starterTom", matches: /\btoms?\b|\b[lmh]t\b/i },
+  { sound: "starterCymbal", matches: /cymbal|crash|ride|splash|china|\bcy\b/i },
+  {
+    sound: "starterPercussion",
+    matches: /perc|conga|bongo|cowbell|shaker|tamb|clave|block|cabasa|guiro/i,
+  },
+] as const;
+
+type KitSound =
+  | (typeof STARTER_KIT)[number]["sound"]
+  | (typeof OTHER_VOICES)[number]["sound"];
 
 /**
  * A fresh instrument of `kind`, at its defaults. Every ID it needs is minted
@@ -134,9 +155,11 @@ export function newInstrumentOfKind(
  * kit's order: a pad `instrument` already has that matches a voice by name
  * stands in for it, keeping its ID and taking the voice's sound unless it has
  * one of its own; a voice no pad matches gets a fresh pad. The pads that match
- * no voice follow, and one with no sound takes a kit sound in turn, so every
- * pad a beat is written on plays. A kit sound the project already carries is
- * reused rather than added twice; the rest come back in `assets`.
+ * no kit voice follow, and one with no sound takes the sound of the voice its
+ * name says ({@link OTHER_VOICES}). One whose name says no voice is left
+ * without a sound rather than given another voice's. A sound the project
+ * already carries is reused rather than added twice; the rest come back in
+ * `assets`.
  */
 export function loadStarterKit(
   context: DomainFactoryContext,
@@ -144,7 +167,7 @@ export function loadStarterKit(
   project: Project,
 ): NewInstrument {
   const added: Asset[] = [];
-  const kitAsset = (sound: (typeof STARTER_KIT)[number]["sound"]) => {
+  const kitAsset = (sound: KitSound) => {
     const { storageRef } = factoryLibraryEntry(sound);
     let asset = [...project.song.assets, ...added].find(
       (candidate) => candidate.storageRef === storageRef,
@@ -163,11 +186,10 @@ export function loadStarterKit(
     const assetId = kitAsset(sound);
     return pad ? { ...pad, assetId } : createDrumPad(context, { name, assetId });
   });
-  let next = 0;
   const others = unmatched.map((pad) => {
     if (pad.assetId) return pad;
-    const { sound } = STARTER_KIT[next++ % STARTER_KIT.length];
-    return { ...pad, assetId: kitAsset(sound) };
+    const voice = OTHER_VOICES.find(({ matches }) => matches.test(pad.name));
+    return voice ? { ...pad, assetId: kitAsset(voice.sound) } : pad;
   });
   return { instrument: { ...instrument, pads: [...voices, ...others] }, assets: added };
 }
