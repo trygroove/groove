@@ -74,9 +74,15 @@ export const EDIT_SHORTCUTS: readonly ShortcutDefinition[] = [
     id: "edit.delete",
     label: "Delete selection",
     description:
-      "Deletes the selected notes, clips, or placements, or a track chosen on its header when nothing inside it is selected.",
+      "Deletes the selected notes, clips, or placements, the device whose header has focus, or a track chosen on its header when nothing inside it is selected.",
     group: "global_editing",
-    contexts: ["arrangement", "step_editor", "piano_roll", "automation_lane"],
+    contexts: [
+      "arrangement",
+      "step_editor",
+      "piano_roll",
+      "automation_lane",
+      "device_header",
+    ],
     keys: ["Delete", "Backspace"],
     ableton: { kind: "follows", abletonKeys: "Delete / Backspace" },
   }),
@@ -84,9 +90,9 @@ export const EDIT_SHORTCUTS: readonly ShortcutDefinition[] = [
     id: "edit.duplicate",
     label: "Duplicate selection",
     description:
-      "Duplicates the selected tracks, clips, placements, notes, sections, automation points, or devices.",
+      "Duplicates the selected tracks, clips, placements, notes, sections, or automation points, or the device whose header has focus.",
     group: "global_editing",
-    contexts: ["selection", "arrangement"],
+    contexts: ["selection", "arrangement", "device_header"],
     keys: "Mod+D",
     ableton: { kind: "follows", abletonKeys: "Cmd/Ctrl+D" },
     browserConflict: {

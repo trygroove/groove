@@ -8,11 +8,13 @@ import {
   addDevice,
   type CommandIssueCode,
   type DeviceChainTarget,
+  duplicateDevice,
   type Gesture,
   type GestureOptions,
   insertChain,
   newDeviceOrder,
   type RawCommandInput,
+  removeDevice,
   reorderDevice,
   type TransactionResult,
 } from "../commands";
@@ -186,6 +188,38 @@ export function DeviceChain(props: DeviceChainProps): JSX.Element {
     queueMicrotask(() => grip?.focus());
   }
 
+  /** The device whose header has focus, while it is still in the chain. */
+  function focusedDevice(): DeviceId | undefined {
+    const id = focused();
+    return devices().some((device) => device.id === id) ? (id ?? undefined) : undefined;
+  }
+
+  /**
+   * Removes the focused device and hands focus to the header that takes its
+   * place, so a second Delete removes the next one rather than the track.
+   */
+  function removeFocused(): void {
+    const id = focusedDevice();
+    if (id === undefined) return;
+    const index = devices().findIndex((device) => device.id === id);
+    if (!edit(removeDevice(props.chain, id))?.ok) return;
+    queueMicrotask(() => {
+      const grips = list?.querySelectorAll<HTMLElement>(".device-card-grip");
+      if (grips && grips.length > 0) grips[Math.min(index, grips.length - 1)]?.focus();
+    });
+  }
+
+  function duplicateFocused(): void {
+    const id = focusedDevice();
+    if (id === undefined || full()) return;
+    edit(duplicateDevice(props.chain, id, ids()("device")));
+  }
+
+  // A focused device header is the `device_header` focus context (GRV-186):
+  // there Delete and Mod+D act on that device. This scope is newer than the
+  // editor's, so it gets the press first and the track the chain belongs to is
+  // never deleted or duplicated from here. A full chain still claims Mod+D, as
+  // a no-op, rather than letting it fall through to the track.
   useShortcutScope({
     handlers: (): ShortcutHandlers => ({
       "device.move_earlier": {
@@ -196,8 +230,17 @@ export function DeviceChain(props: DeviceChainProps): JSX.Element {
         run: () => moveFocused(1),
         isEnabled: () => focusedMove(1) !== undefined,
       },
+      "edit.delete": {
+        run: removeFocused,
+        isEnabled: () => focusedDevice() !== undefined,
+      },
+      "edit.duplicate": {
+        run: duplicateFocused,
+        isEnabled: () => focusedDevice() !== undefined,
+      },
     }),
-    contexts: () => ["editor"],
+    contexts: () =>
+      focusedDevice() === undefined ? ["editor"] : ["editor", "device_header"],
   });
 
   function add(type: DeviceTypeId): void {

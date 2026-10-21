@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library";
+import type { JSX } from "@solidjs/web";
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it } from "vitest";
 import { Analytics } from "../analytics/analytics";
@@ -10,6 +11,7 @@ import { createPianoRollFixtureProject } from "../domain/fixtures";
 import { createSeededIdFactory, type TrackId } from "../domain/ids";
 import { MAX_TRACK_INSERTS } from "../domain/parse";
 import { moveTo } from "../instrument/panelTesting";
+import { useShortcutScope } from "../shortcuts/useShortcutScope";
 import { clickAndFlush, fireAndFlush } from "../testing/events";
 import { memoryStorage } from "../testing/storage";
 import { pointer } from "../testing/trackDrag";
@@ -28,7 +30,9 @@ function recordingAnalytics(options = { allowed: true }) {
 }
 
 /** The panel over a real history, showing the fixture's first track. */
-function renderPanel(options: { preload?: number; allowed?: boolean } = {}) {
+function renderPanel(
+  options: { preload?: number; allowed?: boolean; onTrackDelete?: () => void } = {},
+) {
   const history = new CommandHistory(createPianoRollFixtureProject());
   const trackId = history.project.song.tracks[0].id;
   const ids = createSeededIdFactory("device-chain-panel");
@@ -43,13 +47,15 @@ function renderPanel(options: { preload?: number; allowed?: boolean } = {}) {
     allowed: options.allowed ?? true,
   });
   render(() => (
-    <DeviceChainPanel
-      track={project().song.tracks[0]}
-      dispatch={(commands) => history.execute(commands)}
-      beginGesture={(gesture) => history.beginGesture(gesture)}
-      analytics={analytics}
-      ids={ids}
-    />
+    <EditorScope onTrackDelete={options.onTrackDelete}>
+      <DeviceChainPanel
+        track={project().song.tracks[0]}
+        dispatch={(commands) => history.execute(commands)}
+        beginGesture={(gesture) => history.beginGesture(gesture)}
+        analytics={analytics}
+        ids={ids}
+      />
+    </EditorScope>
   ));
   const panel = () => within(screen.getByRole("region", { name: "Device chain" }));
   const items = () =>
@@ -57,6 +63,22 @@ function renderPanel(options: { preload?: number; allowed?: boolean } = {}) {
       "listitem",
     );
   return { history, project, transport, panel, items };
+}
+
+/**
+ * Stands in for the editor's scope around the chain: Delete and Mod+D there
+ * act on the selected track, as `useEditorShortcuts` does, so a key the chain
+ * does not keep reaches it.
+ */
+function EditorScope(props: { onTrackDelete?: () => void; children: JSX.Element }) {
+  useShortcutScope({
+    handlers: () => ({
+      "edit.delete": { run: () => props.onTrackDelete?.() },
+      "edit.duplicate": { run: () => props.onTrackDelete?.() },
+    }),
+    contexts: () => ["editor", "arrangement"],
+  });
+  return props.children;
 }
 
 function addFromPanel(panel: ReturnType<typeof renderPanel>["panel"], label: string) {
@@ -314,6 +336,48 @@ describe("DeviceChainPanel", () => {
     expect(history.entries.length).toBe(entries + 1);
     press("ArrowDown");
     expect(names()).toEqual(["Overdrive", "Reverb"]);
+  });
+
+  // GRV-186 QA: Delete on a focused device header fell through to the editor
+  // and deleted the whole track.
+  it("removes and duplicates the device whose name has focus, never the track", async () => {
+    let trackKeys = 0;
+    const { history, panel, items } = renderPanel({
+      onTrackDelete: () => {
+        trackKeys += 1;
+      },
+    });
+    addFromPanel(panel, "Filter");
+    addFromPanel(panel, "Reverb");
+    const names = () =>
+      items().map((item) => within(item).getByRole("heading").textContent);
+    const grip = (name: string) => panel().getByRole("button", { name });
+    const press = (init: KeyboardEventInit) =>
+      fireAndFlush(() =>
+        fireEvent.keyDown(document.activeElement ?? document.body, init),
+      );
+
+    fireAndFlush(() => grip("Reverb").focus());
+    const entries = history.entries.length;
+    press({ key: "d", ctrlKey: true });
+    expect(names()).toEqual(["Filter", "Reverb", "Reverb"]);
+    expect(history.entries.length).toBe(entries + 1);
+
+    press({ key: "Delete" });
+    expect(names()).toEqual(["Filter", "Reverb"]);
+    // Focus moves to the header that took the removed device's place.
+    await Promise.resolve();
+    fireAndFlush(() => undefined);
+    expect(document.activeElement).toBe(grip("Reverb"));
+    press({ key: "Backspace" });
+    expect(names()).toEqual(["Filter"]);
+    expect(trackKeys).toBe(0);
+
+    // Off the chain, the keys belong to the editor again.
+    fireAndFlush(() => (document.activeElement as HTMLElement | null)?.blur());
+    press({ key: "Delete" });
+    expect(trackKeys).toBe(1);
+    expect(names()).toEqual(["Filter"]);
   });
 
   it("keeps a slider in place through a drag, committing it as one entry", () => {
