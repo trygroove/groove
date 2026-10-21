@@ -10,6 +10,7 @@ import type { RawCommandInput } from "../../commands/types";
 import type { Project } from "../../domain/entities";
 import type { PadId, TrackId } from "../../domain/ids";
 import { beatTrack, kickPad } from "../../lessons/drums";
+import { BITE_IDS, TRACK_UNDER_WAY } from "../../lessons/ids";
 import { useProducerProfile } from "../../memory/useProducerProfile";
 import { lessonOfferAsk } from "../../onboarding/questions";
 import { InMemoryProfileRepository } from "../../persistence/inMemoryProfileRepository";
@@ -429,6 +430,19 @@ describe("Finish a track in the panel (GRV-44)", () => {
     expect(h.bite("Pick a kick")).toHaveAttribute("aria-current", "step");
   });
 
+  it("marks only what this song has, not beat bites done in another lesson", async () => {
+    const beat = BITE_IDS.filter((id) => id.startsWith("beat-"));
+    const h = await renderLesson({
+      profile: { ...producer(["House"]), lessonsDone: [TRACK_UNDER_WAY, ...beat] },
+    });
+    h.start("track", "asked");
+    expect(place(h)).toHaveTextContent("Finish a track · chapter 1 of 5 · bite 1 of 6");
+    expect(h.bite("The kick pattern")).toHaveTextContent("already in your song");
+    for (const title of ["Pick a kick", "Hear it", "The backbeat", "Hats", "Loop it"]) {
+      expect(h.bite(title)?.textContent).toBe(title);
+    }
+  });
+
   it("picks the lesson up where it was left", async () => {
     const h = await renderLesson({
       profile: { ...producer(), lessonsDone: ["bass-key", "bass-line", "bass-sound"] },
@@ -449,6 +463,8 @@ describe("Finish a track in the panel (GRV-44)", () => {
     const next = await within(h.lesson()).findByRole("button", {
       name: "Next chapter: Chords and hook",
     });
+    // The bite is over, waiting on Next: the place says so.
+    expect(place(h)).toHaveTextContent("chapter 2 of 5 · bite 3 of 3 · done");
     clickAndFlush(next);
     expect(
       within(h.lesson()).getByRole("heading", { name: "Chords and hook" }),

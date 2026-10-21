@@ -152,7 +152,13 @@ const key: LessonBite = {
         return `Give the song a [key](key): open ${PART_TRACK_NAMES.bass}'s clip in the [Sequence view](sequence), and in the Key panel under the [piano roll](piano-roll), pick ${keyWords(chosen)}. ${STYLE_KEY_WORDS[settings.style]}`;
       },
       target: () => controlAddress(SONG_ENTITY, CONTROL_PARTS.key),
-      done: (world) => !isChromatic(world.project.song.key),
+      // The key asked for, not just any (GRV-44): the bassline, the chords and
+      // the hook are written in it.
+      done: (world, _start, settings) => {
+        const chosen = STYLE_KEYS[settings.style];
+        const { root, scale } = world.project.song.key;
+        return root === chosen.root && scale === chosen.scale;
+      },
       showMe: (_world, settings) => ({
         kind: "commands",
         commands: [setKey(STYLE_KEYS[settings.style])],
