@@ -7,12 +7,24 @@
       "caption": "Finish a track starts in Coproducer's panel"
     },
     {
+      "file": "02-the-bass-under-the-kick.png",
+      "caption": "The bass, under the kick"
+    },
+    {
       "file": "03-arranged-by-taking-parts-away.png",
       "caption": "Arranged by taking parts away"
     },
     {
+      "file": "04-mixed-with-the-master-meter-watched.png",
+      "caption": "Mixed, with the master meter watched"
+    },
+    {
       "file": "05-the-export-dialog-on-stems.png",
       "caption": "The Export dialog, on stems"
+    },
+    {
+      "file": "06-the-track-is-finished.png",
+      "caption": "The track is finished"
     }
   ]
 }
