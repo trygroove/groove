@@ -27,7 +27,7 @@ import {
   saveRetryButton,
   saveStatusGroup,
 } from "./EditorView.testHarness";
-import { focusedValueField } from "./valueFieldFocus";
+import { focusedValueField } from "./editorFocus";
 
 installWebAudioGlobals();
 
