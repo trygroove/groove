@@ -72,6 +72,29 @@ export function trackResume(
 }
 
 /**
+ * Where the lesson starts in the song open now, by what `done` records: where
+ * {@link trackResume} picks it up once a chapter of its own is started. Before
+ * that, at the start of "Make a beat", whose bites are taught alone too, so
+ * `done` cannot say which song they were made in: the chapter passes over
+ * only what this song already has (`LessonBite.made`), and a song with the
+ * whole beat goes straight on to Bass. Null when it is not under way.
+ */
+export function trackStartPoint(
+  done: readonly string[],
+): { readonly chapter: TrackChapterId; readonly biteId: BiteId } | null {
+  const resume = trackResume(done);
+  if (!resume) return null;
+  const finished = new Set(done);
+  const ownStarted = OWN_CHAPTERS.some((one) =>
+    one.bites.some((each) => finished.has(each.id)),
+  );
+  const first = TRACK_CHAPTERS[0];
+  return ownStarted
+    ? resume
+    : { chapter: first.id as TrackChapterId, biteId: first.bites[0].id };
+}
+
+/**
  * What the lesson passes over as done by `done` as it goes on: everything
  * `done` records while it is under way ({@link trackResume}), so a producer
  * who goes back to a chapter is not taught again what they did after it;

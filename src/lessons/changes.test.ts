@@ -9,6 +9,7 @@ import {
   applied,
   applyShowMe,
   lessonContext,
+  showBite,
   starterWorld,
 } from "../testing/lessonWorld";
 import {
@@ -17,7 +18,7 @@ import {
   MAX_CHANGE_LINES,
   MAX_LISTED_HITS,
 } from "./changes";
-import { chapter, nextStep } from "./chapters";
+import { bite, chapter, nextStep } from "./chapters";
 import { beatTrack, kickPad } from "./drums";
 
 describe("what the producer changed (GRV-43)", () => {
@@ -77,7 +78,7 @@ describe("what the producer changed (GRV-43)", () => {
     ]);
     expect(describeChanges(world.project, longer)).toEqual([
       "Tempo: 120 to 90 BPM.",
-      "BD's clips now play for 4 bars (were 1 bar).",
+      "BD's clips now play in bars 1-4 (were bar 1).",
     ]);
 
     const sound = chapter("sound").bites[0];
@@ -91,7 +92,7 @@ describe("what the producer changed (GRV-43)", () => {
     );
     const synthLines = describeChanges(world.project, withSynth.project);
     expect(synthLines[0]).toBe('Added a synth track, "Synth".');
-    expect(synthLines[1]).toBe("Synth: 8 notes added.");
+    expect(synthLines[1]).toMatch(/^Synth: 8 notes added in bars? [\d-]+\.$/);
     const synth = withSynth.project.song.tracks.find((track) => track.name === "Synth");
     if (!synth) throw new Error("no synth");
     const square = applied(withSynth.project, [
@@ -157,5 +158,49 @@ describe("what the producer changed (GRV-43)", () => {
     const [line] = describeChanges(named, without);
     expect(line).toHaveLength(MAX_CHANGE_LINE_LENGTH);
     expect(line.endsWith("…")).toBe(true);
+  });
+
+  it("says what Show me did as it is: the key, the chords' shape, and where clips play (GRV-44)", () => {
+    const settings = { style: "four_on_the_floor" } as const;
+    let world = starterWorld();
+    const lines: Record<string, string[]> = {};
+    for (const id of [
+      "beat-snare",
+      "beat-hats",
+      "beat-loop",
+      "bass-key",
+      "bass-line",
+      "chords-loop",
+      "chords-hook",
+      "arrange-copy",
+      "arrange-intro",
+      "arrange-breakdown",
+      "arrange-drop",
+      "arrange-outro",
+    ] as const) {
+      const before = world.project;
+      world = showBite(bite(id), world, settings);
+      lines[id] = describeChanges(before, world.project);
+    }
+    expect(lines["bass-key"]).toEqual([
+      "Key: no key (chromatic) to A minor.",
+      'Added a synth track, "Bass".',
+    ]);
+    expect(lines["chords-loop"]).toContain(
+      "Chords: 12 notes added in bars 1-4, as 4 chords of 3 notes.",
+    );
+    // Copying the loop out changes no note: it says only where the clips play.
+    expect(lines["arrange-copy"]).toEqual([
+      "BD's clips now play in bars 1-32 (were bars 1-4).",
+      "Bass's clips now play in bars 1-32 (were bars 1-4).",
+      "Chords's clips now play in bars 1-32 (were bars 1-4).",
+      "Hook's clips now play in bars 1-32 (were bars 1-4).",
+    ]);
+    expect(lines["arrange-outro"]).toEqual([
+      "BD's clips now play in bars 1-8 and 17-28 (were bars 1-8 and 17-32).",
+      "Bass's clips now play in bars 1-28 (were bars 1-32).",
+      "Chords's clips now play in bars 9-28 (were bars 9-32).",
+      "Hook's clips now play in bars 9-28 (were bars 9-32).",
+    ]);
   });
 });
