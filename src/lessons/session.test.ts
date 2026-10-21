@@ -26,7 +26,7 @@ describe("a lesson as it runs (GRV-43)", () => {
   it("starts a chapter on its first bite, with the step's words read as it starts", () => {
     const world = starterWorld();
     const { state, event } = startBite("beat", null, world, settings);
-    expect(event).toEqual({ kind: "bite_started" });
+    expect(event).toEqual({ kind: "bite_started", passed: [] });
     expect(biteOf(state).id).toBe("beat-library");
     expect(state.step?.index).toBe(1);
     expect(stepWords(state)).toMatch(/^Open the Library/);
@@ -42,6 +42,7 @@ describe("a lesson as it runs (GRV-43)", () => {
       how: "did_it",
       changes: [],
       chapterDone: false,
+      trackDone: false,
     });
     expect(ended?.state.step).toBeNull();
     expect(ended?.state.endings).toEqual({ "tour-library": "did_it" });

@@ -5,9 +5,10 @@ import { TICKS_PER_SIXTEENTH } from "../domain/time";
 import { foldTurns, lessonCue } from "../lessons/cue";
 import { beatTrack, kickPad } from "../lessons/drums";
 import { MAX_EARLIER } from "../lessons/ids";
-import { skip, startBite } from "../lessons/session";
+import { observe, skip, startBite, startTrack } from "../lessons/session";
 import { applied, lessonContext, starterWorld } from "../testing/lessonWorld";
 import { MINIMAL_ASSISTANT_CONTEXT } from "../testing/scriptedAssistantProvider";
+import { lessonReplyText } from "./emulatorProvider";
 import {
   type AssistantLessonContext,
   assistantLessonContextSchema,
@@ -41,6 +42,38 @@ describe("a lesson as a turn carries it (GRV-43)", () => {
     if (!over) throw new Error("not skipped");
     const wrapUp = lessonCue(over.state, over.event, settings, []);
     expect(assistantLessonContextSchema.safeParse(wrapUp).success).toBe(true);
+  });
+
+  it("takes Finish a track's cues: a chapter in it, passed bites, and its end (GRV-44)", () => {
+    const world = starterWorld();
+    const started = startTrack("beat", null, world, settings);
+    if (!started) throw new Error("not started");
+    const first = lessonCue(started.state, started.event, settings, []);
+    expect(first.track).toEqual({
+      title: "Finish a track",
+      chapterNumber: 1,
+      chapterCount: 5,
+    });
+    expect(assistantLessonContextSchema.safeParse(first).success).toBe(true);
+
+    const last = startBite("mix", "mix-export", world, settings);
+    const over = observe(
+      { ...last.state, track: true },
+      { ...world, stemExports: 1 },
+      settings,
+    );
+    if (!over) throw new Error("not over");
+    const end = lessonCue(over.state, over.event, settings, []);
+    expect(end.moment).toBe("track_done");
+    expect(assistantLessonContextSchema.parse(end)).toEqual(end);
+    expect(lessonReplyText(end)).toBe(
+      'That\'s "Finish a track" finished, stems and all.',
+    );
+  });
+
+  it("tells Coproducer how to teach Finish a track and to wrap it up", () => {
+    expect(LESSON_RULES).toMatch(/"track_done"/);
+    expect(LESSON_RULES).toMatch(/"passed"/);
   });
 
   it("takes the cue of a step that changed a great deal", () => {

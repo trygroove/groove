@@ -345,6 +345,25 @@ describe("the lesson under way (GRV-43)", () => {
     expect(cue.next.length).toBeLessThanOrEqual(3);
   });
 
+  it("logs a chapter completed once, as its last bite ends, and no other (GRV-44)", () => {
+    const h = setup();
+    h.lesson.start("tour", "asked", "tour-library");
+    flush();
+    h.lesson.skip();
+    flush();
+    expect(h.log).not.toHaveBeenCalledWith("lesson_chapter_completed", expect.anything());
+    h.lesson.next();
+    flush();
+    h.lesson.skip();
+    flush();
+    const completed = h.log.mock.calls.filter(
+      ([name]) => (name as string) === "lesson_chapter_completed",
+    );
+    expect(completed).toEqual([["lesson_chapter_completed", { chapter_id: "tour" }]]);
+    // A chapter taught alone is not the track lesson.
+    expect(h.log).not.toHaveBeenCalledWith("lesson_track_completed", expect.anything());
+  });
+
   it("has nothing to show without an editor", () => {
     const h = setup();
     expect(h.lesson.canShowMe).toBe(false);

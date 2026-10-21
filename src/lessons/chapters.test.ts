@@ -15,11 +15,15 @@ import {
 import { BITE_IDS, CHAPTER_IDS } from "./ids";
 
 describe("the chapters (GRV-43)", () => {
-  it("are the three this issue ships, in order, and list every bite ID once", () => {
+  it("are the three taught alone, then Finish a track's own four, and list every bite ID once", () => {
     expect(CHAPTERS.map((one) => one.title)).toEqual([
       "Make a beat",
       "Shape a sound",
       "Tour the studio",
+      "Bass",
+      "Chords and hook",
+      "Arrange, subtractively",
+      "Mix and export",
     ]);
     expect(CHAPTERS.map((one) => one.id)).toEqual(CHAPTER_IDS);
     expect(ALL_BITES.map((one) => one.id)).toEqual(BITE_IDS);
@@ -49,6 +53,11 @@ describe("the chapters (GRV-43)", () => {
     const tourDone = bitesDoneIn("tour", [...BITE_IDS]);
     expect(nextBite(tourDone, "tour")?.id).toBe("beat-library");
     expect(nextBite([...BITE_IDS])).toBeNull();
+    // Finish a track's own chapters are not offered as a chapter alone (GRV-44).
+    const soloDone = ALL_BITES.filter((one) =>
+      ["beat", "sound", "tour"].includes(one.chapter),
+    ).map((one) => one.id);
+    expect(nextBite(soloDone)).toBeNull();
     // An ID the lessons no longer have does not count, and does not break it.
     expect(nextBite(["beat-gone"])?.id).toBe("beat-library");
   });
