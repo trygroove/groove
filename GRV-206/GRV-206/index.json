@@ -1,0 +1,14 @@
+{
+  "id": "GRV-206",
+  "title": "Coproducer unavailable, and the lesson offer letting go",
+  "steps": [
+    {
+      "file": "01-a-provider-error-says-coproducer-is-unav.png",
+      "caption": "A provider error says Coproducer is unavailable; the offer has gone"
+    },
+    {
+      "file": "02-the-next-message-gets-a-reply.png",
+      "caption": "The next message gets a reply"
+    }
+  ]
+}
