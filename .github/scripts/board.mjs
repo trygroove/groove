@@ -14,7 +14,17 @@
  *                                                   and /ship continues from its handoff)
  *                           mentions=[{issue,comment,reply}, …]  comments that say @claude
  *                           milestone=["GRV-40", …] new bugs with no milestone
- *                         and approves the open PRs of every card in Approved.
+ *                         and approves the open PRs of every card in Approved. Before
+ *                         that, a card in Blocked, Ready For Review or Approved whose
+ *                         /ship handoff waits on a PR that has merged goes back to
+ *                         Ready (and joins ship); after it, the idle sweep moves a
+ *                         card that has sat in In Progress for an hour with no ship,
+ *                         rework, mention or claude.yml run on it, and no PR of it
+ *                         queued, auto-merging with CI green or running, or running
+ *                         an assistant experiment, and no red PR CI run still waiting
+ *                         on its re-run or @claude hand-over, to Blocked (or to Ready For Review
+ *                         when its PRs are healthy and only wait for approval), with
+ *                         a comment naming its PRs and their state (GRV-197).
  *   node board.mjs pr     On a pull_request event: a PR that closes a card
  *                         puts it in QA (or Ready For Review when it changes the
  *                         security rules); the PR that completes a card merging
@@ -22,7 +32,8 @@
  *                         assistant experiment (`evals/experiments/<id>.ts`):
  *                         then it starts the experiment and the card stays In
  *                         Progress until the verdict moves it; the PR that
- *                         closes a card merging puts it in Done.
+ *                         closes a card merging puts it in Done. Any merged PR a
+ *                         card's /ship handoff waits on puts that card back in Ready.
  *
  * Nothing here needs a cursor or a webhook. Every rule reads the card's own
  * state and the comments on it, so a poll that runs twice does the work once:
@@ -35,7 +46,15 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import * as linear from "./linear.mjs";
-import { approvalOfIssue, approve, lineStatus, openPrs, refersTo } from "./merge.mjs";
+import {
+  approvalOfIssue,
+  approve,
+  GATE_JOBS,
+  issuesIn,
+  lineStatus,
+  openPrs,
+  refersTo,
+} from "./merge.mjs";
 
 const REPO = process.env.GITHUB_REPOSITORY;
 const RUN_URL = process.env.RUN_URL ?? "";
@@ -267,6 +286,22 @@ async function pollRework(index, ship) {
 }
 
 /**
+ * The first words of every comment the board and the CI-failure workflow
+ * write on a card. Those report what the automation did; none of them asks
+ * for a run, so a mention of Claude in one is never a request.
+ */
+export const AUTOMATED = [
+  PICKUP,
+  "**Moved to Blocked",
+  "**Moved to Ready For Review",
+  "**Back to Ready.**",
+];
+
+/** Whether a card comment asks for a Claude run: it says `@claude`, and a person wrote it. */
+export const mentionRequest = (body) =>
+  /@claude\b/i.test(body) && !AUTOMATED.some((prefix) => body.startsWith(prefix));
+
+/**
  * A comment that says `@claude` starts a Claude run on the card, once: the
  * poll replies "Picking this up" under it before the run starts, and a
  * comment that already has that reply is done. The run keeps its progress in
@@ -278,7 +313,7 @@ async function pollMentions() {
   for (const card of await linear.list({ open: true, comments: true })) {
     if (card.updatedAt < since) continue;
     for (const c of card.comments) {
-      if (!/@claude\b/i.test(c.body) || c.body.startsWith(PICKUP)) continue;
+      if (!mentionRequest(c.body)) continue;
       const replies = card.comments.filter((r) => r.parent?.id === c.id);
       if (replies.some((r) => r.body.startsWith(PICKUP))) continue;
       const reply = await linear.comment(
@@ -304,8 +339,457 @@ async function pollMilestones() {
   return bugs.map((b) => b.identifier);
 }
 
+// ---------------------------------------------------------------- handoff
+
+/** The first line of the comment /ship leaves on a card when a sequence stops part way. */
+export const HANDOFF = "**Handoff from /ship";
+/**
+ * The columns a handoff leaves a card in: Blocked, Ready For Review once the
+ * PR it waits for is gated (merge.mjs moves the card there), or Approved once
+ * the product owner approves that PR.
+ */
+const HANDOFF_COLUMNS = new Set(["blocked", "ready for review", "approved"]);
+
+/**
+ * The PR a card's /ship handoff waits for, when that is all that holds it
+ * back: the card is in Blocked (or Ready For Review, or Approved), its
+ * latest handoff's first line says "Waiting on #<n>", and it has not been
+ * back to Ready since. A handoff
+ * that waits on a decision (the PR was closed unmerged) names no PR.
+ */
+export function handoffAwaiting(card) {
+  if (!HANDOFF_COLUMNS.has(card.state?.name.toLowerCase())) return null;
+  const note = latest(card.comments, (c) => c.body.startsWith(HANDOFF));
+  if (!note) return null;
+  const resumed = card.history.some(
+    (h) => h.toState?.name.toLowerCase() === "ready" && h.createdAt > note.createdAt,
+  );
+  if (resumed) return null;
+  const pr = note.body.split("\n")[0].match(/waiting on #(\d+)/i);
+  return pr ? Number(pr[1]) : null;
+}
+
+/** Back to Ready, where the poll starts /ship, which continues from the handoff. */
+async function resumeHandoff(card, number) {
+  await linear.setState(card.identifier, "Ready");
+  await linear.comment(
+    card.identifier,
+    `**Back to Ready.** #${number}, which the /ship handoff was waiting on, has merged, so /ship continues from the handoff.`,
+  );
+  console.log(
+    `${card.identifier}: #${number} merged; ${card.state?.name ?? "?"} → Ready to continue /ship`,
+  );
+}
+
+/**
+ * The backstop for the merge event (`board.mjs pr`): a card whose handoff
+ * waits on a PR that has merged goes back to Ready.
+ */
+async function pollHandoffs() {
+  const resumed = [];
+  for (const card of await linear.list({
+    state: ["Blocked", "Ready For Review", "Approved"],
+    history: true,
+    comments: true,
+  })) {
+    const number = handoffAwaiting(card);
+    if (!number) continue;
+    let merged;
+    try {
+      merged = gh([
+        "api",
+        `repos/${REPO}/pulls/${number}`,
+        "--jq",
+        ".merged_at // empty",
+      ]);
+    } catch {
+      console.warn(`${card.identifier}: could not read #${number}; leaving it`);
+      continue;
+    }
+    if (!merged) continue;
+    await resumeHandoff(card, number);
+    resumed.push(card.identifier);
+  }
+  return resumed;
+}
+
+// ---------------------------------------------------------------- sweep
+
+/** How long a re-run's own completion gets to start ci-failure.yml before the poll steps in. */
+const RETRY_GRACE_MS = 10 * 60 * 1000;
+
+/**
+ * In Progress means an agent is working on the card. One left there with
+ * nothing happening for this long, and nothing running for it, goes to Blocked.
+ */
+const IDLE_MS = 60 * 60 * 1000;
+/** The workflows whose runs count as an agent on a card. */
+const WATCHED = {
+  board: "board.yml",
+  claude: "claude.yml",
+  experiment: "assistant-experiments.yml",
+};
+const EXPERIMENT_STARTED = "**Experiment started.**";
+const FAILED = new Set([
+  "FAILURE",
+  "TIMED_OUT",
+  "CANCELLED",
+  "STARTUP_FAILURE",
+  "ACTION_REQUIRED",
+  "ERROR",
+]);
+
+const names = (text, identifier) =>
+  new RegExp(`\\b${identifier}(?!\\d)`).test(text ?? "");
+const hasLabel = (p, name) => (p.labels ?? []).some((l) => l.name === name);
+
+/** The experiments the card's "Experiment started" comments name. */
+const experimentsStarted = (card) =>
+  card.comments
+    .filter((c) => c.body.startsWith(EXPERIMENT_STARTED))
+    .map((c) => c.body.match(/`([a-z0-9-]+)`/)?.[1])
+    .filter(Boolean);
+
+/**
+ * True when a running workflow run is an agent on the card: a board.yml run
+ * with a ship, rework or mention job for it still going, a claude.yml run on
+ * one of its PRs (the run is titled after the PR), or the assistant
+ * experiment it started. An experiment run titled only with the workflow's
+ * name (one dispatched before runs carried the experiment's ID) counts as the
+ * card's: never move a card whose experiment may be going.
+ */
+export function runFor(run, card, prs) {
+  if (run.workflow === "board") return run.jobs.some((j) => names(j, card.identifier));
+  if (run.workflow === "claude")
+    return names(run.title, card.identifier) || prs.some((p) => p.title === run.title);
+  if (run.workflow === "experiment") {
+    const ids = experimentsStarted(card);
+    if (!ids.length) return false;
+    return (
+      ids.some((id) => run.title.includes(id)) || !/experiment\s+\S/i.test(run.title)
+    );
+  }
+  return false;
+}
+
+/**
+ * Where an open PR stands, in words, and whether it is still moving on its
+ * own: queued, or auto-merging with its required checks green or still
+ * running. A failed required check, a conflict, a draft or a hold all need
+ * someone.
+ */
+export function prActivity(p) {
+  const gates = (p.statusCheckRollup ?? []).filter((c) =>
+    GATE_JOBS.includes(c.name ?? c.context),
+  );
+  const failed = gates
+    .filter((c) => FAILED.has(c.conclusion ?? c.state))
+    .map((c) => c.name ?? c.context);
+  const running = gates.some(
+    (c) =>
+      (c.status && c.status !== "COMPLETED") || ["PENDING", "EXPECTED"].includes(c.state),
+  );
+  const conflict = p.mergeStateStatus === "DIRTY";
+  const held = hasLabel(p, "hold");
+  const awaitingApproval =
+    hasLabel(p, "needs-approval") && !hasLabel(p, "status:approved");
+  const parts = [];
+  if (p.isDraft) parts.push("a draft");
+  if (held) parts.push("labelled `hold`");
+  if (awaitingApproval) parts.push("waiting for approval (`needs-approval`)");
+  if (conflict) parts.push("conflicts with `main`");
+  if (failed.length) parts.push(`CI failed (${failed.join(", ")})`);
+  else if (running) parts.push("CI running");
+  parts.push(p.autoMergeRequest ? "auto-merge on" : "not queued");
+  return {
+    inFlight: Boolean(
+      p.autoMergeRequest && !p.isDraft && !held && !conflict && !failed.length,
+    ),
+    // Gated and otherwise healthy: the next step is the product owner's review.
+    onlyAwaitingApproval:
+      awaitingApproval && !p.isDraft && !held && !conflict && !failed.length,
+    state: parts.join(", "),
+  };
+}
+
+/**
+ * What the sweep does with one In Progress card: `leave` it (with why),
+ * `review` it (move it to Ready For Review: every open PR of it is healthy
+ * and only waits for the product owner's approval) or `block` it (move it to
+ * Blocked). `review` and `block` carry the comment to post. `prs` are the
+ * open PRs that refer to it, with their checks; `runs` the watched
+ * workflows' runs still going.
+ */
+export function sweepVerdict(card, { now, prs, runs, ciRuns = [], idleMs = IDLE_MS }) {
+  const times = [
+    enteredInProgress(card)?.createdAt,
+    ...card.comments.flatMap((c) => [c.createdAt, c.updatedAt]),
+    ...prs.flatMap((p) =>
+      (p.comments ?? [])
+        .filter((c) => c.body.includes("@claude"))
+        .map((c) => c.createdAt),
+    ),
+  ]
+    .filter(Boolean)
+    .map(Date.parse);
+  const last = times.length ? Math.max(...times) : 0;
+  const idle = Math.round((now - last) / 60_000);
+  if (now - last < idleMs)
+    return { action: "leave", reason: `last active ${idle} min ago` };
+  const run = runs.find((r) => runFor(r, card, prs));
+  if (run)
+    return { action: "leave", reason: `a ${run.workflow} run is on it (${run.url})` };
+  for (const p of prs) {
+    const due = ciFailureDue(p, ciRuns, now);
+    if (due)
+      return {
+        action: "leave",
+        reason: `CI failure handling is still due on #${p.number} (run ${due.id}, attempt ${due.attempt})`,
+      };
+  }
+  const states = prs.map((p) => ({ p, ...prActivity(p) }));
+  const moving = states.find((s) => s.inFlight);
+  if (moving)
+    return { action: "leave", reason: `#${moving.p.number} is ${moving.state}` };
+  const found = states.length
+    ? states.map((s) => `- [#${s.p.number}](${s.p.url}): ${s.state}`).join("\n")
+    : "- No open PR refers to it.";
+  const footer = "---\n_Posted by the board's idle sweep (`.github/scripts/board.mjs`)._";
+  if (states.length && states.every((s) => s.onlyAwaitingApproval))
+    return {
+      action: "review",
+      comment: `**Moved to Ready For Review: its PRs wait for approval.** No agent has worked on this card for ${idle} minutes, and every open PR of it touches a gated path and is otherwise ready:
+
+${found}
+
+Review them, then move this card to Approved to land them, or comment what should change and move it to In Progress.
+
+${footer}`,
+    };
+  return {
+    action: "block",
+    comment: `**Moved to Blocked: no agent is working on this card.** It sat in In Progress for ${idle} minutes with no /ship, rework or Claude run on it, and no PR of it queued, auto-merging with CI green or running, or running an assistant experiment. What the board found:
+
+${found}
+
+Say what should happen next here. To send an agent back to it, move it to In Progress: a rework run takes on its open PRs, or /ship continues from its handoff when none is open.
+
+${footer}`,
+  };
+}
+
+/**
+ * How long after a PR's CI run fails the sweep leaves the PR to the
+ * CI-failure handling: the re-run (attempt 1), or the hand-over to @claude
+ * that ci-failure.yml or, after RETRY_GRACE_MS, the poll makes (a later
+ * attempt), with one poll interval to spare. Bounded, because ci-failure.sh
+ * may decide to do nothing (only non-gate jobs failed, the line is stopped,
+ * an @claude run already has it) and leaves no mark when it does.
+ */
+const CI_FAILURE_WINDOW_MS = RETRY_GRACE_MS + 20 * 60 * 1000;
+
+/**
+ * The failed PR CI run whose handling is still due on the PR's head, if any:
+ * a run of its head commit that failed within CI_FAILURE_WINDOW_MS, which the
+ * PR has no `<!-- ci-failure:run:<id> -->` comment for yet. A failed first
+ * attempt is waiting for its re-run (a re-run in progress is not listed as
+ * failed, and its checks show as running); a failed later attempt is waiting
+ * to be handed to @claude. Either way the spec's order is re-run, then
+ * @claude, then Blocked only if the fix is red, so the sweep must not jump it.
+ */
+export function ciFailureDue(p, ciRuns, now) {
+  if (!p.headRefOid) return null;
+  return (
+    ciRuns.find(
+      (r) =>
+        r.sha === p.headRefOid &&
+        now - Date.parse(r.updatedAt) < CI_FAILURE_WINDOW_MS &&
+        !(p.comments ?? []).some((c) =>
+          c.body.includes(`<!-- ci-failure:run:${r.id} -->`),
+        ),
+    ) ?? null
+  );
+}
+
+/** Every status GitHub gives a workflow run that has not finished. */
+const UNFINISHED = ["in_progress", "queued", "waiting", "pending", "requested"];
+
+/**
+ * `gh api --paginate` over a list endpoint, with a jq filter that prints one
+ * JSON value per line: every line, parsed.
+ */
+const ghLines = (path, jq) =>
+  gh(["api", "--paginate", path, "--jq", jq])
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+
+/**
+ * The watched workflows' runs that are not finished, with each board run's
+ * unfinished jobs. Asks GitHub for each unfinished status in turn rather than
+ * filtering the latest runs: board.yml starts a run every few minutes, so a
+ * ship job that has been going for hours is far past its first page.
+ */
+export function activeRuns(list = ghLines) {
+  const runs = new Map();
+  for (const [workflow, file] of Object.entries(WATCHED)) {
+    for (const status of UNFINISHED) {
+      for (const r of list(
+        `repos/${REPO}/actions/workflows/${file}/runs?status=${status}&per_page=100`,
+        ".workflow_runs[] | {id, title: .display_title, url: .html_url}",
+      )) {
+        if (runs.has(r.id)) continue;
+        const jobs =
+          workflow === "board"
+            ? list(
+                `repos/${REPO}/actions/runs/${r.id}/jobs?per_page=100`,
+                '.jobs[] | select(.status != "completed") | .name',
+              )
+            : [];
+        runs.set(r.id, { workflow, ...r, jobs });
+      }
+    }
+  }
+  return [...runs.values()];
+}
+
+const prChecks = (number) =>
+  JSON.parse(
+    gh([
+      "pr",
+      "view",
+      String(number),
+      "--repo",
+      REPO,
+      "--json",
+      "title,url,statusCheckRollup,mergeStateStatus",
+    ]),
+  );
+
+/**
+ * The backstop: a card in In Progress with no agent on it and nothing moving
+ * for it for an hour goes to Blocked (or to Ready For Review, when every open
+ * PR of it only waits for approval), with a comment naming its PRs and where
+ * each stands. Cards this poll just handed to a run are skipped, and nothing
+ * is swept while the line is stopped (every PR is out of the queue then, and
+ * rejoins it on its own) or when GitHub cannot say what is running.
+ */
+async function pollSweep(index, skip, ciRuns) {
+  if (lineStatus().stopped) return console.log("The line is stopped; not sweeping");
+  let runs;
+  try {
+    runs = activeRuns();
+  } catch {
+    return console.warn("Could not list the running workflows; not sweeping");
+  }
+  const now = Date.now();
+  for (const card of await linear.list({
+    state: "In Progress",
+    history: true,
+    comments: true,
+  })) {
+    if (skip.has(card.identifier)) continue;
+    let prs;
+    try {
+      prs = index.prs
+        .filter((p) => refersTo(p.body, card.identifier))
+        .map((p) => ({ ...p, ...prChecks(p.number) }));
+    } catch {
+      console.warn(`${card.identifier}: could not read its PRs' checks; leaving it`);
+      continue;
+    }
+    const verdict = sweepVerdict(card, { now, prs, runs, ciRuns });
+    if (verdict.action === "leave") {
+      console.log(`${card.identifier}: In Progress; ${verdict.reason}`);
+      continue;
+    }
+    // The list is from the start of the sweep: someone may have moved the card since.
+    const current = await linear.issue(card.identifier, { comments: false });
+    if (current?.state?.name !== "In Progress") {
+      console.log(
+        `${card.identifier}: now ${current?.state?.name ?? "gone"}; leaving it`,
+      );
+      continue;
+    }
+    const target = verdict.action === "review" ? "Ready For Review" : "Blocked";
+    await linear.setState(card.identifier, target);
+    await linear.comment(card.identifier, verdict.comment);
+    console.log(
+      `${card.identifier}: idle in In Progress with no agent on it; → ${target}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------- retried CI
+
+const CI_FAILURE = new URL("./ci-failure.sh", import.meta.url).pathname;
+
+/**
+ * The PR CI runs (pull_request) the poll hands to `ci-failure.sh pr`: failed
+ * again on a re-run, finished more than RETRY_GRACE_MS ago, on the head
+ * commit of an open PR. ci-failure.sh re-runs a failed PR run with
+ * GITHUB_TOKEN, and GitHub may start no workflow for that re-run's
+ * completion, so without this the PR would never be handed to a Claude run.
+ * The script acts on a run once, so a run its workflow did handle is left
+ * alone there; a run of a commit the PR has moved past is not passed at all.
+ */
+export function retriedRuns(runs, prs, now) {
+  const heads = new Map(prs.map((p) => [p.headRefName, p.headRefOid]));
+  return runs.filter(
+    (r) =>
+      r.attempt > 1 &&
+      heads.has(r.branch) &&
+      (!heads.get(r.branch) || heads.get(r.branch) === r.sha) &&
+      now - Date.parse(r.updatedAt) > RETRY_GRACE_MS,
+  );
+}
+
+/** The cards `ci-failure.sh` output says it handed over or blocked (`ci-failure:acted <pr>`). */
+export function actedOn(output, prs) {
+  const cards = new Set();
+  for (const [, number] of output.matchAll(/^ci-failure:acted (\d+)$/gm)) {
+    const p = prs.find((x) => x.number === Number(number));
+    for (const id of issuesIn(p?.body ?? "")) cards.add(id);
+  }
+  return cards;
+}
+
+/** Every pull_request CI run that failed in the last day. */
+function failedPrRuns(now) {
+  const since = new Date(now - 24 * 3600 * 1000).toISOString();
+  return ghLines(
+    `repos/${REPO}/actions/workflows/ci.yml/runs?event=pull_request&status=failure&created=${encodeURIComponent(`>=${since}`)}&per_page=100`,
+    ".workflow_runs[] | {id, branch: .head_branch, sha: .head_sha, attempt: .run_attempt, updatedAt: .updated_at}",
+  );
+}
+
+/**
+ * Hand each retried red PR run to ci-failure.sh. Returns the cards it handed
+ * to @claude or moved to Blocked in this poll, which the sweep (reading PR
+ * comments from before them) must not move.
+ */
+function pollRetriedRuns(index, runs, now) {
+  const cards = new Set();
+  for (const r of retriedRuns(runs, index.prs, now)) {
+    const p = index.prs.find((x) => x.headRefName === r.branch);
+    try {
+      const output = execFileSync(
+        "bash",
+        [CI_FAILURE, "pr", String(r.id), r.branch, r.sha, String(r.attempt)],
+        { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8" },
+      );
+      process.stdout.write(output);
+      for (const id of actedOn(output, index.prs)) cards.add(id);
+    } catch {
+      console.warn(`#${p.number}: ci-failure.sh could not handle run ${r.id}`);
+    }
+  }
+  return cards;
+}
+
 async function poll() {
   const index = openPrs();
+  const resumed = await pollHandoffs();
   const ship = await pollReady();
   await pollApproved(index);
   const rework = await pollRework(index, ship);
@@ -321,6 +805,28 @@ async function poll() {
       ? "true"
       : "false",
   );
+  // After the outputs: the runs this poll starts must start even if these fail.
+  const now = Date.now();
+  let ciRuns = [];
+  let retried = new Set();
+  try {
+    ciRuns = failedPrRuns(now);
+    retried = pollRetriedRuns(index, ciRuns, now);
+  } catch (error) {
+    console.warn(`Could not check the re-run PR CI runs: ${error.message}`);
+  }
+  const skip = new Set([
+    ...retried,
+    ...resumed,
+    ...ship.map((s) => s.issue),
+    ...rework.map((r) => r.issue),
+    ...mentions.map((m) => m.issue),
+  ]);
+  try {
+    await pollSweep(index, skip, ciRuns);
+  } catch (error) {
+    console.warn(`The idle sweep failed: ${error.message}`);
+  }
 }
 
 // ---------------------------------------------------------------- pr
@@ -447,6 +953,12 @@ async function pr() {
       if (!experiments.some((e) => e.card === id)) await move(id, "QA");
     }
     for (const id of closedBy(p.body)) await move(id, "Done");
+    // An earlier PR of a sequence merged: a card whose /ship handoff waits on
+    // it goes back to Ready, and /ship continues from the handoff.
+    for (const id of new Set(issuesIn(p.body))) {
+      const card = await linear.issue(id, { history: true });
+      if (card && handoffAwaiting(card) === p.number) await resumeHandoff(card, p.number);
+    }
     return;
   }
   if (event.action === "closed" || p.draft) return;
@@ -457,13 +969,16 @@ async function pr() {
   for (const id of closedBy(p.body)) await move(id, target);
 }
 
-const mode = process.argv[2];
-const run = mode === "poll" ? poll : mode === "pr" ? pr : null;
-if (!run) {
-  console.error("usage: board.mjs poll|pr");
-  process.exit(2);
+// Run only as a script: the tests import the rules above without polling.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const mode = process.argv[2];
+  const run = mode === "poll" ? poll : mode === "pr" ? pr : null;
+  if (!run) {
+    console.error("usage: board.mjs poll|pr");
+    process.exit(2);
+  }
+  run().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
 }
-run().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});

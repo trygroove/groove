@@ -10,6 +10,13 @@ on:
     # executed" finding on the grounds that a green run was structurally
     # unobtainable at review time, and the browser jobs then failed on the
     # first PR run. Building CI on push makes that checkable when it matters.
+    #
+    # A push run on a `claude/**` branch names its gate jobs "branch push / …"
+    # (GRV-197). Once the branch has a PR, the push and the pull_request run
+    # test the same commit, and with one job name the run that finished last
+    # decided the required check: a flaky red push run shadowed a green PR run
+    # and left the PR blocked for a day. Now only the pull_request run (and the
+    # merge queue's) reports the required checks, and ci-failure.yml acts on it.
     branches: [main, "claude/**"]
   pull_request:
   # The merge queue (merge.yml) tests each PR on top of main and the PRs queued
@@ -42,7 +49,7 @@ jobs:
   # Fast, no-external-service gate: typecheck, lint/format check, and the
   # unit + component suites. Everything else depends on this passing first.
   checks:
-    name: typecheck, check, unit + component tests
+    name: "${{ github.event_name == 'push' && github.ref != 'refs/heads/main' && 'branch push / ' || '' }}typecheck, check, unit + component tests"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -170,7 +177,7 @@ jobs:
   # through each major surface, about a minute of tests) in Chromium. The full
   # suite, in every browser, runs daily (`browser-emulator`).
   browser-sanity:
-    name: browser sanity (chromium)
+    name: "${{ github.event_name == 'push' && github.ref != 'refs/heads/main' && 'branch push / ' || '' }}browser sanity (chromium)"
     needs: checks
     if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
@@ -209,7 +216,7 @@ jobs:
   # Firebase Emulator suite: contract tests for firestore.rules against a
   # real local Firestore instance (PRD 9.9).
   emulator:
-    name: firebase emulator tests
+    name: "${{ github.event_name == 'push' && github.ref != 'refs/heads/main' && 'branch push / ' || '' }}firebase emulator tests"
     needs: checks
     runs-on: ubuntu-latest
     steps:
@@ -243,7 +250,7 @@ jobs:
   # The `deploy` job below runs the same two steps (via `bun run deploy`'s
   # `predeploy` hook) against the real release SHA before shipping anything.
   build:
-    name: production build + no-secrets-in-bundle check
+    name: "${{ github.event_name == 'push' && github.ref != 'refs/heads/main' && 'branch push / ' || '' }}production build + no-secrets-in-bundle check"
     needs: checks
     runs-on: ubuntu-latest
     steps:

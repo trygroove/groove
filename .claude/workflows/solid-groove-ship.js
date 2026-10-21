@@ -231,8 +231,25 @@ Poll \`gh pr view ${prev.number} --repo trygroove/groove --json state,mergedAt,l
         ? `#${prev.number} was closed without merging`
         : `#${prev.number} has not merged yet${waited?.labels?.includes('needs-approval') ? ' (it needs approval)' : ''}`
       // The handoff note: the next run starts from this, not from the diffs.
+      // In Progress means an agent is on the card, and none is once this run
+      // stops, so the card goes to Blocked. When the handoff waits on a PR, the
+      // board puts the card back in Ready once that PR merges (board.mjs,
+      // handoffAwaiting), so the product owner is needed only to approve a
+      // gated PR or to decide about a closed one.
+      const firstLine = waited?.state === 'closed'
+        ? `**Handoff from /ship.** Waiting on a decision: #${prev.number} was closed without merging.`
+        : `**Handoff from /ship.** Waiting on #${prev.number} to merge.`
+      const unblock = waited?.state === 'closed'
+        ? `the product owner deciding what happens to the remaining work: say on the card what to do instead, or reopen #${prev.number} and move the card to Ready once it has merged`
+        : waited?.labels?.includes('needs-approval')
+          ? `the product owner approving #${prev.number} (move the card to Approved, or label the PR \`status:approved\`); once it merges, the board moves the card back to Ready by itself and /ship continues from here`
+          : `#${prev.number} merging (it is queued to merge on its own once CI is green); once it does, the board moves the card back to Ready by itself and /ship continues from here`
       await agent(
-        `Post one comment on Linear issue ${issue}, headed "**Handoff from /ship**". It says this run opened ${prs.map((p) => `${p.url}`).join(', ')} and stopped because ${why}, and that the remaining work is pushed and opens as its own PR${remaining.length > 1 ? 's' : ''} against main once #${prev.number} has landed: then move the card to Ready again and /ship continues from here. Do not move the card. Then the note the next run works from:
+        `Post one comment on Linear issue ${issue}. Its first line is exactly:
+
+${firstLine}
+
+(the board reads that line, so copy it character for character). Then it says this run opened ${prs.map((p) => `${p.url}`).join(', ')} and stopped because ${why}, that the remaining work is pushed and opens as its own PR${remaining.length > 1 ? 's' : ''} against main once #${prev.number} has landed, and, in one sentence starting "**Unblocked by:**", that what unblocks it is ${unblock}. Then the note the next run works from:
 
 - Remaining pieces, in landing order, each with its branch, what it contains and the branch it was built on (merge main into it before opening it):
 ${remaining.map((x, j) => `  ${i + j + 1} of ${n}: \`${x.branch}\` (built on \`${build.branches[i + j - 1].branch}\`): ${x.purpose}`).join('\n')}
@@ -240,7 +257,9 @@ ${remaining.map((x, j) => `  ${i + j + 1} of ${n}: \`${x.branch}\` (built on \`$
 - Assumptions made without asking: ${build.assumptions.join('; ') || 'none'}
 - Checks run on the branches: ${build.checks}
 ${build.uiChanged ? `- Screenshots already captured (for the PR whose branch changed the UI):\n${build.screenshots || '  MISSING'}\n` : ''}${unresolved.length ? `- Review findings still open (for the last PR's body):\n${unresolved.map((f) => `  - ${f}`).join('\n')}\n` : ''}
-Copy the facts as given; do not summarise them away. ${GITHUB}`,
+Copy the facts as given; do not summarise them away.
+
+After posting the comment, move the card to Blocked (\`node .github/scripts/linear.mjs state ${issue} Blocked\`): In Progress means an agent is working on it, and none is once this run stops. ${GITHUB}`,
         { label: `report ${issue}`, ...LANDING },
       )
       problems.push(`${why}; ${rest} not opened`)

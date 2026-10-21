@@ -14,7 +14,12 @@ name: Board
 #  - a card moved back to In Progress while its PRs are open (sent back from
 #    QA, review or Blocked) gets a rework agent on those PRs;
 #  - a comment on a card that says @claude starts a Claude run on it;
-#  - a new bug with no milestone gets one from a short Claude run.
+#  - a new bug with no milestone gets one from a short Claude run;
+#  - a card in Blocked whose /ship handoff waits on a PR that has merged goes
+#    back to Ready, so /ship continues;
+#  - a card idle in In Progress for an hour, with no agent run on it and no PR
+#    of it moving on its own, goes to Blocked with a comment saying what the
+#    poll found (GRV-197).
 #
 # A `pull_request` event moves the card the PR names: see `board.mjs pr`.
 #
@@ -84,6 +89,9 @@ jobs:
         run: node .github/scripts/board.mjs poll
 
   ship:
+    # Named for its card: the poll's idle sweep reads a running job's name to
+    # know an agent is on that card (board.mjs, runFor).
+    name: ship ${{ matrix.card.issue }}
     needs: poll
     if: needs.poll.outputs.ship != '[]' && needs.poll.outputs.ship != ''
     runs-on: ubuntu-latest
@@ -129,7 +137,7 @@ jobs:
           github_token: ${{ secrets.RESTACK_TOKEN || github.token }}
           show_full_output: true
           prompt: |
-            Ship Linear issue ${{ matrix.card.issue }}, unattended. It was moved to Ready on the board, or sent back to In Progress with no PR open and none that completes it merged: then earlier pieces have landed, and you continue from the card's latest "Handoff from /ship" comment.
+            Ship Linear issue ${{ matrix.card.issue }}, unattended. It was moved to Ready on the board (by the product owner, or by the board itself once the PR a "Handoff from /ship" comment waited on merged), or sent back to In Progress with no PR open and none that completes it merged. When earlier pieces have landed, continue from the card's latest "Handoff from /ship" comment.
 
             Follow `.claude/skills/ship/SKILL.md`, with one change for this environment: do NOT use the Workflow tool. This is a headless run that ends the moment your turn ends, so a background workflow would be killed before it does anything. Instead run the stages in `.claude/workflows/solid-groove-ship.js` yourself, in order (triage, build, review for features only, land), giving each stage's prompt to the Agent tool with `run_in_background: false` and waiting for its result before starting the next. Never end your turn to wait for anything: your turn ending ends this run. If a stage's agent comes back with its work unfinished, start a new Agent call that tells it what is left (not SendMessage, which resumes it in the background). Read the agent briefs in `.claude/agents/` the same way the workflow does.
 
@@ -166,6 +174,7 @@ jobs:
           node .github/scripts/linear.mjs state "$ISSUE" Blocked
 
   rework:
+    name: rework ${{ matrix.card.issue }}
     needs: poll
     if: needs.poll.outputs.rework != '[]' && needs.poll.outputs.rework != ''
     runs-on: ubuntu-latest
@@ -255,6 +264,7 @@ jobs:
           node .github/scripts/linear.mjs state "$ISSUE" Blocked
 
   mention:
+    name: mention ${{ matrix.card.issue }}
     needs: poll
     if: needs.poll.outputs.mentions != '[]' && needs.poll.outputs.mentions != ''
     runs-on: ubuntu-latest

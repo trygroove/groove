@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Project } from "../domain/entities";
 import { TICKS_PER_BAR } from "../domain/time";
 import { applyShowMe, lessonContext, starterWorld } from "../testing/lessonWorld";
+import { chapter } from "./chapters";
 import { cueMessage, lessonCue, wrapUpPointers } from "./cue";
 import { BITE_IDS, TRACK_CHAPTER_IDS, TRACK_UNDER_WAY } from "./ids";
 import {
@@ -10,6 +11,7 @@ import {
   type LessonState,
   type LessonTransition,
   observe,
+  resumeLesson,
   skip,
   startBite,
   startNextBite,
@@ -198,6 +200,36 @@ describe("Finish a track (GRV-44)", () => {
       28 * TICKS_PER_BAR,
     );
     expect(run.world.stemExports).toBe(1);
+  });
+
+  it("comes back after a reload as itself: a chapter over waits on the next (GRV-43)", () => {
+    const world = starterWorld();
+    const bass = chapter("bass").bites.map((one) => one.id);
+    const last = bass[bass.length - 1];
+    const endings = Object.fromEntries(bass.map((id) => [id, "did_it" as const]));
+    const course = { track: true, passed: [bass[0]] };
+
+    const under = resumeLesson("bass", bass[1], world, settings, {}, course);
+    expect(under).toMatchObject({ track: true, passed: [bass[0]] });
+    expect(under?.step).not.toBeNull();
+
+    const over = resumeLesson("bass", last, world, settings, endings, course);
+    expect(over).toMatchObject({ chapter: "bass", track: true, step: null });
+    const next = over && startNextBite(over, world, settings);
+    expect(next?.state).toMatchObject({ chapter: "chords", track: true });
+
+    // Alone, the same chapter had ended; the track's last chapter ends it.
+    expect(resumeLesson("bass", last, world, settings, endings)).toBeNull();
+    expect(
+      resumeLesson(
+        "mix",
+        "mix-export",
+        world,
+        settings,
+        { "mix-export": "did_it" },
+        course,
+      ),
+    ).toBeNull();
   });
 
   it("ends with the track: the last bite's cue is its wrap-up", () => {

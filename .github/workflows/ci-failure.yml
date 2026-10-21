@@ -13,6 +13,11 @@ name: CI failure
 #                               (or, when the cause is unclear, a bug is filed)
 #  - CI goes green on main    -> the line resumes: every open PR is synced back
 #                               into the queue and the board polls
+#  - a PR's own CI run fails  -> (a pull_request run on the PR's head, outside
+#                               the queue) re-run the failed jobs once; if they
+#                               fail again, the PR goes to @claude to fix; if
+#                               the fix's run ends red too, the card goes to
+#                               Blocked (GRV-197)
 #
 # The daily browser pass is not handled here: browser-pass-report in ci.yml
 # files its own bug.
@@ -20,9 +25,9 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    # Only the runs either job acts on: main and the merge queue. Without this,
-    # every PR branch's CI starts a run that is skipped at once.
-    branches: [main, "gh-readonly-queue/**"]
+    # No branch filter: a PR's head can be any branch. Push runs on a PR
+    # branch are skipped below; only its pull_request run reports the required
+    # checks (ci.yml names a branch push run's gate jobs "branch push / …").
 
 permissions:
   contents: write
@@ -35,16 +40,31 @@ jobs:
     if: >-
       github.event.workflow_run.conclusion == 'failure' && (
         github.event.workflow_run.event == 'merge_group' ||
+        github.event.workflow_run.event == 'pull_request' ||
         (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
       )
     runs-on: ubuntu-latest
     concurrency:
-      group: ci-failure
+      # A group keeps one run going and one pending, and a newer pending run
+      # cancels the older one. PR failures are frequent, so each PR branch gets
+      # its own group: one can never cancel a pending queue or main hand-back,
+      # or the line's `resume` below, which share `ci-failure`.
+      group: ${{ github.event.workflow_run.event == 'pull_request' && format('ci-failure-pr-{0}', github.event.workflow_run.head_branch) || 'ci-failure' }}
       cancel-in-progress: false
     env:
       # RESTACK_TOKEN so the @claude comment starts claude.yml, and the revert PR
       # gets CI and its label starts merge.yml (GITHUB_TOKEN triggers neither).
       GH_TOKEN: ${{ secrets.RESTACK_TOKEN || github.token }}
+      # The PAT has no Actions permission, so a re-run goes through GITHUB_TOKEN
+      # (`actions: write` above). Its completion may then never start this
+      # workflow (GitHub starts nothing for most events GITHUB_TOKEN causes), so
+      # the board's poll also hands over a PR whose re-run failed
+      # (board.mjs, pollRetriedRuns). main has the same gap with no backstop
+      # yet: a re-run of main that fails again may never come back here as
+      # attempt 2 (no revert), and one that goes green may never start
+      # `resume` (the line stays stopped until the next push to main). That is
+      # how it was before GRV-197; a poll backstop for main is a follow-up.
+      RERUN_TOKEN: ${{ github.token }}
       LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +87,8 @@ jobs:
           cp .github/scripts/ci-failure.sh .github/scripts/linear.mjs .github/scripts/merge.mjs "$RUNNER_TEMP/"
           if [ "$EVENT" = merge_group ]; then
             bash "$RUNNER_TEMP/ci-failure.sh" queue "$RUN" "$BRANCH"
+          elif [ "$EVENT" = pull_request ]; then
+            bash "$RUNNER_TEMP/ci-failure.sh" pr "$RUN" "$BRANCH" "$SHA" "$ATTEMPT"
           else
             bash "$RUNNER_TEMP/ci-failure.sh" main "$RUN" "$SHA" "$ATTEMPT"
           fi

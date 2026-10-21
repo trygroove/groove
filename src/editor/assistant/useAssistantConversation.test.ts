@@ -5,6 +5,7 @@ import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
 import { type AssistantAsk, askTranscript } from "../../assistant/ask";
 import { ASSISTANT_REQUEST_LIMITS } from "../../assistant/config";
+import { lessonNote } from "../../assistant/history";
 import type { AssistantLessonContext } from "../../assistant/lesson";
 import { START_LESSON_TOOL_NAME } from "../../assistant/lessonTool";
 import type { AssistantLibraryContext } from "../../assistant/protocol";
@@ -293,6 +294,53 @@ describe("a conversation during a lesson (GRV-43)", () => {
     conversation.send("Thanks");
     await vi.waitFor(() => expect(client.turns).toHaveLength(2));
     expect(client.last().request.lesson).toBeUndefined();
+    dispose();
+  });
+
+  it("resends a reply that started a lesson with a line saying the call did", async () => {
+    const client = createFakeAssistantClient();
+    let conversation: AssistantConversation | undefined;
+    const dispose = createRoot((dispose) => {
+      conversation = useAssistantConversation({
+        client: async () => client,
+        project: () => project,
+        scope: () => scope,
+        canSend: () => true,
+        analytics: () =>
+          new Analytics({
+            transport: createRecordingTransport(),
+            storage: memoryStorage(),
+          }),
+        onStartLesson: vi.fn(),
+      });
+      return dispose;
+    });
+    flush();
+    if (!conversation) throw new Error("no conversation");
+    conversation.send("Teach me how to make a beat");
+    await vi.waitFor(() => expect(client.turns).toHaveLength(1));
+    client.last().emit({ type: "text", text: 'Starting "Make a beat" now.' });
+    client.last().emit({
+      type: "proposal",
+      proposal: {
+        baseRevision: 0,
+        toolsetVersion: 10,
+        calls: [{ id: "t1", name: START_LESSON_TOOL_NAME, input: { chapter: "beat" } }],
+      },
+    });
+    client.last().done();
+    flush();
+    expect(conversation.entries().at(-1)).toMatchObject({
+      kind: "reply",
+      lesson: "beat",
+    });
+
+    conversation.send("Now teach me to shape a sound");
+    await vi.waitFor(() => expect(client.turns).toHaveLength(2));
+    expect(client.last().request.messages[1]).toEqual({
+      role: "assistant",
+      text: `Starting "Make a beat" now.\n\n${lessonNote("beat")}`,
+    });
     dispose();
   });
 
