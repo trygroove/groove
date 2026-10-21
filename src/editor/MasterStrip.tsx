@@ -9,7 +9,9 @@ import { deviceTypeDefinition } from "../domain/devices";
 import type { Device } from "../domain/entities";
 import { MASTER_VOLUME } from "../domain/parameters";
 import { ariaBool } from "../shared/aria";
+import LevelMeter from "./LevelMeter";
 import { DbFader } from "./TrackFaders";
+import type { TrackLevel } from "./trackLevels";
 
 /** A chain's devices by name, in signal order, for a strip's footer (#447). */
 export function chainSummary(devices: readonly Device[]): string {
@@ -25,6 +27,11 @@ export interface MasterStripProps {
   readonly devices: readonly Device[];
   /** Whether the chain below the desk is the master's, not a return's (#1106). */
   readonly selected: boolean;
+  /**
+   * The mix's level as it leaves for the speakers (GRV-44), reactively: its
+   * meter goes red when the mix clips, as a track's does.
+   */
+  level(): TrackLevel | null;
   /** Takes the user to the master's effects, below the desk. */
   onSelect(): void;
   onFirstUse(): void;
@@ -37,8 +44,8 @@ export interface MasterStripProps {
 /**
  * The master as the last strip on the desk, pinned to its right edge (#447):
  * its name — the way to its effects — its volume on the same fader law as a
- * track's, and the chain it carries. `master.volume` was in the song but had
- * no control until now.
+ * track's, the mix's level meter beside it (GRV-44), and the chain it carries.
+ * `master.volume` was in the song but had no control until now.
  */
 export default function MasterStrip(props: MasterStripProps): JSX.Element {
   return (
@@ -65,6 +72,12 @@ export default function MasterStrip(props: MasterStripProps): JSX.Element {
           dispatch={props.dispatch}
           beginGesture={props.beginGesture}
         />
+        <div class="mixer-meter-column">
+          <span class="mixer-meter-label" aria-hidden="true">
+            Lvl
+          </span>
+          <LevelMeter level={props.level} label="Master level" />
+        </div>
       </div>
       <div class="mixer-strip-actions">
         <span class="mixer-strip-chain" title={chainSummary(props.devices)}>

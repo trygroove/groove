@@ -782,6 +782,7 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
                                 dispatch={session.dispatch}
                                 beginGesture={session.beginGesture}
                                 trackLevel={audio.trackLevel}
+                                masterLevel={audio.masterLevel}
                                 selectedTrackId={track()?.id ?? null}
                                 onSelectTrack={selectTrackFrom}
                                 selectedReturnId={selectedReturn()?.id ?? null}

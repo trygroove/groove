@@ -5,6 +5,7 @@ import type { AudioProjectScope } from "./AudioRuntime";
 import { CompensationDelay } from "./compensationDelay";
 import { DeviceChain, type DeviceNode, type DeviceNodeFactory } from "./DeviceChain";
 import { type DeclaredLatency, dynamicsLookaheadFrames } from "./latency";
+import { type LevelReading, loudestDb, peakDbOf } from "./levels";
 import { SummingBus } from "./summingBus";
 
 /**
@@ -19,6 +20,9 @@ import { SummingBus } from "./summingBus";
  * path for that reason.
  */
 export const MASTER_LIMITER_THRESHOLD_DB = -0.5;
+
+/** Samples per channel the master's peak tap holds: one frame's worth, as a track's. */
+const MASTER_PEAK_WINDOW = 1024;
 
 /**
  * How many frames the safety limiter delays everything by (EXP-001, #883).
@@ -59,9 +63,12 @@ export class MasterAudioGraph {
   private readonly auxAlignHandle: ReturnType<AudioProjectScope["register"]>;
   private readonly volume: Tone.Volume;
   private readonly meter: Tone.Meter;
+  /** The samples the meter hears, for the clip state (GRV-44), as a track's. */
+  private readonly peakTap: Tone.Analyser;
   private readonly limiter: Tone.Limiter;
   private readonly volumeHandle: ReturnType<AudioProjectScope["register"]>;
   private readonly meterHandle: ReturnType<AudioProjectScope["register"]>;
+  private readonly peakTapHandle: ReturnType<AudioProjectScope["register"]>;
   private readonly limiterHandle: ReturnType<AudioProjectScope["register"]>;
   private lastProjection: AudioMasterProjection | null = null;
   /** Whether the volume stage feeds the safety limiter or the output directly. */
@@ -94,6 +101,16 @@ export class MasterAudioGraph {
     this.meterHandle = scope.register("node", () => {
       this.meter.dispose();
     });
+    // The master meter's clip state (GRV-44) reads the samples themselves, as a
+    // track's does (#447): an RMS meter smooths the peaks a clip is made of.
+    this.peakTap = new Tone.Analyser({
+      type: "waveform",
+      size: MASTER_PEAK_WINDOW,
+      channels: 2,
+    });
+    this.peakTapHandle = scope.register("node", () => {
+      this.peakTap.dispose();
+    });
     // The transparent safety limiter is the last stage before the shared
     // destination, so nothing after it can push a dangerous peak to the
     // hardware (PRD AUD-04).
@@ -110,6 +127,7 @@ export class MasterAudioGraph {
     this.deviceChain.output.connect(this.volume);
     this.volume.connect(this.limiter);
     this.limiter.connect(this.meter);
+    this.limiter.connect(this.peakTap);
     this.limiter.connect(destination);
   }
 
@@ -131,6 +149,7 @@ export class MasterAudioGraph {
       for (const source of sources) source.disconnect(this.volume);
       this.volume.disconnect(this.deviceChain.input);
       this.deviceChain.output.disconnect(this.meter);
+      this.deviceChain.output.disconnect(this.peakTap);
       this.deviceChain.output.disconnect(this.destination);
       for (const source of sources) source.connect(this.deviceChain.input);
       this.deviceChain.output.connect(this.volume);
@@ -142,6 +161,7 @@ export class MasterAudioGraph {
       for (const source of sources) source.connect(this.volume);
       this.volume.connect(this.deviceChain.input);
       this.deviceChain.output.connect(this.meter);
+      this.deviceChain.output.connect(this.peakTap);
       this.deviceChain.output.connect(this.destination);
     }
   }
@@ -177,6 +197,20 @@ export class MasterAudioGraph {
   }
 
   /**
+   * What the master meter on the Mixer shows (GRV-44): the mix's RMS now and
+   * its latest peak, read where the mix leaves for the speakers, after
+   * everything on the master. As a track's reading, it is polled by the
+   * editor's frame loop and never sources an analytics event.
+   */
+  readLevel(): LevelReading {
+    const samples = this.peakTap.getValue();
+    return {
+      rmsDb: loudestDb(this.meter.getValue()),
+      peakDb: peakDbOf(Array.isArray(samples) ? samples : [samples]),
+    };
+  }
+
+  /**
    * `reapplyDevices` reports that state outside the master projection moved
    * (the song tempo, which a synced delay resolves against) and so must survive
    * the reference short-circuit — otherwise a tempo-only edit, which leaves this
@@ -207,6 +241,7 @@ export class MasterAudioGraph {
     void this.scope.release(this.auxAlignHandle);
     void this.scope.release(this.volumeHandle);
     void this.scope.release(this.meterHandle);
+    void this.scope.release(this.peakTapHandle);
     void this.scope.release(this.limiterHandle);
   }
 }

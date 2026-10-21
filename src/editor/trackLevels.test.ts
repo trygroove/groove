@@ -1,7 +1,12 @@
 import { createEffect, createRoot, flush } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { TrackId } from "../domain/ids";
-import { CLIP_HOLD_FRAMES, createTrackLevels, nextTrackLevel } from "./trackLevels";
+import {
+  CLIP_HOLD_FRAMES,
+  createMasterLevel,
+  createTrackLevels,
+  nextTrackLevel,
+} from "./trackLevels";
 
 describe("nextTrackLevel (#447)", () => {
   it("clips on a peak over 0 dBFS, whatever the RMS", () => {
@@ -84,5 +89,51 @@ describe("createTrackLevels (#447)", () => {
       expect(runs).toHaveBeenCalledTimes(1);
       dispose();
     });
+  });
+});
+
+describe("createMasterLevel (GRV-44)", () => {
+  it("shows the mix's frame, holds a clip as a track's meter does, and rests on clear", () => {
+    const master = createMasterLevel();
+    expect(master.level()).toBeNull();
+
+    master.sample({ rmsDb: -9, peakDb: -3 });
+    flush();
+    expect(master.level()).toEqual({ db: -9, clipping: false });
+
+    master.sample({ rmsDb: -4, peakDb: 0.5 });
+    flush();
+    expect(master.level()).toEqual({ db: -4, clipping: true });
+    // The clip stays lit after the over, so a single one is seen.
+    master.sample({ rmsDb: -20, peakDb: -12 });
+    flush();
+    expect(master.level()?.clipping).toBe(true);
+
+    master.clear();
+    flush();
+    expect(master.level()).toBeNull();
+    // A clear drops the hold too: the next quiet frame is not red.
+    master.sample({ rmsDb: -20, peakDb: -12 });
+    flush();
+    expect(master.level()).toEqual({ db: -20, clipping: false });
+  });
+
+  it("wakes its readers only when the level changes", () => {
+    const master = createMasterLevel();
+    const seen = vi.fn();
+    const dispose = createRoot((done) => {
+      createEffect(master.level, seen);
+      return done;
+    });
+    flush();
+    seen.mockClear();
+    master.sample({ rmsDb: -9, peakDb: -3 });
+    flush();
+    flush();
+    master.sample({ rmsDb: -9, peakDb: -6 });
+    flush();
+    flush();
+    expect(seen).toHaveBeenCalledTimes(1);
+    dispose();
   });
 });

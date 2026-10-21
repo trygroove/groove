@@ -193,8 +193,7 @@ export default function TrackHeader(props: TrackHeaderProps): JSX.Element {
         )}
       </Show>
       <LevelMeter
-        trackId={props.track.id}
-        trackLevel={props.trackLevel}
+        level={() => props.trackLevel(props.track.id)}
         orientation="horizontal"
       />
     </div>

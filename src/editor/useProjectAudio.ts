@@ -33,7 +33,7 @@ import {
 } from "../projection/previewOverride";
 import { createDeviceMeters } from "./deviceMeters";
 import { type LeakReportOptions, reportAudioLeaks } from "./leakReport";
-import { createTrackLevels, type TrackLevel } from "./trackLevels";
+import { createMasterLevel, createTrackLevels, type TrackLevel } from "./trackLevels";
 
 /**
  * Maps an asset's library kind to the `asset_load_failed` `asset_type` value
@@ -98,6 +98,12 @@ export interface ProjectAudioControls {
    * cost no loop of their own; reading a meter emits no telemetry.
    */
   trackLevel(trackId: TrackId): TrackLevel | null;
+  /**
+   * The master's level, reactively, or `null` while nothing plays (GRV-44):
+   * read in the same frame loop as the tracks', after everything on the
+   * master, so its clip state says whether the mix itself went over.
+   */
+  readonly masterLevel: Accessor<TrackLevel | null>;
   toggleMetronome(): void;
   /**
    * Plays one drum pad immediately (a panel audition, PRD INS-01). It resumes
@@ -283,6 +289,7 @@ export function useProjectAudio(
   const [loop, setLoop] = createSignal<LoopRange | null>(null);
   const [metronomeEnabled, setMetronomeEnabled] = createSignal(false);
   const levels = createTrackLevels();
+  const masterLevel = createMasterLevel();
   const meters = createDeviceMeters();
 
   let graph: ProjectAudioGraph | null = null;
@@ -562,12 +569,14 @@ export function useProjectAudio(
       if (!transport) return;
       setPositionTicks(transport.positionTicks);
       levels.sample(graph?.readTrackLevels() ?? new Map());
+      if (graph) masterLevel.sample(graph.readMasterLevel());
       meters.sample(graph?.sampleDeviceMeters() ?? new Map());
       if (transport.isPlaying) {
         frameHandle = requestFrame(tick);
       } else {
         frameHandle = null;
         levels.clear();
+        masterLevel.clear();
         meters.rest();
       }
     };
@@ -580,6 +589,7 @@ export function useProjectAudio(
       frameHandle = null;
     }
     levels.clear();
+    masterLevel.clear();
     meters.rest();
   }
 
@@ -783,6 +793,7 @@ export function useProjectAudio(
     continueFromStop,
     seekTicks,
     trackLevel: levels.level,
+    masterLevel: masterLevel.level,
     toggleMetronome,
     auditionPad,
     auditionTrack,

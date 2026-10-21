@@ -348,6 +348,11 @@ export class ProjectAudioGraph {
     return readings;
   }
 
+  /** The master's level now, for the Mixer's master meter (GRV-44). */
+  readMasterLevel(): LevelReading {
+    return this.master.readLevel();
+  }
+
   /**
    * The project disposal scope, so a session-scoped companion (e.g. the
    * transport metronome) can register its resources under the same owner and

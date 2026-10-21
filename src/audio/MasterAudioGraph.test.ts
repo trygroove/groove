@@ -193,6 +193,12 @@ describe("MasterAudioGraph (PRD AUD-04/AUD-08)", () => {
     const value = master.levelMeter.getValue();
     const level = Array.isArray(value) ? Math.max(...value) : value;
     expect(level).toBeLessThan(-60);
+    // Nor does the reading the master strip's meter takes (GRV-44), in
+    // either routing of the safety limiter.
+    expect(master.readLevel().rmsDb).toBeLessThan(-60);
+    expect(master.readLevel().peakDb).toBe(Number.NEGATIVE_INFINITY);
+    master.reconcile(masterProjection({ safetyLimiter: false, fingerprint: "f2" }));
+    expect(master.readLevel().peakDb).toBe(Number.NEGATIVE_INFINITY);
     master.dispose();
     await runtime.close();
   });

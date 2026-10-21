@@ -538,7 +538,7 @@ const GRAPHS = [
   {
     id: "master", group: "Strips & buses", title: "Master",
     files: ["src/audio/MasterAudioGraph.ts"],
-    summary: "A project made before #937 (master.safetyLimiter true): tracks and returns sum on the mix bus, then device chain → volume → a transparent −0.5 dB safety limiter → the destination. The metronome joins after the mix, at the chain input. The meter taps the limited signal.",
+    summary: "A project made before #937 (master.safetyLimiter true): tracks and returns sum on the mix bus, then device chain → volume → a transparent −0.5 dB safety limiter → the destination. The metronome joins after the mix, at the chain input. The meter and the peak tap read the limited signal for the master strip's level meter (GRV-44).",
     nodes: [
       { id: "tracks", label: "Tracks", type: "TrackAudioGraph × n", kind: "io" },
       { id: "returns", label: "Returns", type: "ReturnAudioGraph × n", kind: "io" },
@@ -548,11 +548,12 @@ const GRAPHS = [
       { id: "vol", label: "volume", type: "Tone.Volume", kind: "node" },
       { id: "lim", label: "limiter", type: "Tone.Limiter(−0.5 dB)", kind: "node", params: ["MASTER_LIMITER_THRESHOLD_DB"] },
       { id: "meter", label: "meter", type: "Tone.Meter", kind: "tap" },
+      { id: "peak", label: "peak tap", type: "Tone.Analyser waveform", kind: "tap", note: "Feeds the clip state of the master strip's level meter (GRV-44)." },
       { id: "dest", label: "Destination", type: "context destination / offline", kind: "io" },
     ],
     edges: [
       ["tracks", "mix"], ["returns", "mix"], ["mix", "chain"], ["metro", "chain"],
-      ["chain", "vol"], ["vol", "lim"], ["lim", "dest"], ["lim", "meter"],
+      ["chain", "vol"], ["vol", "lim"], ["lim", "dest"], ["lim", "meter"], ["lim", "peak"],
     ],
   },
   {
@@ -567,11 +568,12 @@ const GRAPHS = [
       { id: "vol", label: "volume", type: "Tone.Volume", kind: "node", params: ["master.volume, up to +6 dB"] },
       { id: "chain", label: "device chain", type: "DeviceChain", kind: "node", note: "A new master device is inserted before the trailing Limiter, so the Limiter stays last." },
       { id: "meter", label: "meter", type: "Tone.Meter", kind: "tap" },
+      { id: "peak", label: "peak tap", type: "Tone.Analyser waveform", kind: "tap", note: "Feeds the clip state of the master strip's level meter (GRV-44)." },
       { id: "dest", label: "Destination", type: "context destination / offline", kind: "io" },
     ],
     edges: [
       ["tracks", "mix"], ["returns", "mix"], ["mix", "vol"], ["metro", "vol"],
-      ["vol", "chain"], ["chain", "dest"], ["chain", "meter"],
+      ["vol", "chain"], ["chain", "dest"], ["chain", "meter"], ["chain", "peak"],
     ],
   },
   {

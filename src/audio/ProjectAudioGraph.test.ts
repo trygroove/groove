@@ -209,6 +209,10 @@ describe("ProjectAudioGraph", () => {
       expect(reading.rmsDb).toBeLessThanOrEqual(0);
       expect(reading.peakDb).toBeLessThanOrEqual(0);
     }
+    // The master's own reading (GRV-44), from the same frame loop.
+    const master = graph.readMasterLevel();
+    expect(master.rmsDb).toBeLessThanOrEqual(0);
+    expect(master.peakDb).toBeLessThanOrEqual(0);
 
     await graph.dispose();
     await runtime.close();
