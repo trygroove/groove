@@ -11,8 +11,7 @@ import {
 import type { Clip, Project } from "../../domain/entities";
 import type { EventId, IdFactory } from "../../domain/ids";
 import { TICKS_PER_SIXTEENTH } from "../../domain/time";
-import { doubleClip } from "./doubleClip";
-import { halveClip } from "./halveClip";
+import { doubleClip, halveClip } from "./clipLengthActions";
 
 /**
  * Pure, framework-free model behind the CLP-04 transformation panel.
@@ -127,7 +126,7 @@ export const DEFAULT_TRANSFORM_OPTIONS: TransformOptions = {
 
 /**
  * Builds the command for one transformation, or for Double the commands of
- * one transaction (`doubleClip.ts`).
+ * one transaction (`clipLengthActions.ts`).
  *
  * `duplicate` needs an ID factory and the project because its copies carry
  * their new event IDs explicitly — that is what makes redo and an assistant

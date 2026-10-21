@@ -10,8 +10,7 @@ import {
 import type { Clip, Project } from "../../domain/entities";
 import { createFactoryContext } from "../../domain/factories";
 import type { EventId } from "../../domain/ids";
-import { canDouble } from "./doubleClip";
-import { canHalve } from "./halveClip";
+import { canDouble, canHalve } from "./clipLengthActions";
 import {
   buildTransform,
   canTransform,
