@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Analytics } from "../../analytics/analytics";
 import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
+import { ASSISTANT_TOOLSET_VERSION } from "../../assistant/tools";
 import { executeTransaction } from "../../commands/execute";
 import type { RawCommandInput } from "../../commands/types";
 import type { Project } from "../../domain/entities";
@@ -359,7 +360,7 @@ describe("a lesson in the panel (GRV-43)", () => {
       type: "proposal",
       proposal: {
         baseRevision: 0,
-        toolsetVersion: 10,
+        toolsetVersion: ASSISTANT_TOOLSET_VERSION,
         calls: [{ id: "t1", name: "start_lesson", input: { chapter: "sound" } }],
       },
     });
@@ -389,7 +390,7 @@ describe("Finish a track in the panel (GRV-44)", () => {
       type: "proposal",
       proposal: {
         baseRevision: 0,
-        toolsetVersion: 10,
+        toolsetVersion: ASSISTANT_TOOLSET_VERSION,
         calls: [{ id: "t1", name: "start_lesson", input: { chapter: "track" } }],
       },
     });

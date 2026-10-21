@@ -110,8 +110,10 @@ import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
  *    GRV-131).
  * 10: a turn that carries the producer's memory is offered `start_lesson`
  *    (`lesson.ts`, GRV-43).
+ * 11: `start_lesson` takes "track" as well as a chapter: "Finish a track",
+ *    from wherever it was left (`lessonTool.ts`, GRV-44).
  */
-export const ASSISTANT_TOOLSET_VERSION = 10;
+export const ASSISTANT_TOOLSET_VERSION = 11;
 
 /** The song's own parameters the assistant may set: its tempo and its swing. */
 const SONG_PARAMETER_IDS: readonly string[] = [SONG_TEMPO.id, SONG_SWING.id];

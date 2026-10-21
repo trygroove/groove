@@ -459,6 +459,7 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
     playing: () => audio.isPlaying(),
     positionTicks: audio.positionTicks,
     masterLevel: audio.masterLevel,
+    loop: () => (audio.loopEnabled() ? audio.loop() : null),
   });
   const chat = useAssistantChat({
     profile: producerProfile,

@@ -60,10 +60,13 @@ export default function LessonCard(props: {
   const chapter = () => chapterOf(props.state);
   const bite = () => biteOf(props.state);
   const following = () => followingBite(props.state);
-  // "Finish a track" goes on to its next chapter once this one is over (GRV-44).
+  // "Finish a track" goes on to its next chapter once this one is over
+  // (GRV-44): the one Next will start, which passes over a chapter the song
+  // already has all of.
   const nextChapter = () => {
-    const next = chapterFinished(props.state) ? followingChapter(props.state) : null;
-    return next ? chapterById(next) : null;
+    if (!chapterFinished(props.state) || !followingChapter(props.state)) return null;
+    const next = props.lesson.upcoming();
+    return next ? chapterById(next.chapter) : null;
   };
   const [term, setTerm] = createSignal<TermId | null>(null);
   const instruction = () => props.state.step?.instruction ?? "";

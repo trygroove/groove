@@ -9,6 +9,7 @@ import type { AssistantLessonContext } from "../../assistant/lesson";
 import { START_LESSON_TOOL_NAME } from "../../assistant/lessonTool";
 import type { AssistantLibraryContext } from "../../assistant/protocol";
 import { RECOMMEND_SOUNDS_TOOL } from "../../assistant/recommendation";
+import { ASSISTANT_TOOLSET_VERSION } from "../../assistant/tools";
 import { createSliceFixtureProject } from "../../domain/fixtures";
 import { buildAssistantLibrary } from "../../testing/assistantLibrary";
 import { createFakeAssistantClient } from "../../testing/fakeAssistantClient";
@@ -274,7 +275,7 @@ describe("a conversation during a lesson (GRV-43)", () => {
       type: "proposal",
       proposal: {
         baseRevision: 0,
-        toolsetVersion: 10,
+        toolsetVersion: ASSISTANT_TOOLSET_VERSION,
         calls: [
           { id: "t1", name: START_LESSON_TOOL_NAME, input: { chapter: "beat" } },
           { id: "t2", name: START_LESSON_TOOL_NAME, input: { chapter: "jazz" } },

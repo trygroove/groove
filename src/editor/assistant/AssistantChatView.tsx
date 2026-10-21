@@ -235,7 +235,7 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
         >
           {(bite) => (
             <section class="assistant-card cue-nudge" aria-label={NUDGE_LABEL}>
-              <b>{nudgeWords(bite())}</b>
+              <b>{nudgeWords(bite(), props.chat.lesson.done())}</b>
               <div class="memory-proposal-actions">
                 <button
                   type="button"

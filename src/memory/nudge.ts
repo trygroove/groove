@@ -41,11 +41,13 @@ export function nudgeBite(profile: ProducerProfile): LessonBite | null {
 }
 
 /**
- * What the nudge says of `offered`: "Want to try" a bite, or, for "Finish a
- * track" (GRV-44), which chapter to pick up.
+ * What the nudge says of `offered`: "Want to try" a bite, or, when it is where
+ * "Finish a track" picks up by what `done` records (GRV-44), which chapter of
+ * it to pick up, its first, "Make a beat", included.
  */
-export function nudgeWords(offered: LessonBite): string {
-  if (isTrackChapterId(offered.chapter) && offered.chapter !== "beat") {
+export function nudgeWords(offered: LessonBite, done: readonly string[]): string {
+  const resume = trackResume(done);
+  if (resume?.biteId === offered.id && isTrackChapterId(offered.chapter)) {
     const number = trackChapterNumber(offered.chapter);
     return `Pick up chapter ${number} of "${TRACK_TITLE}", "${chapter(offered.chapter).title}"?`;
   }

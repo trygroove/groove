@@ -4,7 +4,10 @@ import { CONTROL_PARTS, controlAddress } from "../../commands/controlAddress";
 import { createControlRegistry } from "../../controls/registry";
 import type { Project } from "../../domain/entities";
 import { TICKS_PER_BAR } from "../../domain/time";
+import { BITE_IDS, TRACK_UNDER_WAY } from "../../lessons/ids";
 import { BEAT_PATTERNS, beatStyleFor } from "../../lessons/style";
+import type { ProducerProfileStore } from "../../memory/useProducerProfile";
+import { emptyProfile, type ProducerProfile } from "../../persistence/profileDocuments";
 import { starterWorld } from "../../testing/lessonWorld";
 import type { EditorViewName } from "../editorViews";
 import { type LessonEditorPort, SHOW_ME_SETTLE_MS, useLesson } from "./useLesson";
@@ -15,7 +18,28 @@ function tempoed(project: Project | null, tempo: number): Project {
   return { ...project, song: { ...project.song, tempo } };
 }
 
-function setup(editor?: LessonEditorPort, open = true) {
+/** A loaded profile that has been through `lessonsDone`, saved in memory. */
+function profileStore(lessonsDone: readonly string[]): ProducerProfileStore {
+  const [profile, setProfile] = createSignal<ProducerProfile | null>({
+    ...emptyProfile(0),
+    lessonsDone,
+  });
+  return {
+    profile,
+    loaded: () => true,
+    failed: () => false,
+    current: profile,
+    async update(change) {
+      const saved = profile();
+      if (!saved) return null;
+      const next = change(saved);
+      setProfile(next);
+      return next;
+    },
+  };
+}
+
+function setup(editor?: LessonEditorPort, open = true, profile?: ProducerProfileStore) {
   const [project, setProject] = createSignal<Project | null>(
     open ? starterWorld().project : null,
   );
@@ -40,6 +64,7 @@ function setup(editor?: LessonEditorPort, open = true) {
       conversation: { sendLesson, streaming },
       registry,
       editor,
+      profile,
       analytics: () => ({ log, logFeatureFirstUse: vi.fn() }),
     }),
   );
@@ -410,6 +435,62 @@ describe("Finish a track in the panel (GRV-44)", () => {
       .filter(([name]) => (name as string) === "lesson_bite_completed")
       .map((call) => (call as unknown as [string, { bite_id: string }])[1].bite_id);
     expect(completed).toEqual(["beat-library"]);
+  });
+
+  it("saves the lesson as under way as it starts, before any bite is done", () => {
+    const profile = profileStore([]);
+    const h = setup(undefined, true, profile);
+    h.lesson.start("track", "asked");
+    flush();
+    expect(profile.profile()?.lessonsDone).toContain(TRACK_UNDER_WAY);
+    expect(h.lesson.done()).toContain(TRACK_UNDER_WAY);
+  });
+
+  it("picks up at Bass once the beat is done in it and Bass is not started", () => {
+    const beat = BITE_IDS.filter((id) => id.startsWith("beat-"));
+    const h = setup(undefined, true, profileStore([TRACK_UNDER_WAY, ...beat]));
+    expect(h.lesson.start("track", "nudge")).toBe(true);
+    flush();
+    const state = h.lesson.state();
+    expect(state?.track).toBe(true);
+    expect(state?.chapter).toBe("bass");
+    expect(h.log).toHaveBeenCalledWith(
+      "lesson_bite_started",
+      expect.objectContaining({
+        chapter_id: "bass",
+        bite_id: "bass-key",
+        source: "nudge",
+      }),
+    );
+  });
+
+  it("picks the beat up inside it when left part-way through, so Bass follows", () => {
+    const done = [TRACK_UNDER_WAY, "beat-library", "beat-kick"];
+    // The nudge offers the beat's next bite, and starts it as its chapter.
+    const h = setup(undefined, true, profileStore(done));
+    expect(h.lesson.start("beat", "nudge", "beat-play")).toBe(true);
+    flush();
+    expect(h.lesson.state()?.track).toBe(true);
+    expect(h.lesson.state()?.chapter).toBe("beat");
+    expect(h.lesson.state()?.biteIndex).toBe(2);
+    // "Finish a track" from where it was left lands on the same bite.
+    const resumed = setup(undefined, true, profileStore(done));
+    resumed.lesson.start("track", "asked");
+    flush();
+    expect(resumed.lesson.state()?.track).toBe(true);
+    expect(resumed.lesson.state()?.biteIndex).toBe(2);
+  });
+
+  it("keeps Make a beat a chapter alone when the lesson is not under way on it", () => {
+    const solo = setup(undefined, true, profileStore(["beat-library"]));
+    solo.lesson.start("beat", "asked");
+    flush();
+    expect(solo.lesson.state()?.track).toBe(false);
+    const beat = BITE_IDS.filter((id) => id.startsWith("beat-"));
+    const past = setup(undefined, true, profileStore([TRACK_UNDER_WAY, ...beat]));
+    past.lesson.start("beat", "asked");
+    flush();
+    expect(past.lesson.state()?.track).toBe(false);
   });
 
   it("goes on to the next chapter after a chapter's last bite, without leaving the panel", () => {

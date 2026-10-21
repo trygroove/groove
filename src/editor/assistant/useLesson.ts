@@ -41,6 +41,7 @@ import {
   isTrackChapterId,
   type LessonChoice,
   type LessonSource,
+  TRACK_UNDER_WAY,
   type TrackChapterId,
 } from "../../lessons/ids";
 import {
@@ -57,7 +58,7 @@ import {
   startTrack,
 } from "../../lessons/session";
 import { beatStyleFor } from "../../lessons/style";
-import { trackResume } from "../../lessons/track";
+import { trackResume, withTrackUnderWay } from "../../lessons/track";
 import type { LessonSettings, LessonWorld, ShowMe } from "../../lessons/types";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import type { EditorViewName } from "../editorViews";
@@ -125,6 +126,12 @@ export interface Lesson {
   start(lesson: LessonChoice | ChapterId, source: LessonSource, biteId?: BiteId): boolean;
   /** The next bite, once the one before is over. */
   next(): void;
+  /**
+   * Where {@link next} would go now, read against the world as it stands:
+   * the chapter and bite it would start, past what the song already has.
+   * Null when it would start nothing.
+   */
+  upcoming(): LessonState | null;
   showMe(): void;
   skip(): void;
   /** Leaves the lesson part-way. */
@@ -141,18 +148,21 @@ export const SHOW_ME_FAILED = "That didn't go in. Try it by hand, or press Skip.
 export const NO_SOUND =
   "I couldn't find another kick in the library. Pick one by hand, or press Skip.";
 
-/** What the editor reports to "Finish a track" (GRV-44), each an accessor. */
 /**
  * Whether `lesson` starts "Finish a track" (GRV-44): "track" itself, or one of
  * its own chapters. "Make a beat" is a chapter of its own as well as the
- * track's first, and alone it is the chapter.
+ * track's first: alone it is the chapter, unless the lesson, by what `done`
+ * records, is under way and still on it, when it is the lesson's chapter 1.
  */
 function isTrackLesson(
   lesson: LessonChoice | ChapterId,
-): lesson is "track" | Exclude<TrackChapterId, "beat"> {
-  return lesson === "track" || (isTrackChapterId(lesson) && lesson !== "beat");
+  done: readonly string[],
+): boolean {
+  if (lesson === "beat") return trackResume(done)?.chapter === "beat";
+  return lesson === "track" || isTrackChapterId(lesson);
 }
 
+/** What the editor reports to "Finish a track" (GRV-44), each an accessor. */
 export interface LessonListening {
   readonly bar: Accessor<number>;
   readonly barsHeard: Accessor<number>;
@@ -248,9 +258,20 @@ export function useLesson(options: UseLessonOptions): Lesson {
     arrive(next, event.kind === "step_done");
   }
 
+  /** Saves "Finish a track" as under way, once, so it resumes from any bite. */
+  function recordTrackUnderWay(): void {
+    if (untrack(done).includes(TRACK_UNDER_WAY)) return;
+    setFinished((current) => withTrackUnderWay(current));
+    void options.profile?.update((profile) => ({
+      ...profile,
+      lessonsDone: withTrackUnderWay(profile.lessonsDone),
+    }));
+  }
+
   function begin(transition: LessonTransition, source: LessonSource): void {
     setNotice(null);
     setState(transition.state);
+    if (transition.state.track) recordTrackUnderWay();
     const analytics = options.analytics();
     // What the song already had is done as far as the lesson goes (GRV-44):
     // saved, so picking the lesson up again starts past it, but never logged
@@ -380,9 +401,9 @@ export function useLesson(options: UseLessonOptions): Lesson {
   ): boolean {
     const now = world();
     if (!now) return false;
-    const transition = isTrackLesson(lesson)
-      ? trackStart(now, lesson === "track" ? null : lesson, biteId)
-      : soloStart(now, lesson, biteId);
+    const transition = isTrackLesson(lesson, done())
+      ? trackStart(now, lesson === "track" ? null : (lesson as TrackChapterId), biteId)
+      : soloStart(now, lesson as ChapterId, biteId);
     if (!transition) return false;
     const current = state();
     if (current) {
@@ -408,6 +429,13 @@ export function useLesson(options: UseLessonOptions): Lesson {
     if (!current || !now) return;
     const transition = startNextBite(current, now, settings());
     if (transition) begin(transition, "next");
+  }
+
+  function upcoming(): LessonState | null {
+    const current = state();
+    const now = world();
+    if (!current || !now) return null;
+    return startNextBite(current, now, settings())?.state ?? null;
   }
 
   function showMe(): void {
@@ -487,6 +515,7 @@ export function useLesson(options: UseLessonOptions): Lesson {
     canShowMe: options.editor !== undefined,
     start,
     next,
+    upcoming,
     showMe,
     skip,
     leave,

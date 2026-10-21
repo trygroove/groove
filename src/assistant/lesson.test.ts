@@ -24,6 +24,7 @@ import {
   startLessonTool,
 } from "./lessonTool";
 import { buildSystemBlocks, MEMORY_BLOCK_HEADING } from "./prompt";
+import { ASSISTANT_TOOLSET_VERSION } from "./tools";
 
 const settings = { style: "boom_bap" } as const;
 
@@ -201,13 +202,13 @@ describe("start_lesson (GRV-43)", () => {
     const change = { id: "toolu_2", name: "parameter_set", input: {} };
     const alone = splitLessonCalls({
       baseRevision: 1,
-      toolsetVersion: 10,
+      toolsetVersion: ASSISTANT_TOOLSET_VERSION,
       calls: [lesson],
     });
     expect(alone).toEqual({ proposal: null, lessons: [lesson] });
     const mixed = splitLessonCalls({
       baseRevision: 1,
-      toolsetVersion: 10,
+      toolsetVersion: ASSISTANT_TOOLSET_VERSION,
       calls: [lesson, change],
     });
     expect(mixed.proposal?.calls).toEqual([change]);

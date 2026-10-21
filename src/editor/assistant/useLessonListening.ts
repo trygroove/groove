@@ -8,6 +8,7 @@
  * step's predicate stays a pure function of the world it is handed.
  */
 import { type Accessor, createEffect, createMemo, createSignal } from "solid-js";
+import type { LoopRange } from "../../audio/loopRange";
 import { TICKS_PER_BAR } from "../../domain/time";
 import type { ExportFormat } from "../export/FormatCards";
 import type { TrackLevel } from "../trackLevels";
@@ -17,6 +18,22 @@ export interface UseLessonListeningOptions {
   readonly playing: Accessor<boolean>;
   readonly positionTicks: Accessor<number>;
   readonly masterLevel: Accessor<TrackLevel | null>;
+  /** The loop the transport obeys, or null while it is off. */
+  readonly loop?: Accessor<LoopRange | null>;
+}
+
+/**
+ * Whether the playhead moving from `from` back to `to` ticks is `loop` going
+ * round: from its last bar to its first, not a seek back.
+ */
+export function loopWrapped(loop: LoopRange | null, from: number, to: number): boolean {
+  return (
+    loop !== null &&
+    to < from &&
+    from >= loop.endTicks - TICKS_PER_BAR &&
+    to >= loop.startTicks &&
+    to < loop.startTicks + TICKS_PER_BAR
+  );
 }
 
 export interface LessonListeningCounts extends LessonListening {
@@ -37,18 +54,27 @@ export function useLessonListening(
   // that reads them as the song starts never sees the last play's. A new bar
   // while playing adds one. The reads are in the compute half; counting
   // writes, in the apply.
-  // The loop brace sending the playhead back counts as a bar too, so a
-  // one-bar loop still adds up.
+  // The loop going round counts as a bar too, even inside one bar, so a
+  // one-bar loop still adds up; a seek back within a bar does not.
   let wasPlaying = false;
   let lastBar = 0;
   let lastTicks = 0;
   createEffect(
-    () => ({ playing: options.playing(), at: bar(), ticks: options.positionTicks() }),
-    ({ playing, at, ticks }) => {
+    () => ({
+      playing: options.playing(),
+      at: bar(),
+      ticks: options.positionTicks(),
+      loop: options.loop?.() ?? null,
+    }),
+    ({ playing, at, ticks, loop }) => {
       if (!playing && wasPlaying) {
         setBarsHeard(0);
         setMasterClips(0);
-      } else if (playing && wasPlaying && (at !== lastBar || ticks < lastTicks)) {
+      } else if (
+        playing &&
+        wasPlaying &&
+        (at !== lastBar || loopWrapped(loop, lastTicks, ticks))
+      ) {
         setBarsHeard((heard) => heard + 1);
       }
       wasPlaying = playing;
