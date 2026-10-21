@@ -37,8 +37,11 @@ without asking questions. See `CLAUDE.md`, "Shape, then ship".
      blockers and it goes back to Ready, where the board starts it again once
      they merge; an unclear issue posts
      its question on the card and moves it to Blocked; answer there or in this
-     session and re-run `/ship`; a run that stopped at a gated PR continues
-     from what has landed when `/ship` runs again after that PR merges).
+     session and re-run `/ship`; a run that stopped part way through a sequence,
+     at a gated PR or one that did not merge in time, leaves a "Handoff from
+     /ship" comment and moves the card to Blocked; once the PR it waits on
+     merges, the board moves the card back to Ready by itself and `/ship`
+     continues from what has landed).
 4. **Watch the PRs** if `subscribe_pr_activity` is available: subscribe to each
    one and drive it to green (CI fixes, QA findings, merge conflicts) as the
    events arrive.

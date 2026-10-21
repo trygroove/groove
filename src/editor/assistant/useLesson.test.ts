@@ -6,6 +6,7 @@ import type { Project } from "../../domain/entities";
 import { BEAT_PATTERNS, beatStyleFor } from "../../lessons/style";
 import { starterWorld } from "../../testing/lessonWorld";
 import type { EditorViewName } from "../editorViews";
+import { createLessonStore, type LessonStore } from "./lessonStore";
 import { type LessonEditorPort, SHOW_ME_SETTLE_MS, useLesson } from "./useLesson";
 
 /** `project` at `tempo` BPM, as a committed edit would leave it. */
@@ -14,7 +15,11 @@ function tempoed(project: Project | null, tempo: number): Project {
   return { ...project, song: { ...project.song, tempo } };
 }
 
-function setup(editor?: LessonEditorPort, open = true) {
+function setup(
+  editor?: LessonEditorPort,
+  open = true,
+  saved?: { key: () => string | null; store: LessonStore },
+) {
   const [project, setProject] = createSignal<Project | null>(
     open ? starterWorld().project : null,
   );
@@ -33,6 +38,7 @@ function setup(editor?: LessonEditorPort, open = true) {
       registry,
       editor,
       analytics: () => ({ log, logFeatureFirstUse: vi.fn() }),
+      saved,
     }),
   );
   return {
@@ -342,5 +348,75 @@ describe("the lesson under way (GRV-43)", () => {
   it("has nothing to show without an editor", () => {
     const h = setup();
     expect(h.lesson.canShowMe).toBe(false);
+  });
+
+  it("does not count a skipped bite as done, so it is still the next unfinished one", () => {
+    const h = setup();
+    h.lesson.start("tour", "asked", "tour-sequence");
+    flush();
+    h.lesson.skip();
+    flush();
+    expect(h.lesson.state()?.endings).toEqual({ "tour-sequence": "skipped" });
+    expect(h.lesson.done()).toEqual([]);
+    h.lesson.leave();
+    h.lesson.start("tour", "asked");
+    flush();
+    expect(h.lesson.state()?.biteIndex).toBe(0);
+  });
+
+  it("comes back after a reload at the bite it was on, with how the others ended", () => {
+    const storage = new Map<string, string>();
+    const store = createLessonStore({
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => void storage.set(key, value),
+      removeItem: (key) => void storage.delete(key),
+    });
+    const saved = { key: () => "lesson-key", store };
+    const before = setup(undefined, true, saved);
+    before.lesson.start("tour", "asked", "tour-sequence");
+    flush();
+    before.lesson.skip();
+    flush();
+    before.lesson.next();
+    flush();
+    expect(before.lesson.state()?.biteIndex).toBe(2);
+
+    // The page reloads: a new lesson, over the same storage.
+    const after = setup(undefined, true, saved);
+    flush();
+    expect(after.lesson.state()).toMatchObject({
+      chapter: "tour",
+      biteIndex: 2,
+      endings: { "tour-sequence": "skipped" },
+    });
+    expect(after.lesson.state()?.step).not.toBeNull();
+    // Coming back is not a new start: nothing is said or logged.
+    expect(after.sendLesson).not.toHaveBeenCalled();
+    expect(after.log).not.toHaveBeenCalled();
+
+    // Leaving forgets it.
+    after.lesson.leave();
+    flush();
+    expect(storage.size).toBe(0);
+    const again = setup(undefined, true, saved);
+    flush();
+    expect(again.lesson.state()).toBeNull();
+  });
+
+  it("waits for the project before bringing a lesson back, and keeps it meanwhile", () => {
+    const storage = new Map<string, string>();
+    const store = createLessonStore({
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => void storage.set(key, value),
+      removeItem: (key) => void storage.delete(key),
+    });
+    store.save("lesson-key", { chapter: "beat", bite: "beat-kick", endings: {} });
+    const h = setup(undefined, false, { key: () => "lesson-key", store });
+    flush();
+    expect(h.lesson.state()).toBeNull();
+    expect(storage.size).toBe(1);
+    h.setProject(starterWorld().project);
+    flush();
+    expect(h.lesson.state()).toMatchObject({ chapter: "beat", biteIndex: 1 });
   });
 });

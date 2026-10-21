@@ -30,6 +30,7 @@ import { validateRecommendation } from "../../assistant/recommendation";
 import { REPLY_RATINGS, sessionIdSchema } from "../../assistant/transcripts";
 import type { Project } from "../../domain/entities";
 import { eventIdSchema, placementIdSchema } from "../../domain/ids";
+import { CHAPTER_IDS } from "../../lessons/ids";
 import type { AssistantScope } from "./assistantScope";
 import type { ConversationEntry, TurnOrigin } from "./useAssistantConversation";
 
@@ -68,6 +69,7 @@ const storedEntrySchema = z.discriminatedUnion("kind", [
     turnId: sessionIdSchema.optional(),
     rating: z.enum(REPLY_RATINGS).optional(),
     proposal: z.enum(HISTORY_PROPOSALS).optional(),
+    lesson: z.enum(CHAPTER_IDS).optional(),
   }),
 ]);
 
@@ -289,6 +291,7 @@ export function serializeConversation(
             ...(entry.turnId ? { turnId: entry.turnId } : {}),
             ...(entry.rating ? { rating: entry.rating } : {}),
             ...(entry.proposal ? { proposal: entry.proposal } : {}),
+            ...(entry.lesson ? { lesson: entry.lesson } : {}),
           };
         case "proposal":
           return {

@@ -213,6 +213,8 @@ describe("buildAssistantContext: selected notes (ADR 0007)", () => {
           startTicks: placement?.startTicks,
           durationTicks: placement?.durationTicks,
           looped: placement?.looped,
+          clipLengthTicks: project.clips.find((clip) => clip.id === placement?.clipId)
+            ?.lengthTicks,
         });
       }
     }
