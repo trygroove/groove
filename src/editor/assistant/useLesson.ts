@@ -62,7 +62,7 @@ import {
   startTrack,
 } from "../../lessons/session";
 import { beatStyleFor } from "../../lessons/style";
-import { trackResume, withTrackUnderWay } from "../../lessons/track";
+import { trackProgress, trackResume, withTrackUnderWay } from "../../lessons/track";
 import type { LessonSettings, LessonWorld, ShowMe } from "../../lessons/types";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import type { EditorViewName } from "../editorViews";
@@ -255,7 +255,10 @@ export function useLesson(options: UseLessonOptions): Lesson {
       if (event.chapterDone) {
         analytics.log("lesson_chapter_completed", { chapter_id: next.chapter });
       }
-      if (event.trackDone) analytics.log("lesson_track_completed", {});
+      // The track is finished by exporting its stems, not by skipping that.
+      if (event.trackDone && event.how !== "skipped") {
+        analytics.log("lesson_track_completed", {});
+      }
     }
     queue(next, event);
     // A chapter's last bite ends the lesson, unless "Finish a track" goes on
@@ -361,6 +364,7 @@ export function useLesson(options: UseLessonOptions): Lesson {
         resumeLesson(kept.chapter, kept.bite, now, untrack(settings), kept.endings, {
           track: kept.track,
           passed: kept.passed,
+          behind: kept.behind,
         }),
       );
     },
@@ -411,12 +415,17 @@ export function useLesson(options: UseLessonOptions): Lesson {
     },
   );
 
-  /** Where "Finish a track" starts (GRV-44): where it was left, or chapter `from`. */
+  /**
+   * Where "Finish a track" starts (GRV-44): where it was left, or chapter
+   * `from`. Either way, while it is under way it goes on past what the
+   * producer has already done (`trackProgress`), never back over it.
+   */
   function trackStart(
     now: LessonWorld,
     from: TrackChapterId | null,
     biteId: BiteId | undefined,
   ): LessonTransition | null {
+    const progress = trackProgress(done());
     if (from === null) {
       const resume = trackResume(done());
       return startTrack(
@@ -424,6 +433,8 @@ export function useLesson(options: UseLessonOptions): Lesson {
         resume?.biteId ?? null,
         now,
         settings(),
+        [],
+        progress,
       );
     }
     const finishedIds = new Set(done());
@@ -431,7 +442,7 @@ export function useLesson(options: UseLessonOptions): Lesson {
       biteId ??
       chapterOfId(from).bites.find((one) => !finishedIds.has(one.id))?.id ??
       null;
-    return startTrack(from, first, now, settings());
+    return startTrack(from, first, now, settings(), [], progress);
   }
 
   function start(
@@ -467,7 +478,7 @@ export function useLesson(options: UseLessonOptions): Lesson {
     const current = state();
     const now = world();
     if (!current || !now) return;
-    const transition = startNextBite(current, now, settings());
+    const transition = startNextBite(current, now, settings(), trackProgress(done()));
     if (transition) begin(transition, "next");
   }
 
@@ -475,7 +486,7 @@ export function useLesson(options: UseLessonOptions): Lesson {
     const current = state();
     const now = world();
     if (!current || !now) return null;
-    return startNextBite(current, now, settings())?.state ?? null;
+    return startNextBite(current, now, settings(), trackProgress(done()))?.state ?? null;
   }
 
   function showMe(): void {

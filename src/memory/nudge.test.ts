@@ -65,6 +65,28 @@ describe("the nudge for Finish a track (GRV-44)", () => {
     );
   });
 
+  it("offers the chapter the producer is on, not one where they skipped a bite", () => {
+    // "Round it off" (Bass) skipped, so not saved; the rest done through the intro.
+    const profile = onboarded(NOON - DAY, {
+      lessonsDone: [
+        TRACK_UNDER_WAY,
+        "bass-key",
+        "bass-line",
+        "chords-loop",
+        "chords-hook",
+        "chords-pluck",
+        "arrange-copy",
+        "arrange-intro",
+      ],
+    });
+    const offered = nudgeBite(profile);
+    expect(offered?.id).toBe("arrange-breakdown");
+    if (!offered) throw new Error("nothing offered");
+    expect(nudgeWords(offered, profile.lessonsDone)).toBe(
+      'Pick up chapter 4 of "Finish a track", "Arrange, subtractively"?',
+    );
+  });
+
   it("offers chapter 2 once the beat is done in it and Bass is not started", () => {
     const beat = BITE_IDS.filter((id) => id.startsWith("beat-"));
     const profile = onboarded(NOON - DAY, { lessonsDone: [TRACK_UNDER_WAY, ...beat] });

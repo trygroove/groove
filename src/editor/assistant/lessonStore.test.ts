@@ -31,7 +31,7 @@ describe("the kept lesson (GRV-43)", () => {
     } as const;
     store.save(key, lesson);
     // A lesson kept without them is a chapter alone.
-    expect(store.load(key)).toEqual({ ...lesson, track: false, passed: [] });
+    expect(store.load(key)).toEqual({ ...lesson, track: false, passed: [], behind: [] });
     store.save(key, null);
     expect(items.size).toBe(0);
     expect(store.load(key)).toBeNull();
@@ -46,9 +46,21 @@ describe("the kept lesson (GRV-43)", () => {
       endings: { "beat-library": "did_it" },
       track: true,
       passed: ["beat-kick"],
+      behind: [],
     };
     store.save("key", lesson);
     expect(store.load("key")).toEqual(lesson);
+    // And the bites it passed over as the producer had done them.
+    const back: StoredLesson = {
+      chapter: "bass",
+      bite: "bass-sound",
+      endings: {},
+      track: true,
+      passed: [],
+      behind: ["bass-key", "bass-line"],
+    };
+    store.save("key", back);
+    expect(store.load("key")).toEqual(back);
   });
 
   it("drops what it cannot read back", () => {

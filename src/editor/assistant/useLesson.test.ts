@@ -5,6 +5,7 @@ import { createControlRegistry } from "../../controls/registry";
 import type { Project } from "../../domain/entities";
 import { TICKS_PER_BAR } from "../../domain/time";
 import { BITE_IDS, TRACK_UNDER_WAY } from "../../lessons/ids";
+import { biteOf } from "../../lessons/session";
 import { BEAT_PATTERNS, beatStyleFor } from "../../lessons/style";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import { emptyProfile, type ProducerProfile } from "../../persistence/profileDocuments";
@@ -650,6 +651,70 @@ describe("Finish a track in the panel (GRV-44)", () => {
       ["lesson_chapter_completed", { chapter_id: "mix" }],
       ["lesson_track_completed", {}],
     ]);
+  });
+
+  it("picks up where the producer is, not at a bite they skipped on the way", () => {
+    // "Round it off" skipped (not saved), everything else done up to the intro.
+    const done = [
+      TRACK_UNDER_WAY,
+      "bass-key",
+      "bass-line",
+      "chords-loop",
+      "chords-hook",
+      "chords-pluck",
+      "arrange-copy",
+      "arrange-intro",
+    ];
+    const h = setup(undefined, true, profileStore(done));
+    expect(h.lesson.start("track", "nudge")).toBe(true);
+    flush();
+    expect(h.lesson.state()?.chapter).toBe("arrange");
+    const resumed = h.lesson.state();
+    expect(resumed && biteOf(resumed).id).toBe("arrange-breakdown");
+  });
+
+  it("goes back for a skipped bite, then on past what is done, not over it again", () => {
+    const done = [
+      TRACK_UNDER_WAY,
+      "bass-key",
+      "bass-line",
+      "chords-loop",
+      "chords-hook",
+      "chords-pluck",
+      "arrange-copy",
+      "arrange-intro",
+    ];
+    const h = setup(undefined, true, profileStore(done));
+    h.lesson.start("bass", "asked");
+    flush();
+    const back = h.lesson.state();
+    expect(back && biteOf(back).id).toBe("bass-sound");
+    h.lesson.skip();
+    flush();
+    h.lesson.skip();
+    flush();
+    const ahead = h.lesson.upcoming();
+    expect(ahead && biteOf(ahead).id).toBe("arrange-breakdown");
+    h.lesson.next();
+    flush();
+    const now = h.lesson.state();
+    expect(now && biteOf(now).id).toBe("arrange-breakdown");
+    const started = h.log.mock.calls
+      .filter(([name]) => (name as string) === "lesson_bite_started")
+      .map((call) => (call as unknown as [string, { bite_id: string }])[1].bite_id);
+    expect(started).toEqual(["bass-sound", "arrange-breakdown"]);
+  });
+
+  it("does not count the track completed when its last bite, the export, is skipped", () => {
+    const editor = recordingEditor();
+    const h = setup(editor);
+    h.lesson.start("mix", "asked", "mix-export");
+    flush();
+    h.lesson.skip();
+    flush();
+    expect(h.lesson.state()).toBeNull();
+    expect(h.log).toHaveBeenCalledWith("lesson_chapter_completed", { chapter_id: "mix" });
+    expect(h.log).not.toHaveBeenCalledWith("lesson_track_completed", expect.anything());
   });
 
   it("plays from where Show me says, for the drop", () => {

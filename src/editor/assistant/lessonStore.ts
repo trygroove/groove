@@ -31,12 +31,13 @@ const storedLessonSchema = z.object({
   endings: z.partialRecord(z.enum(BITE_IDS), z.enum(BITE_ENDINGS)),
   track: z.boolean().default(false),
   passed: z.array(z.enum(BITE_IDS)).default([]),
+  behind: z.array(z.enum(BITE_IDS)).default([]),
 });
 
 /** A lesson as it is kept. */
 export type StoredLesson = Omit<z.output<typeof storedLessonSchema>, "version">;
 
-/** A lesson to keep: outside "Finish a track", `track` and `passed` may be left out. */
+/** A lesson to keep: outside "Finish a track", `track`, `passed` and `behind` may be left out. */
 export type LessonToKeep = Omit<z.input<typeof storedLessonSchema>, "version">;
 
 /** What is kept of `state`. */
@@ -47,6 +48,7 @@ export function storedLesson(state: LessonState): StoredLesson {
     endings: { ...state.endings },
     track: state.track,
     passed: [...state.passed],
+    behind: [...state.behind],
   };
 }
 
