@@ -161,7 +161,7 @@ bun run test:watch  # watch mode
 bun run test:ui     # Vitest UI
 ```
 
-Config: `vitest.config.ts`. `@solidjs/vite-plugin` sets `test.environment: "jsdom"` automatically, so both plain unit tests (e.g. `src/shared/id.test.ts`) and component tests using `@solidjs/testing-library` (e.g. `src/components/Dashboard.test.tsx`) run under the same command — see those two files for the canonical shape of each.
+Config: `vitest.config.ts`. `@solidjs/vite-plugin` sets `test.environment: "jsdom"` automatically, so both plain unit tests (e.g. `src/domain/ids.test.ts`) and component tests using `@solidjs/testing-library` (e.g. `src/components/Dashboard.test.tsx`) run under the same command — see those two files for the canonical shape of each.
 
 `src/audio/InstrumentGraph.test.ts`, `src/audio/TrackAudioGraph.test.ts`, `src/audio/DeviceChain.test.ts`, and `src/audio/ProjectAudioGraph.test.ts` additionally render real audio via `node-web-audio-api` (see `src/audio/testAudioContext.ts`). Importing `tone` creates a real (non-offline) global `AudioContext` as a side effect, and `node-web-audio-api`'s `cpal` backend needs to find *some* default output device to satisfy that, even though the tests themselves only render through `Tone.Offline`. On a machine with no audio hardware (`/dev/snd` absent — every GitHub-hosted runner, most containers), that context creation throws `InvalidStateError: ... DeviceUnavailable` and the whole file fails before any test runs.
 
@@ -205,7 +205,7 @@ outside the reactive system too, not just `fireEvent` — a subscription callbac
 firing from a fake store needs the same treatment
 (`src/components/TelemetryDisclosure.test.tsx` is the worked example). Each step
 of a multi-step interaction needs its own flush, because each one queues its own
-batch: `src/editor/StepEditor.test.tsx`'s `stroke()`/`dragStroke()` helpers flush
+batch: `src/editor/sequence/StepEditor.test.tsx`'s `stroke()`/`dragStroke()` helpers flush
 after every pointer event for exactly that reason.
 
 `flush()` is a **test** tool. It is not an escape hatch for product code — a
@@ -845,9 +845,8 @@ The two remaining checks are deferred by decision (`DEC-012`), not left unfinish
 
 | Helper | Location | Purpose |
 | --- | --- | --- |
-| `createId`, `createSeededIdFactory`, `isPrefixedId` | `src/shared/id.ts` | The prefixed-ID format (`trk_...`, `clp_...`, ...). `createId` is the production generator; `createSeededIdFactory(seed)` is deterministic for fixtures and round-trip tests. One shared factory, not a separate test-only ID shape. |
+| `createIdFactory`, `createSeededIdFactory`, `isEntityId` | `src/domain/ids.ts` | The prefixed-ID format (`trk_...`, `clp_...`, ...). `createIdFactory()` is the production generator; `createSeededIdFactory(seed)` is deterministic for fixtures and round-trip tests. One shared factory, not a separate test-only ID shape. |
 | `systemClock`, `createManualClock` | `src/shared/clock.ts` | A `Clock` abstraction so domain code depends on an injectable clock instead of calling `Date.now()` directly. `createManualClock` never advances on its own — tests control time explicitly. |
-| `parseOrThrow`, `safeParseWithIssues`, `finiteNumberInRange` | `src/shared/schema.ts` | The shared Zod entry point PRD section 9.1 commits to for runtime schemas. `parseOrThrow` fails closed (throws `SchemaValidationError`, never returns a partial value) per invariant 6; `finiteNumberInRange` is the shared clamping primitive invariant 4 asks for. `FND-002` builds the schema-v1 domain schemas on top of this rather than inventing its own parse/error shape. |
 | `timeoutScheduler`, `createManualScheduler` | `src/shared/scheduler.ts` | A `Scheduler` abstraction for deferred work (autosave coalescing, backoff), so a test drives the delay explicitly instead of sleeping. Same rationale as `clock.ts`: production code is a consumer too. |
 | `loadStoredProjectFixture` | `src/testing/fixtures.ts` | Loads a stored schema-vN project from `public/fixtures/persistence/v{version}-{name}.json`. The fixture convention the persistence migration harness follows — see [`docs/persistence.md`](./persistence.md). |
 | `describeProjectRepositoryContract` | `src/persistence/projectRepositoryContract.ts` | The shared `ProjectRepository` contract suite. Any new repository implementation runs it; behavior specific to one implementation stays in that implementation's own test file. |
@@ -856,7 +855,7 @@ The two remaining checks are deferred by decision (`DEC-012`), not left unfinish
 | `createRecordingTransport`, `createFailingTransport` | `src/analytics/transport.ts` | Analytics transports for tests: one records events and user properties for assertions, the other throws on every call so a test can prove the PRD `OPS-02` fail-open requirement rather than assume it. |
 | `loadFixtureJson` | `src/testing/fixtures.ts` | Browser-safe fixture loading: reads `public/fixtures/*.json` from disk under Node (unit/component/emulator suites) or fetches it as a static asset under a real browser, picking the strategy at call time. |
 
-`src/shared/` holds helpers production code also depends on (both current and future domain code use `createId`/`Clock`); `src/testing/` holds helpers that only make sense inside a test.
+`src/shared/` holds helpers production code also depends on (`Clock`, `Scheduler`); entity IDs live in the domain, `src/domain/ids.ts`; `src/testing/` holds helpers that only make sense inside a test.
 
 ## Why `firebase.json`'s `database` block was removed, not fixed
 
