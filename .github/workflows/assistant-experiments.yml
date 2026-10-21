@@ -27,6 +27,10 @@ name: Assistant experiments
 # ran out of credit, every turn errored, or a win's PR failed to open (the
 # comment still goes up and says so). "No win" is a finding.
 
+# The experiment's ID in the run's title: the board's idle sweep matches a
+# running experiment to its card by it (board.mjs, runFor).
+run-name: Assistant experiment ${{ inputs.experiment }}
+
 on:
   workflow_dispatch:
     inputs:

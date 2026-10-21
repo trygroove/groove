@@ -40,6 +40,7 @@ import {
 import { assistantSuggestions } from "./assistantSuggestions";
 import { type CardQueue, useCardQueue } from "./cardQueue";
 import type { ConversationStore } from "./conversationStore";
+import { createLessonStore, type LessonStore, lessonStorageKey } from "./lessonStore";
 import { MISSING_SLOT } from "./recommendationCardModel";
 import { type AskDraft, useAskDraft } from "./useAskDraft";
 import {
@@ -126,6 +127,11 @@ export interface UseAssistantChatOptions {
   readonly conversationKey?: Accessor<string | null>;
   /** The store it is kept in; this tab's session storage by default. */
   readonly conversationStore?: ConversationStore;
+  /**
+   * The store the lesson under way is kept in beside it (GRV-43); this
+   * tab's session storage by default.
+   */
+  readonly lessonStore?: LessonStore;
   /** What times a proposal's undo against its apply (GRV-103); the real clock by default. */
   readonly clock?: Clock;
   /**
@@ -447,6 +453,16 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     editor: options.lessonEditor,
     registry: editor?.controls.registry,
     analytics: options.analytics,
+    // Kept wherever the conversation is, so a reload brings both back.
+    saved: options.conversationKey
+      ? {
+          key: () => {
+            const key = options.conversationKey?.();
+            return key ? lessonStorageKey(key) : null;
+          },
+          store: options.lessonStore ?? createLessonStore(),
+        }
+      : undefined,
   });
 
   // Applying a proposal has the assistant say what next (GRV-195). The cards

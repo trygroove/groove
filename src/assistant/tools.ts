@@ -756,9 +756,9 @@ export const TOOL_TEXT: Readonly<Record<string, TrimmedText>> = {
   },
   start_lesson: {
     moderate:
-      "Start a lesson in the producer's project when they ask to learn something a chapter covers (a beat or drums; shaping a synth sound; finding their way around Groove). Call it alone, after one short sentence, and only when they asked to learn. Teach anything else in the conversation.",
+      "Start a lesson in the producer's project when they ask to learn something a chapter covers (a beat or drums; shaping a synth sound; finding their way around Groove). Call it alone, after one short sentence, and only when they asked to learn. Only the call starts it, so call it every time they ask, even for a chapter done before. Teach anything else in the conversation.",
     aggressive:
-      "Start a lesson when they ask to learn what a chapter covers (beat, sound, tour). Alone, after one sentence.",
+      "Start a lesson when they ask to learn what a chapter covers (beat, sound, tour). Alone, after one sentence. Only the call starts it, every time.",
   },
   remember_producer: {
     moderate:

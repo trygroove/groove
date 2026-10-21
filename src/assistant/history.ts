@@ -8,8 +8,11 @@
  * oldest messages are dropped until what is sent fits the budget, and the
  * user's newest message is always kept.
  */
+
+import type { ChapterId } from "../lessons/ids";
 import { type AssistantAsk, askTranscript } from "./ask";
 import { ASSISTANT_REQUEST_LIMITS, ESTIMATED_CHARS_PER_TOKEN } from "./config";
+import { START_LESSON_TOOL_NAME } from "./lessonTool";
 import type { AssistantMessage } from "./protocol";
 import type { ProposalOutcome } from "./transcripts";
 
@@ -51,6 +54,15 @@ export function proposalNote(proposal: HistoryProposal): string {
 }
 
 /**
+ * The line the model reads after a reply that started a lesson (GRV-43). The
+ * reply only says it is starting one; without the line, a later turn reads
+ * that sentence as what started it, and says it again with no call.
+ */
+export function lessonNote(chapter: ChapterId): string {
+  return `[I called ${START_LESSON_TOOL_NAME} with chapter "${chapter}", which put the lesson's card in the panel. Saying I'd start one did not start it; only the call did.]`;
+}
+
+/**
  * What {@link historyOf} reads of one thing in a conversation's log. The
  * panel's `ConversationEntry` is one.
  */
@@ -63,6 +75,8 @@ export type HistoryEntry =
       readonly ask?: AssistantAsk;
       /** What became of the proposal the reply made, when it made one (GRV-150). */
       readonly proposal?: HistoryProposal;
+      /** The lesson the reply started, when it started one (GRV-43). */
+      readonly lesson?: ChapterId;
     }
   | { readonly kind: "video"; readonly video: { readonly videoId: string } }
   | { readonly kind: "proposal" | "recommendation" | "memory" | "error" };
@@ -73,7 +87,8 @@ export const MAX_MESSAGE_CHARS = ASSISTANT_REQUEST_LIMITS.maxMessageChars;
 /**
  * The conversation so far, as the next turn resends it: every message that
  * got a reply, with that reply, and after a reply that proposed a change, a
- * line saying what the producer did with it (GRV-150). A message whose turn failed is left out,
+ * line saying what the producer did with it (GRV-150); a lesson the reply
+ * started is said beside it (GRV-43). A message whose turn failed is left out,
  * along with whatever its reply wrote before failing, so the roles always
  * alternate and a broken answer is never passed off as the assistant's; the
  * retry resends the message, and its reply is the one that counts.
@@ -99,7 +114,12 @@ export function historyOf(entries: readonly HistoryEntry[]): AssistantMessage[] 
     if (entry.kind !== "reply" || pending === null || entry.failed) continue;
     // A question the reply asked is part of what it said (GRV-42), so the
     // model reads its question back beside the answer.
-    const said = [entry.text.trim(), entry.ask ? askTranscript(entry.ask) : ""]
+    // So is a lesson it started (GRV-43), which only its call could start.
+    const said = [
+      entry.text.trim(),
+      entry.lesson ? lessonNote(entry.lesson) : "",
+      entry.ask ? askTranscript(entry.ask) : "",
+    ]
       .filter((part) => part.length > 0)
       .join("\n\n");
     if (said.length === 0) continue;

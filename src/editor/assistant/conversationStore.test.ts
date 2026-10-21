@@ -234,6 +234,20 @@ describe("the conversation across a reload (GRV-42)", () => {
     ]);
   });
 
+  it("keeps the lesson a reply started, so the next turn still says the call did (GRV-43)", () => {
+    const reply = {
+      kind: "reply",
+      id: "entry-2",
+      text: 'Starting "Make a beat" now.',
+      streaming: false,
+      stopped: false,
+      lesson: "beat",
+    } as const;
+    expect(parseConversation(serializeConversation([reply], null))?.entries).toEqual([
+      reply,
+    ]);
+  });
+
   it("keeps what became of a reply's proposal, so the next turn still says it (GRV-150)", () => {
     const reply = {
       kind: "reply",
