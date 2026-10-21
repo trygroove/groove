@@ -24,7 +24,7 @@ import {
   type Suggestion,
   type SuggestionId,
 } from "../../projection/projectAnalysisProjection";
-import type { EditorViewName } from "../editorViews";
+import type { EditorViewName } from "../composition/editorViews";
 import type { AssistantScope, CatalogScope } from "./assistantScope";
 
 /** The most chips shown at once. */

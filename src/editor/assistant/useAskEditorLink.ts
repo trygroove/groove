@@ -20,9 +20,9 @@ import type { Project } from "../../domain/entities";
 import type { TrackId } from "../../domain/ids";
 import { TICKS_PER_QUARTER } from "../../domain/time";
 import type { ArrangementBand, ArrangementSelection } from "../../selection";
-import type { Preview } from "../sessionPreview";
-import type { UseEditorSessionResult } from "../useEditorSession";
-import type { ProjectAudioControls } from "../useProjectAudio";
+import type { Preview } from "../composition/sessionPreview";
+import type { UseEditorSessionResult } from "../composition/useEditorSession";
+import type { ProjectAudioControls } from "../composition/useProjectAudio";
 import {
   type AskEditorLink,
   auditionTrigger,

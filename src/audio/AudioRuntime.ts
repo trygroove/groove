@@ -87,7 +87,7 @@ export interface AudioDiagnostics {
 
 /**
  * The subset of `AudioRuntime` that project graphs depend on. Consumers
- * (`ProjectAudioGraph`, `src/editor/useProjectAudio.ts`) depend on this
+ * (`ProjectAudioGraph`, `src/editor/composition/useProjectAudio.ts`) depend on this
  * interface rather than the concrete class so tests can supply a fake
  * without touching Tone or Web Audio at all.
  */

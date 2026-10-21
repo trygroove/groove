@@ -6,7 +6,7 @@ import { createSliceFixtureProject } from "../../domain/fixtures";
 import type { PlacementId } from "../../domain/ids";
 import { createFakeAssistantClient } from "../../testing/fakeAssistantClient";
 import { memoryStorage } from "../../testing/storage";
-import type { EditorViewName } from "../editorViews";
+import type { EditorViewName } from "../composition/editorViews";
 import type { ScopeSources } from "./assistantScope";
 import { type AssistantChat, useAssistantChat } from "./useAssistantChat";
 

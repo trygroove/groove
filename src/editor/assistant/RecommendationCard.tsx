@@ -2,7 +2,7 @@ import type { JSX } from "@solidjs/web";
 import { createMemo, For, Match, Show, Switch } from "solid-js";
 import { PlayIcon, StopIcon } from "../../components/icons";
 import PackCover from "../../library/PackCover";
-import { editorViewSpec } from "../editorViews";
+import { editorViewSpec } from "../composition/editorViews";
 import { ERROR_HEADING, ERROR_REASSURANCE } from "./assistantErrorCopy";
 import { moreAfterThis } from "./cardQueue";
 import type {

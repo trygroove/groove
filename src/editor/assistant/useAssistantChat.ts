@@ -26,7 +26,7 @@ import { LESSON_OFFER_ASK_ID, LESSON_OFFER_YES } from "../../onboarding/question
 import type { Suggestion } from "../../projection/projectAnalysisProjection";
 import { type Clock, systemClock } from "../../shared/clock";
 import type { Scheduler } from "../../shared/scheduler";
-import type { EditorViewName } from "../editorViews";
+import type { EditorViewName } from "../composition/editorViews";
 import type { AskEditorLink } from "./askReferences";
 import { type AssistantLibrary, libraryContext } from "./assistantLibrary";
 import {

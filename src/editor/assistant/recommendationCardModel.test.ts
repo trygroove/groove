@@ -26,8 +26,8 @@ import {
 } from "../../domain/parameters";
 import { fixtureFetcher } from "../../library/__fixtures__/fixtures";
 import { LibraryClient } from "../../library/libraryClient";
-import { emptyPadSelection, withSelectedPad } from "../padSelection";
-import { createStarterProject } from "../starterProject";
+import { createStarterProject } from "../composition/starterProject";
+import { emptyPadSelection, withSelectedPad } from "../sequence/padSelection";
 import { createAssistantLibrary, libraryContext } from "./assistantLibrary";
 import {
   editTouchesSlot,

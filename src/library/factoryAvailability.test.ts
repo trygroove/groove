@@ -12,7 +12,7 @@ import { createSeededIdFactory } from "../domain/ids";
 import { resolvePackAvailability, trackAssetIds } from "../domain/packs";
 import { parseProject } from "../domain/parse";
 import { stringifyProject } from "../domain/serialize";
-import { createStarterProject } from "../editor/starterProject";
+import { createStarterProject } from "../editor/composition/starterProject";
 import { packAudioPath } from "../userData/userData";
 import { FIXTURE_PACK_INDEX_DOC, fixturePackManifest } from "./__fixtures__/fixtures";
 import { withdrawnFactoryPacks } from "./factoryAvailability";

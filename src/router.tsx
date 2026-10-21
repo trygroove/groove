@@ -1,6 +1,6 @@
 import { createRouter } from "@solidjs/router";
 import { lazy } from "solid-js";
-import { EDITOR_VIEW_SEGMENTS } from "./editor/editorViews";
+import { EDITOR_VIEW_SEGMENTS } from "./editor/composition/editorViews";
 import IndexPage from "./routes/index";
 
 /**
@@ -63,7 +63,7 @@ export const Router = createRouter({
     // editor on every switch — reloading the project and rebuilding the audio
     // graph, which is precisely what switching views must never do. The filter
     // is what stops the optional segment from swallowing
-    // `/projects/:id/anything`; `src/editor/editorViews.ts` maps between the
+    // `/projects/:id/anything`; `src/editor/composition/editorViews.ts` maps between the
     // segment and the view.
     {
       path: "/projects/:id/:view?",

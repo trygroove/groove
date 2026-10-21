@@ -432,7 +432,7 @@ The dev server applies none of `firebase.json`'s headers, and could not run unde
 
 `tests/e2e/emulator/compatibility.spec.ts` (#75) runs in every browser project and covers what PRD section 10 says differs between browsers, one `describe` per area:
 
-- **Capability fallbacks**, forced by taking the API away in an init script before any app code runs (no Web Audio, no `OfflineAudioContext`, a `localStorage` that throws, a canvas that refuses a 2D context, no `download` attribute). Each asserts the editor still opens with no page error and that the notice (`src/browser/`, `src/editor/CompatibilityNotice.tsx`) says what is missing and what to do.
+- **Capability fallbacks**, forced by taking the API away in an init script before any app code runs (no Web Audio, no `OfflineAudioContext`, a `localStorage` that throws, a canvas that refuses a 2D context, no `download` attribute). Each asserts the editor still opens with no page error and that the notice (`src/browser/`, `src/editor/composition/CompatibilityNotice.tsx`) says what is missing and what to do.
 - **Audio unlock**: Play starts sound (Chromium family only, the known Firefox gap below), and a context whose `resume()` rejects with `NotAllowedError` is explained as blocked sound, recovering once allowed.
 - **Decoding**, through the production loader on the shared context (`tests/e2e/emulator/support/decodeHarness.ts`): a factory WAV decodes to its manifest's shape, and bytes that are not audio classify as `decode_failed`.
 - **Shortcuts**, **downloads** (an exported WAV arrives as one download), and **Canvas at device pixel ratio 1 and 2** (each arrangement layer's backing store is its CSS size times the ratio, and the content layer paints).

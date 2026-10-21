@@ -6,7 +6,7 @@ import { executeTransaction } from "../commands/execute";
 import type { Project } from "../domain/entities";
 import { createFactoryContext, type DomainFactoryContext } from "../domain/factories";
 import { createSeededIdFactory } from "../domain/ids";
-import { createStarterProject } from "../editor/starterProject";
+import { createStarterProject } from "../editor/composition/starterProject";
 import type { LessonWorld, ShowMe } from "../lessons/types";
 
 /** The starter project a new producer opens: BD with four on the floor. */

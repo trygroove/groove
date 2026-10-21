@@ -9,7 +9,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { duplicateProject } from "../domain/duplicateProject";
 import type { ProjectMetadata } from "../domain/entities";
 import type { ProjectId } from "../domain/ids";
-import { createStarterProject } from "../editor/starterProject";
+import { createStarterProject } from "../editor/composition/starterProject";
 import { getProjectRepository } from "../projectRepositoryClient";
 import { LogInButton, SignOutButton } from "./AccountControls";
 import type { ProjectActionResult } from "./ProjectList";

@@ -12,7 +12,7 @@ import { type Accessor, createEffect, createSignal, onCleanup, untrack } from "s
 import type { AskOption } from "../../assistant/ask";
 import { optionDoneByEdit, predicateHolds } from "../../assistant/askPredicates";
 import type { Project } from "../../domain/entities";
-import type { SessionEdit } from "../EditorSession";
+import type { SessionEdit } from "../composition/EditorSession";
 import { type AskEditorLink, barsLabel } from "./askReferences";
 import type { AssistantConversation } from "./useAssistantConversation";
 

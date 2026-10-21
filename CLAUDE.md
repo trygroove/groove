@@ -24,7 +24,7 @@ Groove is a browser-based music production tool designed to make music creation 
 
 ### Audio
 - **Tone.js** - Web Audio API library for audio synthesis and playback
-  - Used by `ProjectAudioGraph` (the stable, ID-keyed graph) and `src/editor/useProjectAudio.ts` (the hook that wires one open project onto it) for audio playback and synthesis
+  - Used by `ProjectAudioGraph` (the stable, ID-keyed graph) and `src/editor/composition/useProjectAudio.ts` (the hook that wires one open project onto it) for audio playback and synthesis
 
 ### Development Tools
 - **TypeScript** - Strict mode enabled
@@ -225,7 +225,7 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends t
 ### SolidJS Best Practices
 
 1. **State Management**
-   - Use `createStore` (from `solid-js`) for complex nested state updates (see `src/editor/useEditorSession.ts`). `produce` is gone — mutating the draft **is** the setter's default behaviour: `setState((draft) => { draft.project = next; })`
+   - Use `createStore` (from `solid-js`) for complex nested state updates (see `src/editor/composition/useEditorSession.ts`). `produce` is gone — mutating the draft **is** the setter's default behaviour: `setState((draft) => { draft.project = next; })`
    - Domain state changes only through the command layer (`src/commands`); a component never mutates a `Project` directly
    - Export setter functions rather than exposing setters directly
    - Keep stores focused on a single domain (auth, editor session, etc.)
@@ -239,7 +239,7 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends t
 3. **Effects and Cleanup**
    - `createEffect` is split in two: `createEffect(compute, apply)`. **Only the compute half is tracked.** A reactive read moved into the apply half compiles, runs once, and then silently never re-runs — enumerate every reactive read an effect needs and keep all of them in the compute half
    - The apply half is where a write belongs: a signal or store write inside a tracking scope throws in dev, and the apply half is not a tracking scope
-   - **Cleanup is the value the apply half returns**, not a nested `onCleanup`. `onCleanup` still exists and is still right at the top level of a component or hook body (see `src/editor/useEditorSession.ts`); what changed is that it no longer nests inside an effect
+   - **Cleanup is the value the apply half returns**, not a nested `onCleanup`. `onCleanup` still exists and is still right at the top level of a component or hook body (see `src/editor/composition/useEditorSession.ts`); what changed is that it no longer nests inside an effect
    - Example pattern:
    ```typescript
    // A subscription with no reactive dependencies: compute returns a constant,
@@ -339,7 +339,7 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends t
 - `scheduling.ts` expands a placement's clip content into absolute-tick events (looping and clip trimming included) as a pure function of the audio projection; `ProjectAudioGraph` schedules those against `Tone.Transport` (or an injected `AudioTransport` in tests) with an owner-tracked handle per event, never an anonymous global callback.
 - Every constructed Tone/Web Audio resource is registered with the owning `AudioProjectScope` (`AudioRuntime.openProjectScope`) so disposal is idempotent and instrumented — components and domain stores request graph operations but never receive mutable audio nodes.
 - [`docs/audio-graphs.html`](./docs/audio-graphs.html) draws every instrument, device and strip graph as nodes and connections. It is hand-kept, not generated: a change to how `src/audio` builds or wires nodes updates the matching entry in its `GRAPHS` list in the same PR (the comment at the top of the page explains the format).
-- `src/editor/useProjectAudio.ts` is the one place a component wires a `Project` onto `ProjectAudioGraph`: it rebuilds the `AudioSongProjection` (passing the previous one through, so an unrelated edit reuses unchanged entries) on every project change, and its `play()` is the allowed user gesture that resumes the shared `AudioRuntime` context. The prototype `SongPlayer`/`ToneInstrument`/`AudioProvider.tsx` playback path this superseded was removed by `FND-009`; do not reintroduce a component-owned Tone lifecycle.
+- `src/editor/composition/useProjectAudio.ts` is the one place a component wires a `Project` onto `ProjectAudioGraph`: it rebuilds the `AudioSongProjection` (passing the previous one through, so an unrelated edit reuses unchanged entries) on every project change, and its `play()` is the allowed user gesture that resumes the shared `AudioRuntime` context. The prototype `SongPlayer`/`ToneInstrument`/`AudioProvider.tsx` playback path this superseded was removed by `FND-009`; do not reintroduce a component-owned Tone lifecycle.
 
 ### Shortcut registry (`src/shortcuts`)
 - `src/shortcuts/registry.ts` is the only place a key combination is written down ([`docs/shortcuts.md`](./docs/shortcuts.md) is its human copy). Event handling, tooltips, menu labels, the `?` guide, the `shortcut_used` analytics `action_id` set, and [`docs/shortcuts.md`](./docs/shortcuts.md) are all derived from it; a component never compares `event.key` itself and never adds its own `keydown` listener — modals included, which register `view.close_surface` for `Escape` (see `src/components/ConfirmDialog.tsx`) rather than owning a per-modal listener.
@@ -360,7 +360,7 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup, the three backends t
 - **State is brightness, not hue.** Selected, focused, active and playing are the brightest thing in their neighbourhood — usually a white fill with `--color-on-accent` (black) on it. `--color-accent-dim` and `--color-accent-deep` are the steps below for a fill under the pointer and for material that is present but not chosen.
 - **The one exception is the selected track, which is black** (#447, a product-owner decision): the track the editor is showing sinks to `--color-background` wherever tracks are listed, the arrangement's header, the instrument rail, the mixer strip, and the selected drum pad's row with them, so the selection reads as a hole in the panel while pressed toggles and chosen options stay white.
 - Status is monochrome too, so an error signals through emphasis and framing (`--color-danger-wash`/`-edge`) and through its wording — not through being red. A destructive action is a white fill with black on it, the loudest control on screen. If a pairing puts a bright fill under bright text, that is a bug: check the `color` beside every `background`.
-- **The level meters' clip state is the one status in colour** (#447): a meter fills `--signal-ok` (green) while its track peaks under 0 dBFS and `--signal-clip` (red) for a moment after a peak goes over (`src/editor/trackLevels.ts`). Its bar is the RMS; only peaks can say a track clipped. The pair is a product-owner decision, only `LevelMeter.css` may read it, and `theme.test.ts` pins both halves.
+- **The level meters' clip state is the one status in colour** (#447): a meter fills `--signal-ok` (green) while its track peaks under 0 dBFS and `--signal-clip` (red) for a moment after a peak goes over (`src/editor/tracks/trackLevels.ts`). Its bar is the RMS; only peaks can say a track clipped. The pair is a product-owner decision, only `LevelMeter.css` may read it, and `theme.test.ts` pins both halves.
 - **A track's own colour is the other hue in the product, and it is not theme** — it is persisted domain data (`TRACK_COLORS` in `src/domain/factories.ts`), so changing it is a schema change. Against a colourless interface it is unmissable, which is the point.
 - Style against a **semantic alias** (`--color-background-secondary`, `--color-text`, `--color-accent`), not a ramp step. The ramp is the vocabulary; only the aliases survive a re-theme. Never introduce a near-duplicate of a step that already exists, and never a local alias for a token that already says the same thing.
 - `src/theme.test.ts` enforces all of it: a colour literal in any other stylesheet, a token read but never defined, a token whose channels are not all equal, a tint borrowing anything but black or white, a tenth ramp step, or an arrangement-canvas fallback that has drifted from the theme each fail there.
@@ -433,7 +433,7 @@ That is an environment problem, not a test bug — **do not "fix" it by mocking 
 4. Use TypeScript for props
 
 ### Working with audio
-1. Use `useProjectAudio()` (`src/editor/useProjectAudio.ts`) to wire a project onto playback from a component
+1. Use `useProjectAudio()` (`src/editor/composition/useProjectAudio.ts`) to wire a project onto playback from a component
 2. All Tone.js code should be in `src/audio/`
 3. Keep audio logic separate from UI components
 

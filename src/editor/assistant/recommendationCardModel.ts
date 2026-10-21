@@ -15,8 +15,8 @@ import type { RawCommandInput } from "../../commands/types";
 import type { Project, Track } from "../../domain/entities";
 import type { PadId, TrackId } from "../../domain/ids";
 import type { LibraryAsset, LibraryPackSummary } from "../../library/manifest";
-import { type LibraryTarget, libraryAim } from "../libraryTarget";
-import { type PadSelection, selectedPadOf } from "../padSelection";
+import { type LibraryTarget, libraryAim } from "../library/libraryTarget";
+import { type PadSelection, selectedPadOf } from "../sequence/padSelection";
 import type { AssistantLibraryCatalog } from "./assistantLibrary";
 
 /** A recommendation, as the library holds it. */

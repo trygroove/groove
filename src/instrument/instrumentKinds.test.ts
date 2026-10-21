@@ -8,7 +8,7 @@ import {
   createSliceFixtureProject,
 } from "../domain/fixtures";
 import { createSeededIdFactory } from "../domain/ids";
-import { createNewTrack, NEW_TRACK_KINDS } from "../editor/trackCreation";
+import { createNewTrack, NEW_TRACK_KINDS } from "../editor/tracks/trackCreation";
 import { createManualClock } from "../shared/clock";
 import {
   countPadTriggeredHits,

@@ -16,9 +16,9 @@ import { createManualClock } from "../../shared/clock";
 import { createManualScheduler } from "../../shared/scheduler";
 import { createFakeAssistantClient } from "../../testing/fakeAssistantClient";
 import { memoryStorage } from "../../testing/storage";
-import { assistantProposalTarget } from "../assistantProposalTarget";
-import { EditorSession } from "../EditorSession";
-import type { EditorLocation } from "../editorControls";
+import { assistantProposalTarget } from "../composition/assistantProposalTarget";
+import { EditorSession } from "../composition/EditorSession";
+import type { EditorLocation } from "../composition/editorControls";
 import { type AssistantChat, useAssistantChat } from "./useAssistantChat";
 import { FOLLOW_UP_DELAY_MS } from "./useFollowUp";
 

@@ -15,7 +15,7 @@ import {
   type FakeTurn,
 } from "../../testing/fakeAssistantClient";
 import { memoryStorage } from "../../testing/storage";
-import type { EditorViewName } from "../editorViews";
+import type { EditorViewName } from "../composition/editorViews";
 import { ASK_CARD_LABEL, ASK_TEXT_LABEL, askHint } from "./AssistantAskCard";
 import AssistantPanel from "./AssistantPanel";
 import type { AskEditorLink } from "./askReferences";

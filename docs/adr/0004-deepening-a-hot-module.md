@@ -9,7 +9,7 @@
 
 ## Context
 
-`REFACTOR-001` (#142) split `src/editor/EditorView.tsx` into five modules. Its stated
+`REFACTOR-001` (#142) split `src/editor/composition/EditorView.tsx` into five modules. Its stated
 motivation was merge-clash reduction: *"every parallel feature appends to this one
 file, feature PRs collide on it even when their real logic is disjoint."* That was a
 real problem and the split solved it.
