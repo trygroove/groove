@@ -1603,7 +1603,8 @@ use.
 7. Go on to "Hear it". It asks for boom bap's tempo, 90 BPM: type 90 in the
    tempo field. Then press Play. It is marked done. Stop. (Playing is
    asserted in Chromium only, the gap CF-001 names: in other browsers the
-   song never starts, so the bite is skipped there to go on.)
+   song may never start, as in Firefox, so there the bite is skipped to go
+   on when it has not.)
 8. Go on to "The backbeat" and press Show me. A Snare pad joins BD's drum
    machine with hits on beats 2 and 4, and the bite is marked done.
 9. Go on to "Hats" and press Skip. It is marked skipped.
