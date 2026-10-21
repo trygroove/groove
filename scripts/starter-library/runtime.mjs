@@ -58,6 +58,31 @@ export const RUNTIME_SELECTION = [
     use: "The closed hat a new drum machine's HH pad starts with (#447).",
   },
   {
+    key: "starterRim",
+    assetId: "sg-one-shot-drums-rim-0001",
+    use: "The sound a drum pad named for a rim takes when the kit has none (GRV-192).",
+  },
+  {
+    key: "starterOpenHat",
+    assetId: "sg-one-shot-drums-open-hat-0001",
+    use: "The sound a drum pad named for an open hat takes when the kit has none (GRV-192).",
+  },
+  {
+    key: "starterTom",
+    assetId: "sg-one-shot-drums-tom-0001",
+    use: "The sound a drum pad named for a tom takes when the kit has none (GRV-192).",
+  },
+  {
+    key: "starterCymbal",
+    assetId: "sg-one-shot-drums-cymbal-0001",
+    use: "The sound a drum pad named for a cymbal takes when the kit has none (GRV-192).",
+  },
+  {
+    key: "starterPercussion",
+    assetId: "sg-one-shot-drums-percussion-0001",
+    use: "The sound a drum pad named for percussion takes when the kit has none (GRV-192).",
+  },
+  {
     key: "starterLoop",
     assetId: "sg-loop-drums-full-loop-0001",
     use: "An audio loop, so an audio-clip path has real bar-aligned material.",
