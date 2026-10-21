@@ -42,6 +42,7 @@ export const SHORTCUT_CONTEXTS = [
   "resize_edge",
   "composer",
   "assistant_ask",
+  "device_header",
 ] as const;
 export type ShortcutContext = (typeof SHORTCUT_CONTEXTS)[number];
 
@@ -59,6 +60,8 @@ export type ShortcutContext = (typeof SHORTCUT_CONTEXTS)[number];
  * (GRV-26), where Enter sends. `assistant_ask` is focus in the assistant's
  * panel anywhere but a text box or its resize edge while it is asking a
  * question (GRV-42), where `1`-`8` pick an answer in place of the view keys.
+ * `device_header` is a focused device's header in a chain (GRV-186), where
+ * Delete removes that device and Mod+D duplicates it, never the track.
  */
 export const FOCUS_CONTEXTS: readonly ShortcutContext[] = [
   "loop_brace",
@@ -67,6 +70,7 @@ export const FOCUS_CONTEXTS: readonly ShortcutContext[] = [
   "resize_edge",
   "composer",
   "assistant_ask",
+  "device_header",
 ];
 
 /**

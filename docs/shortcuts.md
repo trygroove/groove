@@ -41,8 +41,8 @@ than also meaning `track.move_left`. It suppresses nothing else.
 | `edit.copy` | Copy | `Cmd+C` | `Ctrl+C` | Global Editing | selection, arrangement | Follows Live (`Cmd/Ctrl+C`) |
 | `edit.paste` | Paste | `Cmd+V` | `Ctrl+V` | Global Editing | selection, arrangement | Follows Live (`Cmd/Ctrl+V`) |
 | `edit.select_all` | Select all | `Cmd+A` | `Ctrl+A` | Global Editing | selection, arrangement, step_editor | Follows Live (`Cmd/Ctrl+A`) |
-| `edit.delete` | Delete selection | `Delete / Backspace` | `Delete / Backspace` | Global Editing | arrangement, step_editor, piano_roll, automation_lane | Follows Live (`Delete / Backspace`) |
-| `edit.duplicate` | Duplicate selection | `Cmd+D` | `Ctrl+D` | Global Editing | selection, arrangement | Follows Live (`Cmd/Ctrl+D`) |
+| `edit.delete` | Delete selection | `Delete / Backspace` | `Delete / Backspace` | Global Editing | arrangement, step_editor, piano_roll, automation_lane, device_header | Follows Live (`Delete / Backspace`) |
+| `edit.duplicate` | Duplicate selection | `Cmd+D` | `Ctrl+D` | Global Editing | selection, arrangement, device_header | Follows Live (`Cmd/Ctrl+D`) |
 | `arrangement.split_clip` | Split clip | `E` | `E` | Arrangement | arrangement | Differs from Live's `Cmd/Ctrl+E` |
 | `arrangement.toggle_loop` | Toggle arrangement loop | `L` | `L` | Arrangement | arrangement | Differs from Live's `Cmd/Ctrl+L` |
 | `arrangement.toggle_automation_view` | Toggle automation view | `A` | `A` | Automation | arrangement | Follows Live (`A`) |
@@ -153,7 +153,10 @@ the Insert button does, `Shift+Enter` inserts and stays to try another, and both
 button; `Space` leaves the browser default alone, so a focused button or
 checkbox still presses.
 The two `device.*` moves act on the device whose header has focus: they are the
-keyboard way to reorder a chain, which the pointer does by dragging.
+keyboard way to reorder a chain, which the pointer does by dragging. A focused
+device header is the `device_header` focus context too: there `edit.delete`
+removes that device and `edit.duplicate` duplicates it, and neither reaches the
+track the chain belongs to.
 
 In `piano_roll` the eight `note.*` moves act on the selected notes: Up and Down
 step through the rows the roll shows, so in a scale they move by scale degree;
