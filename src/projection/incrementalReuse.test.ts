@@ -151,17 +151,64 @@ describe("arrangement projection on the reference project", () => {
     expect(project.song.placements).toHaveLength(2500);
 
     // PRD section 10 targets 50 ms for a pointer edit. Wall-clock time on a
-    // shared CI runner is noisy, so warm up, take the best of several runs
-    // (noise only ever adds time), and assert 10x the target. That still
-    // catches an accidental quadratic walk (seconds), not a slow neighbour.
-    buildArrangementProjection(project, rowMetrics);
-    let best = Number.POSITIVE_INFINITY;
-    for (let run = 0; run < 5; run += 1) {
-      const start = performance.now();
-      buildArrangementProjection(project, rowMetrics);
-      best = Math.min(best, performance.now() - start);
+    // shared CI runner is noisy, so warm up, take the median of several runs
+    // and assert 10x the target. Measured (GRV-181) at roughly 2-4 ms per
+    // build, so this still catches an accidental quadratic walk (seconds),
+    // not a slow neighbour.
+    const median = (build: () => void) => {
+      build();
+      const times: number[] = [];
+      for (let run = 0; run < 7; run += 1) {
+        const start = performance.now();
+        build();
+        times.push(performance.now() - start);
+      }
+      times.sort((a, b) => a - b);
+      return times[Math.floor(times.length / 2)];
+    };
+    const target = project.song.placements[1200];
+    const moved = replacePlacement(project, {
+      ...target,
+      startTicks: toTicks(target.startTicks + 192),
+    });
+    const recoloured = replaceTrack(project, {
+      ...project.song.tracks[10],
+      name: "Renamed",
+      color: "#123456",
+    });
+
+    expect(median(() => buildArrangementProjection(project, rowMetrics))).toBeLessThan(
+      500,
+    );
+    expect(median(() => buildArrangementProjection(moved, rowMetrics))).toBeLessThan(500);
+    expect(median(() => buildArrangementProjection(recoloured, rowMetrics))).toBeLessThan(
+      500,
+    );
+  });
+
+  it("invalidates only the recoloured track's placements, not the other 49 tracks'", () => {
+    const project = referenceProject();
+    const before = buildArrangementProjection(project, rowMetrics);
+    const track = project.song.tracks[10];
+    const recoloured = replaceTrack(project, {
+      ...track,
+      name: "Renamed",
+      color: "#123456",
+    });
+    const after = buildArrangementProjection(recoloured, rowMetrics);
+
+    let touched = 0;
+    for (const [id, geometry] of before.placementsById) {
+      const next = after.placementsById.get(id);
+      if (geometry.trackId === track.id) {
+        touched += 1;
+        expect(next?.revision).not.toBe(geometry.revision);
+        expect(next?.color).toBe("#123456");
+      } else {
+        expect(next?.revision).toBe(geometry.revision);
+      }
     }
-    expect(best).toBeLessThan(500);
+    expect(touched).toBeGreaterThan(0);
   });
 
   it("keeps revisions of untouched placements stable after a one-placement edit", () => {
