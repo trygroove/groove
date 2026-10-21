@@ -436,6 +436,39 @@ test.describe("Export dialog layout", () => {
     });
   }
 
+  // GRV-166 QA: a window breakpoint only moved the gap, to 821px, where the note
+  // was 0px wide again, and up to about 1000px it was a narrow column. The
+  // footer stacks by its own width, so at no supported width is the note squeezed.
+  test("keeps the footer note at least 180px wide at every width from 768px", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/");
+    await harness(page, "mountExportDialog", "few");
+    const dialog = page.getByRole("dialog", { name: "Export" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("radio", { name: "Stems (ZIP)" }).check();
+    await expect(dialog.locator(".export-note")).not.toHaveText("");
+    const narrow: number[] = [];
+    for (let width = 768; width <= 1280; width++) {
+      await page.setViewportSize({ width, height: 800 });
+      const fits = await page.evaluate(() => {
+        const note = document.querySelector(".export-note") as HTMLElement;
+        const slot = note.parentElement as HTMLElement;
+        const box = note.getBoundingClientRect();
+        const edge = slot.getBoundingClientRect();
+        return (
+          box.width >= 180 &&
+          note.scrollWidth <= note.clientWidth &&
+          box.top >= edge.top - 0.5 &&
+          box.bottom <= edge.bottom + 0.5
+        );
+      });
+      if (!fits) narrow.push(width);
+    }
+    expect(narrow, "widths where the note is squeezed or clipped").toEqual([]);
+  });
+
   test("keeps Close and Export reachable in a short or a narrow window (GRV-153)", async ({
     page,
   }) => {
