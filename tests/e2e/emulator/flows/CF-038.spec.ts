@@ -267,7 +267,7 @@ test.describe("CF-038", () => {
       await listen(page, "Watch the master", browserName);
       await step("Mixed, with the master meter watched");
       // 7. The last bite opens the Export dialog by itself with Stems (ZIP)
-      //    chosen and every track picked in its list. Press Export. The bite is done and the lesson leaves the
+      //    chosen and every track included in its list. Press Export. The bite is done and the lesson leaves the
       //    panel. Close the dialog. Coproducer's wrap-up of the whole track
       //    follows in the conversation.
       await lessonButton(page, "Next: Export the stems").click({ timeout: 15_000 });
@@ -275,8 +275,8 @@ test.describe("CF-038", () => {
       await expect(dialog).toBeVisible();
       await expect(dialog.getByRole("radio", { name: "Stems (ZIP)" })).toBeChecked();
       const stems = dialog.getByRole("listbox", { name: "Tracks to export" });
-      await expect(stems.getByRole("option").first()).toBeVisible();
-      await expect(stems.getByRole("option", { selected: false })).toHaveCount(0);
+      await expect(stems.getByRole("option", { name: /, included$/ }).first()).toBeVisible();
+      await expect(stems.getByRole("option", { name: /, left out$/ })).toHaveCount(0);
       await step("The Export dialog, on stems");
       await dialog.getByRole("button", { name: "Export", exact: true }).click();
       await expect(lesson(page)).toHaveCount(0);
