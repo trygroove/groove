@@ -187,9 +187,13 @@ export interface UseStreamedProposalsOptions {
   ): void;
   /**
    * The producer applied some of a card's parts, with Apply on a part or
-   * Apply all (GRV-195); never a redo.
+   * Apply all (GRV-195); never a redo. `applyId` names that one Apply, the
+   * step's correlation ID, so undoing it can be told apart from the card's
+   * other parts.
    */
-  onApplied?(entryId: string): void;
+  onApplied?(entryId: string, applyId: string): void;
+  /** The step an Apply committed was undone, by whatever undid it (GRV-195). */
+  onApplyUndone?(applyId: string): void;
 }
 
 export interface StreamedProposals {
@@ -688,7 +692,7 @@ export function useStreamedProposals(
       state.location = null;
     }
     options.onOutcome?.(entryId, "applied");
-    options.onApplied?.(entryId);
+    options.onApplied?.(entryId, id);
     noticeAllApplied(state);
     publish();
     return true;
@@ -973,6 +977,7 @@ export function useStreamedProposals(
             ),
           });
         }
+        options.onApplyUndone?.(step.id);
         if (!state.parts.some((part) => part.appliedBy)) {
           options.onOutcome?.(entryId, "undone");
         }

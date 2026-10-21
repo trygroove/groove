@@ -295,6 +295,51 @@ describe("the assistant's follow-up after an Apply (GRV-195)", () => {
     expect(undone.client.turns).toHaveLength(1);
   });
 
+  it("drops the follow-up when the one part applied is undone, and a redo brings none", async () => {
+    const { chat, client, wait, sent, volume, session } = await setUp();
+    expect(chat.conversation.send("Shape the beat")).toBe(true);
+    await settle();
+    const calls = [SWING, volume(-3), volume(-6)];
+    for (const [index, call] of calls.entries()) {
+      client.last().emit({
+        type: "part",
+        part: { index, toolsetVersion: ASSISTANT_TOOLSET_VERSION, call },
+      });
+    }
+    client.last().done();
+    flush();
+    const card = chat.conversation
+      .entries()
+      .findLast((entry) => entry.kind === "proposal");
+    if (!card) throw new Error("no streamed card");
+    // Two parts go in, and their follow-up starts.
+    chat.proposals?.applyPart(card.id, 0);
+    flush();
+    chat.proposals?.applyPart(card.id, 1);
+    flush();
+    await wait();
+    expect(client.turns).toHaveLength(2);
+
+    // While it still streams, one more part goes in and straight out again.
+    chat.proposals?.applyPart(card.id, 2);
+    flush();
+    chat.proposals?.undo(card.id);
+    await settle();
+    flush();
+    await wait();
+    client.last().done();
+    flush();
+    await wait(FOLLOW_UP_DELAY_MS * 5);
+    expect(client.turns).toHaveLength(2);
+
+    // A redo is not an Apply.
+    expect(session.redo()?.ok).toBe(true);
+    flush();
+    await wait(FOLLOW_UP_DELAY_MS * 5);
+    expect(client.turns).toHaveLength(2);
+    expect(sent()).toEqual([false, true]);
+  });
+
   it("shows the normal error when the follow-up fails, and the change stays", async () => {
     const { chat, client, propose, wait, session } = await setUp();
     const card = await propose();

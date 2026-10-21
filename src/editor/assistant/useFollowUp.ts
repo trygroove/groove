@@ -29,17 +29,23 @@ export interface UseFollowUpOptions {
 }
 
 export interface FollowUp {
-  /** A card's Apply committed. */
-  applied(entryId: string): void;
-  /** A card's change was undone, by whatever undid it. */
-  undone(entryId: string): void;
+  /** An Apply committed; `applyId` names that one Apply, not its card. */
+  applied(applyId: string): void;
+  /**
+   * What an Apply committed was undone, by whatever undid it. A redo does
+   * not bring it back: only pressing Apply starts a follow-up.
+   */
+  undone(applyId: string): void;
   /** A turn started, so a follow-up still to come is not needed. */
   turnStarted(): void;
 }
 
 export function useFollowUp(options: UseFollowUpOptions): FollowUp {
   const scheduler = options.scheduler ?? timeoutScheduler;
-  /** The cards applied since the last turn, still applied. */
+  /**
+   * The Applies since the last turn, still applied. Each is one Apply, not
+   * one card: undoing one part of a streamed card leaves its others applied.
+   */
   const applied = new Set<string>();
   let cancelTimer: (() => void) | null = null;
   /** The quiet after the last Apply is over. */
@@ -72,8 +78,8 @@ export function useFollowUp(options: UseFollowUpOptions): FollowUp {
   onCleanup(reset);
 
   return {
-    applied(entryId) {
-      applied.add(entryId);
+    applied(applyId) {
+      applied.add(applyId);
       cancelTimer?.();
       due = false;
       cancelTimer = scheduler.schedule(() => {
@@ -83,8 +89,8 @@ export function useFollowUp(options: UseFollowUpOptions): FollowUp {
         tryToSend(options.streaming());
       }, FOLLOW_UP_DELAY_MS);
     },
-    undone(entryId) {
-      applied.delete(entryId);
+    undone(applyId) {
+      applied.delete(applyId);
     },
     turnStarted: reset,
   };

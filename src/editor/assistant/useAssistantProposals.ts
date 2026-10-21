@@ -150,9 +150,12 @@ export interface UseAssistantProposalsOptions {
   /**
    * The producer pressed Apply (or a streamed card's Apply on a part, or Apply
    * all) and it committed (GRV-195). A redo is not an apply: it is heard as an
-   * `applied` outcome only.
+   * `applied` outcome only. `applyId` names that one Apply (its correlation
+   * ID), so undoing one part of a streamed card is told apart from the rest.
    */
-  onApplied?(entryId: string): void;
+  onApplied?(entryId: string, applyId: string): void;
+  /** What one Apply committed was undone, by whatever undid it (GRV-195). */
+  onApplyUndone?(applyId: string): void;
 }
 
 export interface AssistantProposals {
@@ -246,7 +249,8 @@ export function useAssistantProposals(
     onPreviewOpen: () => endWholePreviews(),
     onOutcome: (entryId, outcome, issues) =>
       options.onOutcome?.(entryId, outcome, issues),
-    onApplied: (entryId) => options.onApplied?.(entryId),
+    onApplied: (entryId, applyId) => options.onApplied?.(entryId, applyId),
+    onApplyUndone: (applyId) => options.onApplyUndone?.(applyId),
   });
 
   /** Ends every whole proposal's open preview, as a streamed card's opens. */
@@ -502,7 +506,7 @@ export function useAssistantProposals(
     controls.registry.setMark(entry.addresses, "changed");
     update(entryId, { status: "applied", returnView: null, outlined: true });
     options.onOutcome?.(entryId, "applied");
-    options.onApplied?.(entryId);
+    options.onApplied?.(entryId, handle.id);
     options.analytics().logFeatureFirstUse("assistant_proposal");
   }
 
@@ -568,6 +572,7 @@ export function useAssistantProposals(
       if (edit.kind === "undo") {
         entry.watching = false;
         update(entryId, { status: "undone" });
+        if (entry.handle) options.onApplyUndone?.(entry.handle.id);
         options.onOutcome?.(entryId, "undone");
       } else if (edit.kind === "redo") {
         entry.watching = !entry.reported;
