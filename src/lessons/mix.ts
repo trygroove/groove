@@ -270,13 +270,18 @@ const reverb: LessonBite = {
  * The bars heard, and the master's clips, since the step began: counted from
  * the step's start when the song was already playing then, so a step begun
  * mid-song is still four bars of watching, and from the song's start
- * otherwise.
+ * otherwise. Both counts start again as the song does, so either one below
+ * where it stood at the step's start means the song was played again since:
+ * a new run, counted from its own start.
  */
 export function watched(
   world: LessonWorld,
   start: LessonWorld,
 ): { readonly bars: number; readonly clips: number } {
-  const sameRun = start.playing && world.barsHeard >= start.barsHeard;
+  const sameRun =
+    start.playing &&
+    world.barsHeard >= start.barsHeard &&
+    world.masterClips >= start.masterClips;
   return sameRun
     ? {
         bars: world.barsHeard - start.barsHeard,

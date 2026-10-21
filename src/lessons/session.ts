@@ -60,6 +60,12 @@ export interface LessonState {
    * the chapter started (GRV-44). Empty outside "Finish a track".
    */
   readonly passed: readonly BiteId[];
+  /**
+   * The chapter's bites passed over because the producer had already done
+   * them, "Finish a track" being under way (GRV-44, `trackProgress`). Empty
+   * outside it and in "Make a beat".
+   */
+  readonly behind: readonly BiteId[];
 }
 
 /** What happened, for Coproducer and analytics. */
@@ -101,7 +107,7 @@ export function biteOf(state: LessonState): LessonBite {
 
 /** The index of the chapter's next bite to teach after `after`, or -1. */
 function followingIndex(state: LessonState, after: number): number {
-  const passed = new Set(state.passed);
+  const passed = new Set([...state.passed, ...state.behind]);
   return chapterOf(state).bites.findIndex(
     (one, index) => index > after && !passed.has(one.id),
   );
@@ -158,6 +164,7 @@ function stepAt(
 interface Course {
   readonly track: boolean;
   readonly passed: readonly BiteId[];
+  readonly behind: readonly BiteId[];
   readonly endings: LessonState["endings"];
 }
 
@@ -180,6 +187,7 @@ function startAt(
       endings: course.endings,
       track: course.track,
       passed: course.passed,
+      behind: course.behind,
     },
     event: { kind: "bite_started", passed: passedNow },
   };
@@ -203,16 +211,36 @@ export function startBite(
     Math.max(0, found),
     world,
     settings,
-    { track: false, passed: [], endings },
+    { track: false, passed: [], behind: [], endings },
     [],
   );
 }
 
 /**
+ * The bites of `chapterId` that "Finish a track" passes over as done (GRV-44):
+ * those `progress` records (`trackProgress`), but for `biteId`, the one asked
+ * for, and none of "Make a beat", whose bites are taught alone too and are
+ * passed over only when the song has them.
+ */
+function behindIn(
+  chapterId: TrackChapterId,
+  biteId: BiteId | null,
+  progress: readonly string[],
+): BiteId[] {
+  if (chapterId === "beat") return [];
+  const done = new Set(progress);
+  return chapter(chapterId)
+    .bites.map((one) => one.id)
+    .filter((id) => id !== biteId && done.has(id));
+}
+
+/**
  * Starts "Finish a track" (GRV-44) at chapter `chapterId`, at bite `biteId`
- * (its first, without one), passing over what the song already has: a bite
- * it has, and a chapter it has all of, the lesson going on to the next. Null
- * when the song has everything from there on.
+ * (its first, without one), passing over what the song already has and,
+ * while the lesson is under way, what `progress` records the producer has
+ * already done (`trackProgress`): a bite either way, and a chapter of nothing
+ * else, the lesson going on to the next. Null when nothing is left from
+ * there on.
  */
 export function startTrack(
   chapterId: TrackChapterId,
@@ -220,34 +248,36 @@ export function startTrack(
   world: LessonWorld,
   settings: LessonSettings,
   passedBefore: readonly BiteId[] = [],
+  progress: readonly string[] = [],
 ): LessonTransition | null {
   const bites = chapter(chapterId).bites;
   const passed = madeBites(chapterId, world, settings);
-  const skip = new Set(passed);
+  const made = new Set(passed);
+  const behind = behindIn(chapterId, biteId, progress);
+  const skip = new Set([...passed, ...behind]);
   const from = Math.max(
     0,
     biteId === null ? 0 : bites.findIndex((one) => one.id === biteId),
   );
+  // Only what the song has is told as passed over: what the producer did is theirs.
+  const madeFrom = (to?: number) =>
+    bites
+      .slice(from, to)
+      .map((one) => one.id)
+      .filter((id) => made.has(id));
   const index = bites.findIndex((one, at) => at >= from && !skip.has(one.id));
   if (index < 0) {
     const next = nextTrackChapter(chapterId);
-    const all = [
-      ...passedBefore,
-      ...bites
-        .slice(from)
-        .map((one) => one.id)
-        .filter((id) => skip.has(id)),
-    ];
-    return next ? startTrack(next, null, world, settings, all) : null;
+    const all = [...passedBefore, ...madeFrom()];
+    return next ? startTrack(next, null, world, settings, all, progress) : null;
   }
-  const passedNow = [...passedBefore, ...bites.slice(from, index).map((one) => one.id)];
   return startAt(
     chapterId,
     index,
     world,
     settings,
-    { track: true, passed, endings: {} },
-    passedNow,
+    { track: true, passed, behind, endings: {} },
+    [...passedBefore, ...madeFrom(index)],
   );
 }
 
@@ -265,7 +295,11 @@ export function resumeLesson(
   world: LessonWorld,
   settings: LessonSettings,
   endings: LessonState["endings"],
-  course: { readonly track: boolean; readonly passed: readonly BiteId[] } = {
+  course: {
+    readonly track: boolean;
+    readonly passed: readonly BiteId[];
+    readonly behind?: readonly BiteId[];
+  } = {
     track: false,
     passed: [],
   },
@@ -281,7 +315,12 @@ export function resumeLesson(
     index,
     world,
     settings,
-    { track, passed: track ? course.passed : [], endings },
+    {
+      track,
+      passed: track ? course.passed : [],
+      behind: track ? (course.behind ?? []) : [],
+      endings,
+    },
     [],
   );
   if (!endings[biteOf(state).id]) return state;
@@ -292,13 +331,15 @@ export function resumeLesson(
 
 /**
  * The next bite, once the one before is over: the chapter's next not passed
- * over, or in "Finish a track", the next chapter's first after its last.
- * Null when there is none.
+ * over, or in "Finish a track", the next chapter's first after its last,
+ * passing over what `progress` records done (`trackProgress`). Null when
+ * there is none.
  */
 export function startNextBite(
   state: LessonState,
   world: LessonWorld,
   settings: LessonSettings,
+  progress: readonly string[] = [],
 ): LessonTransition | null {
   if (state.step !== null) return null;
   const index = followingIndex(state, state.biteIndex);
@@ -310,11 +351,14 @@ export function startNextBite(
       world,
       settings,
       state,
-      bites.slice(state.biteIndex + 1, index).map((one) => one.id),
+      bites
+        .slice(state.biteIndex + 1, index)
+        .map((one) => one.id)
+        .filter((id) => state.passed.includes(id)),
     );
   }
   const next = followingChapter(state);
-  return next ? startTrack(next, null, world, settings) : null;
+  return next ? startTrack(next, null, world, settings, [], progress) : null;
 }
 
 /** Ends the step under way as `how`, and starts the next or ends the bite. */

@@ -21,6 +21,7 @@ import {
   madeBites,
   TRACK_CHAPTERS,
   trackChapterNumber,
+  trackProgress,
   trackResume,
   withTrackUnderWay,
 } from "./track";
@@ -77,6 +78,14 @@ function walk(start: LessonTransition, world: LessonWorld): Walk {
   return { world: now, events, bites };
 }
 
+/** Skips every step of the bite under way, to its end. */
+function skipBite(state: LessonState, world: LessonWorld): LessonTransition {
+  let transition = skip(state, world, settings);
+  while (transition?.state.step) transition = skip(transition.state, world, settings);
+  if (!transition) throw new Error("not skipped");
+  return transition;
+}
+
 describe("Finish a track (GRV-44)", () => {
   it("is five chapters, from a beat to stems", () => {
     expect(TRACK_CHAPTERS.map((one) => one.title)).toEqual([
@@ -124,6 +133,65 @@ describe("Finish a track (GRV-44)", () => {
     });
     const own = BITE_IDS.filter((id) => !/^(beat|sound|tour)-/.test(id));
     expect(trackResume([...started, ...own])).toBeNull();
+  });
+
+  it("picks up after the furthest bite done, a bite skipped on the way not offered again", () => {
+    // "Round it off" skipped (skips are not saved), the rest done through the intro.
+    const done = withTrackUnderWay([
+      "bass-key",
+      "bass-line",
+      "chords-loop",
+      "chords-hook",
+      "chords-pluck",
+      "arrange-copy",
+      "arrange-intro",
+    ]);
+    expect(trackResume(done)).toEqual({
+      chapter: "arrange",
+      biteId: "arrange-breakdown",
+    });
+    expect(trackProgress(done)).toEqual(done);
+    // Once the last bite is done the lesson is over, a bite skipped or not.
+    const finished = [...done, "arrange-breakdown", "arrange-drop", "mix-export"];
+    expect(trackResume(finished)).toBeNull();
+    expect(trackProgress(finished)).toEqual([]);
+  });
+
+  it("passes over what the producer has done when they go back, and goes on from where they are", () => {
+    const beat = walk(
+      startBite("beat", "beat-kick", starterWorld(), settings),
+      starterWorld(),
+    );
+    const done = withTrackUnderWay([
+      "bass-key",
+      "bass-line",
+      "chords-loop",
+      "chords-hook",
+    ]);
+    const progress = trackProgress(done);
+    // Back to Bass for the bite skipped: only that one is taught there.
+    const back = startTrack("bass", "bass-sound", beat.world, settings, [], progress);
+    if (!back) throw new Error("not started");
+    expect(biteOf(back.state).id).toBe("bass-sound");
+    expect(back.state.behind).toEqual(["bass-key", "bass-line"]);
+    expect(back.event).toEqual({ kind: "bite_started", passed: [] });
+    const sounded = skipBite(back.state, beat.world);
+    expect(sounded.event).toMatchObject({ chapterDone: true, trackDone: false });
+    // On to the chords: the loop and the hook are done, so the pluck is next,
+    // and nothing is told as already in the song.
+    const next = startNextBite(sounded.state, beat.world, settings, progress);
+    expect(next && biteOf(next.state).id).toBe("chords-pluck");
+    expect(next?.event).toEqual({ kind: "bite_started", passed: [] });
+    // A chapter's bites done are passed over inside it as well.
+    const loop = startTrack("chords", "chords-loop", beat.world, settings, [], progress);
+    if (!loop) throw new Error("not started");
+    const looped = skipBite(loop.state, beat.world);
+    const after = startNextBite(looped.state, beat.world, settings, progress);
+    expect(after && biteOf(after.state).id).toBe("chords-pluck");
+    // Not under way, nothing is passed over for being done: it is taught again.
+    expect(
+      startTrack("bass", null, beat.world, settings, [], trackProgress([])),
+    ).toMatchObject({ state: { behind: [] } });
   });
 
   it("passes over the kick the starter already plays, and teaches the rest of the beat", () => {
