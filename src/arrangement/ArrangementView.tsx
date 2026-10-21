@@ -23,13 +23,13 @@ import { TICKS_PER_BAR } from "../domain/time";
 import { createClipAt } from "./clipCreation";
 import "../editor/tracks/trackDrag.css";
 import TrackHeader from "../editor/tracks/TrackHeader";
-import { deleteTrack } from "../editor/tracks/trackDeletion";
-import type { TrackLevel } from "../editor/tracks/trackLevels";
 import {
+  deleteTrack,
   moveTrack,
   orderedTrackIds,
   previewTrackOrder,
-} from "../editor/tracks/trackReorder";
+} from "../editor/tracks/trackActions";
+import type { TrackLevel } from "../editor/tracks/trackLevels";
 import type { TrackSelectionSource } from "../editor/tracks/trackSurface";
 import { useTrackDrag } from "../editor/tracks/useTrackDrag";
 import { MASK_CONTENT } from "../monitoring/replayPrivacy";

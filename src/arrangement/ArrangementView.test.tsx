@@ -14,7 +14,7 @@ import {
 import type { PlacementId, TrackId } from "../domain/ids";
 import { TICKS_PER_BAR } from "../domain/time";
 import { EditorSession } from "../editor/composition/EditorSession";
-import { orderedTrackIds } from "../editor/tracks/trackReorder";
+import { orderedTrackIds } from "../editor/tracks/trackActions";
 import { createInMemoryProjectRepository } from "../persistence/inMemoryProjectRepository";
 import { createManualClock } from "../shared/clock";
 import { detectPlatform, shortcutLabel } from "../shortcuts";

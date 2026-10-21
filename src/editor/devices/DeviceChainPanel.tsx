@@ -26,7 +26,7 @@ import type { ShortcutHandlers } from "../../shortcuts/ShortcutController";
 import { useShortcutScope } from "../../shortcuts/useShortcutScope";
 import DeviceCard from "./DeviceCard";
 import "../tracks/NewTrackButtons.css";
-import { previewOrder } from "../tracks/trackReorder";
+import { previewOrder } from "../tracks/trackActions";
 import { useTrackDrag } from "../tracks/useTrackDrag";
 import "./DeviceChainPanel.css";
 
