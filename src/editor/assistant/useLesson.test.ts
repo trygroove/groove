@@ -524,19 +524,24 @@ describe("Finish a track in the panel (GRV-44)", () => {
     expect(h.lesson.done()).toContain(TRACK_UNDER_WAY);
   });
 
-  it("picks up at Bass once the beat is done in it and Bass is not started", () => {
+  it("teaches the beat in a song without one, though its bites were done before", () => {
+    // Make a beat done in another song: this one has only its kick, so the
+    // beat is taught from Pick a kick, and only the kick is passed over.
     const beat = BITE_IDS.filter((id) => id.startsWith("beat-"));
     const h = setup(undefined, true, profileStore([TRACK_UNDER_WAY, ...beat]));
     expect(h.lesson.start("track", "nudge")).toBe(true);
     flush();
     const state = h.lesson.state();
     expect(state?.track).toBe(true);
-    expect(state?.chapter).toBe("bass");
+    expect(state?.chapter).toBe("beat");
+    expect(state?.biteIndex).toBe(0);
+    expect(state?.passed).toEqual(["beat-kick"]);
+    expect(state?.behind).toEqual([]);
     expect(h.log).toHaveBeenCalledWith(
       "lesson_bite_started",
       expect.objectContaining({
-        chapter_id: "bass",
-        bite_id: "bass-key",
+        chapter_id: "beat",
+        bite_id: "beat-library",
         source: "nudge",
       }),
     );
@@ -551,12 +556,14 @@ describe("Finish a track in the panel (GRV-44)", () => {
     expect(h.lesson.state()?.track).toBe(true);
     expect(h.lesson.state()?.chapter).toBe("beat");
     expect(h.lesson.state()?.biteIndex).toBe(2);
-    // "Finish a track" from where it was left lands on the same bite.
+    // Asked for "Finish a track" instead, the beat goes by the song: this one
+    // has only its kick, so Pick a kick is taught again.
     const resumed = setup(undefined, true, profileStore(done));
     resumed.lesson.start("track", "asked");
     flush();
     expect(resumed.lesson.state()?.track).toBe(true);
-    expect(resumed.lesson.state()?.biteIndex).toBe(2);
+    expect(resumed.lesson.state()?.chapter).toBe("beat");
+    expect(resumed.lesson.state()?.biteIndex).toBe(0);
   });
 
   it("keeps Make a beat a chapter alone when the lesson is not under way on it", () => {

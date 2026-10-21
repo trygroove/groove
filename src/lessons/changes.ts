@@ -7,6 +7,7 @@
  * assistant already reads does; it never goes near analytics.
  */
 import type { Clip, DrumPad, NoteEvent, Project, Track } from "../domain/entities";
+import { isChromatic, type MusicalKey } from "../domain/musicalKey";
 import {
   instrumentParameters,
   readInstrumentParameter,
@@ -15,7 +16,7 @@ import {
 } from "../domain/parameters";
 import { TICKS_PER_BAR, TICKS_PER_SIXTEENTH } from "../domain/time";
 import { formatSummary } from "../domain/valueFormat";
-import { coveredTicks } from "./beat";
+import { keyWords } from "./parts";
 
 /** The most lines a description runs to. */
 export const MAX_CHANGE_LINES = 8;
@@ -85,9 +86,57 @@ function fit(line: string): string {
     : `${line.slice(0, MAX_CHANGE_LINE_LENGTH - 1)}…`;
 }
 
-function bars(ticks: number): string {
-  const count = Math.round((ticks / TICKS_PER_BAR) * 100) / 100;
-  return `${count} bar${count === 1 ? "" : "s"}`;
+/**
+ * Where `trackId`'s clips play on the arrangement, as the ruler counts bars:
+ * "bars 1-8 and 17-28", or "nowhere". Spans that touch are one.
+ */
+function playedBars(project: Project, trackId: string): string {
+  const spans = project.song.placements
+    .filter((placement) => placement.trackId === trackId)
+    .map((placement) => [
+      placement.startTicks,
+      placement.startTicks + placement.durationTicks,
+    ])
+    .sort((a, b) => a[0] - b[0]);
+  const merged: number[][] = [];
+  for (const [start, end] of spans) {
+    const last = merged.at(-1);
+    if (last && start <= last[1]) last[1] = Math.max(last[1], end);
+    else merged.push([start, end]);
+  }
+  if (merged.length === 0) return "nowhere";
+  const words = merged.map(([start, end]) => {
+    const first = Math.floor(start / TICKS_PER_BAR) + 1;
+    const last = Math.max(first, Math.ceil(end / TICKS_PER_BAR));
+    return first === last ? `${first}` : `${first}-${last}`;
+  });
+  const one = merged.length === 1 && !words[0].includes("-");
+  return `${one ? "bar" : "bars"} ${list(words)}`;
+}
+
+function keyName(key: MusicalKey): string {
+  return isChromatic(key) ? "no key (chromatic)" : keyWords(key);
+}
+
+/**
+ * "12 notes added in bars 1-4, as 4 chords of 3 notes": pitched notes,
+ * counted, with where they fall and how many of them sound together, so
+ * Coproducer never has to guess the shape of what was written.
+ */
+function pitchedLine(track: Track, notes: readonly NoteEvent[], change: string): string {
+  const count = `${notes.length} note${notes.length === 1 ? "" : "s"}`;
+  const starts = new Map<number, number>();
+  for (const note of notes)
+    starts.set(note.startTicks, (starts.get(note.startTicks) ?? 0) + 1);
+  const sizes = [...starts.values()];
+  const chords = sizes.filter((size) => size > 1);
+  let together = "";
+  if (chords.length > 0 && chords.length === sizes.length && new Set(sizes).size === 1) {
+    together = `, as ${chords.length} chord${chords.length === 1 ? "" : "s"} of ${sizes[0]} notes`;
+  } else if (chords.length > 0) {
+    together = `, ${chords.length} chord${chords.length === 1 ? "" : "s"} among them`;
+  }
+  return `${track.name}: ${count} ${change} in ${barSpan(notes)}${together}.`;
 }
 
 function noteLines(before: Project, after: Project, track: Track): string[] {
@@ -121,9 +170,7 @@ function noteLines(before: Project, after: Project, track: Track): string[] {
   for (const [padId, notes] of byPad(added)) {
     const sorted = [...notes].sort((a, b) => a.startTicks - b.startTicks);
     if (padId === "") {
-      lines.push(
-        `${track.name}: ${notes.length} note${notes.length === 1 ? "" : "s"} added.`,
-      );
+      lines.push(pitchedLine(track, notes, "added"));
       continue;
     }
     const soft = sorted.filter((note) => note.velocity < GHOST_VELOCITY).length;
@@ -137,7 +184,7 @@ function noteLines(before: Project, after: Project, track: Track): string[] {
     const sorted = [...notes].sort((a, b) => a.startTicks - b.startTicks);
     lines.push(
       padId === ""
-        ? `${track.name}: ${notes.length} note${notes.length === 1 ? "" : "s"} removed.`
+        ? pitchedLine(track, notes, "removed")
         : `${track.name}'s ${padName(padId)}: ${hitPlaces(sorted, "removed")}.`,
     );
   }
@@ -200,6 +247,10 @@ export function describeChanges(before: Project, after: Project): string[] {
   if (before.song.tempo !== after.song.tempo) {
     lines.push(`Tempo: ${before.song.tempo} to ${after.song.tempo} BPM.`);
   }
+  const [keyWas, keyNow] = [before.song.key, after.song.key];
+  if (keyWas.root !== keyNow.root || keyWas.scale !== keyNow.scale) {
+    lines.push(`Key: ${keyName(keyWas)} to ${keyName(keyNow)}.`);
+  }
   const was = new Map(before.song.tracks.map((track) => [track.id, track]));
   const now = new Set(after.song.tracks.map((track) => track.id));
   for (const track of before.song.tracks) {
@@ -213,11 +264,11 @@ export function describeChanges(before: Project, after: Project): string[] {
       lines.push(...padLines(old, track, after), ...parameterLines(old, track));
     }
     lines.push(...noteLines(before, after, track));
-    const covered = [coveredTicks(before, track.id), coveredTicks(after, track.id)];
-    if (old && covered[0] !== covered[1]) {
-      lines.push(
-        `${track.name}'s clips now play for ${bars(covered[1])} (were ${bars(covered[0])}).`,
-      );
+    // Where, not how long: "for 20 bars" reads as a length, and a breakdown
+    // cut out of the middle of a track is not one.
+    const played = [playedBars(before, track.id), playedBars(after, track.id)];
+    if (old && played[0] !== played[1]) {
+      lines.push(`${track.name}'s clips now play in ${played[1]} (were ${played[0]}).`);
     }
   }
   return lines.slice(0, MAX_CHANGE_LINES).map(fit);

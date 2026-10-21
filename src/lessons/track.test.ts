@@ -23,6 +23,7 @@ import {
   trackChapterNumber,
   trackProgress,
   trackResume,
+  trackStartPoint,
   withTrackUnderWay,
 } from "./track";
 import type { LessonSettings, LessonWorld, ShowMe } from "./types";
@@ -133,6 +134,28 @@ describe("Finish a track (GRV-44)", () => {
     });
     const own = BITE_IDS.filter((id) => !/^(beat|sound|tour)-/.test(id));
     expect(trackResume([...started, ...own])).toBeNull();
+  });
+
+  it("starts the beat by the song, not by beat bites done in another one", () => {
+    const beat = BITE_IDS.filter((id) => id.startsWith("beat-"));
+    const started = withTrackUnderWay([]);
+    // The nudge still says where the producer is: Bass is next.
+    expect(trackResume([...started, ...beat])?.chapter).toBe("bass");
+    // But a song opens at Make a beat, which passes over only what it has.
+    expect(trackStartPoint([...started, ...beat])).toEqual({
+      chapter: "beat",
+      biteId: "beat-library",
+    });
+    expect(trackStartPoint([...started, "beat-library"])).toEqual({
+      chapter: "beat",
+      biteId: "beat-library",
+    });
+    // Once a chapter of its own is started, it picks up where they are.
+    expect(trackStartPoint([...started, ...beat, "bass-key"])).toEqual({
+      chapter: "bass",
+      biteId: "bass-line",
+    });
+    expect(trackStartPoint([])).toBeNull();
   });
 
   it("picks up after the furthest bite done, a bite skipped on the way not offered again", () => {

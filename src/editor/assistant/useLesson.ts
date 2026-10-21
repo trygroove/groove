@@ -62,7 +62,12 @@ import {
   startTrack,
 } from "../../lessons/session";
 import { beatStyleFor } from "../../lessons/style";
-import { trackProgress, trackResume, withTrackUnderWay } from "../../lessons/track";
+import {
+  trackProgress,
+  trackResume,
+  trackStartPoint,
+  withTrackUnderWay,
+} from "../../lessons/track";
 import type { LessonSettings, LessonWorld, ShowMe } from "../../lessons/types";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import type { EditorViewName } from "../composition/editorViews";
@@ -427,7 +432,7 @@ export function useLesson(options: UseLessonOptions): Lesson {
   ): LessonTransition | null {
     const progress = trackProgress(done());
     if (from === null) {
-      const resume = trackResume(done());
+      const resume = trackStartPoint(done());
       return startTrack(
         resume?.chapter ?? "beat",
         resume?.biteId ?? null,

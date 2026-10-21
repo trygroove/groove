@@ -48,6 +48,29 @@ describe("Bass (GRV-44)", () => {
     expect(bite("bass-key").made?.(after, settings)).toBe(true);
   });
 
+  it("is done once the song is in the key it asks for, not any other", () => {
+    const withBass = applyShowMe(
+      starterWorld(),
+      nextStep(bite("bass-key"), starterWorld(), settings)?.step.showMe(
+        starterWorld(),
+        settings,
+        lessonContext(7),
+      ) ?? null,
+    );
+    const step = nextStep(bite("bass-key"), withBass, settings);
+    if (step?.step.id !== "key") throw new Error("no key step");
+    const done = (key: Parameters<typeof setKey>[0]) =>
+      step.step.done(
+        worldOf(applied(withBass.project, [setKey(key)])),
+        withBass,
+        settings,
+      );
+    // Boom bap asks for C minor: A minor or C major is not it.
+    expect(done({ root: 9, scale: "minor" })).toBe(false);
+    expect(done({ root: 0, scale: "major" })).toBe(false);
+    expect(done({ root: 0, scale: "minor" })).toBe(true);
+  });
+
   it("counts any key the producer picks, and keeps it", () => {
     const withBass = showAll("bass-key", starterWorld());
     const theirs = worldOf(

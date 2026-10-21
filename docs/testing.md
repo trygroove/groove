@@ -161,7 +161,7 @@ bun run test:watch  # watch mode
 bun run test:ui     # Vitest UI
 ```
 
-Config: `vitest.config.ts`. `@solidjs/vite-plugin` sets `test.environment: "jsdom"` automatically, so both plain unit tests (e.g. `src/shared/id.test.ts`) and component tests using `@solidjs/testing-library` (e.g. `src/components/Dashboard.test.tsx`) run under the same command — see those two files for the canonical shape of each.
+Config: `vitest.config.ts`. `@solidjs/vite-plugin` sets `test.environment: "jsdom"` automatically, so both plain unit tests (e.g. `src/domain/ids.test.ts`) and component tests using `@solidjs/testing-library` (e.g. `src/components/Dashboard.test.tsx`) run under the same command — see those two files for the canonical shape of each.
 
 `src/audio/InstrumentGraph.test.ts`, `src/audio/TrackAudioGraph.test.ts`, `src/audio/DeviceChain.test.ts`, and `src/audio/ProjectAudioGraph.test.ts` additionally render real audio via `node-web-audio-api` (see `src/audio/testAudioContext.ts`). Importing `tone` creates a real (non-offline) global `AudioContext` as a side effect, and `node-web-audio-api`'s `cpal` backend needs to find *some* default output device to satisfy that, even though the tests themselves only render through `Tone.Offline`. On a machine with no audio hardware (`/dev/snd` absent — every GitHub-hosted runner, most containers), that context creation throws `InvalidStateError: ... DeviceUnavailable` and the whole file fails before any test runs.
 
@@ -205,7 +205,7 @@ outside the reactive system too, not just `fireEvent` — a subscription callbac
 firing from a fake store needs the same treatment
 (`src/components/TelemetryDisclosure.test.tsx` is the worked example). Each step
 of a multi-step interaction needs its own flush, because each one queues its own
-batch: `src/editor/StepEditor.test.tsx`'s `stroke()`/`dragStroke()` helpers flush
+batch: `src/editor/sequence/StepEditor.test.tsx`'s `stroke()`/`dragStroke()` helpers flush
 after every pointer event for exactly that reason.
 
 `flush()` is a **test** tool. It is not an escape hatch for product code — a
@@ -502,10 +502,10 @@ An **experiment** measures one idea for making the assistant better, cheaper or 
 `bun run assistant:try` talks to the live assistant on an eval fixture the way QA does in the browser, without the browser, and turns a moment that went wrong into an eval case. Each command is one call that reads and writes a session file, `tmp/assistant-sessions/<id>.json` (the project, the conversation, the scope and selection, the proposal and question waiting, and the proposals applied), so an agent can drive it step by step; with no command it opens a prompt that takes the same commands, and `quit` (or `exit`) leaves it. `--session <id>` picks a session (otherwise the one used last), `--json` prints what a command did as JSON, and `--model` picks a configured model as `assistant:eval` does.
 
 - `fixtures` lists the fixtures a session can start on, each with where it comes from; it needs no session and leaves the one used last alone.
-- `new <fixture>` starts a session on a named fixture: one `src/assistant/evals/fixtures.ts` builds (`kit-sketch`, `house-loop`, `arrangement`, `techno-drums`, `techno-loop`, `bd-only`, `bd-sketch`; see `namedFixtures.ts`) or a JSON fixture in `src/assistant/evals/fixtures/`.
+- `new <fixture>` starts a session on a named fixture: one `src/assistant/evals/fixtures.ts` builds (`kit-sketch`, `house-loop`, `arrangement`, `techno-drums`, `techno-loop`, `bd-only`, `bd-sketch`; see `namedFixtures.ts`) or a JSON fixture in `src/assistant/evals/fixtures/` (created by the first fixture written there).
 - `ask "<message>"` is one live turn through the gateway's own turn, as `assistant:eval` runs it, resending the history as the panel builds it (`historyOf` in `src/assistant/history.ts`), cancelled and undone proposals included. It prints the whole response first, call by call as the model streamed it (`src/assistant/evals/callTranscript.ts`): thinking, text, and every tool call with its full input as JSON, a retried or cut-off call included; `--json` carries the same as `calls`. Then the reply, the proposal's changes as the card lists them (or why the executor refused it: each issue under the call it blames, a payload that does not parse one field per line with what was missing or wrong there, and a hint when the model nested a payload inside itself, `src/assistant/evals/refusal.ts`), or the question it asked, then checks 1 to 5 on the proposal, and the turn's tokens and estimated cost. `answer <option>` answers the question (option numbers, a label, or your own words) as the next turn.
 - `apply`, `cancel` and `undo` do what the card's buttons do, through the executor and a command history. `scope whole | <track> ...` (with `--create-tracks`, `--song`, `--master`, `--returns`) sets what check 3 lets a proposal change; `select none | tracks <names> | clips <names>` sets what the turn's context says is selected. `show` prints the tracks, clips with note counts, levels, pans and devices.
-- `save-case <case-id> --capability <c> [--expect proposal|ask|either]` writes the last request, with the project and history as they were just before it, to `src/assistant/evals/cases/<case-id>.json`, naming the session's fixture when the song is unchanged from it (an apply undone counts as unchanged), or writing it as a new JSON fixture named for the case. `cases.ts` loads every JSON case after the TypeScript ones, and refuses one that does not parse or names no fixture there is. Tighten its scope and add any case checks by hand, run it with `bun run assistant:eval -- <case-id>`, and land it as a normal PR.
+- `save-case <case-id> --capability <c> [--expect proposal|ask|either]` writes the last request, with the project and history as they were just before it, to `src/assistant/evals/cases/<case-id>.json` (the directory is created by the first case saved), naming the session's fixture when the song is unchanged from it (an apply undone counts as unchanged), or writing it as a new JSON fixture named for the case. `cases.ts` loads every JSON case after the TypeScript ones, and refuses one that does not parse or names no fixture there is. Tighten its scope and add any case checks by hand, run it with `bun run assistant:eval -- <case-id>`, and land it as a normal PR.
 
 `ask` and `answer` need `ANTHROPIC_API_KEY`, and without it say so and call nothing; nothing touches Firestore, user data or the deployed quota, and nothing logs analytics. The commands are `src/assistant/evals/tryCli.ts` and `trySession.ts`, unit-tested with a scripted provider. The `assistant-try` skill tells an agent how to explore with it.
 
@@ -845,9 +845,8 @@ The two remaining checks are deferred by decision (`DEC-012`), not left unfinish
 
 | Helper | Location | Purpose |
 | --- | --- | --- |
-| `createId`, `createSeededIdFactory`, `isPrefixedId` | `src/shared/id.ts` | The prefixed-ID format (`trk_...`, `clp_...`, ...). `createId` is the production generator; `createSeededIdFactory(seed)` is deterministic for fixtures and round-trip tests. One shared factory, not a separate test-only ID shape. |
+| `createIdFactory`, `createSeededIdFactory`, `isEntityId` | `src/domain/ids.ts` | The prefixed-ID format (`trk_...`, `clp_...`, ...). `createIdFactory()` is the production generator; `createSeededIdFactory(seed)` is deterministic for fixtures and round-trip tests. One shared factory, not a separate test-only ID shape. |
 | `systemClock`, `createManualClock` | `src/shared/clock.ts` | A `Clock` abstraction so domain code depends on an injectable clock instead of calling `Date.now()` directly. `createManualClock` never advances on its own — tests control time explicitly. |
-| `parseOrThrow`, `safeParseWithIssues`, `finiteNumberInRange` | `src/shared/schema.ts` | The shared Zod entry point PRD section 9.1 commits to for runtime schemas. `parseOrThrow` fails closed (throws `SchemaValidationError`, never returns a partial value) per invariant 6; `finiteNumberInRange` is the shared clamping primitive invariant 4 asks for. `FND-002` builds the schema-v1 domain schemas on top of this rather than inventing its own parse/error shape. |
 | `timeoutScheduler`, `createManualScheduler` | `src/shared/scheduler.ts` | A `Scheduler` abstraction for deferred work (autosave coalescing, backoff), so a test drives the delay explicitly instead of sleeping. Same rationale as `clock.ts`: production code is a consumer too. |
 | `loadStoredProjectFixture` | `src/testing/fixtures.ts` | Loads a stored schema-vN project from `public/fixtures/persistence/v{version}-{name}.json`. The fixture convention the persistence migration harness follows — see [`docs/persistence.md`](./persistence.md). |
 | `describeProjectRepositoryContract` | `src/persistence/projectRepositoryContract.ts` | The shared `ProjectRepository` contract suite. Any new repository implementation runs it; behavior specific to one implementation stays in that implementation's own test file. |
@@ -856,7 +855,7 @@ The two remaining checks are deferred by decision (`DEC-012`), not left unfinish
 | `createRecordingTransport`, `createFailingTransport` | `src/analytics/transport.ts` | Analytics transports for tests: one records events and user properties for assertions, the other throws on every call so a test can prove the PRD `OPS-02` fail-open requirement rather than assume it. |
 | `loadFixtureJson` | `src/testing/fixtures.ts` | Browser-safe fixture loading: reads `public/fixtures/*.json` from disk under Node (unit/component/emulator suites) or fetches it as a static asset under a real browser, picking the strategy at call time. |
 
-`src/shared/` holds helpers production code also depends on (both current and future domain code use `createId`/`Clock`); `src/testing/` holds helpers that only make sense inside a test.
+`src/shared/` holds helpers production code also depends on (`Clock`, `Scheduler`); entity IDs live in the domain, `src/domain/ids.ts`; `src/testing/` holds helpers that only make sense inside a test.
 
 ## Why `firebase.json`'s `database` block was removed, not fixed
 
