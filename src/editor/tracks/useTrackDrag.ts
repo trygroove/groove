@@ -3,7 +3,7 @@ import type { TrackId } from "../../domain/ids";
 import { useShortcutScope } from "../../shortcuts/useShortcutScope";
 import { createSlide, type DragLift, liftItem } from "./dragLift";
 import "./dragLift.css";
-import { dropSlot, slotToIndex } from "./trackReorder";
+import { dropSlot, slotToIndex } from "./trackActions";
 
 /**
  * Drag a track to a new position (TRK-02, #331). The arrangement's header

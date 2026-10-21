@@ -48,12 +48,12 @@ import {
 import { type FaderProps, VolumeFader } from "./TrackFaders";
 import TrackSends from "./TrackSends";
 import "../tracks/trackDrag.css";
+import { moveTrack, previewOrder, type ReorderMethod } from "../tracks/trackActions";
 import {
   addTrackOfKind,
   instrumentTypeKey,
   type NewTrackKindSpec,
 } from "../tracks/trackCreation";
-import { moveTrack, previewOrder, type ReorderMethod } from "../tracks/trackReorder";
 import {
   type TrackSelectionSource,
   toggleTrackFlag,

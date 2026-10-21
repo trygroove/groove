@@ -17,7 +17,7 @@ import type { AssistantPanel } from "../assistant/useAssistantPanel";
 import type { LibraryActions } from "../library/LibraryModal";
 import type { LibraryTargeting } from "../library/useLibraryTarget";
 import type { PianoRollActions } from "../pianoRoll/rollActions";
-import { deleteTrack, type TrackDeletionContext } from "../tracks/trackDeletion";
+import { deleteTrack, type TrackDeletionContext } from "../tracks/trackActions";
 import type { TrackSelection } from "../tracks/useTrackSelection";
 import type { SongControls } from "../transport/useSongControls";
 import { arrangementHasFocus } from "./arrangementFocus";
