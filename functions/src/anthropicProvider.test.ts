@@ -221,6 +221,9 @@ describe("createAnthropicProvider", () => {
       drain(provider.stream(request, new AbortController().signal)),
     );
     expect(failure.kind).toBe("rejected");
+    // Told apart from a refused request, as the provider down for everyone (GRV-206).
+    expect(failure.noApiKey).toBe(true);
+    expect(failure.outOfCredit).toBe(false);
     expect(sent).toHaveLength(0);
   });
 
@@ -317,6 +320,34 @@ describe("the gateway over the real SDK", () => {
     );
     expect(sent).toHaveLength(2);
     expect(logs[0]).toMatchObject({ attempts: 2, failures: ["overloaded"] });
+  });
+
+  it("fails a turn as the provider unavailable when the account is out of credit, or there is no key (GRV-206)", async () => {
+    const credit = scriptedFetch(() =>
+      errorResponse(
+        400,
+        "invalid_request_error",
+        "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+      ),
+    );
+    const noKey: AssistantGatewayDeps = {
+      ...deps(credit.fetchImpl, []),
+      provider: createAnthropicProvider({ apiKey: "", fetch: credit.fetchImpl }),
+    };
+    for (const [wired, kind] of [
+      [deps(credit.fetchImpl, []), "out_of_credit"],
+      [noKey, "no_api_key"],
+    ] as const) {
+      const down: string[] = [];
+      const error = await runAssistantTurn(
+        { ...wired, onProviderDown: (reported) => down.push(reported) },
+        { uid: "u", signInProvider: "google.com" },
+        turn,
+        { signal: new AbortController().signal, onChunk: () => {} },
+      ).catch((caught) => caught);
+      expect((error as AssistantGatewayError).code).toBe("provider_unavailable");
+      expect(down).toEqual([kind]);
+    }
   });
 
   it("fails a truncated stream as malformed", async () => {
