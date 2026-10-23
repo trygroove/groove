@@ -1,0 +1,6 @@
+{"id":"lesson-plan","title":"The lesson plan at the top of the assistant panel (docs/assistant-panel.html, steps 10 to 12)","steps":[
+{"file":"01-lessons-list.png","caption":"The Lessons list, from the header button, in place of the conversation: the tour first, each lesson with its progress as a tick strip"},
+{"file":"02-the-plan-on-top.png","caption":"A lesson under way: the plan is a header under the panel's, with the chapter strip, this chapter's bites, the step, Show me and Skip; the title reads Assistant · Lesson"},
+{"file":"03-show-me-done.png","caption":"After Show me: the bite's tick fills, the chip reads done, Next names the following bite, and Coproducer says what Show me did"},
+{"file":"04-resumed-folded.png","caption":"Resumed on another device at chapter 3, bite 2, from the project's record; the plan folded to its first two rows"},
+{"file":"05-resumed-open.png","caption":"The same plan unfolded, docked"}]}
