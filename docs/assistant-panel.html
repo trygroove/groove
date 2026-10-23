@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<!-- The assistant reference design for #72 (AI-004). Self-contained and playable: open it in a browser. -->
+<!-- The assistant reference design for #72 (AI-004), and the lesson plan at the top of it (GRV-190). Self-contained and playable: open it in a browser. -->
 <title>Groove Assistant Panel</title>
 <style>
 /* Layout: a flow stepper over one full-size editor stage. The assistant floats bottom-right over whichever view is open, like a mail composer, and can be minimised, docked to the right edge, or closed. Dark single look, the product's own ramp. */
@@ -272,6 +272,61 @@ details.why dd button{color:var(--m100);text-decoration:underline;text-underline
 .vbig .vb-h b{flex:1;color:var(--m100)}
 .vbig .cap span{font-size:16px}
 
+/* ===== the lesson plan (GRV-190): the lesson under way, as a header under the panel's ===== */
+.plan{flex:none;display:flex;flex-direction:column;gap:8px;padding:8px 12px 10px;background:var(--m12);border-bottom:1px solid var(--m16)}
+.plan-h{display:flex;align-items:center;gap:8px;min-width:0}
+.plan-h .lbl{color:var(--m85);white-space:nowrap}
+.plan-h .where{flex:1;min-width:0;color:var(--m65);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fold{width:22px;height:22px;display:grid;place-items:center;color:var(--m65);flex:none;margin-left:-6px}
+.fold:hover{background:var(--m28);color:var(--m100)}
+.fold::before{content:"";border-left:5px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .12s}
+.fold[aria-expanded="true"]::before{transform:rotate(90deg)}
+.leave{height:22px;padding:0 8px;color:var(--m85);font-size:11px;font-weight:600;box-shadow:inset 0 0 0 1px var(--m28);flex:none}
+.leave:hover{color:var(--m100);box-shadow:inset 0 0 0 1px var(--m85)}
+/* the chapter strip: one column per chapter, one tick per bite */
+.chs{list-style:none;margin:0;padding:0;display:flex;gap:6px}
+.chs li{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.chs .ch-t{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--m47);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.chs li[data-state="done"] .ch-t{color:var(--m85)}
+.chs li[data-state="current"] .ch-t{color:var(--m100)}
+.ticks{display:flex;gap:2px;height:5px}
+.ticks i{flex:1;background:var(--m28)}
+.ticks i[data-how="did_it"],.ticks i[data-how="show_me"]{background:var(--m100)}
+.ticks i[data-how="passed"]{background:var(--m57)}
+.ticks i[data-how="skipped"]{background:repeating-linear-gradient(135deg,var(--m65) 0 2px,transparent 2px 5px)}
+.ticks i[data-how="current"]{background:var(--m12);box-shadow:inset 0 0 0 1px var(--m100)}
+/* the chapter under way: its bites as chips, the bite under way white */
+.bites{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:4px}
+.bites li{display:flex;gap:4px;padding:2px 6px;box-shadow:inset 0 0 0 1px var(--m28);color:var(--m47);font-size:11px}
+.bites li[data-how]{color:var(--m85)}
+.bites li[aria-current="step"]{background:var(--m100);box-shadow:none;color:var(--m00)}
+.bites li em{font-style:italic;color:inherit}
+.plan-step{margin:0;color:var(--m100);font-size:13px;line-height:1.45}
+.plan-step u{text-decoration:underline dotted;text-decoration-color:var(--m47);text-underline-offset:3px;cursor:help}
+.plan-acts{display:flex;gap:2px;align-items:center;flex-wrap:wrap}
+.plan-acts .say{flex:1 1 100%;color:var(--m65);font-size:11px;padding-top:4px}
+.plan[data-folded="true"] .bites,.plan[data-folded="true"] .plan-step,.plan[data-folded="true"] .plan-acts{display:none}
+.plan[data-folded="true"]{gap:6px;padding-bottom:8px}
+.lsn{align-self:flex-start;max-width:86%;display:flex;flex-direction:column;gap:3px}
+.lsn p{margin:0;color:var(--m65);font-size:12px;font-style:italic}
+
+/* the Lessons list, in place of the conversation */
+.lsl{flex:1;overflow:auto;display:flex;flex-direction:column;gap:2px;padding:14px 12px}
+.lsl-h{display:flex;flex-direction:column;gap:4px;padding:0 2px 10px}
+.lsl-h b{color:var(--m100);font-size:15px}
+.lsl-h p{margin:0;color:var(--m65)}
+.lrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:10px 12px;background:var(--m00);box-shadow:inset 0 0 0 1px var(--m16);width:100%}
+.lrow:hover{box-shadow:inset 0 0 0 1px var(--m65)}
+.lrow[aria-current="true"]{box-shadow:inset 0 0 0 1px var(--m100)}
+.lrow b{grid-column:1;color:var(--m100);font-size:13px}
+.lrow small{grid-column:1;color:var(--m65);font-size:12px}
+.lrow .prog{grid-column:2;grid-row:1/3;align-self:center;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px;color:var(--m65);font-size:11px;white-space:nowrap}
+.lrow .prog .ticks{width:64px}
+.lrow .prog b{font-size:11px}
+.lsl-ig{margin:12px 2px 0;color:var(--m65);font-size:12px}
+.lsl-ig a{color:var(--m100);text-underline-offset:3px}
+.lsl-foot{display:flex;justify-content:flex-end;padding-top:12px}
+
 .sugs{display:flex;gap:4px;padding:0 14px 10px;overflow-x:auto;scrollbar-width:none;flex:none}
 .sugs::-webkit-scrollbar{display:none}
 .chip{height:26px;flex:none;white-space:nowrap;padding:0 10px;background:var(--m16);color:var(--m85);font-size:12px;display:flex;align-items:center}
@@ -298,9 +353,9 @@ details.why dd button{color:var(--m100);text-decoration:underline;text-underline
 
 <div class="wrap">
   <header class="page-h">
-    <p class="eyebrow">Groove · AI-004 · assistant mockup</p>
+    <p class="eyebrow">Groove · AI-004 · assistant mockup · lessons (GRV-190)</p>
     <h1>An assistant that floats over the work, and can dock beside it</h1>
-    <p class="lede">Step through the flow, or just use it: type in the composer, preview and apply the proposal, hear the beat with the play button, switch views, and minimise, dock or close the panel. Replies are scripted and sounds are synthesized stand-ins.</p>
+    <p class="lede">Step through the flow, or just use it: type in the composer, preview and apply the proposal, hear the beat with the play button, switch views, open the Lessons list and run a lesson from the plan at the top, and minimise, dock or close the panel. Replies are scripted and sounds are synthesized stand-ins.</p>
   </header>
 
   <nav class="steps" id="steps" aria-label="Flow"></nav>
@@ -323,6 +378,8 @@ details.why dd button{color:var(--m100);text-decoration:underline;text-underline
       <li><b>A proposal can go out of date.</b> If the song changes under it (your edit, or a change from another tab), the card says so, Apply is off, and Refresh asks for a new one.</li>
       <li><b>Explanations are one click deep.</b> "Why this works" names the goal, the technique and the changed controls; each control is a link that points at it in the view. No lesson is mandatory.</li>
       <li><b>Pack and video cards are proposals too.</b> Trying a sound previews it on the pad; Keep or Put back decide. A video plays in the card, can pop out larger over the view, and "Show me" points at the control it teaches.</li>
+      <li><b>The lesson is a header, not a card.</b> While a lesson runs, its plan sits at the top of the panel under the header, above the conversation: the lesson's name and where it stands, a strip with one column per chapter and one tick per bite (white when done, hatched when skipped, dim grey when the song already had it, outlined for the one under way), the chapter's bites as chips, and the step with <b>Show me</b> and <b>Skip</b>. It is one record per project, so the same plan comes back on a reload, another tab or another device, at the same step. It folds to its first two rows while you talk, and the title reads "Assistant · Lesson" until you leave. The conversation under it is Coproducer's words only; the plan is what you act on.</li>
+      <li><b>Lessons are a list in the header, started with one press.</b> The Lessons button shows every lesson in place of the conversation, the tour first, each with its progress as the same tick strip; pressing a row starts it, or continues the one under way, with no message sent and no model turn. The model never decides whether a lesson starts.</li>
       <li><b>Monochrome, square, shared parts.</b> The panel uses the ramp, the product's buttons and chips, and brightness for state; the only hue is the track colour the proposal touches.</li>
     </ol>
   </section>
@@ -346,6 +403,7 @@ const I = {
   play:`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg>`,
   pause:`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3h3v10H4zM9 3h3v10H9z" fill="currentColor"/></svg>`,
   expand:`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5L9 7M2.5 13.5L7 9"/></svg>`,
+  book:`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 3h11v10h-11zM2.5 6.5h11M5.5 9.5l1.5 1.5 3-3"/></svg>`,
   sound:`<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1" y="6" width="2" height="4"/><rect x="4.5" y="3" width="2" height="10"/><rect x="8" y="1" width="2" height="14"/><rect x="11.5" y="5" width="2" height="6"/></svg>`,
 };
 
@@ -386,6 +444,7 @@ let S;
 const fresh = () => ({
   view:"arr", panel:"closed", lastOpen:saved.last === "dock" ? "dock" : "float", scope:"sel", back:null, draft:"", msgs:[], stream:null,
   prop:"none", pack:"none", demo:false, vid:{t:0, playing:false, big:false}, point:null, why:false, error:false,
+  lesson:null, list:false, finished:{},
 });
 const eff = () => {
   const on = S.prop === "preview" || S.prop === "applied";
@@ -395,6 +454,144 @@ const hl = kind => S.prop === "preview" ? "preview" : S.prop === "applied" ? "ch
 const hlAttr = (kind, label) => { const h = hl(kind) || (S.point === kind ? "point" : null); return h ? ` data-hl="${h}"><span class="hl-tag">${h === "preview" ? "Preview" : h === "changed" ? "Changed" : label}</span` : ""; };
 /* the pad/kick preview is its own, from the pack card */
 const padHl = () => S.pack === "preview" ? "preview" : S.pack === "kept" ? "changed" : S.point === "pad1" ? "point" : null;
+
+/* ---------- lessons (GRV-190): one model, a lesson is a list of chapters ---------- */
+/* A bite is [id, title, the step's instruction, what Show me did]. Every bite is one step here. */
+const BEAT_BITES = [
+  ["beat-library", "Pick a kick", "Open the <u>Library</u> and put a kick on pad 1 of the Drums track.", "put Tight House Kick on pad 1"],
+  ["beat-kick", "The kick pattern", "In Sequence, put the kick on steps 1, 5, 9 and 13: four on the floor.", "placed the kick on steps 1, 5, 9 and 13"],
+  ["beat-play", "Hear it", "Press play and listen for four bars.", "set 124 BPM and pressed play"],
+  ["beat-snare", "The backbeat", "Put the snare on steps 5 and 13, where the kick answers.", "put the snare on 5 and 13"],
+  ["beat-hats", "Hats", "Put a closed hat on every other step: 1, 3, 5 and so on.", "put a closed hat on the eight odd steps"],
+  ["beat-loop", "Loop it", "In the Arrangement, loop Beat A so it plays for four bars.", "looped Beat A over bars 1 to 4"],
+];
+const CH = (id, title, short, bites) => ({id, title, short, bites:bites.map(([id, title, step, shown]) => ({id, title, step, shown}))});
+const LESSONS = [
+  {id:"tour", title:"Tour the studio", summary:"the five views of the studio, and the key for each", chapters:[CH("tour", "Tour the studio", "Tour", [
+    ["tour-arrangement", "The Arrangement", "Open the Arrangement (key 1) and find Beat A on the Drums track.", "opened the Arrangement"],
+    ["tour-sequence", "The Sequence view", "Open Sequence (key 2): this is where a clip's notes are written.", "opened Sequence"],
+    ["tour-instrument", "The Instrument view", "Open Instrument (key 3) to see the Drums track's pads.", "opened Instrument"],
+    ["tour-library", "The Library", "Open the Library (key L) and play any sound.", "opened the Library"],
+    ["tour-mixer", "The Mixer", "Open the Mixer (key 4) and find the master strip.", "opened the Mixer"]])]},
+  {id:"beat", title:"Make a beat", summary:"a one-bar beat, kick, backbeat and hats, looped for four bars", chapters:[CH("beat", "Make a beat", "Beat", BEAT_BITES)]},
+  {id:"sound", title:"Shape a sound", summary:"a synth pluck, from a raw waveform through the filter and the envelope", chapters:[CH("sound", "Shape a sound", "Sound", [
+    ["sound-wave", "Pick a wave", "On the Keys synth, choose the saw wave and play a note.", "chose the saw wave"],
+    ["sound-filter", "Darken it", "Bring the filter cutoff down until the buzz goes.", "set the cutoff to 900 Hz"],
+    ["sound-pluck", "Make it a pluck", "Shorten the amp envelope's decay and turn the sustain off.", "set decay to 180 ms and sustain to 0"]])]},
+  {id:"track", title:"Finish a track", summary:"a beat, a bass, chords and a hook, arranged, mixed and exported as stems", chapters:[
+    CH("beat", "Beat", "Beat", BEAT_BITES),
+    CH("bass", "Bass", "Bass", [
+      ["bass-key", "Pick a key", "Under the piano roll, set the song's <u>key</u> to A minor.", "set the key to A minor"],
+      ["bass-line", "Under the kick", "Write a bass note on A1 under each kick: steps 1, 5, 9 and 13.", "wrote four A1 notes under the kick"],
+      ["bass-sound", "Round it off", "Bring the Bass filter's cutoff down until it sits low and round.", "set the Bass cutoff to 400 Hz"]]),
+    CH("chords", "Chords and hook", "Chords", [
+      ["chords-loop", "A chord loop", "On Keys, write four bars of chords in A minor: Am, F, C, G.", "wrote Am, F, C and G, one chord a bar"],
+      ["chords-hook", "The hook", "Write a short melody over the chords, above them, on a new Hook track.", "wrote 8 notes in bar 1, from E4 up to A4"],
+      ["chords-pluck", "Pluck the hook", "Shorten the Hook synth's decay so it cuts through the chords.", "set the Hook's decay to 160 ms"]]),
+    CH("arrange", "Arrange, subtractively", "Arrange", [
+      ["arrange-copy", "Copy the loop out", "Copy every clip out so the whole loop plays to bar 32.", "copied every clip out to bar 32"],
+      ["arrange-intro", "An intro", "Delete the Hook and Keys clips in bars 1 to 8.", "cleared Hook and Keys from bars 1 to 8"],
+      ["arrange-breakdown", "A breakdown", "Delete the Drums clips in bars 9 to 16.", "cleared Drums from bars 9 to 16"],
+      ["arrange-drop", "The drop", "Leave bars 17 to 24 whole, and listen from bar 15.", "played from bar 15"],
+      ["arrange-outro", "A short outro", "Delete everything after bar 28.", "cut every clip at bar 28"]]),
+    CH("mix", "Mix and export", "Mix", [
+      ["mix-balance", "Balance", "In the Mixer, bring Keys and Hook down so the kick and bass lead.", "set Keys to -6 dB and Hook to -8 dB"],
+      ["mix-pan", "Pan", "Pan the hats a little left and Keys a little right.", "panned hats -20 and Keys +25"],
+      ["mix-reverb", "Reverb on the hook", "Turn up the Hook strip's Send A to the reverb return.", "set Hook's Send A to -12 dB"],
+      ["mix-master", "Watch the master", "Play the song and watch the master meter: it should never go red.", "played the song through"],
+      ["mix-export", "Export the stems", "Open Export, keep Stems selected, and press Export.", "opened Export with stems chosen"]]),
+  ]},
+];
+const lessonOf = id => LESSONS.find(l => l.id === id);
+const curCh = () => lessonOf(S.lesson.id).chapters[S.lesson.ch];
+const curBite = () => curCh().bites[S.lesson.bite];
+/* How a bite stands in the lesson under way: this run's ending, or passed over because the song had it. */
+const howOf = (chI, b) => { const L = S.lesson; if (!L) return null; if (L.endings[b.id]) return L.endings[b.id]; if (L.passed.includes(b.id)) return "passed"; return S.finished[b.id] || null; };
+const ticks = (chI, ch, current) => `<span class="ticks" aria-hidden="true">${ch.bites.map((b, i) => { const how = current && i === S.lesson.bite ? "current" : howOf(chI, b); return `<i${how ? ` data-how="${how}"` : ""}></i>`; }).join("")}</span>`;
+const HOW_WORD = {did_it:"done", show_me:"done", skipped:"skipped", passed:"already in your song"};
+function lessonPlace() {
+  const L = S.lesson, les = lessonOf(L.id), ch = curCh();
+  return `bite ${L.bite + 1} of ${ch.bites.length}${L.over ? " · done" : ""}`;
+}
+function planHeader() {
+  const L = S.lesson; if (!L || S.list) return "";
+  const les = lessonOf(L.id), ch = curCh(), bite = curBite(), many = les.chapters.length > 1;
+  const strip = `<ol class="chs" aria-label="Chapters">${les.chapters.map((c, i) => `<li data-state="${i < L.ch ? "done" : i === L.ch ? "current" : "next"}" title="${esc(c.title)}">${many ? `<span class="ch-t">${esc(c.short)}</span>` : ""}${ticks(i, c, i === L.ch)}</li>`).join("")}</ol>`;
+  const chips = `<ol class="bites" aria-label="Bites of ${esc(ch.title)}">${ch.bites.map((b, i) => { const how = howOf(L.ch, b); return `<li${how ? ` data-how="${how}"` : ""}${i === L.bite ? ' aria-current="step"' : ""}>${esc(b.title)}${how ? `<em>· ${HOW_WORD[how]}</em>` : ""}</li>`; }).join("")}</ol>`;
+  const following = ch.bites[L.bite + 1], nextCh = les.chapters[L.ch + 1];
+  const acts = L.over
+    ? `<button type="button" class="btn pri" data-act="lnext">${following ? `Next: ${esc(following.title)}` : nextCh ? `Start chapter ${L.ch + 2}: ${esc(nextCh.title)}` : "Finish"}</button>`
+    : `<button type="button" class="btn pri" data-act="lshow">Show me</button><button type="button" class="btn" data-act="lskip">Skip</button><span class="say">Do it in the view, or press Show me. ${S.view === "seq" ? "Here, a click in the grid counts." : ""}</span>`;
+  return `<section class="plan" aria-label="Lesson plan" data-folded="${L.folded}">
+    <div class="plan-h"><button type="button" class="fold" data-act="lfold" aria-expanded="${!L.folded}" aria-label="${L.folded ? "Show the step" : "Fold the plan"}"></button>
+      <span class="lbl">Lesson · ${esc(les.title)}</span><span class="where">${L.folded ? esc(bite.title) : lessonPlace()}</span>
+      <button type="button" class="leave" data-act="lleave">Leave</button></div>
+    ${strip}${chips}
+    <p class="plan-step">${bite.step}</p>
+    <div class="plan-acts">${acts}</div></section>`;
+}
+/* Progress for the list: this project's record (the lesson under way and what it finished), as a lesson's row says it. */
+function lessonProgress(les) {
+  const all = les.chapters.flatMap(c => c.bites), done = all.filter(b => S.finished[b.id] || (S.lesson && S.lesson.id === les.id && (S.lesson.endings[b.id] || S.lesson.passed.includes(b.id)))).length;
+  const under = S.lesson && S.lesson.id === les.id;
+  const text = under ? "In progress" : done === 0 ? "Not started" : done === all.length ? "Done" : `${done} of ${all.length} done`;
+  const strip = `<span class="ticks" aria-hidden="true">${all.map(b => { const how = S.finished[b.id] || (under && (S.lesson.endings[b.id] || (S.lesson.passed.includes(b.id) ? "passed" : null))) || (under && b.id === curBite().id ? "current" : null); return `<i${how ? ` data-how="${how}"` : ""}></i>`; }).join("")}</span>`;
+  return {text, strip, under};
+}
+function lessonsList() {
+  return `<div class="lsl" aria-label="Lessons">
+    <div class="lsl-h"><b>Lessons</b><p>Each one runs in your own project, a step at a time. Press one to start it, or to pick up where you left it.</p></div>
+    ${LESSONS.map(l => { const p = lessonProgress(l); return `<button type="button" class="lrow" data-lesson="${l.id}"${p.under ? ' aria-current="true"' : ""}><b>${esc(l.title)}</b><small>${esc(l.summary)}</small><span class="prog">${p.strip}<b>${p.under ? "Continue" : p.text}</b></span></button>`; }).join("")}
+    <p class="lsl-ig">More bite-sized lessons on Instagram: follow <a href="https://www.instagram.com/trygroove.app" target="_blank" rel="noopener">@trygroove.app</a>.</p>
+    <div class="lsl-foot"><button type="button" class="btn" data-act="lessons">Done</button></div></div>`;
+}
+/* The lesson's own turns: a line the log shows on the producer's side, and Coproducer's scripted words. */
+function lessonTurn(text, reply) { S.msgs.push({role:"lesson", text}); startStream(reply, null, 30); }
+function biteIntro() {
+  const L = S.lesson, les = lessonOf(L.id), ch = curCh(), b = curBite();
+  const passed = L.passed.filter(id => ch.bites.some(x => x.id === id)).map(id => ch.bites.find(x => x.id === id).title);
+  const first = L.bite === 0 && L.ch === 0 && !Object.keys(L.endings).length;
+  const open = first ? `We're starting "${les.title}", a lesson in your own project; leave whenever you like from the plan above. ` : "";
+  const skip = passed.length && L.bite === passed.length ? `Your song already has ${passed.join(" and ").toLowerCase()}, so we skip ${passed.length > 1 ? "those" : "that"}. ` : "";
+  return `${open}${skip}${b.title}: ${{
+    "beat-hats":"hats are the clock of a beat. Eighth notes on the odd steps keep time under the kick and snare; listen for how the groove gets busier without getting faster.",
+    "bass-line":"a bassline that lands with the kick makes the low end one thing instead of two. The root, A, on every kick is all a house bass needs to start.",
+    "chords-hook":"a hook is the line people hum. Keep it short, keep it above the chords, and let it repeat.",
+  }[b.id] || "one skill, two minutes. The step is on the plan above; do it in the view, or press Show me and I'll do it so you can see."}`;
+}
+function biteDone(how) {
+  const L = S.lesson, les = lessonOf(L.id), ch = curCh(), b = curBite(), last = L.bite === ch.bites.length - 1, lastCh = L.ch === les.chapters.length - 1;
+  const did = how === "show_me" ? `Show me ${b.shown}, so you can do it yourself next time.` : how === "skipped" ? `Skipped, that's fine: "${b.title}" was about ${b.step.replace(/<[^>]+>/g, "").replace(/\.$/, "").toLowerCase()}.` : `You ${b.shown}. That's "${b.title}" done, and you did it yourself.`;
+  if (!last) return `${did} Next is "${ch.bites[L.bite + 1].title}"; go on when you're ready.`;
+  if (!lastCh) return `${did} That's ${ch.title.toLowerCase()} finished: ${{beat:"a kick, a backbeat and hats, looped for four bars", bass:"a key and a bass that moves with the kick"}[ch.id] || "the whole chapter in your song"}. Chapter ${L.ch + 2} is ${les.chapters[L.ch + 1].title}; the plan starts it when you press Next.`;
+  return `${did} That's "${les.title}" over: ${les.summary}. Two pointers: ${LESSONS.filter(l => l.id !== les.id).slice(0, 2).map(l => `"${l.title}"`).join(" or ")} are in the Lessons list whenever you want them.`;
+}
+function endStep(how) {
+  const L = S.lesson; if (!L || L.over) return;
+  L.endings[curBite().id] = how; L.over = true; L.folded = false;
+  const word = how === "show_me" ? "Show me did it" : how === "skipped" ? "skipped" : "I did it myself";
+  lessonTurn(`Finished "${curBite().title}": ${word}.`, biteDone(how));
+}
+function nextBite() {
+  const L = S.lesson, les = lessonOf(L.id), ch = curCh();
+  if (L.bite < ch.bites.length - 1) { L.bite++; L.over = false; return lessonTurn(`Starting "${curBite().title}".`, biteIntro()); }
+  Object.assign(S.finished, L.endings);
+  if (L.ch < les.chapters.length - 1) { L.ch++; L.bite = 0; L.over = false; return lessonTurn(`Starting chapter ${L.ch + 1}, ${curCh().title}.`, biteIntro()); }
+  S.lesson = null; render();
+}
+function startLesson(id) {
+  if (S.lesson) Object.assign(S.finished, S.lesson.endings);
+  /* The record decides: a lesson left mid-way comes back at its step; otherwise from the top, passing over what the song has. */
+  const passed = id === "track" || id === "beat" ? ["beat-library"] : [], les = lessonOf(id);
+  let ch = 0, bite = 0;
+  const left = b => !passed.includes(b.id) && !S.finished[b.id];
+  while (ch < les.chapters.length - 1 && !les.chapters[ch].bites.some(left)) ch++;
+  bite = Math.max(0, les.chapters[ch].bites.findIndex(left));
+  S.lesson = {id, ch, bite, endings:{}, passed, over:false, folded:false};
+  S.list = false;
+  if (S.view === "arr" && id !== "tour") S.view = "seq";
+  lessonTurn(`Starting "${lessonOf(id).title}".`, biteIntro());
+}
 
 /* ---------- top bar ---------- */
 function renderTop() {
@@ -572,9 +769,11 @@ function status() {
   if (S.prop === "stale") return "A proposal is out of date";
   if (S.pack === "preview") return "Previewing a sound";
   if (S.vid.playing) return "Playing video";
+  if (S.lesson && S.panel === "min") return `Lesson · ${curBite().title} · ${lessonPlace()}`;
   return S.panel === "min" && S.msgs.length ? "Ready" : "";
 }
 function suggestions() {
+  if (S.lesson) return ["Why does that work?", "What's a root note?", "Can we go faster?"];
   const by = {arr:["Make the drums less stiff","Add a fill before bar 9","What should come next?"],
     seq:["Make the drums less stiff","Add a ghost snare","Why does this feel stiff?"],
     inst:["Find a dustier kick","Make the snare fatter","What does decay do?"],
@@ -585,6 +784,7 @@ function renderLog() {
   const m = S.msgs.map(m => m.role === "user"
     ? `<div class="mu"><span class="lbl">Scope · ${esc(m.scope)}</span><p>${esc(m.text)}</p></div>`
     : m.role === "ai" ? `<div class="ma"><span class="who lbl">${I.spark}Assistant</span><p>${esc(m.text)}${m.stopped ? ` <span class="stopped">Stopped.</span>` : ""}</p></div>`
+    : m.role === "lesson" ? `<div class="lsn"><span class="lbl">Lesson</span><p>${esc(m.text)}</p></div>`
     : m.role === "err" ? `<div class="err" role="alert"><b>The assistant couldn't reply.</b><span>The connection dropped. Your song is unchanged, and editing still works.</span><div style="display:flex;gap:2px"><button type="button" class="btn pri" data-act="retry">Try again</button></div></div>`
     : CARDS[m.kind]()).join("");
   const s = S.stream ? `<div class="ma"><span class="who lbl">${I.spark}Assistant</span>${S.stream.n === 0 ? `<div class="think" aria-label="Thinking"><i></i><i></i><i></i></div>` : `<p id="stream">${esc(streamText())}<span class="caret"></span></p>`}</div>` : "";
@@ -608,13 +808,15 @@ function renderPanel() {
     ? `<button type="button" class="ib" data-act="float" aria-label="Float" title="Float over the view">${I.float}</button>`
     : `<button type="button" class="ib" data-act="${mode === "min" ? "restore" : "min"}" aria-label="${mode === "min" ? "Restore" : "Minimise"}" title="${mode === "min" ? "Restore" : "Minimise"}">${mode === "min" ? I.up : I.min}</button>
        <button type="button" class="ib" data-act="dock" aria-label="Dock to the right" title="Dock to the right edge">${I.dock}</button>`;
-  const head = `<header class="ah"><span class="grab" data-act="${mode === "min" ? "restore" : mode === "float" ? "min" : ""}"><span class="ttl">${I.spark.replace("<svg", '<svg class="sp"')}Assistant</span><span class="stat" id="stat">${status()}</span></span>${ctrl}
+  const lessons = mode === "min" ? "" : `<button type="button" class="ib" data-act="lessons" aria-label="Lessons" title="Lessons: every lesson, with your progress" aria-pressed="${S.list}">${I.book}</button>`;
+  const head = `<header class="ah"><span class="grab" data-act="${mode === "min" ? "restore" : mode === "float" ? "min" : ""}"><span class="ttl">${I.spark.replace("<svg", '<svg class="sp"')}Assistant${S.lesson ? " · Lesson" : ""}</span><span class="stat" id="stat">${status()}</span></span>${lessons}${ctrl}
     <button type="button" class="ib" data-act="close" aria-label="Close" title="Close (the conversation is kept)">${I.x}</button></header>`;
   if (mode === "min") { a.innerHTML = head; return; }
   const dock = mode === "dock", val = dock ? SIZE.w : SIZE.h, [lo, hi] = dock ? W_RANGE : H_RANGE;
   const grip = `<div class="grip" id="grip" role="separator" tabindex="0" aria-orientation="${dock ? "vertical" : "horizontal"}" aria-label="${dock ? "Resize width" : "Resize height"}" aria-valuemin="${lo}" aria-valuemax="${hi}" aria-valuenow="${val}" title="Drag to resize"></div>`;
   const busy = !!S.stream;
-  a.innerHTML = grip + head + `<div class="log" id="log" role="log" aria-live="polite" aria-label="Conversation">${renderLog()}</div>
+  if (S.list) { a.innerHTML = grip + head + lessonsList(); return; }
+  a.innerHTML = grip + head + planHeader() + `<div class="log" id="log" role="log" aria-live="polite" aria-label="Conversation">${renderLog()}</div>
     ${busy ? "" : `<div class="sugs" aria-label="Suggestions">${suggestions().map((s, i) => `<button type="button" class="chip" data-sug="${i}">${s}</button>`).join("")}</div>`}
     <div class="comp">
       <label class="sr" for="draft">Message the assistant</label>
@@ -657,6 +859,7 @@ function send(text) {
   const key = route(text);
   S.msgs.push({role:"user", text, scope:scopeLabel()});
   S.draft = "";
+  if (S.lesson) return startStream(`Good question, and it fits the step: ${curBite().step.replace(/<[^>]+>/g, "").replace(/\.$/, "").toLowerCase()}. ${/root/i.test(text) ? "The root is the note a key is named after: in A minor, A. A bass that sits on it makes the key unmistakable." : /fast/i.test(text) ? "Of course: Show me does the step in one go, and Skip moves on. Each one is on the plan above." : "In the song it means one thing to listen for, and the plan above keeps the step in view while we talk."}`, null);
   startStream(key ? TURNS[key].ai : FALLBACK, key ? TURNS[key].card : null);
 }
 function startStream(text, card, speed = 45) {
@@ -787,6 +990,12 @@ const ACT = {
   vplay() { vplay(); renderVideo(); renderPanel(); },
   vbig() { S.vid.big = !S.vid.big; render(); },
   showme() { point("sendA"); },
+  lessons() { S.list = !S.list; S.focus = !S.list; render(); },
+  lshow() { endStep("show_me"); },
+  lskip() { endStep("skipped"); },
+  lnext() { nextBite(); },
+  lleave() { Object.assign(S.finished, S.lesson.endings); S.lesson = null; render(); },
+  lfold() { S.lesson.folded = !S.lesson.folded; renderPanel(); },
 };
 document.addEventListener("click", e => {
   /* editing the beat under an open proposal makes it stale */
@@ -798,8 +1007,11 @@ document.addEventListener("click", e => {
     if (again) again.classList.add("flash");
     return;
   }
-  const b = e.target.closest("[data-act],[data-view],[data-sug],[data-point],[data-hear],[data-seek],#tplay,#launch");
+  /* doing the step by hand: during a lesson, an edit in the grid is the step's predicate coming true */
+  if (cell && S.lesson && !S.lesson.over && /beat-|bass-/.test(curBite().id)) { cell.classList.add("flash"); endStep("did_it"); return; }
+  const b = e.target.closest("[data-act],[data-view],[data-sug],[data-point],[data-hear],[data-seek],[data-lesson],#tplay,#launch");
   if (!b || !$("ed").contains(b)) return;
+  if (b.dataset.lesson) return startLesson(b.dataset.lesson);
   if (b.id === "tplay") { playing ? stop() : start(); renderTop(); renderView(); return; }
   if (b.id === "launch") return ACT.launch();
   if (b.dataset.view) { S.view = b.dataset.view; S.point = null; render(); return; }
@@ -848,6 +1060,12 @@ const STEPS = [
     go() { S.panel = "float"; S.view = "inst"; S.msgs = [...turn("groove"), ...turn("pack")]; S.prop = "applied"; S.pack = "preview"; }},
   {t:"Show a video", s:"Mixer", n:"A short video plays in the card with captions and chapters, or pops out larger over the view. <b>Show me on the Keys strip</b> points at the control it teaches.",
     go() { S.panel = "float"; S.view = "mix"; S.msgs = [...turn("groove"), ...turn("pack"), ...turn("video")]; S.prop = "applied"; S.pack = "kept"; S.vid.t = 30; S.point = "sendA"; }},
+  {t:"Pick a lesson", s:"Lessons list", n:"The <b>Lessons</b> button in the header shows every lesson in place of the conversation, the tour first, each with its progress as a tick strip: this producer finished the tour and half of Make a beat. Pressing a row starts it, or continues it, with no message and no model turn; the model never decides whether a lesson starts. Try <b>Finish a track</b>.",
+    go() { S.panel = "float"; S.list = true; S.finished = {"tour-arrangement":"did_it", "tour-sequence":"did_it", "tour-instrument":"show_me", "tour-library":"did_it", "tour-mixer":"did_it", "beat-library":"did_it", "beat-kick":"did_it", "beat-play":"skipped"}; }},
+  {t:"The plan on top", s:"Lesson", n:"A lesson under way is a <b>header under the panel's</b>, not a card in the log: the lesson and where it stands, a strip with a column per chapter and a tick per bite (white done, hatched skipped, dim grey for what the song already had, outlined for the one under way), this chapter's bites, and the step with <b>Show me</b> and <b>Skip</b>. Click a cell in the grid to do the step yourself. The conversation under it is only Coproducer's words, and the title says it is a lesson.",
+    go() { S.panel = "float"; S.view = "seq"; S.lesson = {id:"track", ch:0, bite:4, endings:{"beat-kick":"did_it", "beat-play":"did_it", "beat-snare":"show_me"}, passed:["beat-library"], over:false, folded:false}; S.finished = {}; S.msgs = [{role:"lesson", text:"Starting \"Hats\"."}, {role:"ai", text:"Hats: hats are the clock of a beat. Eighth notes on the odd steps keep time under the kick and snare; listen for how the groove gets busier without getting faster."}]; }},
+  {t:"Back where you were", s:"Resume", n:"The lesson is <b>one record per project</b>, so opening the project on another device brings the plan back at the same step: here chapter 3, bite 2, with the first two chapters' ticks filled. Folded, the plan keeps its first two rows while you talk, and <b>Leave</b> is always there. Nothing is inferred from the song or from a list of bites done elsewhere.",
+    go() { S.panel = "dock"; S.lastOpen = "dock"; S.view = "seq"; S.lesson = {id:"track", ch:2, bite:1, endings:{"chords-loop":"did_it"}, passed:["beat-library"], over:false, folded:true}; S.finished = {"beat-kick":"did_it", "beat-play":"did_it", "beat-snare":"show_me", "beat-hats":"did_it", "beat-loop":"did_it", "bass-key":"did_it", "bass-line":"did_it", "bass-sound":"skipped"}; S.msgs = [{role:"lesson", text:"Starting \"The hook\"."}, {role:"ai", text:"The hook: a hook is the line people hum. Keep it short, keep it above the chords, and let it repeat."}]; }},
   {t:"Dock", s:"Right edge", n:"Docked, the panel becomes a full-height column at the right edge and the view reflows around it, so nothing is covered. Drag its left edge to set the width. The same button floats it again; the choice and both sizes are remembered.",
     go() { S.panel = "dock"; S.lastOpen = "dock"; S.view = "mix"; S.msgs = [...turn("groove"), ...turn("pack"), ...turn("video")]; S.prop = "applied"; S.pack = "kept"; S.vid.t = 30; }},
   {t:"Minimise", s:"Status bar", n:"Minimised, it shrinks to a bar that still shows status, here a previewed change. Click the bar to bring it back. If the provider fails, the reply becomes an error with <b>Try again</b>, and editing carries on: send a message with \u201coffline\u201d in it to see that.",
