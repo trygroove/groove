@@ -36,6 +36,7 @@ import type { RawCommandInput } from "../../commands/types";
 import type { Project } from "../../domain/entities";
 import { type AskAnswer, type AssistantAsk, answerMessage, pickedLabels } from "../ask";
 import { type HistoryEntry, historyOf } from "../history";
+import type { AssistantLessonContext } from "../lesson";
 import type { AssistantProposal } from "../protocol";
 import { splitRecommendations } from "../recommendation";
 import type { ProviderUsage } from "../streamEvents";
@@ -59,6 +60,10 @@ export interface EvalSessionTurn extends EvalTurn {
   readonly turn: number;
   /** The producer's message, as the turn sent it. */
   readonly request: string;
+  /** The lesson block the turn sent: a lesson session's turns (GRV-208, `lessonSession.ts`). */
+  readonly lesson?: AssistantLessonContext;
+  /** The project description's facts the turn sent (`describedFacts`), for a lesson session's checks. */
+  readonly described?: string;
 }
 
 /** Why a session stopped. */
@@ -346,7 +351,7 @@ function sessionUsage(turns: readonly EvalTurn[]): ProviderUsage | null {
  * The session as one run: every turn's proposal joined (display-only, see
  * {@link sessionProposal}), the sums, every turn kept.
  */
-function sessionTurn(fixture: Project, session: EvalSession): EvalTurn {
+export function sessionTurn(fixture: Project, session: EvalSession): EvalTurn {
   const { turns } = session;
   const failed = turns.find((turn) => turn.error);
   const last = turns[turns.length - 1];

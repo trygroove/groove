@@ -128,7 +128,10 @@ describe("parseEvalArgs", () => {
     [["--runs"], "--runs needs a value"],
     [["--wat"], "Unknown option --wat"],
     [["--model", "gpt-4"], 'Unknown model "gpt-4"'],
-    [["--set", "vibes"], 'Unknown set "vibes". Sets: musical, basicActions, heavyOutput'],
+    [
+      ["--set", "vibes"],
+      'Unknown set "vibes". Sets: musical, basicActions, lessons, heavyOutput',
+    ],
   ])("refuses %j", (argv, message) => {
     expect(() => parseEvalArgs(argv)).toThrow(EvalUsageError);
     expect(() => parseEvalArgs(argv)).toThrow(message);
@@ -151,7 +154,10 @@ describe("selectEvalCases", () => {
     expect(basic).toHaveLength(32);
     expect(basic.every((entry) => entry.set === "basicActions")).toBe(true);
     const musical = selectEvalCases([], EVAL_CASES, "musical");
-    expect(musical.length + basic.length).toBe(EVAL_CASES.length);
+    const lessons = selectEvalCases([], EVAL_CASES, "lessons");
+    expect(lessons).toHaveLength(10);
+    expect(lessons.every((entry) => entry.set === "lessons")).toBe(true);
+    expect(musical.length + basic.length + lessons.length).toBe(EVAL_CASES.length);
     expect(() => selectEvalCases(["sketch-house"], EVAL_CASES, "basicActions")).toThrow(
       'No eval case "sketch-house"',
     );

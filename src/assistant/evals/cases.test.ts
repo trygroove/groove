@@ -244,10 +244,12 @@ describe("the basic production actions (GRV-119)", () => {
     ).toEqual(["basic-missing-track"]);
   });
 
-  it("are the only cases in their set, and every other case is a musical one", () => {
+  it("are the only cases in their set, and every other case is a musical one or a lesson", () => {
     expect(EVAL_CASES.filter((entry) => entry.set === "basicActions")).toEqual(basic);
     expect(
-      EVAL_CASES.filter((entry) => !basic.includes(entry)).every((entry) => !entry.set),
+      EVAL_CASES.filter((entry) => !basic.includes(entry)).every(
+        (entry) => !entry.set || entry.set === "lessons",
+      ),
     ).toBe(true);
   });
 });

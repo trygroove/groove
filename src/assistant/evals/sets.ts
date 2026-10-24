@@ -1,6 +1,7 @@
 /**
  * The sets of assistant eval cases the scorecard scores apart (GRV-119): the
- * musical capability evals (GRV-6 onwards) and the basic production actions.
+ * musical capability evals (GRV-6 onwards), the basic production actions,
+ * and Coproducer's lesson turns (GRV-208, `lessonCases.ts`).
  * Kept apart from `cases.ts` so the scorecard can name a set without loading
  * every case.
  *
@@ -9,12 +10,13 @@
  * of its own, but its cases are still scored in their own sets. The one group
  * is the heavy-output set, the turns that write the most proposal JSON.
  */
-export const EVAL_SETS = ["musical", "basicActions"] as const;
+export const EVAL_SETS = ["musical", "basicActions", "lessons"] as const;
 export type EvalSetId = (typeof EVAL_SETS)[number];
 
 export const EVAL_SET_LABELS: Readonly<Record<EvalSetId, string>> = {
   musical: "Musical capability",
   basicActions: "Basic production actions",
+  lessons: "Lessons",
 };
 
 /**
