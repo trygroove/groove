@@ -822,6 +822,30 @@ describe("the Lessons list and lesson mode (GRV-190)", () => {
     expect(screen.queryByRole("button", { name: /^2/ })).toBeNull();
   });
 
+  it("puts a quiz away that a replaced lesson's reply asks after the replacement", async () => {
+    const h = await renderLesson();
+    h.start("tour", "asked", "tour-sequence");
+    await waitFor(() => expect(h.client.turns).toHaveLength(1));
+    // Another lesson replaces the tour while the tour's reply is on its way.
+    expect(h.chat.pickLesson("beat")).toBe(true);
+    flush();
+    expect(h.chat.lesson.state()?.lessonId).toBe("beat");
+    // The tour's reply asks its quiz only now.
+    h.client.last().emit({
+      type: "ask",
+      ask: {
+        id: "quiz",
+        question: "Which key opens Sequence?",
+        options: [{ label: "2" }, { label: "5" }],
+        multiSelect: false,
+      },
+    });
+    h.client.last().done();
+    await waitFor(() => expect(h.client.turns).toHaveLength(2));
+    expect(h.chat.conversation.pendingAsk()).toBeNull();
+    expect(screen.queryByRole("button", { name: /^2/ })).toBeNull();
+  });
+
   it("opens the Library from its term in the step", async () => {
     const h = await renderLesson();
     h.start("beat", "asked", "beat-library");

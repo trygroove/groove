@@ -489,29 +489,37 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
   });
 
   // A lesson's quiz goes with the lesson (GRV-190): one waiting as it ends or
-  // is left is put away, and so is one its reply still on the way asks.
-  let quizLapsing = false;
-  function askedInLesson(replyId: string): boolean {
+  // is left is put away, and so is one its reply still on the way asks, even
+  // once another lesson is under way. What marks a lesson's turns as over is
+  // the last lesson turn in the conversation as it ended: a quiz asked in
+  // reply to it or one before it belongs to a lesson that is gone.
+  let lapsedThrough: string | null = null;
+  /** Where the lesson turn `replyId` answers sits, or -1 for no lesson turn. */
+  function lessonTurnBefore(replyId: string): number {
     const all = conversation.entries();
     for (let at = all.findIndex((entry) => entry.id === replyId) - 1; at >= 0; at -= 1) {
       const entry = all[at];
-      if (entry.kind === "message") return entry.lesson !== undefined;
+      if (entry.kind === "message") return entry.lesson !== undefined ? at : -1;
     }
-    return false;
+    return -1;
+  }
+  function askedInLapsedLesson(replyId: string): boolean {
+    if (lapsedThrough === null) return false;
+    const asked = lessonTurnBefore(replyId);
+    const through = conversation.entries().findIndex((entry) => entry.id === lapsedThrough);
+    return asked >= 0 && asked <= through;
   }
   function lessonQuizLapses(): void {
+    const all = conversation.entries();
+    const last = all.findLast((entry) => entry.kind === "message" && entry.lesson !== undefined);
+    if (last) lapsedThrough = last.id;
     const pending = conversation.pendingAsk();
-    if (pending && askedInLesson(pending.replyId)) conversation.dismissAsk();
-    quizLapsing = conversation.streaming();
+    if (pending && askedInLapsedLesson(pending.replyId)) conversation.dismissAsk();
   }
   createEffect(
-    () => ({ pending: conversation.pendingAsk(), busy: conversation.streaming() }),
-    ({ pending, busy }) => {
-      if (!quizLapsing) return;
-      if (pending && askedInLesson(pending.replyId) && !lesson.state()) {
-        conversation.dismissAsk();
-      }
-      if (!busy) quizLapsing = false;
+    () => conversation.pendingAsk(),
+    (pending) => {
+      if (pending && askedInLapsedLesson(pending.replyId)) conversation.dismissAsk();
     },
   );
 
