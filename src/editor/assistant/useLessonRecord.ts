@@ -52,6 +52,12 @@ export interface LoadedLessonRecord {
 export interface LessonRecordStore {
   /** The record as read, once the first read for the owner succeeded. */
   readonly loaded: Accessor<LoadedLessonRecord | null>;
+  /**
+   * Whether the first read for the owner is over, whether or not it worked
+   * (true at once with no owner): until then `current()` is only the empty
+   * record, so nothing should start a lesson from it.
+   */
+  readonly settled: Accessor<boolean>;
   /** The record as it stands now, past any write not yet stored. */
   current(): LessonRecord;
   /** How each bite finished in this project ended, skipped ones included. */
@@ -71,7 +77,10 @@ export interface LessonRecordStore {
 export function useLessonRecord(options: UseLessonRecordOptions): LessonRecordStore {
   const repository = options.repository ?? getLessonRepository;
   const clock = options.clock ?? systemClock;
+  const keyOf = (next: LessonRecordOwner | null) =>
+    next ? `${next.uid}|${next.projectId}` : null;
   const [loaded, setLoaded] = createSignal<LoadedLessonRecord | null>(null);
+  const [settled, setSettled] = createSignal(keyOf(untrack(options.owner)) === null);
   const [shown, setShown] = createSignal<LessonRecord>(emptyLessonRecord());
   // A plain copy: Solid 2 batches writes, and the next write must see the last.
   let latest: LessonRecord = emptyLessonRecord();
@@ -101,8 +110,6 @@ export function useLessonRecord(options: UseLessonRecordOptions): LessonRecordSt
       .catch(() => undefined);
   }
 
-  const keyOf = (next: LessonRecordOwner | null) =>
-    next ? `${next.uid}|${next.projectId}` : null;
   let openKey: string | null = null;
 
   /**
@@ -119,6 +126,7 @@ export function useLessonRecord(options: UseLessonRecordOptions): LessonRecordSt
     if (!first) {
       set(emptyLessonRecord());
       setLoaded(null);
+      setSettled(!key);
     }
     if (!key || !next) {
       ready = Promise.resolve(false);
@@ -128,7 +136,9 @@ export function useLessonRecord(options: UseLessonRecordOptions): LessonRecordSt
       .then((repo) => repo.loadRecord(next.uid, next.projectId))
       .then(
         (result) => {
-          if (since !== generation || !result.ok) return false;
+          if (since !== generation) return false;
+          setSettled(true);
+          if (!result.ok) return false;
           const stored = result.record ?? emptyLessonRecord();
           // What this page wrote meanwhile goes over what was stored.
           set(
@@ -143,7 +153,10 @@ export function useLessonRecord(options: UseLessonRecordOptions): LessonRecordSt
           setLoaded({ key, record: stored });
           return true;
         },
-        () => false,
+        () => {
+          if (since === generation) setSettled(true);
+          return false;
+        },
       );
   }
 
@@ -174,5 +187,5 @@ export function useLessonRecord(options: UseLessonRecordOptions): LessonRecordSt
 
   const finished = createMemo(() => finishedBites(shown()));
   const done = createMemo(() => doneBites(shown()));
-  return { loaded, current: () => latest, finished, done, save };
+  return { loaded, settled, current: () => latest, finished, done, save };
 }

@@ -19,7 +19,12 @@
 import { createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
 import { createFactoryContext } from "../../domain/factories";
 import { lessonCue } from "../../lessons/cue";
-import { isLessonId, type LessonSource } from "../../lessons/ids";
+import {
+  type BiteId,
+  isLessonId,
+  type LessonId,
+  type LessonSource,
+} from "../../lessons/ids";
 import {
   biteOf,
   type LessonState,
@@ -91,6 +96,8 @@ export function useLesson(options: UseLessonOptions): Lesson {
     );
     turns.queue(next, event);
     put(over ? null : next);
+    // An ended lesson's quiz goes with it.
+    if (over) options.onEnded?.();
   }
 
   function begin(transition: LessonTransition, source: LessonSource): void {
@@ -112,18 +119,39 @@ export function useLesson(options: UseLessonOptions): Lesson {
     },
   );
 
+  // A lesson asked for before the record has been read waits for it, so it
+  // starts from where the record has it rather than from an empty one.
+  let pending: {
+    readonly lesson: LessonId;
+    readonly source: LessonSource;
+    readonly biteId?: BiteId;
+  } | null = null;
+
   // The lesson the record has under way comes back once it has been read and
   // there is a project to read it against, silently: the conversation already
-  // has its turns. Each record is read back once.
+  // has its turns. Each record is read back once. A lesson asked for while it
+  // was read starts instead, from it.
   let restored: string | null = null;
   createEffect(
-    () => ({ loaded: record.loaded(), ready: world() !== null }),
-    ({ loaded, ready }) => {
-      if (!loaded || !ready || restored === loaded.key) return;
+    () => ({
+      settled: record.settled(),
+      loaded: record.loaded(),
+      ready: world() !== null,
+    }),
+    ({ settled, loaded, ready }) => {
+      if (!ready) return;
+      if (pending && settled) {
+        const asked = pending;
+        pending = null;
+        if (loaded) restored = loaded.key;
+        launch(asked.lesson, asked.source, asked.biteId);
+        return;
+      }
+      if (!loaded || restored === loaded.key) return;
       restored = loaded.key;
       const underWay = loaded.record.underWay;
       const now = untrack(world);
-      if (!underWay || !now || untrack(state)) return;
+      if (!underWay || !now || live) return;
       const lessonId = underWay.lessonId;
       const back = isLessonId(lessonId)
         ? startLesson(lessonId, loaded.record, now, untrack(settings))
@@ -132,8 +160,25 @@ export function useLesson(options: UseLessonOptions): Lesson {
     },
   );
 
+  function launch(lesson: LessonId, source: LessonSource, biteId?: BiteId): boolean {
+    const now = world();
+    if (!now) return false;
+    // The lesson under way, asked for again, carries on where it is.
+    if (biteId === undefined && live?.lessonId === lesson) return true;
+    const transition = startLesson(lesson, record.current(), now, settings(), biteId);
+    if (!transition) return false;
+    // Another lesson under way is left first, its turns and its quiz with it.
+    if (live) {
+      dropOut();
+      turns.clear();
+      options.onEnded?.();
+    }
+    begin(transition, source);
+    return true;
+  }
+
   function dropOut(): void {
-    const current = state();
+    const current = live;
     if (current) options.analytics().log("lesson_dropped_out", lessonIds(current));
   }
   // Leaving the editor mid-lesson drops out of it (GRV-190); the record keeps
@@ -148,15 +193,12 @@ export function useLesson(options: UseLessonOptions): Lesson {
     busy: shows.busy,
     openView: shows.openView,
     start(lesson, source, biteId) {
-      const now = world();
-      if (!now) return false;
-      // The lesson under way, asked for again, carries on where it is.
-      if (biteId === undefined && live?.lessonId === lesson) return true;
-      const transition = startLesson(lesson, record.current(), now, settings(), biteId);
-      if (!transition) return false;
-      dropOut();
-      begin(transition, source);
-      return true;
+      if (!world()) return false;
+      if (!record.settled()) {
+        pending = { lesson, source, biteId };
+        return true;
+      }
+      return launch(lesson, source, biteId);
     },
     next() {
       const current = state();
@@ -178,7 +220,8 @@ export function useLesson(options: UseLessonOptions): Lesson {
       if (transition) handle(transition);
     },
     leave() {
-      if (!state()) return;
+      pending = null;
+      if (!live) return;
       dropOut();
       turns.clear();
       shows.clearNotice();

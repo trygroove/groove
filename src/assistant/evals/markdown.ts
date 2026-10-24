@@ -45,7 +45,7 @@ export function sessionLines(
   return [
     heading,
     "",
-    "Each session case's runs, turn by turn: the case's checks judge the final song, and each turn's own proposal is judged by checks 1, 16 and 20.",
+    "Each session case's runs, turn by turn: the case's checks judge the final song, and each turn's own proposal is judged by checks 1, 16 and 20. A lesson session's turns are each judged by checks 25 to 28 against what that turn sent.",
     "",
     "| Case | Run | Turns | Ended | Output tokens per turn | Latency per turn | Final song failed | Turns failed |",
     "| --- | --- | --- | --- | --- | --- | --- | --- |",
@@ -211,7 +211,7 @@ function numberLines(
     `- Tool set version: ${report.toolsetVersion}`,
     `- Runs per case: ${report.runsPerCase}; cases: ${report.caseIds.length}; turns: ${report.scorecard.headline.turns}; errored turns: ${report.summary.errored.total}`,
     "",
-    "Pass rates count the proposals a check could judge. A reply with no proposal, or one that did not apply, fails check 1 and is not judged by checks 2 to 5 or 7. A turn that errored (the provider or the transport failed, or it timed out) is not judged by any check and is counted apart. Check 6 is judged on extreme cases only, and check 7 on the sketch cases only (the ones that name the parts they ask for). Check 8 judges every case: a proposal, or, where the case expects one, a question and no proposal; a case that expects a question is judged by checks 1 to 7 only if it proposed something anyway. Checks 16 and 20 judge every proposal that applied, because a proposal that stops partway (notes cleared and never written, a clip made and never placed) applies cleanly and passes the rest; the other checks from 9 on are judged only on the cases that name them, and 18 and 19 judge the basic production actions. Checks 22 and 23 read only the reply's text, so they judge a turn that proposed nothing as well. Nothing gates on the descriptive numbers.",
+    "Pass rates count the proposals a check could judge. A reply with no proposal, or one that did not apply, fails check 1 and is not judged by checks 2 to 5 or 7. A turn that errored (the provider or the transport failed, or it timed out) is not judged by any check and is counted apart. Check 6 is judged on extreme cases only, and check 7 on the sketch cases only (the ones that name the parts they ask for). Check 8 judges every case: a proposal, or, where the case expects one, a question and no proposal; a case that expects a question is judged by checks 1 to 7 only if it proposed something anyway. Checks 16 and 20 judge every proposal that applied, because a proposal that stops partway (notes cleared and never written, a clip made and never placed) applies cleanly and passes the rest; the other checks from 9 on are judged only on the cases that name them, and 18 and 19 judge the basic production actions. Checks 22 and 23 read only the reply's text, so they judge a turn that proposed nothing as well. The lessons set's cases are judged by check 8 on what they changed in the song, by check 24 on the ones that ask for a lesson and by checks 25 to 28 on every lesson turn, and by no proposal check. Nothing gates on the descriptive numbers.",
     "",
     ...erroredLines(report),
     ...headlineLines(report.scorecard),

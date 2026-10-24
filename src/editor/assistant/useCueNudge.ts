@@ -3,8 +3,8 @@
  * opens a project with Coproducer's panel open, Coproducer may offer one "Want to try…?",
  * at most once a day across every project, and dismissable. Opening the
  * editor with the panel closed, or before the day after onboarding, offers
- * nothing. While the conversation cannot be shown (the retention notice is
- * waiting for an answer, GRV-8), nothing is decided: the day is not spent on
+ * nothing. While the conversation cannot be shown (the account's retention
+ * answer is still loading, GRV-8), nothing is decided: the day is not spent on
  * a nudge nobody could see.
  *
  * What it offers is the next lesson bite the producer has not been through
@@ -39,8 +39,8 @@ export interface UseCueNudgeOptions {
   /** Whether the panel is open: read once, as the profile arrives. */
   readonly expanded: Accessor<boolean>;
   /**
-   * Whether the conversation can be on screen: false while the retention
-   * notice stands in for it (GRV-8). The nudge is decided once it is true.
+   * Whether the conversation can be on screen: false while the account's
+   * retention answer loads (GRV-8). The nudge is decided once it is true.
    */
   readonly ready?: Accessor<boolean>;
   readonly conversation: Pick<AssistantConversation, "send" | "pendingAsk">;

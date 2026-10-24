@@ -562,7 +562,7 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
     analytics,
     committedProject: () => session.committedProject(),
     link: askLink,
-    // The disclosure comes before the first message, and every turn says
+    // The disclosure is one tap from the composer (GRV-205), and every turn says
     // where its transcript is filed, if the account keeps any (GRV-8).
     retention: {
       client: props.assistantRetentionClient ?? getAssistantRetentionClient,

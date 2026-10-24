@@ -54,6 +54,12 @@ import {
   isEveryCaseCheck,
 } from "./caseChecks";
 import { casePairs, EVAL_CASES, type EvalCase } from "./cases";
+import {
+  isLessonTurnCheck,
+  LESSON_CHECK_IDS,
+  LESSON_TURN_CHECKS,
+  type LessonTurnCheckId,
+} from "./lessonChecks";
 import { EVAL_SELECTIONS, type EvalSelection, inSelection } from "./sets";
 import { caseSplit, casesInSplit, EVAL_SPLITS, type EvalSplit } from "./splits";
 
@@ -101,6 +107,14 @@ export const DEFAULT_GUARDRAILS = {
   holdNotFlattened: false,
 } as const;
 
+/** A check an experiment may hold on every turn. */
+export type EveryTurnCheckId = EveryCaseCheckId | LessonTurnCheckId;
+
+const EVERY_TURN_CHECKS: readonly EveryTurnCheckId[] = [
+  ...EVERY_CASE_CHECKS,
+  ...LESSON_TURN_CHECKS,
+];
+
 export interface ExperimentGuardrails {
   readonly maxCheckDropPoints: number;
   readonly maxOverallDropPoints: number;
@@ -117,10 +131,12 @@ export interface ExperimentGuardrails {
   /**
    * These checks pass on every turn's own proposal (a session's `turnChecks`).
    * Only the checks a session judges on each turn may be named: those every
-   * case is judged by (`EVERY_CASE_CHECKS`, 16 and 20); any other would be
-   * missing from every session turn and pass without judging anything.
+   * case is judged by (`EVERY_CASE_CHECKS`, 16 and 20), and those a lesson
+   * session judges on each of its turns (`LESSON_TURN_CHECKS`, 25 to 28,
+   * GRV-208); any other would be missing from every session turn and pass
+   * without judging anything.
    */
-  readonly everyTurnChecks?: readonly EveryCaseCheckId[];
+  readonly everyTurnChecks?: readonly EveryTurnCheckId[];
 }
 
 /** Which cases an experiment draws its train and held-out cases from. */
@@ -273,10 +289,11 @@ const definitionSchema = z.strictObject({
       everyTurnChecks: z
         .array(
           z
-            .enum(CASE_CHECK_IDS)
+            .enum([...CASE_CHECK_IDS, ...LESSON_CHECK_IDS])
             .refine(
-              isEveryCaseCheck,
-              `only a check judged on every turn: ${EVERY_CASE_CHECKS.join(", ")}`,
+              (id): id is EveryTurnCheckId =>
+                isLessonTurnCheck(id) || (id !== "startsLesson" && isEveryCaseCheck(id)),
+              `only a check judged on every turn: ${EVERY_TURN_CHECKS.join(", ")}`,
             ),
         )
         .min(1)

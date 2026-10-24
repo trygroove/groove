@@ -27,15 +27,24 @@
  *
  * GRV-145 runs a case as a session when it names `session` (`session.ts`):
  * the large, open requests, judged on the song a scripted producer ends with.
+ *
+ * GRV-208 adds a third set, the lessons (`lessonCases.ts`): a case may carry
+ * the lesson block and the producer's memory its turn sends (`lesson`,
+ * `memory`), run a bite of a lesson as a session (`lessonSession`,
+ * `lessonSession.ts`), and is judged by the lesson checks it names
+ * (`lessonChecks`, `lessonChecks.ts`).
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import type { Project } from "../../domain/entities";
+import type { LessonId } from "../../lessons/ids";
 import { lessonOfferAsk, lessonOfferText } from "../../onboarding/questions";
 import type { SelectionScope, SelectionState } from "../../selection/types";
 import { type AskAnswer, type AssistantAsk, answerMessage, askTranscript } from "../ask";
 import { type HistoryEntry, historyOf } from "../history";
+import type { AssistantLessonContext } from "../lesson";
+import type { AssistantMemoryContext } from "../memory";
 import { type AssistantMessage, assistantMessageSchema } from "../protocol";
 import type { ProposalOutcome } from "../transcripts";
 import { BASIC_ACTION_CASES } from "./basicActionCases";
@@ -55,6 +64,9 @@ import {
   createTechnoDrumsProject,
   createTechnoLoopProject,
 } from "./fixtures";
+import { LESSON_CASES } from "./lessonCases";
+import type { LessonCheckId } from "./lessonChecks";
+import type { EvalLessonScript } from "./lessonSession";
 import { FIXTURE_NAME, jsonFixturesDir, namedFixture } from "./namedFixtures";
 import type { EvalSetId } from "./sets";
 import { EVAL_SPLITS, type EvalSplit } from "./splits";
@@ -85,6 +97,8 @@ export const EVAL_CAPABILITIES = [
   "soundPicks",
   // GRV-150: replies that follow the project context, not the history.
   "projectContext",
+  // GRV-208: Coproducer's lesson turns.
+  "lesson",
 ] as const;
 export type EvalCapability = (typeof EVAL_CAPABILITIES)[number];
 
@@ -177,6 +191,32 @@ export interface EvalCase {
    * one turn.
    */
   readonly session?: EvalSessionOptions;
+  /**
+   * The lesson under way the turn carries (GRV-208, `src/assistant/lesson.ts`),
+   * sent as the panel's `sendMessage` sends it. Absent, the turn is outside a
+   * lesson.
+   */
+  readonly lesson?: AssistantLessonContext;
+  /**
+   * The producer's memory the turn carries (GRV-25), as the panel sends it:
+   * what the lesson rules read, and what offers `start_lesson`.
+   */
+  readonly memory?: AssistantMemoryContext;
+  /** The lesson check 24 expects the turn to start (GRV-208). */
+  readonly startsLesson?: LessonId;
+  /**
+   * Runs the case as a lesson session (GRV-208, `lessonSession.ts`): one bite
+   * of a lesson, a turn per moment, the scripted producer doing each step by
+   * Show me or Skip.
+   */
+  readonly lessonSession?: EvalLessonScript;
+  /**
+   * The lesson checks it is judged by (24 to 28, `lessonChecks.ts`): on its
+   * one turn, or on every turn of its lesson session. A case that names any
+   * is judged on the lesson's own path: check 8 on what changes the song, and
+   * no proposal check, since a lesson turn proposes nothing.
+   */
+  readonly lessonChecks?: readonly LessonCheckId[];
 }
 
 /** How a session case runs (GRV-145). */
@@ -695,6 +735,8 @@ export const TYPESCRIPT_CASES: readonly EvalCase[] = [
   },
   // GRV-119: the basic production actions, a set of their own.
   ...BASIC_ACTION_CASES,
+  // GRV-208: Coproducer's lesson turns, a set of their own.
+  ...LESSON_CASES,
 ];
 
 // ---------------------------------------------------------------------------

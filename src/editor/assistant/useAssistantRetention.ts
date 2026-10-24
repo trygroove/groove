@@ -2,14 +2,14 @@
  * The account's answer about keeping its assistant conversations (GRV-8),
  * held once per editor beside the conversation.
  *
- * Until a signed-in account has answered the current disclosure, the
- * assistant cannot be messaged: `useAssistantChat` gates sending on
- * {@link AssistantRetention.answered}, and the panel shows the disclosure in
- * place of the composer. An answer the browser could not load counts as no
- * answer, so the disclosure is shown again rather than skipped. Until the
- * answer is known ({@link AssistantRetention.known}), the panel shows neither
- * the disclosure nor the conversation, so an account that has answered never
- * sees the disclosure flash past.
+ * The disclosure is available before the first message, not answered before
+ * it (GRV-205, ADR 0007 decision 5 as amended): sending is never gated on
+ * {@link AssistantRetention.answered}. Until the account has answered the
+ * current disclosure, the panel shows a one-line note under the composer; an
+ * answer the browser could not load counts as no answer, so the note shows
+ * rather than being skipped. Until the answer is known
+ * ({@link AssistantRetention.known}) the note is not shown, so an account that
+ * has answered never sees it flash past.
  *
  * Nothing loads until the assistant is first opened
  * ({@link UseAssistantRetentionOptions.wanted}): an editor whose assistant
@@ -52,6 +52,11 @@ export interface AssistantRetention {
   readonly saveFailed: Accessor<boolean>;
   /** Loads the answer again, after a failure. */
   reload(): void;
+  /**
+   * Notes that the producer opened the full disclosure from the composer's
+   * note (GRV-205): `feature_first_use` for `assistant_disclosure`.
+   */
+  disclosureOpened(): void;
   /** Gives an answer. Resolves with whether it was stored. */
   answer(retain: boolean): Promise<boolean>;
   /** Tells a kept turn what became of its proposal, if the account keeps any. */
@@ -162,6 +167,13 @@ export function useAssistantRetention(
     saving,
     saveFailed,
     reload: load,
+    disclosureOpened() {
+      try {
+        options.analytics().logFeatureFirstUse("assistant_disclosure");
+      } catch {
+        // Best-effort, like the answer's own events.
+      }
+    },
     async answer(retain) {
       if (saving()) return false;
       setSaving(true);

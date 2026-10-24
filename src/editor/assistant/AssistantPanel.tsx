@@ -90,14 +90,10 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
   const hasSettings = () =>
     Boolean(props.chat?.retention && props.chat.account().registered);
   // The Lessons list (GRV-190), in place of the conversation like the
-  // settings, and reachable wherever the conversation is.
+  // settings, and reachable wherever the conversation is: for any registered
+  // account, the data disclosure answered or not (GRV-205).
   const [lessonsOpen, setLessonsOpen] = createSignal(false);
-  const hasLessons = () => {
-    const chat = props.chat;
-    if (!chat?.account().registered) return false;
-    const retention = chat.retention;
-    return !retention || retention.answered();
-  };
+  const hasLessons = () => Boolean(props.chat?.account().registered);
   function toggleLessons(): void {
     const opening = !lessonsOpen();
     setLessonsOpen(opening);
@@ -249,6 +245,7 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
               closeSettings={() => setSettingsOpen(false)}
               lessonsOpen={() => lessonsOpen() && hasLessons()}
               closeLessons={() => setLessonsOpen(false)}
+              openSettings={() => setSettingsOpen(true)}
               holdExpandedVideo={(collapse) => props.panel.holdExpandedVideo(collapse)}
             />
           )}
