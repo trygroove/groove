@@ -3,6 +3,7 @@ import { ASK_LIMITS, assistantAskSchema } from "../assistant/ask";
 import {
   EMPTY_MEMORY,
   ONBOARDING_QUESTION_IDS,
+  PRODUCER_GOALS,
   producerMemorySchema,
 } from "../persistence/profileDocuments";
 import {
@@ -10,6 +11,7 @@ import {
   GEAR_CHOICES,
   isAnswered,
   lessonOfferAsk,
+  lessonOfferText,
   memoryLines,
   ONBOARDING_QUESTIONS,
   suggestedLesson,
@@ -99,11 +101,15 @@ describe("onboarding's questions (GRV-25)", () => {
     ]);
   });
 
-  it("suggests a first lesson from the goal: a chapter of the lessons (GRV-43)", () => {
-    expect(suggestedLesson("first_track")).toBe("Make a beat");
-    expect(suggestedLesson("video_or_game")).toBe("Make a beat");
-    expect(suggestedLesson("sound_design")).toBe("Shape a sound");
-    expect(suggestedLesson(null)).toBe("Tour the studio");
+  it("suggests the tour as the first lesson, whatever the goal, and says why (GRV-190)", () => {
+    for (const goal of [...PRODUCER_GOALS, null]) {
+      expect(suggestedLesson(goal)).toBe("Tour the studio");
+    }
+    expect(lessonOfferText("sound_design", "studio")).toContain(
+      "Let's start with a quick tour of the studio, then we'll make something",
+    );
+    const ask = lessonOfferAsk("first_track");
+    expect(ask.options.map((option) => option.label)).toEqual(["Let's go", "Not now"]);
   });
 
   it("reduces memory to its fixed choices for validation, never artists or typed words", () => {

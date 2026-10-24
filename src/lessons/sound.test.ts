@@ -126,3 +126,48 @@ describe("Shape a sound (GRV-43)", () => {
     expect(step.done({ ...world, project: half }, world, settings)).toBe(true);
   });
 });
+
+describe("Shape a sound, started again on a shaped synth (GRV-190)", () => {
+  /** The synth with the whole chapter done by Show me. */
+  function shaped(): LessonWorld {
+    let world = withSynth();
+    for (const bite of SOUND_CHAPTER.bites) {
+      let at = nextStep(bite, world, settings);
+      while (at) {
+        world = applyShowMe(world, at.step.showMe(world, settings, lessonContext()));
+        at = nextStep(bite, world, settings, at.index);
+      }
+    }
+    return world;
+  }
+
+  it("does not finish Darken it or Make it a pluck as they start", () => {
+    const world = shaped();
+    for (const id of ["sound-filter", "sound-pluck"]) {
+      const step = stepIn(id, world);
+      expect(["open", "ring"]).toContain(step.id);
+      expect(step.done(world, world, settings)).toBe(false);
+    }
+  });
+
+  it("opens the filter, then has the producer darken it again", () => {
+    const world = shaped();
+    const open = stepIn("sound-filter", world);
+    const opened = applyShowMe(world, open.showMe(world, settings, lessonContext()));
+    expect(open.done(opened, world, settings)).toBe(true);
+    const bite = SOUND_CHAPTER.bites.find((one) => one.id === "sound-filter");
+    if (!bite) throw new Error("no bite");
+    const next = nextStep(bite, opened, settings, 1);
+    expect(next?.step.id).toBe("cutoff");
+    expect(next?.step.done(opened, opened, settings)).toBe(false);
+  });
+
+  it("lets the pluck ring again, then has the producer shape it", () => {
+    const world = shaped();
+    const ring = stepIn("sound-pluck", world);
+    const ringing = applyShowMe(world, ring.showMe(world, settings, lessonContext()));
+    expect(ring.done(ringing, world, settings)).toBe(true);
+    const synth = lessonSynth(ringing.project);
+    expect(synth && isPluck(synth)).toBe(false);
+  });
+});

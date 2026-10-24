@@ -749,23 +749,42 @@ export function lessonReplyText(lesson: AssistantLessonContext): string {
   return [...earlier, momentText(lesson)].join(" ");
 }
 
+/** The lesson's name, as its first reply says it. */
+function lessonTitle(lesson: AssistantLessonContext): string {
+  return lesson.track?.title ?? lesson.chapter;
+}
+
+/**
+ * Whether this is the lesson's first bite, so its reply says the lesson has
+ * started (GRV-190): the scripted stand-in for the prompt's rule, which reads
+ * the conversation instead.
+ */
+function opensLesson(lesson: AssistantLessonContext): boolean {
+  return lesson.biteNumber === 1 && (lesson.track?.chapterNumber ?? 1) === 1;
+}
+
 function momentText(lesson: AssistantLessonContext): string {
   const bite = `"${lesson.bite}"`;
   switch (lesson.moment) {
     case "bite_started":
-      return `Here's ${bite}: ${lesson.skill}.`;
+      return opensLesson(lesson)
+        ? `We're starting the "${lessonTitle(lesson)}" lesson, and you can leave it whenever you like. Here's ${bite}: ${lesson.skill}.`
+        : `Here's ${bite}: ${lesson.skill}.`;
     case "step_done":
       return `Nice, that step of ${bite} is done. On to the next.`;
     case "bite_done":
       return lesson.next[0]
         ? `Well done: ${bite} is finished. Next is "${lesson.next[0]}", whenever you're ready.`
         : `Well done: ${bite} is finished.`;
-    case "chapter_done":
+    case "chapter_done": {
+      // A chapter alone was the whole lesson (GRV-190).
+      const over = lesson.track === null ? " The lesson is over." : "";
       return lesson.next.length > 0
-        ? `That's "${lesson.chapter}" finished. Where next: ${lesson.next.join("; ")}.`
-        : `That's "${lesson.chapter}" finished.`;
+        ? `That's "${lesson.chapter}" finished.${over} Where next: ${lesson.next.join("; ")}.`
+        : `That's "${lesson.chapter}" finished.${over}`;
+    }
     case "track_done":
-      return `That's "${lesson.track?.title ?? lesson.chapter}" finished, stems and all.`;
+      return `That's "${lesson.track?.title ?? lesson.chapter}" finished, stems and all. The lesson is over.`;
     case "under_way":
       return EMULATOR_REPLY_CHUNKS.join("");
   }

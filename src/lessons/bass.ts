@@ -276,6 +276,7 @@ const sound: LessonBite = {
 export const BASS_CHAPTER: LessonChapter = {
   id: "bass",
   title: "Bass",
+  short: "Bass",
   summary: "a bassline under the kick, in the song's key",
   bites: [key, line, sound],
 };

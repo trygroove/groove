@@ -224,6 +224,38 @@ const wave: LessonBite = {
   ],
 };
 
+/**
+ * Run only when the synth's filter is already down (GRV-190), as when the
+ * chapter is started again on a sound shaped before: the producer opens it
+ * back up, so turning it down is theirs to do and to hear.
+ */
+const openFilter: LessonStep = {
+  id: "open",
+  applies: (world) => {
+    const synth = synthOf(world);
+    return synth !== null && synthValue(synth, SYNTH_FILTER_CUTOFF) <= DARK_CUTOFF_HZ;
+  },
+  instruction: (world) =>
+    `${synthOf(world)?.name ?? "The synth"}'s [filter](filter) is already down. To darken it yourself, open it back up first: turn the [cutoff](cutoff) up, above ${DARK_CUTOFF_HZ.toLocaleString("en")} Hz.`,
+  target: (world) => {
+    const synth = synthOf(world);
+    return synth ? control(synth, SYNTH_FILTER_CUTOFF) : null;
+  },
+  done(world) {
+    const synth = synthOf(world);
+    return synth !== null && synthValue(synth, SYNTH_FILTER_CUTOFF) > DARK_CUTOFF_HZ;
+  },
+  showMe(world) {
+    const synth = synthOf(world);
+    return synth
+      ? {
+          kind: "commands",
+          commands: [set(synth, SYNTH_FILTER_CUTOFF, SYNTH_FILTER_CUTOFF.defaultValue)],
+        }
+      : null;
+  },
+};
+
 const filter: LessonBite = {
   id: "sound-filter",
   chapter: "sound",
@@ -232,6 +264,7 @@ const filter: LessonBite = {
   quiz: "Turning a low-pass filter's cutoff down makes a sound darker or brighter? (Darker.)",
   steps: [
     addSynth,
+    openFilter,
     {
       id: "cutoff",
       instruction: (world) =>
@@ -266,6 +299,38 @@ export function isPluck(track: SynthTrack): boolean {
   );
 }
 
+/**
+ * Run only when the synth is already a pluck (GRV-190), as when the chapter
+ * is started again on a sound shaped before: the producer lets it ring
+ * again, so shaping the pluck is theirs.
+ */
+const openEnvelope: LessonStep = {
+  id: "ring",
+  applies: (world) => {
+    const synth = synthOf(world);
+    return synth !== null && isPluck(synth);
+  },
+  instruction: (world) =>
+    `${synthOf(world)?.name ?? "The synth"} is already a [pluck](pluck). To shape it yourself, let it ring first: turn the [sustain](sustain) up.`,
+  target: (world) => {
+    const synth = synthOf(world);
+    return synth ? control(synth, SYNTH_AMP_SUSTAIN) : null;
+  },
+  done(world) {
+    const synth = synthOf(world);
+    return synth !== null && !isPluck(synth);
+  },
+  showMe(world) {
+    const synth = synthOf(world);
+    return synth
+      ? {
+          kind: "commands",
+          commands: [set(synth, SYNTH_AMP_SUSTAIN, SYNTH_AMP_SUSTAIN.defaultValue)],
+        }
+      : null;
+  },
+};
+
 const pluck: LessonBite = {
   id: "sound-pluck",
   chapter: "sound",
@@ -274,6 +339,7 @@ const pluck: LessonBite = {
   quiz: "Which part of the envelope do you turn all the way down for a pluck? (Sustain.)",
   steps: [
     addSynth,
+    openEnvelope,
     {
       id: "envelope",
       instruction: () =>
@@ -306,6 +372,7 @@ const pluck: LessonBite = {
 export const SOUND_CHAPTER: LessonChapter = {
   id: "sound",
   title: "Shape a sound",
+  short: "Sound",
   summary: "a synth pluck, from a raw waveform through the filter and the envelope",
   bites: [wave, filter, pluck],
 };

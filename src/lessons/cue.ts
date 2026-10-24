@@ -10,7 +10,15 @@
  * except the track and pad names in `changes`, which the project context
  * already carries to the same provider.
  */
-import { bite as biteById, chapter, lesson, TRACK_LESSON } from "./chapters";
+import type { ProducerGoal } from "../persistence/profileDocuments";
+import {
+  bite as biteById,
+  chapter,
+  LESSONS,
+  lesson,
+  lessonForGoal,
+  TRACK_LESSON,
+} from "./chapters";
 import {
   type BeatStyle,
   type BiteEnding,
@@ -115,14 +123,17 @@ const TRACK_POINTER = `The "${TRACK_LESSON.title}" lesson: ${TRACK_LESSON.summar
  * The pointers after chapter `chapterIndex` of `lessonId` (GRV-43): for a
  * chapter taught alone, "Finish a track" after "Make a beat" unless one of
  * its own chapters is begun (by `done`), then the chapters taught alone not
- * yet finished, then the chapter's own related skills, at most three. Inside
- * a lesson of several chapters (GRV-44), the chapter after it; after its
- * last, where to take what it made.
+ * yet finished, in the Lessons list's order, then the chapter's own related
+ * skills, at most three. The tour points first at the lesson the producer's
+ * goal suggests (`lessonForGoal`, GRV-190). Inside a lesson of several
+ * chapters (GRV-44), the chapter after it; after its last, where to take
+ * what it made.
  */
 export function wrapUpPointers(
   lessonId: LessonId,
   chapterIndex: number,
   done: readonly string[],
+  goal: ProducerGoal | null = null,
 ): string[] {
   const finished = new Set(done);
   const definition = lesson(lessonId);
@@ -142,15 +153,26 @@ export function wrapUpPointers(
   const own = (SOLO_CHAPTER_IDS as readonly string[]).includes(chapterId)
     ? POINTERS[chapterId as SoloChapterId]
     : [];
-  return [...toTrack, ...soloLeft(chapterId, finished), ...own].slice(0, 3);
+  const toGoal = chapterId === "tour" ? [pointerTo(lessonForGoal(goal))] : [];
+  const left = soloLeft(chapterId, finished).filter((one) => !toGoal.includes(one));
+  return [...toGoal, ...toTrack, ...left, ...own].slice(0, 3);
 }
 
-/** The chapters taught alone, besides `chapterId`, with a bite not in `finished`. */
+function pointerTo(chapterId: ChapterId): string {
+  const one = chapter(chapterId);
+  return `The "${one.title}" chapter: ${one.summary}`;
+}
+
+/**
+ * The chapters taught alone, besides `chapterId`, with a bite not in
+ * `finished`, in the Lessons list's order.
+ */
 function soloLeft(chapterId: ChapterId, finished: ReadonlySet<string>): string[] {
-  return SOLO_CHAPTER_IDS.filter((id) => id !== chapterId)
-    .map((id) => chapter(id))
+  return LESSONS.filter((one) => one.chapters.length === 1)
+    .map((one) => one.chapters[0])
+    .filter((one) => one.id !== chapterId)
     .filter((one) => one.bites.some((each) => !finished.has(each.id)))
-    .map((one) => `The "${one.title}" chapter: ${one.summary}`);
+    .map((one) => pointerTo(one.id));
 }
 
 const HOW_WORDS: Readonly<Record<Exclude<BiteEnding, "skipped">, string>> = {
@@ -198,7 +220,7 @@ export function lessonCue(
     quiz: over ? lessonBite.quiz : null,
     next:
       moment === "chapter_done" || moment === "track_done"
-        ? wrapUpPointers(state.lessonId, state.chapterIndex, done)
+        ? wrapUpPointers(state.lessonId, state.chapterIndex, done, settings.goal ?? null)
         : over && following
           ? [following.title]
           : [],

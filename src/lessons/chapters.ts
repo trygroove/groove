@@ -75,11 +75,14 @@ export const TRACK_LESSON: LessonDefinition = {
   passesOverMade: true,
 };
 
-/** Every lesson, in the order the Lessons list shows them. */
+/**
+ * Every lesson, in the order the Lessons list shows them (GRV-190): the tour
+ * first, then the beat and the sound, then "Finish a track".
+ */
 export const LESSONS: readonly LessonDefinition[] = [
+  soloLesson("tour"),
   soloLesson("beat"),
   soloLesson("sound"),
-  soloLesson("tour"),
   TRACK_LESSON,
 ];
 
@@ -89,17 +92,21 @@ export function lesson(id: LessonId): LessonDefinition {
   return found;
 }
 
-/** The chapter a goal from onboarding suggests starting with. */
-export function chapterForGoal(goal: ProducerGoal | null): SoloChapterId {
-  switch (goal) {
-    case "first_track":
-    case "video_or_game":
-      return "beat";
-    case "sound_design":
-      return "sound";
-    default:
-      return "tour";
-  }
+/**
+ * The lesson onboarding suggests (GRV-190): the tour, for every goal, so a
+ * new producer knows their way round before making anything.
+ */
+export function chapterForGoal(_goal: ProducerGoal | null): SoloChapterId {
+  return "tour";
+}
+
+/**
+ * The lesson a goal from onboarding points at once the tour is done
+ * (GRV-190): "Make a beat" for a first track, a video or a game, or anyone
+ * just curious; "Shape a sound" for sound design.
+ */
+export function lessonForGoal(goal: ProducerGoal | null): SoloChapterId {
+  return goal === "sound_design" ? "sound" : "beat";
 }
 
 /**

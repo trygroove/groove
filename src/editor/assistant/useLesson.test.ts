@@ -5,7 +5,7 @@ import { createControlRegistry } from "../../controls/registry";
 import type { Project } from "../../domain/entities";
 import { TICKS_PER_BAR } from "../../domain/time";
 import { BITE_IDS } from "../../lessons/ids";
-import { biteOf, chapterOf } from "../../lessons/session";
+import { chapterOf } from "../../lessons/session";
 import { BEAT_PATTERNS, beatStyleFor } from "../../lessons/style";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import { InMemoryLessonRepository } from "../../persistence/inMemoryLessonRepository";
@@ -486,6 +486,36 @@ describe("the lesson under way (GRV-43)", () => {
     expect(profile.profile()?.lessonsDone).toEqual(["beat-kick", "tour-library"]);
   });
 
+  it("drops out of a lesson under way when the editor closes, and keeps it under way (GRV-190)", async () => {
+    const repository = recordStore();
+    let dispose: () => void = () => {};
+    const log = vi.fn();
+    const [project] = createSignal<Project | null>(starterWorld().project);
+    const lesson = createRoot((done) => {
+      dispose = done;
+      return useLesson({
+        project,
+        view: () => "arrangement",
+        playing: () => false,
+        conversation: { sendLesson: vi.fn(() => true), streaming: () => false },
+        analytics: () => ({ log, logFeatureFirstUse: vi.fn() }),
+        record: useLessonRecord({
+          owner: () => OWNER,
+          repository: async () => repository,
+        }),
+      });
+    });
+    await settle();
+    lesson.start("tour", "asked", "tour-sequence");
+    await settle();
+    dispose();
+    expect(log).toHaveBeenCalledWith("lesson_dropped_out", {
+      chapter_id: "tour",
+      bite_id: "tour-sequence",
+    });
+    expect((await stored(repository))?.underWay?.biteId).toBe("tour-sequence");
+  });
+
   it("sends one turn for one transition, however often it is handled", () => {
     const h = setup();
     h.lesson.start("tour", "asked", "tour-sequence");
@@ -760,13 +790,17 @@ describe("Finish a track in the panel (GRV-44)", () => {
     expect(fresh.lesson.state()).toBeNull();
   });
 
-  it("opens the Export dialog as the last bite starts, and ends the lesson once stems are exported", () => {
+  it("opens the Export dialog by Show me, never by itself, and ends once stems are exported", () => {
     const editor = recordingEditor();
     const h = setup(editor);
     h.lesson.start("track", "asked", "mix-export");
     flush();
-    expect(editor.openExport).toHaveBeenCalledTimes(1);
+    // Nothing opens over the lesson as the bite starts (GRV-190).
+    expect(editor.openExport).not.toHaveBeenCalled();
     expect(h.lesson.state()?.step).not.toBeNull();
+    h.lesson.showMe();
+    flush();
+    expect(editor.openExport).toHaveBeenCalledTimes(1);
     h.setStemExports(1);
     flush();
     expect(h.lesson.state()).toBeNull();

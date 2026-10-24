@@ -1,7 +1,7 @@
 /**
  * What the lesson hook takes and gives (GRV-43, GRV-190): `useLesson.ts`
  * holds the signals and the wiring, and these are its edges, which the panel
- * and the lesson card read.
+ * and the lesson plan read.
  */
 import type { Accessor } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
@@ -37,6 +37,8 @@ export interface UseLessonOptions {
   readonly analytics: () => Pick<Analytics, "log" | "logFeatureFirstUse">;
   /** Makes Show me's new IDs; fresh ones by default. */
   readonly factoryContext?: () => DomainFactoryContext;
+  /** Hears that the lesson ended or was left (GRV-190), so its quiz can go. */
+  readonly onEnded?: () => void;
 }
 
 export interface Lesson {
@@ -48,10 +50,15 @@ export interface Lesson {
   readonly notice: Accessor<string | null>;
   /** Whether Show me has an editor to work in. */
   readonly canShowMe: boolean;
+  /** Whether Show me is still at work, so cannot be pressed again yet. */
+  readonly busy: Accessor<boolean>;
+  /** Opens the view a step's term names (GRV-190). */
+  openView(view: EditorViewName): void;
   /**
    * Starts `lesson` where the record has it under way, or from its first
    * bite (at `biteId` when given); whether it could (not while no project is
-   * open). A lesson under way is left first.
+   * open). Another lesson under way is left first; this one, asked for again
+   * with no bite, carries on where it is.
    */
   start(lesson: LessonId, source: LessonSource, biteId?: BiteId): boolean;
   /** The next bite, once the one before is over. */

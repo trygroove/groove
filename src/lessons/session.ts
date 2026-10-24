@@ -65,8 +65,9 @@ export interface LessonState {
   /** How each bite of the lesson ended, this time through. */
   readonly endings: Readonly<Partial<Record<BiteId, BiteEnding>>>;
   /**
-   * The chapter's bites passed over because the song already had them, as
-   * the chapter started (GRV-44). Empty in a lesson that teaches every bite.
+   * The bites passed over because the song already had them, as each of the
+   * lesson's chapters so far started (GRV-44). Empty in a lesson that teaches
+   * every bite.
    */
   readonly passed: readonly BiteId[];
 }
@@ -229,30 +230,40 @@ function startChapter(
   endings: LessonState["endings"],
   passedBefore: readonly BiteId[] = [],
   keep: BiteId | null = null,
+  carried: readonly BiteId[] = [],
 ): LessonTransition | null {
   const lessonChapter = definition.chapters[chapterIndex];
   if (!lessonChapter) return null;
   const made = definition.passesOverMade
     ? madeBites(lessonChapter.id, world, settings).filter((id) => id !== keep)
     : [];
-  const passed = new Set(made);
+  const skips = new Set(made);
   const index = lessonChapter.bites.findIndex(
-    (one, at) => at >= from && !passed.has(one.id),
+    (one, at) => at >= from && !skips.has(one.id),
   );
   // Only what the song has from `from` on is told as passed over.
   const madeFrom = (to?: number) =>
     lessonChapter.bites
       .slice(from, to)
       .map((one) => one.id)
-      .filter((id) => passed.has(id));
+      .filter((id) => skips.has(id));
   if (index < 0) {
-    return startChapter(definition, chapterIndex + 1, 0, world, settings, endings, [
-      ...passedBefore,
-      ...madeFrom(),
-    ]);
+    return startChapter(
+      definition,
+      chapterIndex + 1,
+      0,
+      world,
+      settings,
+      endings,
+      [...passedBefore, ...madeFrom()],
+      null,
+      [...carried, ...made],
+    );
   }
+  // What earlier chapters passed over stays passed over, for the strip.
+  const passed = [...carried, ...made];
   return startAt(
-    { lessonId: definition.id, chapterIndex, biteIndex: index, endings, passed: made },
+    { lessonId: definition.id, chapterIndex, biteIndex: index, endings, passed },
     world,
     settings,
     [...passedBefore, ...madeFrom(index)],
@@ -391,6 +402,9 @@ export function startNextBite(
     world,
     settings,
     state.endings,
+    [],
+    null,
+    state.passed,
   );
 }
 

@@ -158,3 +158,17 @@ describe("Arrange, subtractively (GRV-44)", () => {
     expect(outroMade(project)).toBe(true);
   });
 });
+
+describe("the arrangement's words (GRV-190)", () => {
+  it("name the song's ends the same way: the end of a bar", () => {
+    const words = (id: string) => {
+      const bite = ARRANGE_CHAPTER.bites.find((one) => one.id === id);
+      const step = bite?.steps[0];
+      if (!step) throw new Error(`no ${id}`);
+      return step.instruction(starterWorld(), { style: "four_on_the_floor" });
+    };
+    expect(words("arrange-copy")).toContain(`to the end of bar ${SONG_BARS}`);
+    expect(words("arrange-outro")).toContain(`ends at the end of bar ${END_BAR}`);
+    expect(words("arrange-copy")).not.toMatch(/bar 33/);
+  });
+});

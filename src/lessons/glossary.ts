@@ -5,12 +5,16 @@
  *
  * Each definition is one or two plain sentences, the way Coproducer would say
  * it beside you; Coproducer itself fits its own explanations to how much the
- * producer has made.
+ * producer has made. A term that names one of the studio's views opens it as
+ * well (GRV-190): "the Library" in a step is a way to the Library.
  */
+import type { EditorViewName } from "../analytics/catalog";
 
 export interface GlossaryEntry {
   readonly term: string;
   readonly definition: string;
+  /** The view the term names, which pressing it opens. */
+  readonly view?: EditorViewName;
 }
 
 export const GLOSSARY = {
@@ -38,6 +42,7 @@ export const GLOSSARY = {
     term: "Library",
     definition:
       "Every sound Groove has, in packs. Press a sound to hear it, and put it on a pad or a sampler.",
+    view: "library",
   },
   pad: {
     term: "pad",
@@ -92,6 +97,7 @@ export const GLOSSARY = {
     term: "arrangement",
     definition:
       "The whole song laid out in time: every track's clips, from the first bar to the last.",
+    view: "arrangement",
   },
   synth: {
     term: "synth",
@@ -140,16 +146,19 @@ export const GLOSSARY = {
     term: "Sequence view",
     definition:
       "Where you write a clip's notes: a step grid for drums, a piano roll for everything else.",
+    view: "sequence",
   },
   instrument: {
     term: "Instrument view",
     definition:
       "The faceplate of the selected track's instrument: its sounds and every control that shapes them.",
+    view: "instrument",
   },
   mixer: {
     term: "Mixer",
     definition:
       "Every track's volume, pan and effects side by side, and where you add a new track.",
+    view: "mixer",
   },
   dock: {
     term: "dock",
@@ -255,6 +264,12 @@ export type TermId = keyof typeof GLOSSARY;
 
 export function isTermId(value: string): value is TermId {
   return Object.hasOwn(GLOSSARY, value);
+}
+
+/** The view a term names, which pressing it opens, or null. */
+export function termView(id: TermId): EditorViewName | null {
+  const entry: GlossaryEntry = GLOSSARY[id];
+  return entry.view ?? null;
 }
 
 /** One run of a step's text: plain words, or a term to tap. */

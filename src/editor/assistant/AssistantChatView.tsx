@@ -12,7 +12,8 @@ import {
 import { ERROR_REASSURANCE, errorCopy } from "./assistantErrorCopy";
 import { skippedLine } from "./cardQueue";
 import { fitComposer } from "./composerHeight";
-import LessonCard from "./LessonCard";
+import LessonPlan from "./LessonPlan";
+import LessonsList from "./LessonsList";
 import MemoryProposalCard from "./MemoryProposalCard";
 import ProposalCard from "./ProposalCard";
 import RecommendationCard from "./RecommendationCard";
@@ -36,6 +37,10 @@ export interface AssistantChatViewProps {
   readonly settingsOpen?: () => boolean;
   /** Closes the settings, back to the conversation. */
   closeSettings?(): void;
+  /** Whether the Lessons list is open in place of the conversation (GRV-190). */
+  readonly lessonsOpen?: () => boolean;
+  /** Closes the Lessons list, back to the conversation. */
+  closeLessons?(): void;
   /**
    * Held by a tutorial video while it fills the window (GRV-16), so Escape
    * puts it back; returns the release (`AssistantPanel.holdExpandedVideo`).
@@ -102,6 +107,19 @@ export default function AssistantChatView(props: AssistantChatViewProps): JSX.El
           </div>
         )}
       </Match>
+      {/* Every lesson, in place of the conversation (GRV-190). */}
+      <Match when={registered() && props.lessonsOpen?.()}>
+        <LessonsList
+          lesson={props.chat.lesson}
+          doneAnywhere={() => props.chat.doneAnywhere()}
+          onPick={(lessonId) => {
+            props.chat.pickLesson(lessonId);
+            props.closeLessons?.();
+          }}
+          onInstagram={() => props.chat.openedInstagram()}
+          onDone={() => props.closeLessons?.()}
+        />
+      </Match>
     </Switch>
   );
 }
@@ -160,6 +178,18 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
 
   return (
     <>
+      {/* The lesson under way (GRV-190): a header under the panel's, over
+          the conversation, which holds only the lesson's lines and
+          Coproducer's words. */}
+      <Show when={props.chat.account().registered && props.chat.lesson.state()}>
+        {(state) => (
+          <LessonPlan
+            lesson={props.chat.lesson}
+            state={state()}
+            onFocusLost={() => props.focusComposer()}
+          />
+        )}
+      </Show>
       <div
         ref={log}
         onScroll={(event) => {
@@ -205,10 +235,6 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
         when={props.chat.account().registered}
         fallback={<SignInPrompt signIn={props.chat.account().signIn} />}
       >
-        {/* The lesson under way (GRV-43), above any question it asks. */}
-        <Show when={props.chat.lesson.state()}>
-          {(state) => <LessonCard lesson={props.chat.lesson} state={state()} />}
-        </Show>
         <Show when={conversation().pendingAsk()}>
           {(pending) => (
             <AssistantAskCard

@@ -64,7 +64,7 @@ describe("a lesson as a turn carries it (GRV-43)", () => {
     expect(end.moment).toBe("track_done");
     expect(assistantLessonContextSchema.parse(end)).toEqual(end);
     expect(lessonReplyText(end)).toBe(
-      'That\'s "Finish a track" finished, stems and all.',
+      'That\'s "Finish a track" finished, stems and all. The lesson is over.',
     );
   });
 
@@ -159,6 +159,33 @@ describe("a lesson as a turn carries it (GRV-43)", () => {
     expect(blocks[3].text.startsWith(LESSON_RULES)).toBe(true);
     expect(blocks[3].text).toContain(`${LESSON_BLOCK_HEADING}${JSON.stringify(lesson)}`);
     expect(buildSystemBlocks(MINIMAL_ASSISTANT_CONTEXT, undefined, "S")).toHaveLength(3);
+  });
+
+  it("has the lesson's first reply say it has started and can be left, and its end say it is over (GRV-190)", () => {
+    expect(LESSON_RULES).toMatch(/The lesson's first reply/);
+    expect(LESSON_RULES).toMatch(/a lesson has started, name it/);
+    expect(LESSON_RULES).toMatch(/leave it whenever they like with Leave/);
+    expect(LESSON_RULES.match(/the lesson is over/g)?.length).toBe(2);
+    // The plan is a header now, not a card in the log.
+    expect(LESSON_RULES).not.toMatch(/lesson card/);
+  });
+
+  it("is answered by the scripted provider in the same words (GRV-190)", () => {
+    const world = starterWorld();
+    const first = startedAt("tour", null, world, settings);
+    const opening = lessonCue(first.state, first.event, settings, []);
+    expect(lessonReplyText(opening)).toMatch(
+      /^We're starting the "Tour the studio" lesson, and you can leave it whenever you like\. Here's "The Arrangement"/,
+    );
+    const later = startedAt("tour", "tour-mixer", world, settings);
+    expect(lessonReplyText(lessonCue(later.state, later.event, settings, []))).toMatch(
+      /^Here's "The Mixer"/,
+    );
+    const ended = skip(later.state, world, settings);
+    if (!ended) throw new Error("not skipped");
+    expect(lessonReplyText(lessonCue(ended.state, ended.event, settings, []))).toContain(
+      'That\'s "Tour the studio" finished. The lesson is over.',
+    );
   });
 
   it("tells Coproducer how each moment is taught, and that celebration is words only", () => {

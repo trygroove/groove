@@ -40,13 +40,13 @@ describe("Coproducer's daily nudge (GRV-25)", () => {
     expect(nudgeDue(emptyProfile(NOON - 5 * DAY), NOON)).toBe(false);
   });
 
-  it("offers the next bite not yet done, from the chapter the goal suggests (GRV-43)", () => {
+  it("offers the next bite not yet done, from the tour on (GRV-43, GRV-190)", () => {
     const profile = onboarded(1, {
       memory: { ...emptyProfile(1).memory, goal: "sound_design" },
     });
-    expect(nudgeBite(profile)?.title).toBe("Pick a wave");
-    expect(nudgeBite({ ...profile, lessonsDone: ["sound-wave"] })?.title).toBe(
-      "Darken it",
+    expect(nudgeBite(profile)?.title).toBe("The Arrangement");
+    expect(nudgeBite({ ...profile, lessonsDone: ["tour-arrangement"] })?.title).toBe(
+      "The Sequence view",
     );
     expect(nudgeBite({ ...profile, lessonsDone: [...BITE_IDS] })).toBeNull();
   });

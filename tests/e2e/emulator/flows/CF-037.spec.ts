@@ -26,8 +26,10 @@ import { dockTile, expectView } from "../support/views";
  * **Locators.** The welcome's and the panel's are `../support/onboarding.ts`'s.
  * The lesson's are this spec's own, written from the issue:
  *
- *  - the lesson is a region named "Lesson" in Coproducer's panel, headed by
- *    its chapter's title;
+ *  - the Lessons list is a region named "Lessons" that the panel's "Lessons"
+ *    button shows in place of the conversation, a button per lesson (GRV-190);
+ *  - the lesson is a region named "Lesson" at the top of Coproducer's panel,
+ *    headed "Lesson · <lesson>" (GRV-190);
  *  - its bites are a list named "Bites", one item per bite, whose text says
  *    "done" or "skipped" once it is;
  *  - its step offers "Show me" and "Skip" buttons, and a finished bite a
@@ -128,7 +130,8 @@ test.describe("CF-037", () => {
 
       // 1. Open the dashboard. At the welcome, pick Hip hop and send, skip how
       //    much music you have made, pick "My first track", and skip the last
-      //    two questions. Coproducer offers a first lesson, "Make a beat".
+      //    two questions. Coproducer offers a first lesson: a quick tour of the
+      //    studio, "Tour the studio", before making something.
       await page.goto("/projects");
       await expect(page).toHaveURL(/\/welcome$/);
       await expectQuestion(page, /music do you love/i);
@@ -142,7 +145,10 @@ test.describe("CF-037", () => {
       await skipQuestion(page).click();
       await expectQuestion(page, /gear/i);
       await skipQuestion(page).click();
-      await expect(conversationIn(page)).toContainText(CHAPTER);
+      await expect(conversationIn(page)).toContainText("Tour the studio");
+      await expect(conversationIn(page)).toContainText(
+        "Let's start with a quick tour of the studio, then we'll make something",
+      );
       await step("Coproducer offers a first lesson");
 
       // 2. Choose Open the studio, and OK on the notice about Groove keeping
@@ -152,12 +158,32 @@ test.describe("CF-037", () => {
       await cuePanel(page).getByRole("button", { name: "OK" }).click();
       await expect(askOption(cuePanel(page), "Let's go")).toBeVisible();
 
-      // 3. Choose "Let's go". The lesson appears in the panel: "Make a beat",
-      //    its six bites listed with none done, and the first, "Pick a kick",
-      //    under way. It asks you to put a kick from the Library on BD's pad,
-      //    offers Show me and Skip, and Coproducer's reply about it follows in
-      //    the conversation.
-      await askOption(cuePanel(page), "Let's go").click();
+      // 3. Choose "Not now", and press Lessons in the panel's header. Every
+      //    lesson is listed, the tour first, none started. Press "Make a beat".
+      //    The list closes and the lesson's plan is at the top of the panel,
+      //    whose title says "Coproducer · Lesson": "Make a beat", its six
+      //    bites listed with none done, and the first, "Pick a kick", under
+      //    way. It asks you to put a kick from the Library on BD's pad, offers
+      //    Show me and Skip, and Coproducer's reply follows in the
+      //    conversation, saying the lesson has started and that you can leave
+      //    it whenever you like.
+      await askOption(cuePanel(page), "Not now").click();
+      await cuePanel(page).getByRole("button", { name: "Lessons", exact: true }).click();
+      const lessons = cuePanel(page).getByRole("region", { name: "Lessons", exact: true });
+      await expect(lessons.locator(".lessons-list-title")).toHaveText([
+        "Tour the studio",
+        CHAPTER,
+        "Shape a sound",
+        "Finish a track",
+      ]);
+      await expect(lessons.getByRole("button", { name: /^Tour the studio/ })).toContainText(
+        "Not started",
+      );
+      await lessons.getByRole("button", { name: new RegExp(`^${CHAPTER}`) }).click();
+      await expect(lessons).toHaveCount(0);
+      await expect(cuePanel(page).locator(".assistant-panel-title")).toHaveText(
+        "Coproducer · Lesson",
+      );
       await expect(lesson(page)).toBeVisible();
       await expect(lesson(page).getByRole("heading", { name: CHAPTER })).toBeVisible();
       for (const name of BITES) {
@@ -171,6 +197,9 @@ test.describe("CF-037", () => {
       await expect(replySaying(page, `Here's "${BITES[0]}"`)).toHaveCount(1, {
         timeout: 15_000,
       });
+      await expect(replySaying(page, `We're starting the "${CHAPTER}" lesson`)).toHaveCount(
+        1,
+      );
       await step("The lesson starts in Coproducer's panel");
 
       // 4. Press Show me. A kick from the library lands on BD's pad, and "Pick
@@ -298,12 +327,17 @@ test.describe("CF-037", () => {
           .getByRole("option", { name: /on BD, bars 1 to 4$/ }),
       ).toHaveCount(1);
 
-      // 11. That was the chapter's last bite: the lesson leaves the panel, and
-      //     Coproducer's wrap-up follows in the conversation.
+      // 11. That was the chapter's last bite: the lesson leaves the panel, its
+      //     title is "Coproducer" again, and Coproducer's wrap-up follows in
+      //     the conversation, saying the lesson is over.
       await expect(lesson(page)).toHaveCount(0);
+      await expect(cuePanel(page).locator(".assistant-panel-title")).toHaveText(
+        "Coproducer",
+      );
       await expect(replySaying(page, `That's "${CHAPTER}" finished`)).toHaveCount(1, {
         timeout: 15_000,
       });
+      await expect(replySaying(page, "The lesson is over")).toHaveCount(1);
       await step("The chapter's done, and Coproducer wraps it up");
 
       // 12. Reload the page. The beat is still there: the tempo is 90 BPM,

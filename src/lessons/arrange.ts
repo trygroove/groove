@@ -10,7 +10,7 @@
  * Its predicates read the arrangement by what is absent from it: no hook or
  * chords in the intro's bars, no drums in the breakdown's.
  */
-import { CONTROL_PARTS, controlAddress } from "../commands/controlAddress";
+import { CONTROL_PARTS, controlAddress, playControl } from "../commands/controlAddress";
 import type { Project, Track } from "../domain/entities";
 import { TICKS_PER_BAR } from "../domain/time";
 import {
@@ -119,7 +119,7 @@ const copy: LessonBite = {
     {
       id: "copy",
       instruction: () =>
-        `Copy the whole loop out to bar ${SONG_BARS + 1} on the [arrangement](arrangement), every part playing all the way: select the clips and [duplicate](duplicate) them (⌘D or Ctrl+D) until they reach it, or drag each looped clip's end out. The full loop is the ceiling; the song is what you take away from it.`,
+        `Copy the whole loop out to the end of bar ${SONG_BARS} on the [arrangement](arrangement), every part playing all the way: select the clips and [duplicate](duplicate) them (⌘D or Ctrl+D) until they reach it, or drag each looped clip's end out. The full loop is the ceiling; the song is what you take away from it.`,
       target: firstPlacement,
       done: (world) => everythingIn(world.project, WHOLE),
       showMe(world, _settings, context) {
@@ -191,7 +191,7 @@ const drop: LessonBite = {
       id: "listen",
       instruction: () =>
         `Play from bar ${DROP.from - 3} and hear the breakdown end and everything come back at bar ${DROP.from + 1}: that's the [drop](drop). Click the ruler at bar ${DROP.from - 3} to put the playhead there, then press [Play](play).`,
-      target: () => null,
+      target: () => playControl(),
       done: (world) => world.playing && world.bar >= DROP.from && world.bar < DROP.to,
       showMe: () => ({ kind: "play", from: (DROP.from - 4) * TICKS_PER_BAR }),
     },
@@ -207,7 +207,7 @@ const outro: LessonBite = {
   steps: [
     deletion(
       "outro",
-      `Cut the song to a short [outro](outro): delete everything after bar ${END_BAR}, so ${barsWords(OUTRO)} play out and the song ends there. Split the clips at bar ${END_BAR + 1} and delete what's after it.`,
+      `Cut the song to a short [outro](outro) that ends at the end of bar ${END_BAR}: delete everything after it, so ${barsWords(OUTRO)} play out and the song stops there. Split the clips at bar ${END_BAR + 1} and delete what's after it.`,
       outroMade,
       arrangedTracks,
       (project) => ({
@@ -221,6 +221,7 @@ const outro: LessonBite = {
 export const ARRANGE_CHAPTER: LessonChapter = {
   id: "arrange",
   title: "Arrange, subtractively",
+  short: "Arrange",
   summary:
     "the loop copied across the song, then parts taken away for an intro, a breakdown, a drop and an outro",
   bites: [copy, intro, breakdown, drop, outro],

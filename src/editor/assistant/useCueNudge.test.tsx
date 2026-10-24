@@ -21,7 +21,7 @@ import type { EditorViewName } from "../composition/editorViews";
 import { NUDGE_LABEL } from "./AssistantChatView";
 import AssistantPanel from "./AssistantPanel";
 import { DEFAULT_LAYOUT, float, saveLayout } from "./assistantPanelLayout";
-import { LESSON_LABEL } from "./LessonCard";
+import { LESSON_LABEL } from "./LessonPlan";
 import { ACCEPT_ANSWER, NOTICE_HEADING } from "./retentionCopy";
 import { useAssistantChat } from "./useAssistantChat";
 import { useAssistantPanel } from "./useAssistantPanel";
@@ -101,12 +101,12 @@ describe("Coproducer's daily nudge (GRV-25)", () => {
       onboarded({ onboardedAt: yesterday }),
     );
     const nudge = await screen.findByRole("region", { name: NUDGE_LABEL });
-    expect(nudge).toHaveTextContent('Want to try "Pick a kick"?');
+    expect(nudge).toHaveTextContent('Want to try "The Arrangement"?');
     expect(transport.named("cue_nudge_shown")).toHaveLength(1);
     expect(transport.named("lesson_nudge_shown")).toHaveLength(1);
     expect(transport.named("lesson_nudge_shown")[0]?.params).toMatchObject({
-      chapter_id: "beat",
-      bite_id: "beat-library",
+      chapter_id: "tour",
+      bite_id: "tour-arrangement",
     });
     await waitFor(async () => {
       const loaded = await profiles.loadProfile(UID);
@@ -116,35 +116,35 @@ describe("Coproducer's daily nudge (GRV-25)", () => {
 
   it("starts the next bite not yet done on Let's try it (GRV-43)", async () => {
     const { client, transport } = await renderEditorChat(
-      onboarded({ onboardedAt: Date.now() - DAY, lessonsDone: ["beat-library"] }),
+      onboarded({ onboardedAt: Date.now() - DAY, lessonsDone: ["tour-arrangement"] }),
     );
     const nudge = await screen.findByRole("region", { name: NUDGE_LABEL });
-    expect(nudge).toHaveTextContent('Want to try "The kick pattern"?');
+    expect(nudge).toHaveTextContent('Want to try "The Sequence view"?');
     clickAndFlush(within(nudge).getByRole("button", { name: "Let's try it" }));
     await waitFor(() =>
       expect(client.last().request.messages.at(-1)?.text).toBe(
-        'Let\'s do "The kick pattern".',
+        'Let\'s do "The Sequence view".',
       ),
     );
     expect(client.last().request.lesson).toMatchObject({
-      biteId: "beat-kick",
+      biteId: "tour-sequence",
       moment: "bite_started",
     });
     const lesson = screen.getByRole("region", { name: LESSON_LABEL });
     expect(within(lesson).getByRole("listitem", { current: "step" })).toHaveTextContent(
-      "The kick pattern",
+      "The Sequence view",
     );
     expect(screen.queryByRole("region", { name: NUDGE_LABEL })).not.toBeInTheDocument();
     expect(transport.named("cue_nudge_answered")[0]?.params.how).toBe("tried");
     expect(transport.named("lesson_nudge_taken")).toHaveLength(1);
     expect(transport.named("lesson_nudge_taken")[0]?.params).toMatchObject({
-      chapter_id: "beat",
-      bite_id: "beat-kick",
+      chapter_id: "tour",
+      bite_id: "tour-sequence",
     });
     expect(transport.named("lesson_bite_started")).toHaveLength(1);
     expect(transport.named("lesson_bite_started")[0]?.params).toMatchObject({
-      chapter_id: "beat",
-      bite_id: "beat-kick",
+      chapter_id: "tour",
+      bite_id: "tour-sequence",
       source: "nudge",
     });
   });

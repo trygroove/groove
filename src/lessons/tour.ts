@@ -6,7 +6,9 @@
  * so they still learn the way back. Skipping that step skips the bite: there
  * is nothing left to open.
  */
+
 import type { EditorViewName } from "../analytics/catalog";
+import { viewControl } from "../commands/controlAddress";
 import type { BiteId } from "./ids";
 import type { LessonBite, LessonChapter } from "./types";
 
@@ -91,7 +93,8 @@ function bite(stop: Stop): LessonBite {
         applies: (world) => world.view === stop.view,
         instruction: () =>
           `${stop.about} You're on it already, so step away first: go to any other view, then come back.`,
-        target: () => null,
+        // The tile Show me goes to (GRV-190).
+        target: () => viewControl(elsewhere(stop.view)),
         done: (world) => world.view !== stop.view,
         showMe: () => ({ kind: "view", view: elsewhere(stop.view) }),
       },
@@ -101,7 +104,7 @@ function bite(stop: Stop): LessonBite {
         // still on this one, and the bite ends with the skip.
         applies: (world) => world.view !== stop.view,
         instruction: () => `${stop.about} ${stop.open}`,
-        target: () => null,
+        target: () => viewControl(stop.view),
         done: (world, start) => world.view === stop.view && start.view !== stop.view,
         showMe: () => ({ kind: "view", view: stop.view }),
       },
@@ -112,6 +115,7 @@ function bite(stop: Stop): LessonBite {
 export const TOUR_CHAPTER: LessonChapter = {
   id: "tour",
   title: "Tour the studio",
+  short: "Tour",
   summary: "the five views of the studio, and the key for each",
   bites: STOPS.map(bite),
 };

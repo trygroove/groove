@@ -449,6 +449,8 @@ describe("source guards for the two gaps above", () => {
       "youtubeWatchUrl(props.video.videoId)",
       "YOUTUBE_TERMS_URL",
       "GOOGLE_PRIVACY_URL",
+      // The Lessons list's Instagram link (GRV-190): a constant of our own.
+      "INSTAGRAM_URL",
     ];
     const offenders: string[] = [];
     for (const file of sourceFiles()) {
@@ -540,6 +542,12 @@ describe("source guards for the two gaps above", () => {
       // A library family tile's unit word (GRV-49): "sound" or "sounds",
       // chosen by the count. Our own copy, never a name.
       'entry.count === 1 ? "sound" : "sounds"',
+      // A lesson's plan and the Lessons list (GRV-190): a bite's tick, a
+      // chapter's standing and the plan's fold, each an enum of our own.
+      "tick",
+      "tick()",
+      "chapterStanding(props.state, index())",
+      'folded() ? "true" : "false"',
     ];
     const offenders: string[] = [];
     for (const file of sourceFiles()) {

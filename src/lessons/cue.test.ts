@@ -59,10 +59,37 @@ describe("what a lesson tells Coproducer (GRV-43)", () => {
     expect(cueMessage(ended.state, ended.event)).toBe(
       'Skipped "The Mixer". That was the last bite of "Tour the studio".',
     );
-    // Once every other chapter is done, only the chapter's own pointers are left.
+    // Once every other chapter is done, the goal's lesson and the chapter's
+    // own pointers are left.
     expect(wrapUpPointers("tour", 0, [...BITE_IDS])).toEqual([
+      'The "Make a beat" chapter: a one-bar beat, kick, backbeat and hats, looped for four bars',
       "Ask Coproducer for a loop to start from",
     ]);
+  });
+
+  it("points the tour's wrap-up first at the lesson the producer's goal suggests (GRV-190)", () => {
+    expect(wrapUpPointers("tour", 0, [], "sound_design")[0]).toMatch(
+      /^The "Shape a sound" chapter/,
+    );
+    expect(wrapUpPointers("tour", 0, [], "first_track")[0]).toMatch(
+      /^The "Make a beat" chapter/,
+    );
+    expect(wrapUpPointers("tour", 0, [], "video_or_game")[0]).toMatch(
+      /^The "Make a beat" chapter/,
+    );
+    const world = starterWorld();
+    const started = startedAt("tour", "tour-mixer", world, settings).state;
+    const ended = skip(started, world, { ...settings, goal: "sound_design" });
+    if (!ended) throw new Error("not skipped");
+    const cue = lessonCue(
+      ended.state,
+      ended.event,
+      { ...settings, goal: "sound_design" },
+      [],
+    );
+    expect(cue.next[0]).toMatch(/^The "Shape a sound" chapter/);
+    // Pointers follow the list's order after it, and none comes twice.
+    expect(new Set(cue.next).size).toBe(cue.next.length);
   });
 
   it("is under way for a turn the producer sends mid-lesson", () => {

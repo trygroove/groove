@@ -1572,7 +1572,7 @@ headless browser records audio.
 
 ### CF-037 — A new producer makes a beat with Coproducer
 
-**Issue:** GRV-43 · **Suite:** `tests/e2e/emulator/flows/CF-037.spec.ts` · **Entrypoint:**
+**Issue:** GRV-43, GRV-190 · **Suite:** `tests/e2e/emulator/flows/CF-037.spec.ts` · **Entrypoint:**
 the project dashboard
 
 **Preconditions:** signed in as an invited producer who has never been through
@@ -1583,13 +1583,18 @@ use.
 
 1. Open the dashboard. At the welcome, pick Hip hop and send, skip how much
    music you have made, pick "My first track", and skip the last two
-   questions. Coproducer offers a first lesson, "Make a beat".
+   questions. Coproducer offers a first lesson: a quick tour of the studio,
+   "Tour the studio", before making something.
 2. Choose Open the studio, and OK on the notice about Groove keeping
    conversations. The offer waits in Coproducer's panel.
-3. Choose "Let's go". The lesson appears in the panel: "Make a beat", its six
-   bites listed with none done, and the first, "Pick a kick", under way. It
-   asks you to put a kick from the Library on BD's pad, offers Show me and
-   Skip, and Coproducer's reply about it follows in the conversation.
+3. Choose "Not now", and press Lessons in the panel's header. Every lesson is
+   listed, the tour first, none started. Press "Make a beat". The list closes
+   and the lesson's plan is at the top of the panel, whose title says
+   "Coproducer · Lesson": "Make a beat", its six bites listed with none done,
+   and the first, "Pick a kick", under way. It asks you to put a kick from the
+   Library on BD's pad, offers Show me and Skip, and Coproducer's reply
+   follows in the conversation, saying the lesson has started and that you
+   can leave it whenever you like.
 4. Press Show me. A kick from the library lands on BD's pad, and "Pick a
    kick" is marked done. Coproducer's reply about it follows, and the lesson
    offers the next bite, "The kick pattern".
@@ -1610,8 +1615,9 @@ use.
 9. Go on to "Hats" and press Skip. It is marked skipped.
 10. Go on to "Loop it" and press Show me. The beat's clip now runs for four
     bars on the arrangement, and the bite is marked done.
-11. That was the chapter's last bite: the lesson leaves the panel, and
-    Coproducer's wrap-up follows in the conversation.
+11. That was the chapter's last bite: the lesson leaves the panel, its title
+    is "Coproducer" again, and Coproducer's wrap-up follows in the
+    conversation, saying the lesson is over.
 12. Reload the page. The beat is still there: the tempo is 90 BPM, its clip
     still runs for four bars, and opened in the Sequence view, BD's step 11
     is on and step 5 off, and the Snare pad has its hits.
@@ -1622,14 +1628,15 @@ Coproducer show them others, and the beat is saved.
 
 **Out of scope:** what Coproducer says and whether a real model teaches well,
 which the live-model evals judge. Leaving a lesson part-way, asking for a
-lesson in your own words, the quiz question, the daily nudge naming the next
-unfinished bite, the "Shape a sound" and "Tour the studio" chapters, the
-house and trap patterns, and the done state saved on the profile, which are
-tested at the unit and component layers.
+lesson in your own words, taking the tour the welcome offers, the quiz
+question, the daily nudge naming the next unfinished bite, the "Shape a
+sound" and "Tour the studio" chapters, the house and trap patterns, and the
+lesson record and the done state saved on the profile, which are tested at
+the unit and component layers.
 
 ### CF-038 — A producer finishes a track with Coproducer and exports its stems
 
-**Issue:** GRV-44 · **Suite:** `tests/e2e/emulator/flows/CF-038.spec.ts` · **Entrypoint:**
+**Issue:** GRV-44, GRV-190 · **Suite:** `tests/e2e/emulator/flows/CF-038.spec.ts` · **Entrypoint:**
 the project dashboard
 
 **Preconditions:** signed in as an invited producer who has been through
@@ -1641,9 +1648,10 @@ names the bite it is about. The library holds a kick the starter project does
 not use.
 
 1. Make a new project, open Coproducer and ask it to teach you to finish a
-   track. The lesson appears in the panel: "Finish a track", chapter 1 of 5,
-   "Make a beat", with "Pick a kick" under way and "The kick pattern" marked
-   as already in your song (the starter's four on the floor is that kick).
+   track. The lesson's plan appears at the top of the panel: "Finish a
+   track", its five chapters in a strip with the first, "Make a beat", under
+   way, "Pick a kick" under way and "The kick pattern" marked as already in
+   your song (the starter's four on the floor is that kick).
 2. Go through "Make a beat" with Show me: Pick a kick, Hear it (in Chromium:
    Show me sets the tempo and plays; stop it after. Elsewhere it is skipped:
    the gap CF-001 names), The backbeat, Hats and Loop it, each marked done.
@@ -1655,7 +1663,10 @@ not use.
 4. Go on and through it with Show me: Chords and Hook tracks join, each
    running four bars. The lesson offers "Arrange, subtractively".
 5. Go on and through it with Show me: the loop is copied out to bar 32; the
-   hook and the chords leave bars 1 to 8; the drums leave bars 9 to 16; the
+   hook and the chords leave bars 1 to 8. With "A breakdown" under way, leave
+   the studio and come back (a reload): the lesson is where it was left. Press
+   Lessons: "Finish a track" is in progress; press it, and it continues at "A
+   breakdown", "An intro" still done. Then the drums leave bars 9 to 16; the
    drop is heard (in Chromium the song plays from bar 13 into it, then stop
    it; elsewhere the listening is skipped); and everything after bar 28 is
    cut. On the arrangement the Hook plays bars 9 to 28 and BD bars 1 to 8
@@ -1665,9 +1676,9 @@ not use.
    master: in the Mixer the master strip has its own level meter; in
    Chromium Show me plays the drop while you watch it for four bars, then
    stop it; elsewhere it is skipped.
-7. The last bite, "Export the stems", opens the Export dialog by itself with
-   Stems (ZIP) chosen and every track included in its list. Press Export. The
-   bite is done and the lesson is over: it leaves the panel. Close the
+7. The last bite, "Export the stems": press Show me, and the Export dialog
+   opens with Stems (ZIP) chosen and every track included in its list. Press
+   Export. The bite is done and the lesson is over: it leaves the panel. Close the
    dialog. Coproducer's wrap-up of the whole track follows in the
    conversation.
 8. Reload the page. The track is still there: the Bass, Chords and Hook
@@ -1679,7 +1690,7 @@ stems, and the track is saved.
 
 **Out of scope:** what Coproducer says and whether a real model teaches well,
 which the live-model evals judge. The stems' download, which CF-021 proves.
-Doing the bites by hand, skipping or leaving part-way, picking the lesson up
-again from the daily nudge, the key and patterns of other genres, a song that
+Doing the bites by hand, skipping or pressing Leave part-way, picking the
+lesson up on another device, the key and patterns of other genres, a song that
 already has a beat passing the whole first chapter over, and the predicates
 themselves, which are tested at the unit and component layers.
