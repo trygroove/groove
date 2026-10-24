@@ -4,10 +4,7 @@ import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import { SendIcon, SparkIcon, StopIcon } from "../../components/icons";
 import { nudgeWords } from "../../memory/nudge";
 import AssistantAskCard from "./AssistantAskCard";
-import {
-  RetentionNote,
-  RetentionSettings,
-} from "./AssistantRetention";
+import { RetentionNote, RetentionSettings } from "./AssistantRetention";
 import { ERROR_REASSURANCE, errorCopy } from "./assistantErrorCopy";
 import { skippedLine } from "./cardQueue";
 import { fitComposer } from "./composerHeight";
