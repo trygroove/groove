@@ -1,0 +1,22 @@
+{
+  "id": "GRV-8",
+  "title": "Assistant disclosure",
+  "steps": [
+    {
+      "file": "01-the-note-under-the-composer.png",
+      "caption": "The note under the composer"
+    },
+    {
+      "file": "02-how-this-works-what-is-sent-what-is-kept.png",
+      "caption": "How this works: what is sent, what is kept"
+    },
+    {
+      "file": "03-the-setting-with-its-scope-beside-it.png",
+      "caption": "The setting, with its scope beside it"
+    },
+    {
+      "file": "04-turned-off-kept-conversations-are-delete.png",
+      "caption": "Turned off: kept conversations are deleted"
+    }
+  ]
+}
