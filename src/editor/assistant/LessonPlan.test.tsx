@@ -48,6 +48,56 @@ function producer(taste: string[] = ["Hip hop"]): ProducerProfile {
 }
 
 /**
+ * Removes elements the way Chrome does (GRV-190 QA): the focused element gets
+ * its `focusout`, with no related target, while it is still on the page, and
+ * only then leaves it. jsdom drops focus silently, which hid the bug.
+ */
+function blurOnRemoveLikeChrome(): () => void {
+  const blurIfFocused = (node: Node) => {
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      node.contains(active)
+    ) {
+      active.dispatchEvent(
+        new FocusEvent("focusout", { bubbles: true, relatedTarget: null }),
+      );
+    }
+  };
+  const removeChild = Node.prototype.removeChild;
+  const replaceChild = Node.prototype.replaceChild;
+  const remove = Element.prototype.remove;
+  const replaceWith = Element.prototype.replaceWith;
+  Node.prototype.removeChild = function <T extends Node>(this: Node, child: T): T {
+    blurIfFocused(child);
+    return removeChild.call(this, child) as T;
+  };
+  Node.prototype.replaceChild = function <T extends Node>(
+    this: Node,
+    node: Node,
+    child: T,
+  ): T {
+    blurIfFocused(child);
+    return replaceChild.call(this, node, child) as T;
+  };
+  Element.prototype.remove = function (this: Element) {
+    blurIfFocused(this);
+    remove.call(this);
+  };
+  Element.prototype.replaceWith = function (this: Element, ...nodes: (Node | string)[]) {
+    blurIfFocused(this);
+    replaceWith.apply(this, nodes);
+  };
+  return () => {
+    Node.prototype.removeChild = removeChild;
+    Node.prototype.replaceChild = replaceChild;
+    Element.prototype.remove = remove;
+    Element.prototype.replaceWith = replaceWith;
+  };
+}
+
+/**
  * The panel with a lesson-ready chat, over the starter project: Show me's
  * commands apply to it as the editor's would, and its view and transport are
  * signals the test can move.
@@ -881,6 +931,60 @@ describe("the Lessons list and lesson mode (GRV-190)", () => {
     clickAndFlush(showMe);
     const next = await within(h.lesson()).findByRole("button", { name: /^Next: / });
     await waitFor(() => expect(document.activeElement).toBe(next));
+  });
+
+  it("keeps focus on the plan's next control when the browser blurs Show me as its step finishes", async () => {
+    const restore = blurOnRemoveLikeChrome();
+    try {
+      const h = await renderLesson();
+      h.start("tour", "asked", "tour-sequence");
+      const showMe = within(h.lesson()).getByRole("button", { name: "Show me" });
+      showMe.focus();
+      // The step finishes on a later flush than the press, as the view Show me
+      // asked for opens.
+      h.setView("sequence");
+      flush();
+      const next = await within(h.lesson()).findByRole("button", { name: /^Next: / });
+      await waitFor(() => expect(document.activeElement).toBe(next));
+    } finally {
+      restore();
+    }
+  });
+
+  it("leaves focus on the page when the producer clicks away from Show me before its step finishes", async () => {
+    const restore = blurOnRemoveLikeChrome();
+    try {
+      const h = await renderLesson();
+      h.start("tour", "asked", "tour-sequence");
+      const showMe = within(h.lesson()).getByRole("button", { name: "Show me" });
+      showMe.focus();
+      // A click on the canvas, which takes no focus.
+      showMe.blur();
+      await new Promise((settle) => setTimeout(settle, 0));
+      h.setView("sequence");
+      flush();
+      await within(h.lesson()).findByRole("button", { name: /^Next: / });
+      await new Promise((settle) => setTimeout(settle, 0));
+      expect(document.activeElement).toBe(document.body);
+    } finally {
+      restore();
+    }
+  });
+
+  it("leaves focus where the producer put it when they leave the plan", async () => {
+    const h = await renderLesson();
+    h.start("tour", "asked", "tour-sequence");
+    const showMe = within(h.lesson()).getByRole("button", { name: "Show me" });
+    showMe.focus();
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    outside.focus();
+    h.setView("sequence");
+    flush();
+    await within(h.lesson()).findByRole("button", { name: /^Next: / });
+    await new Promise((settle) => setTimeout(settle, 0));
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
   });
 
   it("holds Show me while a library sound is on its way", async () => {
