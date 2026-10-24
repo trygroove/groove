@@ -96,6 +96,25 @@ describe("the project's lesson record in the editor (GRV-190)", () => {
     await settle();
     expect(saved).toEqual([]);
     expect(h.record.loaded()).toBeNull();
+    // The read is over, though it failed: a lesson may start, from nothing.
+    expect(h.record.settled()).toBe(true);
+  });
+
+  it("says when the first read for an owner is over, and again for the next", async () => {
+    const repository = new InMemoryLessonRepository();
+    const h = setup(repository);
+    expect(h.record.settled()).toBe(false);
+    await settle();
+    expect(h.record.settled()).toBe(true);
+    h.setWho({ uid: "user_1", projectId: "prj_2" });
+    flush();
+    expect(h.record.settled()).toBe(false);
+    await settle();
+    expect(h.record.settled()).toBe(true);
+    h.setWho(null);
+    flush();
+    expect(h.record.settled()).toBe(true);
+    expect(setup(repository, null).record.settled()).toBe(true);
   });
 
   it("keeps nothing without an owner, and starts over for another project", async () => {

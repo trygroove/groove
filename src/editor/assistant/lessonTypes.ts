@@ -51,7 +51,9 @@ export interface Lesson {
   /**
    * Starts `lesson` where the record has it under way, or from its first
    * bite (at `biteId` when given); whether it could (not while no project is
-   * open). A lesson under way is left first.
+   * open). A lesson under way is left first. Asked for while the project's
+   * record is still being read, it starts once the read is over, from what
+   * the record has.
    */
   start(lesson: LessonId, source: LessonSource, biteId?: BiteId): boolean;
   /** The next bite, once the one before is over. */

@@ -4,6 +4,7 @@ import { CONTROL_PARTS, controlAddress } from "../../commands/controlAddress";
 import { createControlRegistry } from "../../controls/registry";
 import type { Project } from "../../domain/entities";
 import { TICKS_PER_BAR } from "../../domain/time";
+import { bite } from "../../lessons/chapters";
 import { BITE_IDS } from "../../lessons/ids";
 import { biteOf, chapterOf } from "../../lessons/session";
 import { BEAT_PATTERNS, beatStyleFor } from "../../lessons/style";
@@ -12,7 +13,7 @@ import { InMemoryLessonRepository } from "../../persistence/inMemoryLessonReposi
 import { emptyLessonRecord, type LessonRecord } from "../../persistence/lessonDocuments";
 import { emptyProfile, type ProducerProfile } from "../../persistence/profileDocuments";
 import { createManualClock } from "../../shared/clock";
-import { starterWorld } from "../../testing/lessonWorld";
+import { showBite, starterWorld } from "../../testing/lessonWorld";
 import type { EditorViewName } from "../composition/editorViews";
 import { useLesson } from "./useLesson";
 import { useLessonRecord } from "./useLessonRecord";
@@ -572,6 +573,44 @@ describe("the lesson under way (GRV-43)", () => {
     expect(h.lesson.state()).toMatchObject({ lessonId: "beat", biteIndex: 1 });
   });
 
+  it("starts a lesson asked for before its record was read from where the record has it", async () => {
+    const repository = recordStore({
+      ...emptyLessonRecord(),
+      underWay: {
+        lessonId: "track",
+        chapterIndex: 3,
+        biteId: "arrange-breakdown",
+        stepIndex: 0,
+        endings: {},
+        passed: [],
+      },
+    });
+    const h = setup(undefined, true, undefined, repository);
+    // Asked for at once: the record has not been read yet.
+    expect(h.lesson.start("track", "asked")).toBe(true);
+    flush();
+    expect(h.lesson.state()).toBeNull();
+    await settle();
+    const back = h.lesson.state();
+    expect(back).toMatchObject({ lessonId: "track", chapterIndex: 3 });
+    expect(back && biteOf(back).id).toBe("arrange-breakdown");
+    // Nothing wrote the empty record's chapter 1 over the stored place.
+    expect((await stored(repository))?.underWay).toMatchObject({
+      chapterIndex: 3,
+      biteId: "arrange-breakdown",
+    });
+  });
+
+  it("starts nothing asked for before the read once it is left", async () => {
+    const repository = recordStore();
+    const h = setup(undefined, true, undefined, repository);
+    h.lesson.start("tour", "asked");
+    h.lesson.leave();
+    await settle();
+    expect(h.lesson.state()).toBeNull();
+    expect((await stored(repository))?.underWay ?? null).toBeNull();
+  });
+
   it("writes a lesson started before its record was read over what was stored", async () => {
     const repository = recordStore({
       ...emptyLessonRecord(),
@@ -714,7 +753,7 @@ describe("Finish a track in the panel (GRV-44)", () => {
     expect(after.lesson.state()).toMatchObject({ lessonId: "track", chapterIndex: 2 });
   });
 
-  it("resumes exactly where it was left, asked for again after Leave", async () => {
+  it("after Leave, asking again starts at chapter 1 and passes over only what the song has", async () => {
     const repository = recordStore({
       ...emptyLessonRecord(),
       underWay: {
@@ -735,8 +774,13 @@ describe("Finish a track in the panel (GRV-44)", () => {
     await settle();
     expect(h.lesson.start("track", "asked")).toBe(true);
     flush();
-    // Left, it is under way no more, so it starts again from its first bite.
-    expect(h.lesson.state()).toMatchObject({ chapterIndex: 0, biteIndex: 0 });
+    // Left, it is under way no more: it starts from the top, and passes over
+    // only the starter's kick, which is all this song has.
+    expect(h.lesson.state()).toMatchObject({
+      chapterIndex: 0,
+      biteIndex: 0,
+      passed: ["beat-kick"],
+    });
 
     const fresh = setup(
       undefined,
@@ -758,6 +802,39 @@ describe("Finish a track in the panel (GRV-44)", () => {
     fresh.lesson.leave();
     flush();
     expect(fresh.lesson.state()).toBeNull();
+  });
+
+  it("after Leave, asking again lands past the chapters this song already has", async () => {
+    const repository = recordStore({
+      ...emptyLessonRecord(),
+      underWay: {
+        lessonId: "track",
+        chapterIndex: 3,
+        biteId: "arrange-breakdown",
+        stepIndex: 0,
+        endings: {},
+        passed: [],
+      },
+    });
+    const h = setup(undefined, true, undefined, repository);
+    await settle();
+    h.lesson.leave();
+    await settle();
+    // The song gains a whole beat, as Make a beat would leave it.
+    const settings = { style: beatStyleFor([]) };
+    let world = starterWorld();
+    for (const id of ["beat-snare", "beat-hats", "beat-loop"] as const) {
+      world = showBite(bite(id), world, settings);
+    }
+    h.setProject(world.project);
+    flush();
+    expect(h.lesson.start("track", "asked")).toBe(true);
+    flush();
+    const state = h.lesson.state();
+    expect(state && chapterOf(state).id).toBe("bass");
+    expect(state).toMatchObject({ lessonId: "track", chapterIndex: 1 });
+    await settle();
+    expect((await stored(repository))?.underWay).toMatchObject({ chapterIndex: 1 });
   });
 
   it("opens the Export dialog as the last bite starts, and ends the lesson once stems are exported", () => {

@@ -19,7 +19,12 @@
 import { createEffect, createMemo, createSignal, untrack } from "solid-js";
 import { createFactoryContext } from "../../domain/factories";
 import { lessonCue } from "../../lessons/cue";
-import { isLessonId, type LessonSource } from "../../lessons/ids";
+import {
+  type BiteId,
+  isLessonId,
+  type LessonId,
+  type LessonSource,
+} from "../../lessons/ids";
 import {
   biteOf,
   type LessonState,
@@ -104,14 +109,35 @@ export function useLesson(options: UseLessonOptions): Lesson {
     },
   );
 
+  // A lesson asked for before the record has been read waits for it, so it
+  // starts from where the record has it rather than from an empty one.
+  let pending: {
+    readonly lesson: LessonId;
+    readonly source: LessonSource;
+    readonly biteId?: BiteId;
+  } | null = null;
+
   // The lesson the record has under way comes back once it has been read and
   // there is a project to read it against, silently: the conversation already
-  // has its turns. Each record is read back once.
+  // has its turns. Each record is read back once. A lesson asked for while it
+  // was read starts instead, from it.
   let restored: string | null = null;
   createEffect(
-    () => ({ loaded: record.loaded(), ready: world() !== null }),
-    ({ loaded, ready }) => {
-      if (!loaded || !ready || restored === loaded.key) return;
+    () => ({
+      settled: record.settled(),
+      loaded: record.loaded(),
+      ready: world() !== null,
+    }),
+    ({ settled, loaded, ready }) => {
+      if (!ready) return;
+      if (pending && settled) {
+        const asked = pending;
+        pending = null;
+        if (loaded) restored = loaded.key;
+        launch(asked.lesson, asked.source, asked.biteId);
+        return;
+      }
+      if (!loaded || restored === loaded.key) return;
       restored = loaded.key;
       const underWay = loaded.record.underWay;
       const now = untrack(world);
@@ -124,6 +150,16 @@ export function useLesson(options: UseLessonOptions): Lesson {
     },
   );
 
+  function launch(lesson: LessonId, source: LessonSource, biteId?: BiteId): boolean {
+    const now = world();
+    if (!now) return false;
+    const transition = startLesson(lesson, record.current(), now, settings(), biteId);
+    if (!transition) return false;
+    dropOut();
+    begin(transition, source);
+    return true;
+  }
+
   function dropOut(): void {
     const current = state();
     if (current) options.analytics().log("lesson_dropped_out", lessonIds(current));
@@ -135,13 +171,12 @@ export function useLesson(options: UseLessonOptions): Lesson {
     notice: shows.notice,
     canShowMe: options.editor !== undefined,
     start(lesson, source, biteId) {
-      const now = world();
-      if (!now) return false;
-      const transition = startLesson(lesson, record.current(), now, settings(), biteId);
-      if (!transition) return false;
-      dropOut();
-      begin(transition, source);
-      return true;
+      if (!world()) return false;
+      if (!record.settled()) {
+        pending = { lesson, source, biteId };
+        return true;
+      }
+      return launch(lesson, source, biteId);
     },
     next() {
       const current = state();
@@ -163,6 +198,7 @@ export function useLesson(options: UseLessonOptions): Lesson {
       if (transition) handle(transition);
     },
     leave() {
+      pending = null;
       if (!state()) return;
       dropOut();
       turns.clear();
