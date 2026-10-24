@@ -22,7 +22,7 @@ import { NUDGE_LABEL } from "./AssistantChatView";
 import AssistantPanel from "./AssistantPanel";
 import { DEFAULT_LAYOUT, float, saveLayout } from "./assistantPanelLayout";
 import { LESSON_LABEL } from "./LessonCard";
-import { ACCEPT_ANSWER, NOTICE_HEADING } from "./retentionCopy";
+import { NOTE_LABEL } from "./retentionCopy";
 import { useAssistantChat } from "./useAssistantChat";
 import { useAssistantPanel } from "./useAssistantPanel";
 import { nudgeMessage } from "./useCueNudge";
@@ -212,21 +212,14 @@ describe("Coproducer's daily nudge (GRV-25)", () => {
     expect(transport.named("cue_nudge_shown")).toHaveLength(1);
   });
 
-  it("waits behind the retention notice, and is offered once it is answered (GRV-8)", async () => {
-    const { transport, profiles } = await renderEditorChat(
+  it("is offered while the disclosure note is still unanswered (GRV-205)", async () => {
+    const { transport } = await renderEditorChat(
       onboarded({ onboardedAt: Date.now() - DAY }),
       true,
       createFakeRetentionClient({ uid: UID }),
     );
-    const notice = await screen.findByRole("group", { name: NOTICE_HEADING });
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    // Not offered, and the day not spent, while the notice hides it.
-    expect(transport.named("cue_nudge_shown")).toHaveLength(0);
-    const loaded = await profiles.loadProfile(UID);
-    expect(loaded.ok && loaded.profile?.lastNudgeDay).toBeNull();
-
-    clickAndFlush(within(notice).getByRole("button", { name: ACCEPT_ANSWER }));
     await screen.findByRole("region", { name: NUDGE_LABEL });
+    expect(screen.getByRole("region", { name: NOTE_LABEL })).toBeInTheDocument();
     expect(transport.named("cue_nudge_shown")).toHaveLength(1);
   });
 });
