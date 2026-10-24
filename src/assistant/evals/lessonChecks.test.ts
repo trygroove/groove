@@ -192,6 +192,8 @@ describe("25. Says only what changes says", () => {
     const chords = block({
       biteId: "chords-loop",
       bite: "A chord loop",
+      // Bite 1 of 3, as chords-shown sends it: its position is a number it sent.
+      biteNumber: 1,
       changes: ["Chords: 12 notes added in bars 1-4, as 4 chords of 3 notes."],
       next: ["The hook"],
     });

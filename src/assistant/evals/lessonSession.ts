@@ -84,6 +84,20 @@ export interface EvalLessonScript {
   readonly settings: LessonSettings;
   /** The most turns it runs; {@link DEFAULT_LESSON_TURNS} when absent. */
   readonly maxTurns?: number;
+  /**
+   * A change to the project the walk makes once bite `after` is over, as a
+   * producer's own edit between bites (applied through the command kernel),
+   * so the case's bite starts from a project Show me alone would not leave.
+   * `id` keeps walks with and without it apart.
+   */
+  readonly prepare?: EvalLessonPrepare;
+}
+
+/** A producer's edit between two bites of the walk: see {@link EvalLessonScript.prepare}. */
+export interface EvalLessonPrepare {
+  readonly id: string;
+  readonly after: BiteId;
+  readonly apply: (project: Project) => Project;
 }
 
 /** Where a lesson stands once walked to a bite's start, with no model. */
@@ -165,7 +179,7 @@ interface Walked extends LessonWalk {
  * for a transition; or, with no `stop`, to the lesson's end.
  */
 function walkLesson(
-  script: Pick<EvalLessonScript, "track" | "chapter" | "settings">,
+  script: Pick<EvalLessonScript, "track" | "chapter" | "settings" | "prepare">,
   stop?: (transition: LessonTransition) => boolean,
 ): Walked | null {
   let world = starterWorld();
@@ -188,7 +202,11 @@ function walkLesson(
       world = next.world;
       continue;
     }
-    done.push(biteOf(state).id);
+    const over = biteOf(state).id;
+    done.push(over);
+    if (script.prepare?.after === over) {
+      world = { ...world, project: script.prepare.apply(world.project) };
+    }
     transition = startNextBite(state, world, script.settings);
   }
   return stop ? null : { world, transition: last, done, lines };
@@ -202,13 +220,14 @@ const walks = new Map<string, LessonWalk>();
  * turn agree.
  */
 export function lessonWalk(
-  script: Pick<EvalLessonScript, "track" | "chapter" | "bite" | "settings">,
+  script: Pick<EvalLessonScript, "track" | "chapter" | "bite" | "settings" | "prepare">,
 ): LessonWalk {
   const key = JSON.stringify([
     script.track,
     script.chapter,
     script.bite,
     script.settings,
+    script.prepare?.id ?? null,
   ]);
   const kept = walks.get(key);
   if (kept) return kept;

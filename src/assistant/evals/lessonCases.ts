@@ -22,14 +22,19 @@
  * no production project was needed.
  */
 
+import { transposeNotes } from "../../commands/definitions/transforms";
+import type { Project } from "../../domain/entities";
+import { noteClips } from "../../lessons/drums";
+import { partTrack } from "../../lessons/parts";
 import type { LessonSettings } from "../../lessons/types";
-import { starterWorld } from "../../testing/lessonWorld";
+import { applied, starterWorld } from "../../testing/lessonWorld";
 import { type HistoryEntry, historyOf } from "../history";
 import type { AssistantMemoryContext } from "../memory";
 import type { AssistantMessage } from "../protocol";
 import type { EvalCase, EvalScope } from "./cases";
 import { LESSON_TURN_CHECKS } from "./lessonChecks";
 import {
+  type EvalLessonPrepare,
   type EvalLessonScript,
   finishedChapter,
   lessonBlockFor,
@@ -167,6 +172,27 @@ function biteCase(
   };
 }
 
+/**
+ * The chords an octave up, as the producer of GRV-44 r2 F3 had them, so the
+ * hook Show me writes (A4-F5, counted up from C4 whatever the chords) lands
+ * under chords at A4-D6, as on the QA project. Through the command kernel,
+ * once "A chord loop" is over.
+ */
+const CHORDS_UP_AN_OCTAVE: EvalLessonPrepare = {
+  id: "chords-up-an-octave",
+  after: "chords-loop",
+  apply: (project: Project) => {
+    const chords = partTrack(project, "chords");
+    if (!chords) throw new Error("The walk wrote no chords to move");
+    return applied(
+      project,
+      noteClips(project, chords)
+        .filter((clip) => clip.content.kind === "notes" && clip.content.events.length > 0)
+        .map((clip) => transposeNotes(clip.id, null, 12)),
+    );
+  },
+};
+
 const START_CHECKS = ["startsLesson", "noHistoryNote"] as const;
 
 /** A mid-lesson question at the start of boom bap's backbeat (GRV-43). */
@@ -213,12 +239,12 @@ export const LESSON_CASES: readonly EvalCase[] = [
     startsLesson: "tour",
     lessonChecks: START_CHECKS,
   },
-  // GRV-44 r2 F3: the hook Show me wrote was called "A5-F5, above the chords".
-  // Today's Show me writes it at A4-F5 over chords at A3-D5 (`chords.ts`
-  // counts the hook up from C4), not A3-F4 under them as on the QA project,
-  // and `changes` names no pitch ("Hook: 8 notes added in bar 1."): the
-  // registers come with the description, and check 25 judges a range or an
-  // above/below claim against those.
+  // GRV-44 r2 F3: the hook Show me wrote was called "A5-F5, above the chords"
+  // when it sat under them. Show me counts the hook up from C4 whatever the
+  // chords, so the walk moves the chords an octave up first (A4-D6), and the
+  // hook (A4-F5) is under them as on the QA project. `changes` names no pitch
+  // ("Hook: 8 notes added in bar 1."): the registers come with the
+  // description, and check 25 judges a range or an above/below claim on them.
   biteCase(
     "hook-shown",
     {
@@ -227,6 +253,7 @@ export const LESSON_CASES: readonly EvalCase[] = [
       bite: "chords-hook",
       how: "show_me",
       settings: HOUSE,
+      prepare: CHORDS_UP_AN_OCTAVE,
     },
     TRACK_STARTED,
   ),

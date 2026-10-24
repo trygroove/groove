@@ -13,6 +13,12 @@ import { EVAL_CASES, type EvalCase } from "./cases";
 import { validateExperiment } from "./experiment";
 import { LESSON_CASES } from "./lessonCases";
 import {
+  checkNamesOnlyBlockBites,
+  checkSaysOnlyChanges,
+  type LessonTurnSent,
+  namedTitles,
+} from "./lessonChecks";
+import {
   lessonFixture,
   lessonOpening,
   lessonWalk,
@@ -286,7 +292,7 @@ describe("judging a lesson session", () => {
     expect(record.checks.startsLesson).toBeUndefined();
   });
 
-  it("passes a true 'above the chords' on hook-shown's bite_done, and fails the QA's range", async () => {
+  it("fails 'above the chords' on hook-shown's bite_done, the hook under them as on the QA project", async () => {
     const evalCase = find("hook-shown");
     const judged = async (text: string) => {
       const turn = await runLessonSession(evalCase, async (turnCase) =>
@@ -294,21 +300,25 @@ describe("judging a lesson session", () => {
       );
       return evaluateTurn(evalCase, 1, turn).checks.saysOnlyChanges;
     };
-    // Show me writes the hook at A4-F5 over chords at A3-D5: the step's
-    // "above the chords" is gone by bite_done, but the registers say it.
+    // The walk moves the chords up to A4-D6 before the hook: Show me's hook
+    // (A4-F5) sits under them, and the step's "above the chords" backs nothing.
     expect(
       (
         await judged(
           "Show me wrote your hook: 8 notes in bar 1, from A4 up to F5, just above the chords.",
         )
+      )?.detail,
+    ).toMatch(/claims not in what it was sent: hook above chords/);
+    expect(
+      (
+        await judged(
+          "Show me wrote your hook: 8 notes in bar 1, from A4 up to F5, tucked under the chords.",
+        )
       )?.status,
     ).toBe("pass");
     expect(
       (await judged("Your hook runs from A5 to F5, above the chords."))?.detail,
-    ).toMatch(/pitches not in what it was sent: A5/);
-    expect((await judged("Your hook sits below the chords."))?.detail).toMatch(
-      /claims not in what it was sent: hook below chords/,
-    );
+    ).toMatch(/pitches not in what it was sent: A5.*claims not in what it was sent/);
   });
 
   it("fails wrap-up-once when the wrap-up asks the chapter's quiz through ask_producer", async () => {
@@ -376,5 +386,177 @@ describe("judging a lesson session", () => {
       "saysOnlyChanges",
       "noHistoryNote",
     ]);
+  });
+});
+
+/** What each turn of a case's session sent, by its moment: the case's real blocks. */
+async function sentAt(id: string, moment: string): Promise<LessonTurnSent> {
+  const turn = await runLessonSession(find(id), async () => reply("Good."));
+  const found = turn.session?.turns.find((each) => each.lesson?.moment === moment);
+  if (!found?.lesson) throw new Error(`${id} sent no ${moment} turn`);
+  return {
+    lesson: found.lesson,
+    request: found.request,
+    described: found.described ?? "",
+  };
+}
+
+describe("the lesson checks on the cases' own blocks", () => {
+  describe("25 on key-show-me's step_done: only the Bass track was added", () => {
+    it("passes what has not set the key, and what tells the producer to", async () => {
+      const sent = await sentAt("key-show-me", "step_done");
+      expect(sent.lesson?.changes).toEqual(['Added a synth track, "Bass".']);
+      for (const said of [
+        "It didn't set the key: that one's yours.",
+        "Show me added a Bass track but hasn't set the key yet.",
+        "Nothing has set the key yet.",
+        "Now pick A minor in the Key panel under the piano roll.",
+        "Then open Bass's clip and pick A minor in the Key panel.",
+        "Go ahead and set the key to A minor in the Key panel.",
+        "Show me set up a Bass track, and the key comes next.",
+      ]) {
+        expect(checkSaysOnlyChanges(said, sent), said).toEqual({
+          status: "pass",
+          detail: "Every figure it gives is in what the turn sent",
+        });
+      }
+    });
+
+    it("fails what says the key was set", async () => {
+      const sent = await sentAt("key-show-me", "step_done");
+      for (const said of [
+        "That set the key to A minor, so the bass will agree.",
+        "Show me added a Bass track and set the song to A minor.",
+        "Done: a Bass track, and the song is set to A minor.",
+        "Your song is in A minor now.",
+        "Show me set the key to A minor.",
+      ]) {
+        expect(checkSaysOnlyChanges(said, sent).detail, said).toMatch(
+          /says the key was set, which no change says/,
+        );
+      }
+    });
+  });
+
+  describe("25 reads above and below only between two tracks with registers", () => {
+    it("passes a part over the beat or the kick, and a title with 'under' in it", async () => {
+      const hook = await sentAt("hook-shown", "bite_done");
+      expect(
+        checkSaysOnlyChanges("That's a melody you can hum over the beat.", hook).status,
+      ).toBe("pass");
+      const hats = await sentAt("quiz-is-a-call", "bite_done");
+      expect(
+        checkSaysOnlyChanges("Hats on the off-beats ride over the kick.", hats).status,
+      ).toBe("pass");
+      const key = await sentAt("key-show-me", "bite_done");
+      const said = "Next up is Under the kick, where the bass sits below the kick.";
+      expect(checkSaysOnlyChanges(said, key).status).toBe("pass");
+      expect(checkNamesOnlyBlockBites(said, key.lesson).status).toBe("pass");
+    });
+  });
+
+  it("25 reads the bite's place as sent: bite 5 of 6 is five bites in", async () => {
+    const hats = await sentAt("quiz-is-a-call", "bite_done");
+    expect(hats.lesson).toMatchObject({ biteNumber: 5, biteCount: 6 });
+    expect(checkSaysOnlyChanges("You're five bites in, one to go.", hats).status).toBe(
+      "pass",
+    );
+  });
+
+  it("25 reads no figure in a numbered list's markers", async () => {
+    const hats = await sentAt("quiz-is-a-call", "bite_started");
+    expect(checkSaysOnlyChanges("1. Click step 3\n2. Click step 7", hats).status).toBe(
+      "pass",
+    );
+    expect(checkSaysOnlyChanges("1. Click step 3\n2. Click step 8", hats).detail).toMatch(
+      /numbers not in what it was sent: 8$/,
+    );
+  });
+
+  describe("26 names a title after 'Next' only as far as a known title goes", () => {
+    it("passes the next bite with words after it", async () => {
+      const hook = await sentAt("hook-shown", "bite_done");
+      for (const said of [
+        "Next up is Pluck the hook when you want to go on.",
+        "Next up is Pluck the hook — give it a sound of its own.",
+      ]) {
+        expect(checkNamesOnlyBlockBites(said, hook.lesson).status, said).toBe("pass");
+      }
+      const key = await sentAt("key-show-me", "bite_done");
+      expect(
+        checkNamesOnlyBlockBites(
+          "Next up is Under the kick when you're ready.",
+          key.lesson,
+        ).status,
+      ).toBe("pass");
+      const chords = await sentAt("chords-shown", "bite_done");
+      expect(
+        checkNamesOnlyBlockBites("Next, I'll walk you through The hook.", chords.lesson)
+          .status,
+      ).toBe("pass");
+    });
+
+    it("passes a wrap-up's pointers named after 'Next'", async () => {
+      const wrap = await sentAt("wrap-up-once", "chapter_done");
+      expect(
+        checkNamesOnlyBlockBites("Next: Finish a track or Shape a sound.", wrap.lesson),
+      ).toEqual({
+        status: "pass",
+        detail: 'Names only the block\'s bites and chapters, and offers 2 of "next"',
+      });
+      const one = "Next, Finish a track takes it all the way to stems.";
+      expect(namedTitles(one)).toEqual(["Finish a track", "Finish a track"]);
+      // Its one pointer is a wrap-up's only shortfall: it names nothing stray.
+      expect(checkNamesOnlyBlockBites(one, wrap.lesson).detail).toMatch(
+        /offering 1 of "next"/,
+      );
+      expect(
+        checkNamesOnlyBlockBites(`${one} Or Shape a sound builds a pluck.`, wrap.lesson)
+          .status,
+      ).toBe("pass");
+    });
+
+    it("fails a title the block does not name, invented or real", async () => {
+      const skipped = await sentAt("skip-names-next", "bite_done");
+      for (const [said, named] of [
+        ["Next up is Sections, where you'll lay out the song.", "Sections"],
+        ["Next up is Sections when you're ready.", "Sections"],
+        ["Skipping is fine. On to the Sections bite.", "Sections"],
+        ["Next up is Hats.", "Hats"],
+      ] as const) {
+        expect(checkNamesOnlyBlockBites(said, skipped.lesson), said).toEqual({
+          status: "fail",
+          detail: `Names what the block does not: "${named}"`,
+        });
+      }
+      expect(
+        checkNamesOnlyBlockBites("Next up is The Sequence view.", skipped.lesson).status,
+      ).toBe("pass");
+    });
+  });
+
+  it("26 reads no title in a word that only starts a sentence before 'bite'", async () => {
+    const hook = await sentAt("hook-shown", "bite_done");
+    for (const said of [
+      "Great bite.",
+      "Lovely chapter so far.",
+      "That's bite 1 of 3 done.",
+    ]) {
+      expect(checkNamesOnlyBlockBites(said, hook.lesson).status, said).toBe("pass");
+    }
+  });
+
+  it("26 counts a wrap-up pointer by its title's words, hyphens and all", async () => {
+    const wrap = await sentAt("wrap-up-once", "chapter_done");
+    expect(
+      checkNamesOnlyBlockBites(
+        "That's your first beat. From here there's a lesson on finishing a whole track, one on shaping a synth sound, and a tour of the studio.",
+        wrap.lesson,
+      ).detail,
+    ).toMatch(/offers 3 of "next"/);
+    expect(
+      checkNamesOnlyBlockBites("Try Finish-a-track, or Shape-a-sound.", wrap.lesson)
+        .detail,
+    ).toMatch(/offers 2 of "next"/);
   });
 });

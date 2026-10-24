@@ -8,12 +8,13 @@
  * 24. {@link checkStartsLesson}: a request for a lesson gets exactly the named
  *     `start_lesson` call, no other call beside it (a song change, a memory,
  *     an explanation, a recommendation) and no question instead.
- * 25. {@link checkSaysOnlyChanges}: every number, pitch name, pitch range, key,
- *     above/below claim and track name in the reply is in what the turn sent:
- *     the lesson's `changes`, its step, the rest of its block, the producer's
- *     message or the project description (which track sits above which is
- *     read off the registers it sends). A key the reply says was set must
- *     be in `changes` (the step is what is still to do).
+ * 25. {@link checkSaysOnlyChanges}: every number, pitch name, pitch range, key
+ *     and track name in the reply is in what the turn sent: the lesson's
+ *     `changes`, its step, the rest of its block (the bite's place in its
+ *     chapter included), the producer's message or the project description.
+ *     A track said to sit above or below another, both with registers in the
+ *     description, must sit there by those registers. A key the reply says
+ *     was set must be in `changes` (the step is what is still to do).
  * 26. {@link checkNamesOnlyBlockBites}: every bite or chapter the reply names
  *     is one the block names (`bite`, `next`, `earlier`, `passed`), and a
  *     wrap-up (`chapter_done`, `track_done`) offers two or three of `next`
@@ -229,6 +230,8 @@ function sourceText(sent: LessonTurnSent): string {
         ...lesson.next,
         ...lesson.passed,
         ...lesson.earlier.flatMap((entry) => [entry.chapter, entry.bite]),
+        // Where the bite stands: "bite 5 of 6", "five bites in".
+        `bite ${lesson.biteNumber} of ${lesson.biteCount}`,
         lesson.track
           ? `${lesson.track.title} chapter ${lesson.track.chapterNumber} of ${lesson.track.chapterCount}`
           : "",
@@ -268,9 +271,15 @@ const NUMBER_WORDS: Readonly<Record<string, number>> = {
 const NOT_A_FIGURE =
   /\b(?:(?:1\/)?(?:4|8|16|32)(?:th|nd)?s?|quarter|eighth|sixteenth|thirty-second)[- ](?:notes?|hats?|hi-hats?|steps?|grid|rolls?)\b|\b(?:4|8|16|32)ths\b|\b(?:TR-)?(?:808|909|303|606)s?\b|\b\d+\/\d+\b/gi;
 
-/** `text` without what has a number in it but is no figure: note values, drum machines, pitches. */
+/** A numbered list's marker at the start of a line: "1. ", "2) ". */
+const LIST_MARKER = /^(\s*)\d+[.)]\s+/gm;
+
+/**
+ * `text` without what has a number in it but is no figure: list markers,
+ * note values, drum machines, pitches.
+ */
 function withoutNonFigures(text: string): string {
-  return text.replace(NOT_A_FIGURE, " ").replace(PITCH, " ");
+  return text.replace(LIST_MARKER, "$1").replace(NOT_A_FIGURE, " ").replace(PITCH, " ");
 }
 
 /**
@@ -347,17 +356,22 @@ function keysIn(text: string): string[] {
 /** A key named: "A minor", "Am". */
 const A_KEY = String.raw`[A-G][#♯b♭]?(?:\s+(?:major|minor)|m\b)`;
 
+/** The verbs that set a key, in any tense; the first group of a claim is one. */
+const SETS_KEY = String.raw`\b(set|picked|pick|chose|chosen|choose|changed|change|switched|switch|put|moved|move)`;
+
 /**
- * What says a key was set, each the clause's verb on: a verb that sets with
- * the key, or the song, track or it set to a key, after it ("set the key to
- * A minor", "set the song to A minor", "put it in Am"); the key, song or
- * track said to be set ("the song is set to A minor", "the key has been
- * changed"); or the song said to be in a key now ("your song is in A minor
- * now", "it's now in Am").
+ * What says a key was set. A verb that sets with the key as its object ("set
+ * the key", "picked a key", "changed the song's key"), the song, track or it
+ * set to a key ("set the song to A minor", "put it in Am"), the verb set to
+ * a key ("switched to A minor") or a key straight after it ("picked A
+ * minor"); the key, song or track said to be set ("the song is set to A
+ * minor", "the key has been changed"); or the song said to be in a key now
+ * ("your song is in A minor now", "it's now in Am"). A "set up a Bass track"
+ * with the key later in the sentence is no claim: the key is not its object.
  */
 const KEY_SET_CLAIMS: readonly RegExp[] = [
   new RegExp(
-    String.raw`\b(set|picked|pick|chose|chosen|choose|changed|change|switched|switch|put|moved|move)\b(?:[^.!?;]*\b[Kk]ey\b|\s+(?:the\s+|your\s+)?(?:song|track|project|beat|it|everything)\s+(?:to|in|into)\s+${A_KEY}|\s+(?:to|in|into)\s+${A_KEY})`,
+    String.raw`${SETS_KEY}\s+(?:(?:the|a|your|its|the song's|your song's)\s+)?[Kk]ey\b|${SETS_KEY}\s+(?:the\s+|your\s+)?(?:song|track|project|beat|it|everything)\s+(?:to|in|into)\s+${A_KEY}|${SETS_KEY}\s+(?:(?:to|in|into)\s+)?${A_KEY}`,
     "g",
   ),
   /\b(?:[Kk]ey|song|track|project|it|everything)(?:'s|\s+is|\s+was|\s+has been|\s+got|\s+now)\s+(?:now\s+|also\s+|just\s+)?(?:set|put|changed|switched)\b/g,
@@ -372,16 +386,32 @@ const KEY_SET_CLAIMS: readonly RegExp[] = [
 const NOT_DONE =
   /\b(?:can|could|will|'ll|would|should|need to|needs to|want to|let's|next|to do|try|if|once|when|until|before)\b/i;
 
-/** A verb that tells the producer to do it, when nothing comes before it in its clause. */
+/** Words before a verb that say it has not happened: "didn't set", "nothing has set". */
+const NOT_HAPPENED = /n't\b|\b(?:not|never|nothing|nobody|no one|yet)\b/i;
+
+/** The base form of a verb that sets a key: an instruction when it leads its clause. */
 const IMPERATIVE = /^(?:set|pick|choose|change|switch|put|move)$/;
 
+/** Words that may come before an instruction's verb: "Now pick", "Go ahead and set". */
+const LEAD = String.raw`(?:(?:now|then|just|so|first|next|okay|ok|and|go ahead and)\s+)*`;
+
 /**
- * Whether `sentence` says the key has been set: a claim whose own clause,
- * up to the verb (from the last comma, colon, semicolon or dash), neither
- * holds a word of something still to do ("you can set", "once you've set")
- * nor is empty before a bare verb, which is an instruction ("Next, set the
- * key to A minor"). A "will" later in the sentence ("so the bass will
- * agree") excuses nothing.
+ * A clause, up to an instruction's verb, that is itself an instruction: empty
+ * but for its lead ("Now pick ..."), or an instruction joined by "and"
+ * ("Then open Bass's clip and pick ..."). "Show me" is the button, not an
+ * instruction: "Show me added a Bass track and set ..." says what it did.
+ */
+const INSTRUCTION_BEFORE = new RegExp(
+  String.raw`^${LEAD}$|^${LEAD}(?!show me\b)(?:open|go|head|click|press|find|select|use|try|hop|jump|pop|set|pick|choose|change|switch|put|move|add|give|listen|play|drag)\b.*\band\s+${LEAD}$`,
+);
+
+/**
+ * Whether `sentence` says the key has been set: a claim whose own clause, up
+ * to the verb (from the last comma, colon, semicolon or dash), holds no word
+ * of something still to do ("you can set", "once you've set") or not done
+ * ("didn't set", "hasn't set"), and is no instruction ("Next, set the key to
+ * A minor", "Now pick A minor", "open the clip and pick A minor"). A "will"
+ * later in the sentence ("so the bass will agree") excuses nothing.
  */
 function claimsKeySet(said: string): boolean {
   // Case-sensitive, so "a minor" is no key; only the sentence's first word
@@ -395,54 +425,26 @@ function claimsKeySet(said: string): boolean {
           .slice(0, start)
           .split(/[,;:—–(]/)
           .pop() ?? "";
-      if (NOT_DONE.test(before)) continue;
-      if (before.trim() === "" && match[1] && IMPERATIVE.test(match[1])) continue;
+      if (NOT_DONE.test(before) || NOT_HAPPENED.test(before)) continue;
+      const verb = match.slice(1).find((group) => group !== undefined);
+      const lead = before.trim().toLowerCase().replace(/\s+/g, " ");
+      if (
+        verb &&
+        IMPERATIVE.test(verb) &&
+        INSTRUCTION_BEFORE.test(lead ? `${lead} ` : "")
+      )
+        continue;
       return true;
     }
   }
   return false;
 }
 
-/** A part a pitch claim can sit above or below. */
-const PARTS = new Set([
-  "kick",
-  "kicks",
-  "snare",
-  "clap",
-  "hats",
-  "hat",
-  "bass",
-  "bassline",
-  "chords",
-  "chord",
-  "hook",
-  "melody",
-  "beat",
-  "drums",
-  "pad",
-  "lead",
-  "pluck",
-]);
+const UP = new Set(["above", "over", "on top of", "higher than"]);
+const DOWN = new Set(["below", "under", "underneath", "beneath", "lower than"]);
 
 const RELATION =
   /\b(above|below|under|underneath|beneath|over|higher than|lower than|on top of)\s+(?:the\s+|your\s+|its\s+)?([A-Za-z][\w'-]*)/gi;
-
-/** "above the chords", spelled one way: "above chords", with where it was said. */
-function relationsIn(
-  text: string,
-  parts: ReadonlySet<string>,
-): { claim: string; relation: string; part: string; index: number }[] {
-  return [...text.matchAll(RELATION)]
-    .filter((match) => parts.has((match[2] as string).toLowerCase()))
-    .map((match) => {
-      const relation = (match[1] as string).toLowerCase();
-      const part = (match[2] as string).toLowerCase();
-      return { claim: `${relation} ${part}`, relation, part, index: match.index ?? 0 };
-    });
-}
-
-const UP = new Set(["above", "over", "on top of", "higher than"]);
-const DOWN = new Set(["below", "under", "underneath", "beneath", "lower than"]);
 
 /** A track's register, as the description sends it. */
 interface Register {
@@ -470,6 +472,17 @@ function registersIn(described: string): ReadonlyMap<string, Register> {
   return registers;
 }
 
+/** The track `word` names, singular or plural: "chord" is the Chords track. */
+function registeredTrack(
+  word: string,
+  registers: ReadonlyMap<string, Register>,
+): string | undefined {
+  const lower = word.toLowerCase();
+  return [lower, `${lower}s`, lower.replace(/s$/, "")].find((name) =>
+    registers.has(name),
+  );
+}
+
 /** "A3" back to 57. */
 function pitchNumber(name: string): number {
   const match = name.match(/^([A-G]#?)(-?\d+)$/);
@@ -485,44 +498,46 @@ function sitsAbove(upper: Register, lower: Register): boolean {
   return upper.low >= lower.low && upper.high > lower.high;
 }
 
+/** Titles with a relation in them, which say nothing of where a part sits: "Under the kick". */
+const RELATION_TITLES = (): readonly string[] =>
+  TITLES.map((title) => title.toLowerCase()).filter((title) =>
+    new RegExp(RELATION.source, "i").test(title),
+  );
+
 /**
- * The above/below claims of `text` that nothing the turn sent backs. A claim
- * between two tracks the description gives registers for ("the hook sits
+ * The above/below claims of `text` the registers deny. Only a claim between
+ * two tracks the description gives registers for is judged ("the hook sits
  * above the chords", its subject the last such track before it in its
- * sentence) is judged on those registers alone, so the step's "above the
- * chords" (still to do) cannot back a hook Show me wrote under them. A
- * claim with no such subject ("just above the chords") is backed by the
- * same words in a source, or by any track the registers put there.
+ * sentence), and on those registers alone, so the step's "above the chords"
+ * (still to do) cannot back a hook Show me wrote under them. "Over the beat",
+ * "over the kick" or "above the chords" with no track before it say where a
+ * part sits loosely, and a title ("Under the kick") says nothing: no claim.
  */
-function unsentRelations(
+function deniedRelations(
   text: string,
-  sources: string,
-  parts: ReadonlySet<string>,
   registers: ReadonlyMap<string, Register>,
 ): string[] {
-  const known = new Set(relationsIn(sources, parts).map((each) => each.claim));
+  const titles = RELATION_TITLES();
   const strays: string[] = [];
   for (const sentence of sentencesOf(text)) {
-    for (const { claim, relation, part, index } of relationsIn(sentence, parts)) {
+    for (const match of sentence.matchAll(RELATION)) {
+      const index = match.index ?? 0;
+      const rest = sentence.slice(index).toLowerCase();
+      if (titles.some((title) => rest.startsWith(title))) continue;
+      const relation = (match[1] as string).toLowerCase();
       const up = UP.has(relation);
       if (!up && !DOWN.has(relation)) continue;
-      const object = registers.get(part);
+      const part = registeredTrack(match[2] as string, registers);
+      const object = part ? registers.get(part) : undefined;
+      if (!part || !object) continue;
       const subjectName = (sentence.slice(0, index).match(/[A-Za-z][\w'-]*/g) ?? [])
-        .map((word) => word.toLowerCase())
-        .filter((word) => word !== part && registers.has(word))
+        .map((word) => registeredTrack(word, registers))
+        .filter((name): name is string => !!name && name !== part)
         .at(-1);
       const subject = subjectName ? registers.get(subjectName) : undefined;
-      const holds = (s: Register, o: Register) =>
-        up ? sitsAbove(s, o) : sitsAbove(o, s);
-      if (object && subject) {
-        if (!holds(subject, object)) strays.push(`${subjectName} ${claim}`);
-        continue;
-      }
-      const backed =
-        known.has(claim) ||
-        (object !== undefined &&
-          [...registers].some(([name, each]) => name !== part && holds(each, object)));
-      if (!backed) strays.push(claim);
+      if (!subjectName || !subject) continue;
+      const holds = up ? sitsAbove(subject, object) : sitsAbove(object, subject);
+      if (!holds) strays.push(`${subjectName} ${relation} ${part}`);
     }
   }
   return strays;
@@ -556,9 +571,10 @@ function sentencesOf(text: string): string[] {
 
 /**
  * 25: every figure in the reply is in what the turn sent. Numbers (digits or
- * words), pitch names, keys, "above/below the <part>" and "<Name> track" are
- * read from the reply and looked for in the sources; and a sentence that
- * says the key has been set passes only when a changes line says it was.
+ * words), pitch names, keys and "<Name> track" are read from the reply and
+ * looked for in the sources; a track said to sit above or below another is
+ * held to their registers; and a sentence that says the key has been set
+ * passes only when a changes line says it was.
  */
 export function checkSaysOnlyChanges(text: string, sent: LessonTurnSent): CheckResult {
   const sources = sourceText(sent);
@@ -588,13 +604,7 @@ export function checkSaysOnlyChanges(text: string, sent: LessonTurnSent): CheckR
     if (claim) problems.push(`says the key was set, which no change says: "${claim}"`);
   }
 
-  const trackNames = new Set(
-    [...sent.described.matchAll(/^(.+) track:/gm)].map((m) =>
-      (m[1] as string).toLowerCase(),
-    ),
-  );
-  const parts = new Set([...PARTS, ...trackNames]);
-  const relations = unsentRelations(text, sources, parts, registersIn(sent.described));
+  const relations = deniedRelations(text, registersIn(sent.described));
   if (relations.length > 0)
     problems.push(
       `claims not in what it was sent: ${[...new Set(relations)].join(", ")}`,
@@ -659,7 +669,73 @@ const NOT_A_TITLE = new Set([
   "new",
 ]);
 
-/** The bites and chapters a reply names: quoted, or set beside "bite" or "chapter". */
+/** Words that start a clause after "Next," rather than a title: "Next, I'll walk you through". */
+const NOT_A_TITLE_START = new Set([
+  "i",
+  "i'll",
+  "i'd",
+  "i've",
+  "we",
+  "we'll",
+  "you",
+  "you'll",
+  "you're",
+  "you've",
+  "it",
+  "it's",
+  "this",
+  "that",
+  "that's",
+  "there",
+  "there's",
+  "let's",
+  "let",
+  "once",
+  "when",
+  "if",
+  "after",
+  "then",
+  "now",
+  "show",
+  "we're",
+  "here's",
+]);
+
+/** The known title `phrase` is, or starts with (the longest), as written in the curriculum. */
+function knownTitleAtStart(phrase: string): string | undefined {
+  const normal = normalTitle(phrase);
+  return TITLES.filter((title) => {
+    const known = normalTitle(title);
+    return normal === known || normal.startsWith(`${known} `);
+  }).sort((a, b) => b.length - a.length)[0];
+}
+
+/**
+ * The title a phrase names: a known one it is or starts with, or, when it
+ * starts with none, its leading run of capitalised words as an invented
+ * title ("Sections"), when that run is short (one to four words). A phrase
+ * that starts a clause ("I'll walk you through ...") names nothing.
+ */
+function titleOf(phrase: string): string | undefined {
+  const known = knownTitleAtStart(phrase);
+  if (known) return known;
+  const words = phrase.trim().split(/\s+/);
+  if (NOT_A_TITLE_START.has((words[0] ?? "").toLowerCase())) return undefined;
+  const run: string[] = [];
+  for (const word of words) {
+    if (!/^[A-Z]/.test(word)) break;
+    run.push(word);
+  }
+  return run.length >= 1 && run.length <= 4 ? run.join(" ") : undefined;
+}
+
+/** Whether `index` in `text` starts a sentence: nothing, or a sentence's end, before it. */
+function startsSentence(text: string, index: number): boolean {
+  const before = text.slice(0, index).trimEnd();
+  return before === "" || /[.!?:]$/.test(before);
+}
+
+/** The bites and chapters a reply names: quoted, set beside "bite" or "chapter", or after "next". */
 export function namedTitles(text: string): string[] {
   const plain = text.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
   const named: string[] = [];
@@ -675,27 +751,41 @@ export function namedTitles(text: string): string[] {
       named.push(quoted);
     }
   }
-  // "the Sections bite", "the Bass chapter".
+  // "the Sections bite", "the Bass chapter": a known title, or an invented
+  // one, but never a word that only starts the sentence ("Great bite.",
+  // "That's bite 1 of 3").
   for (const match of plain.matchAll(
     /\b((?:[A-Z][\w'-]*)(?:\s+(?:[a-z]{1,4}\s+)?[A-Z][\w'-]*)*)\s+(?:bite|chapter)\b/g,
   )) {
-    const phrase = (match[1] as string).trim();
-    const words = phrase.split(/\s+/);
+    const all = (match[1] as string).split(/\s+/);
+    const words = [...all];
     while (words.length > 0 && NOT_A_TITLE.has((words[0] as string).toLowerCase())) {
       words.shift();
     }
-    if (words.length > 0) named.push(words.join(" "));
+    if (words.length === 0) continue;
+    const known = words
+      .map((_, from) => words.slice(from).join(" "))
+      .find((tail) => KNOWN_TITLES.has(normalTitle(tail)));
+    if (known) {
+      named.push(known);
+      continue;
+    }
+    if (words.length === 1 && all.length === 1 && startsSentence(plain, match.index ?? 0))
+      continue;
+    named.push(words.join(" "));
   }
-  // "Next up: Sections", "next is Hats".
+  // "Next up: Sections", "next is Hats", "Next: Finish a track or Shape a
+  // sound": each piece a title, cut at "or", "and" or a dash.
   for (const match of plain.matchAll(
-    /\b[Nn]ext(?:\s+up)?(?:\s+(?:bite|chapter))?(?:\s+is|:|,|\s+comes)\s+"?([A-Z][^.,;:!?"\n]{1,50})/g,
+    /\b[Nn]ext(?:\s+up)?(?:\s+(?:bite|chapter))?(?:\s+is|:|,|\s+comes)\s+"?([A-Z][^.,;:!?"\n]{1,80})/g,
   )) {
     const phrase = (match[1] as string).trim();
-    if (
-      !/^(?:chapter|bite)\b/i.test(phrase) &&
-      !NOT_A_TITLE.has(phrase.split(/\s+/)[0]?.toLowerCase() ?? "")
-    ) {
-      named.push(phrase);
+    if (/^(?:chapter|bite)\b/i.test(phrase)) continue;
+    if (NOT_A_TITLE.has(phrase.split(/\s+/)[0]?.toLowerCase() ?? "")) continue;
+    for (const piece of phrase.split(/\s+(?:or|and)\s+|\s*[—–]\s*|\s+-\s+/)) {
+      if (!/^[A-Z]/.test(piece.trim())) continue;
+      const title = titleOf(piece);
+      if (title) named.push(title);
     }
   }
   // A known title of three words or more, as it is written.
@@ -785,30 +875,53 @@ const POINTER_FILLER = new Set([
   "start",
 ]);
 
-/** The words of a phrase worth matching on, cut to a stem: "patterns" and "pattern" agree. */
+/**
+ * The words of a phrase worth matching on, cut to a stem: "patterns" and
+ * "pattern" agree, and so do "shaping" and "shape". Hyphens part words:
+ * "Finish-a-track" is "finish a track".
+ */
 function pointerWords(phrase: string): string[] {
-  return (phrase.toLowerCase().match(/[a-z][a-z'-]+/g) ?? [])
+  return (
+    phrase
+      .toLowerCase()
+      .replace(/-/g, " ")
+      .match(/[a-z][a-z']+/g) ?? []
+  )
     .filter((word) => word.length >= 3 && !POINTER_FILLER.has(word))
-    .map((word) => word.slice(0, 5));
+    .map((word) => stem(word));
+}
+
+function stem(word: string): string {
+  const cut = word.replace(/(?:ing|ed|es|s|e)$/, "");
+  return (cut.length >= 3 ? cut : word).slice(0, 5);
 }
 
 /**
  * The pointers of `next` a reply offers. A pointer that quotes a lesson or
  * chapter (`The "Shape a sound" chapter: ...`, `Chapter 4 of "Finish a
  * track", "Arrange": ...`) is offered when the reply names its title, the
- * last one it quotes, and only then: its summary's words ("a beat, a bass")
- * are what any wrap-up talks about. Any other pointer is offered when the
+ * last one it quotes, or carries every word of it ("a lesson on finishing a
+ * whole track"), and only then: its summary's words ("a beat, a bass") are
+ * what any wrap-up talks about. Any other pointer is offered when the
  * reply shares two of its words (three, when it has five or more), as "roll
  * new hat patterns from the Generate panel" is by "roll a few hat patterns
  * in Generate".
  */
 export function offeredPointers(text: string, next: readonly string[]): string[] {
-  const reply = normalTitle(text.replace(/[“”]/g, '"').replace(/[‘’]/g, "'"));
+  const reply = normalTitle(
+    text.replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/-/g, " "),
+  );
   const replyWords = new Set(pointerWords(text));
   return next.filter((pointer) => {
     const quoted = [...pointer.matchAll(/"([^"]+)"/g)].map((match) => match[1] as string);
     const title = quoted.at(-1);
-    if (title) return new RegExp(`\\b${escapeRegExp(normalTitle(title))}\\b`).test(reply);
+    if (title) {
+      const titleWords = pointerWords(title);
+      return (
+        new RegExp(`\\b${escapeRegExp(normalTitle(title))}\\b`).test(reply) ||
+        (titleWords.length > 0 && titleWords.every((word) => replyWords.has(word)))
+      );
+    }
     const words = [...new Set(pointerWords(pointer))];
     const shared = words.filter((word) => replyWords.has(word)).length;
     return shared >= (words.length >= 5 ? 3 : 2);
