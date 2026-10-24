@@ -20,6 +20,7 @@ export const ASSISTANT_FEATURE_KEYS = [
   "assistant_recommendation",
   "assistant_ask",
   "assistant_retention",
+  "assistant_disclosure",
   "assistant_video",
   "assistant_rating",
 ] as const;

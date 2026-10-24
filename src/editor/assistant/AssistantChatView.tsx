@@ -4,11 +4,7 @@ import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import { SendIcon, SparkIcon, StopIcon } from "../../components/icons";
 import { nudgeWords } from "../../memory/nudge";
 import AssistantAskCard from "./AssistantAskCard";
-import {
-  RETENTION_LOADING,
-  RetentionDisclosure,
-  RetentionSettings,
-} from "./AssistantRetention";
+import { RetentionNote, RetentionSettings } from "./AssistantRetention";
 import { ERROR_REASSURANCE, errorCopy } from "./assistantErrorCopy";
 import { skippedLine } from "./cardQueue";
 import { fitComposer } from "./composerHeight";
@@ -36,6 +32,8 @@ export interface AssistantChatViewProps {
   readonly settingsOpen?: () => boolean;
   /** Closes the settings, back to the conversation. */
   closeSettings?(): void;
+  /** Opens the settings, where the full disclosure is (GRV-205). */
+  openSettings?(): void;
   /**
    * Held by a tutorial video while it fills the window (GRV-16), so Escape
    * puts it back; returns the release (`AssistantPanel.holdExpandedVideo`).
@@ -83,22 +81,6 @@ export default function AssistantChatView(props: AssistantChatViewProps): JSX.El
               retention={open()}
               onDone={() => props.closeSettings?.()}
             />
-          </div>
-        )}
-      </Match>
-      {/* Neither the disclosure nor the conversation until the answer is known. */}
-      <Match when={registered() && retention() && !retention()?.known() && retention()}>
-        <div class="assistant-panel-log" aria-busy="true">
-          <p class="assistant-panel-note">{RETENTION_LOADING}</p>
-        </div>
-      </Match>
-      {/* Nobody messages the assistant before answering this (GRV-8). */}
-      <Match
-        when={registered() && retention() && !retention()?.answered() && retention()}
-      >
-        {(unanswered) => (
-          <div class="assistant-panel-log assistant-retention-pane">
-            <RetentionDisclosure retention={unanswered()} />
           </div>
         )}
       </Match>
@@ -276,6 +258,15 @@ function Conversation(props: AssistantChatViewProps): JSX.Element {
               )}
             </For>
           </fieldset>
+        </Show>
+        <Show when={props.chat.retention}>
+          {(retention) => (
+            <RetentionNote
+              retention={retention()}
+              onHowItWorks={() => props.openSettings?.()}
+              focusComposer={() => props.focusComposer()}
+            />
+          )}
         </Show>
         <div class="assistant-panel-composer">
           <textarea

@@ -5,6 +5,7 @@ import {
   assistantButton,
   composer,
   conversation,
+  dataNote,
   disclosure,
   newProject,
   panel,
@@ -17,7 +18,7 @@ import { expect, test } from "./support/test";
 /**
  * The assistant's disclosure and its setting (GRV-8) against the real
  * `assistantRetention` callable in the Functions emulator: a fresh account
- * meets the disclosure before it can type, answers it, and finds the same
+ * can type at once, finds the note under the composer (GRV-205), answers it, and finds the same
  * control, with its scope beside it, in the panel's settings. What the
  * server kept is read back from the Firestore emulator, so the spec fails if
  * a yes keeps nothing or a no leaves anything behind.
@@ -28,7 +29,7 @@ const SCOPE =
   "This controls the copies Groove keeps for review and what it sends to PostHog, from now on. The conversation in your project is not affected, and this does not take back anything already sent to Anthropic or PostHog.";
 
 test.describe("the assistant's disclosure and setting", () => {
-  test("is answered before the first message, and changed later in settings", async ({
+  test("is offered before the first message, never required, and changed later in settings", async ({
     page,
     invitedProducer,
   }) => {
@@ -36,9 +37,17 @@ test.describe("the assistant's disclosure and setting", () => {
     await newProject(page);
     await assistantButton(page).click();
 
-    // The disclosure stands where the composer would be.
+    // The composer is there at once, with a one-line note under it, no
+    // provider's name in it (GRV-205).
+    await expect(composer(page)).toBeVisible();
+    await expect(dataNote(page)).toContainText("an AI service");
+    await expect(dataNote(page)).not.toContainText("Anthropic");
+    await expect(disclosure(page)).toHaveCount(0);
+    await step("The note under the composer");
+
+    // One tap opens the full text, named provider and all.
+    await dataNote(page).getByRole("button", { name: "How this works" }).click();
     await expect(disclosure(page)).toBeVisible();
-    await expect(composer(page)).toHaveCount(0);
     await expect(disclosure(page)).toContainText("Anthropic does not use anything");
     await expect(disclosure(page)).toContainText(SCOPE);
     // Keeping is the default (GRV-97): a notice with a way out, not a question.
@@ -50,13 +59,14 @@ test.describe("the assistant's disclosure and setting", () => {
     await expect(
       disclosure(page).getByRole("button", { name: "Don't keep them" }),
     ).toBeVisible();
-    await step("Before the first message: what is sent, what is kept");
+    await step("How this works: what is sent, what is kept");
+    await panel(page).getByRole("button", { name: "Back to the conversation" }).click();
 
-    await answerDisclosure(page, "OK");
-    await expect(composer(page)).toBeFocused();
+    // The first message needs no answer, and sending answers nothing.
     await composer(page).fill("Make it groove");
     await page.keyboard.press("Enter");
     await expect(conversation(page)).toContainText("Here is one idea.");
+    await answerDisclosure(page, "OK");
 
     // OK keeps the turn, server-side: the message and the reply.
     await expect

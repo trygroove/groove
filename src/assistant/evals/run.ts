@@ -76,6 +76,7 @@ import {
 } from "./checks";
 import { describeProposal, type ProposalStats } from "./describe";
 import { evalLibrary } from "./evalLibrary";
+import { lessonChecksOf, runLessonSession, songChangesOf } from "./lessonSession";
 import { isAuthError, RunGuard } from "./runGuard";
 import { type Scorecard, scorecardOf } from "./scorecard";
 import {
@@ -414,6 +415,9 @@ export async function runCaseTurn(
   evalCase: EvalCase,
   options: RunTurnOptions,
 ): Promise<EvalTurn> {
+  if (evalCase.lessonSession) {
+    return runLessonSession(evalCase, (turnCase) => runOneTurn(turnCase, options));
+  }
   if (evalCase.session) {
     return runSession(evalCase, (turnCase) => runOneTurn(turnCase, options));
   }
@@ -475,6 +479,10 @@ async function runOneTurn(
           context,
           // As the editor sends it, so `recommend_sounds` is offered (GRV-129).
           ...(evalCase.library ? { library: evalLibrary() } : {}),
+          // As the panel's `sendMessage` sends them (GRV-208): memory offers
+          // `start_lesson`, and the lesson block puts the lesson's rules in front.
+          ...(evalCase.memory ? { memory: evalCase.memory } : {}),
+          ...(evalCase.lesson ? { lesson: evalCase.lesson } : {}),
         },
         {
           signal: controller.signal,
@@ -582,6 +590,7 @@ export function evaluateTurn(
   run: number,
   turn: EvalTurn,
 ): EvalRecord {
+  if (isLessonCase(evalCase)) return evaluateLessonTurn(evalCase, run, turn);
   const base = {
     ...turn,
     caseId: evalCase.id,
@@ -660,6 +669,42 @@ export function evaluateTurn(
     },
     stats: describeProposal(project, after, commands.length),
     fingerprint: proposalFingerprint(project, commands),
+  };
+}
+
+/** Whether a case is judged on the lesson's own path (GRV-208): it names lesson checks. */
+export function isLessonCase(evalCase: EvalCase): boolean {
+  return (evalCase.lessonChecks?.length ?? 0) > 0 || !!evalCase.lessonSession;
+}
+
+/**
+ * A lesson case's turn (GRV-208): check 8 on what it changed in the song (a
+ * lesson call, a memory proposal or a recommendation is not a change), and
+ * its lesson checks, on its one turn or on each turn of its session. No
+ * proposal check: a lesson turn proposes nothing, and check 8 fails one that
+ * does.
+ */
+function evaluateLessonTurn(evalCase: EvalCase, run: number, turn: EvalTurn): EvalRecord {
+  const base = {
+    ...turn,
+    caseId: evalCase.id,
+    set: caseSet(evalCase),
+    capability: evalCase.capability,
+    axis: evalCase.axis,
+    request: evalCase.request,
+    run,
+  };
+  if (turn.error) return { ...base, checks: {}, stats: null, fingerprint: null };
+  const lesson = lessonChecksOf(evalCase, turn);
+  return {
+    ...base,
+    ...(lesson.turnChecks ? { turnChecks: lesson.turnChecks } : {}),
+    checks: {
+      outcome: checkOutcome(evalCase.expect, { ...turn, proposal: songChangesOf(turn) }),
+      ...lesson.checks,
+    },
+    stats: null,
+    fingerprint: null,
   };
 }
 
