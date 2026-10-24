@@ -63,42 +63,43 @@ function chatWith(
   return { chat, client, transport, setRegistered, setExpanded, dispose };
 }
 
-describe("the assistant's disclosure gate (GRV-8)", () => {
-  it("cannot be messaged until the account has answered the disclosure", async () => {
+describe("the assistant's disclosure (GRV-8, GRV-205)", () => {
+  it("can be messaged before the disclosure is answered (GRV-205)", async () => {
     const retention = createFakeRetentionClient();
     const { chat, client } = chatWith(retention);
     // Before the answer has even loaded.
-    expect(chat.conversation.send("Make it groove")).toBe(false);
+    expect(chat.conversation.send("Make it groove")).toBe(true);
     await settle();
     expect(chat.retention?.status()).toBe("ready");
     expect(chat.retention?.answered()).toBe(false);
-    expect(chat.conversation.send("Make it groove")).toBe(false);
-    chat.setDraft("Make it groove");
-    expect(chat.sendDraft()).toBe(false);
-    expect(client.turns).toHaveLength(0);
-
-    expect(await chat.retention?.answer(false)).toBe(true);
-    flush();
-    expect(chat.retention?.answered()).toBe(true);
-    expect(chat.conversation.send("Make it groove")).toBe(true);
-    await settle();
     expect(client.turns).toHaveLength(1);
+    // Sending answers nothing.
+    expect(retention.requests.filter((request) => request.op === "set")).toHaveLength(0);
   });
 
-  it("stays closed when the answer cannot be loaded, until one is given", async () => {
+  it("can be messaged when the answer cannot be loaded, and still takes one later", async () => {
     const retention = createFakeRetentionClient({ answered: true });
     retention.failCalls(true);
     const { chat, client } = chatWith(retention);
     await settle();
     expect(chat.retention?.status()).toBe("failed");
-    expect(chat.conversation.send("hello")).toBe(false);
+    expect(chat.conversation.send("hello")).toBe(true);
     expect(await chat.retention?.answer(true)).toBe(false);
     expect(chat.retention?.saveFailed()).toBe(true);
     retention.failCalls(false);
     expect(await chat.retention?.answer(true)).toBe(true);
-    expect(chat.conversation.send("hello")).toBe(true);
     await settle();
     expect(client.turns).toHaveLength(1);
+  });
+
+  it("logs feature_first_use for opening the full disclosure once per action", async () => {
+    const { chat, transport } = chatWith(createFakeRetentionClient());
+    await settle();
+    chat.retention?.disclosureOpened();
+    chat.retention?.disclosureOpened();
+    expect(
+      transport.named("feature_first_use").map((event) => event.params?.feature),
+    ).toEqual(["assistant_disclosure"]);
   });
 
   it("reads a stored answer back, so a later session is not asked again", async () => {

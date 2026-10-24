@@ -107,17 +107,29 @@ export const resizeEdge = (page: Page, name: "Resize height" | "Resize width"): 
 export const disclosure = (page: Page): Locator =>
   panel(page).getByRole("region", { name: "About Coproducer" });
 
+/** The one-line data note under the composer (GRV-205). */
+export const dataNote = (page: Page): Locator =>
+  panel(page).getByRole("region", { name: "How Coproducer handles your data" });
+
 /**
- * Answers the disclosure a fresh account meets the first time it opens the
- * assistant (GRV-8), and waits for the composer it gives way to. It declines
- * unless told otherwise, so tests leave nothing behind: keeping or not, the
- * assistant behaves the same.
+ * Answers the note a fresh account meets under the composer the first time it
+ * opens the assistant (GRV-205), and waits for it to go. It declines unless
+ * told otherwise, so tests leave nothing behind: keeping or not, the
+ * assistant behaves the same. The answer is never needed to send.
  */
 export async function answerDisclosure(
   page: Page,
   answer: "OK" | "Don't keep them" = "Don't keep them",
 ): Promise<void> {
-  await disclosure(page).getByRole("button", { name: answer, exact: true }).click();
+  if (answer === "Don't keep them") {
+    await dataNote(page)
+      .getByRole("button", { name: "Don't keep my conversations", exact: true })
+      .click();
+    // The note says what it did, and "Got it" now only puts that away.
+    await expect(dataNote(page).getByRole("status")).toContainText("stopped keeping");
+  }
+  await dataNote(page).getByRole("button", { name: "Got it", exact: true }).click();
+  await expect(dataNote(page)).toHaveCount(0);
   await expect(composer(page)).toBeVisible();
 }
 

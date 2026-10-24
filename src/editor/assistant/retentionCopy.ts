@@ -83,3 +83,15 @@ export const OPTED_OUT_CONFIRMATION =
 export const OPTED_IN_CONFIRMATION = `Groove will keep your conversations from now on, for ${DAYS} each. ${RETENTION_SCOPE}`;
 
 export const RETENTION_SAVE_FAILED = "Couldn't save your answer. Try again.";
+
+/**
+ * The one-line note under the composer (GRV-205, ADR 0007 decision 5 as
+ * amended): the disclosure is available before the first message rather than
+ * answered before it. It says "an AI service", not the provider's name, which
+ * is one tap away in {@link DISCLOSURE_PARAGRAPHS}.
+ */
+export const NOTE_TEXT = `Groove sends your message and a description of your project to an AI service, and keeps your conversations for ${DAYS}.`;
+export const NOTE_HOW_IT_WORKS = "How this works";
+export const NOTE_DECLINE = "Don't keep my conversations";
+export const NOTE_DISMISS = "Got it";
+export const NOTE_LABEL = `How ${ASSISTANT_NAME} handles your data`;

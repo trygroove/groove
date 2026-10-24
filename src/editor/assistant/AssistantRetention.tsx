@@ -7,6 +7,11 @@ import {
   DISCLOSURE_CLOSING,
   DISCLOSURE_PARAGRAPHS,
   DISCLOSURE_TITLE,
+  NOTE_DECLINE,
+  NOTE_DISMISS,
+  NOTE_HOW_IT_WORKS,
+  NOTE_LABEL,
+  NOTE_TEXT,
   NOTICE_CHANGE,
   NOTICE_HEADING,
   OPTED_IN_CONFIRMATION,
@@ -27,9 +32,103 @@ function DisclosureText(): JSX.Element {
 }
 
 /**
- * The assistant's disclosure (GRV-8, ADR 0007 decision 5), shown in place of
- * the composer until a signed-in account has answered it: the assistant
- * cannot be messaged before. Keeping is the default (GRV-97), so it is a
+ * The one-line note under the composer (GRV-205, ADR 0007 decision 5 as
+ * amended): the disclosure is available before the first message, never a
+ * gate on it. It stays until the producer taps "Got it" (which keeps, the
+ * default, and is stored like any answer), opts out, or answers in the full
+ * text. Opting out says what it did, right here, until it is put away.
+ */
+export function RetentionNote(props: {
+  readonly retention: AssistantRetention;
+  /** Opens the full disclosure (Coproducer settings). */
+  onHowItWorks(): void;
+  /** Where focus goes when a button here is pressed and goes away. */
+  focusComposer(): void;
+}): JSX.Element {
+  const [confirmation, setConfirmation] = createSignal<string | null>(null);
+  const visible = () =>
+    props.retention.known() && (!props.retention.answered() || confirmation() !== null);
+
+  async function decline() {
+    if (await props.retention.answer(false)) {
+      setConfirmation(OPTED_OUT_CONFIRMATION);
+      props.focusComposer();
+    }
+  }
+
+  async function keep() {
+    if (await props.retention.answer(true)) props.focusComposer();
+  }
+
+  return (
+    <Show when={visible()}>
+      <section class="assistant-note" aria-label={NOTE_LABEL}>
+        <Show
+          when={confirmation()}
+          fallback={
+            <>
+              <p>{NOTE_TEXT}</p>
+              <div class="assistant-note-actions">
+                <button
+                  type="button"
+                  class="assistant-note-link"
+                  onClick={() => {
+                    props.retention.disclosureOpened();
+                    props.onHowItWorks();
+                  }}
+                >
+                  {NOTE_HOW_IT_WORKS}
+                </button>
+                <button
+                  type="button"
+                  class="assistant-note-link"
+                  onClick={() => void decline()}
+                >
+                  {NOTE_DECLINE}
+                </button>
+                <button
+                  type="button"
+                  class="assistant-note-link"
+                  onClick={() => void keep()}
+                >
+                  {NOTE_DISMISS}
+                </button>
+              </div>
+              <Show when={props.retention.saveFailed()}>
+                <p class="assistant-retention-error" role="alert">
+                  {RETENTION_SAVE_FAILED}
+                </p>
+              </Show>
+            </>
+          }
+        >
+          {(text) => (
+            <>
+              <output>{text()}</output>
+              <div class="assistant-note-actions">
+                <button
+                  type="button"
+                  class="assistant-note-link"
+                  onClick={() => {
+                    setConfirmation(null);
+                    props.focusComposer();
+                  }}
+                >
+                  {NOTE_DISMISS}
+                </button>
+              </div>
+            </>
+          )}
+        </Show>
+      </section>
+    </Show>
+  );
+}
+
+/**
+ * The assistant's full disclosure (GRV-8, ADR 0007 decision 5), shown in
+ * Coproducer settings while the account has not answered it, and reached
+ * from the composer's note ({@link RetentionNote}). Keeping is the default (GRV-97), so it is a
  * notice rather than a question: "OK" keeps them, "Don't keep them" beside
  * it, the same size, opts out. The control's scope sits right under them.
  */

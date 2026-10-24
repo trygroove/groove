@@ -327,9 +327,8 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     client: options.client,
     project: options.project,
     scope,
-    // Nobody messages the assistant before answering the disclosure (GRV-8).
-    canSend: () =>
-      options.account().registered && (retention ? retention.answered() : true),
+    // The disclosure is one tap away, not a gate (GRV-205).
+    canSend: () => options.account().registered,
     analytics: options.analytics,
     committedProject: options.committedProject,
     clock: options.clock,
@@ -491,7 +490,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     ? useCueNudge({
         profile,
         expanded: options.expanded,
-        ready: () => (retention ? retention.answered() : true),
+        ready: () => (retention ? retention.known() : true),
         conversation,
         analytics: options.analytics,
         startLesson: (bite) => lesson.start(bite.chapter, "nudge", bite.id),
