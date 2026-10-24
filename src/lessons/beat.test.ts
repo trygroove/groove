@@ -9,12 +9,13 @@ import {
   applied,
   applyShowMe,
   lessonContext,
+  startedAt,
   starterWorld,
 } from "../testing/lessonWorld";
 import { BEAT_CHAPTER, coveredTicks, LOOP_BARS, TEMPO_TOLERANCE } from "./beat";
 import { nextStep } from "./chapters";
 import { beatTrack, hitsAll, kickPad, stepsHit } from "./drums";
-import { observe, startBite } from "./session";
+import { observe } from "./session";
 import { BEAT_PATTERNS, BEAT_STYLES, type BeatStyle } from "./style";
 import type { LessonBite, LessonStep, LessonWorld } from "./types";
 
@@ -162,7 +163,7 @@ describe("Make a beat (GRV-43)", () => {
         const world = starterWorld();
         // The starter's kick: 1, 5, 9 and 13, four on the floor.
         expect(kickSteps(world)).toEqual([0, 4, 8, 12]);
-        let state = startBite("beat", "beat-kick", world, settings).state;
+        let state = startedAt("beat", "beat-kick", world, settings).state;
         // Nothing is done as the bite starts, whatever the style.
         expect(observe(state, world, settings)).toBeNull();
         let now = world;
@@ -340,7 +341,7 @@ describe("Make a beat (GRV-43)", () => {
       const first = stepIn(biteId, world, "boom_bap");
       const played = applyShowMe(world, first.showMe(world, settings, lessonContext(1)));
       // Started again in a song that has the part: it is not done at once.
-      let state = startBite("beat", biteId, played, settings).state;
+      let state = startedAt("beat", biteId, played, settings).state;
       expect(observe(state, played, settings)).toBeNull();
       const clear = stepIn(biteId, played, "boom_bap");
       expect(clear.id).toBe("clear");
@@ -402,7 +403,7 @@ describe("Make a beat (GRV-43)", () => {
       world,
       stepIn("beat-hats", world).showMe(world, settings, lessonContext(1)),
     );
-    const state = startBite("beat", "beat-snare", withHats, settings).state;
+    const state = startedAt("beat", "beat-snare", withHats, settings).state;
     expect(biteNamed("beat-snare").steps[state.step?.index ?? -1]?.id).toBe("snare");
     expect(observe(state, withHats, settings)).toBeNull();
   });
@@ -430,7 +431,7 @@ describe("Make a beat (GRV-43)", () => {
         world,
         stepIn("beat-loop", world).showMe(world, settings, lessonContext()),
       );
-      let state = startBite("beat", "beat-loop", looped, settings).state;
+      let state = startedAt("beat", "beat-loop", looped, settings).state;
       expect(observe(state, looped, settings)).toBeNull();
       const shorten = stepIn("beat-loop", looped);
       expect(shorten.id).toBe("shorten");

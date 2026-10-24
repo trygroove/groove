@@ -178,6 +178,46 @@ service cloud.firestore {
           && document == 'current'
           && validProfile(request.resource.data);
       }
+
+      // Where every lesson stands in one of the producer's projects
+      // (GRV-190): one document per project, owner only, like the profile.
+      // `src/persistence/lessonDocuments.ts` owns the full shape; the rules
+      // check what keeps it small and theirs.
+      match /lessons/{projectId} {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && validLessonRecord(request.resource.data);
+      }
+    }
+
+    function lessonRecordFields() {
+      return ['version', 'underWay', 'finished', 'updatedAt'];
+    }
+
+    function lessonUnderWayFields() {
+      return ['lessonId', 'chapterIndex', 'biteId', 'stepIndex', 'endings', 'passed'];
+    }
+
+    function validLessonUnderWay(data) {
+      return data == null
+        || (data is map
+          && data.keys().hasOnly(lessonUnderWayFields())
+          && data.keys().hasAll(lessonUnderWayFields())
+          && data.lessonId is string && data.lessonId.size() <= 64
+          && data.chapterIndex is int && data.chapterIndex >= 0
+          && data.biteId is string && data.biteId.size() <= 64
+          && data.stepIndex is int && data.stepIndex >= 0
+          && data.endings is map && data.endings.size() <= 50
+          && data.passed is list && data.passed.size() <= 50);
+    }
+
+    function validLessonRecord(data) {
+      return data.keys().hasOnly(lessonRecordFields())
+        && data.keys().hasAll(lessonRecordFields())
+        && data.version == 1
+        && validLessonUnderWay(data.underWay)
+        && data.finished is map && data.finished.size() <= 100
+        && data.updatedAt is int && data.updatedAt >= 0;
     }
 
     // Every field a profile must have. `lessonsDone` (GRV-43) came later, so

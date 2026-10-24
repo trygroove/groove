@@ -38,7 +38,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import type { Project } from "../../domain/entities";
-import type { LessonChoice } from "../../lessons/ids";
+import type { LessonId } from "../../lessons/ids";
 import { lessonOfferAsk, lessonOfferText } from "../../onboarding/questions";
 import type { SelectionScope, SelectionState } from "../../selection/types";
 import { type AskAnswer, type AssistantAsk, answerMessage, askTranscript } from "../ask";
@@ -203,7 +203,7 @@ export interface EvalCase {
    */
   readonly memory?: AssistantMemoryContext;
   /** The lesson check 24 expects the turn to start (GRV-208). */
-  readonly startsLesson?: LessonChoice;
+  readonly startsLesson?: LessonId;
   /**
    * Runs the case as a lesson session (GRV-208, `lessonSession.ts`): one bite
    * of a lesson, a turn per moment, the scripted producer doing each step by

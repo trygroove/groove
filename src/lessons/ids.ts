@@ -4,7 +4,8 @@
  * without importing the lessons themselves.
  *
  * An ID is published: it is stored on the producer's profile as done
- * (`lessonsDone`) and sent in `lesson_*` analytics. Adding one is routine;
+ * (`lessonsDone`) and in each project's lesson record (GRV-190), and sent in
+ * `lesson_*` analytics. Adding one is routine;
  * renaming or removing one is a task of its own, since a stored ID that no
  * longer names a bite would quietly be undone.
  */
@@ -45,14 +46,6 @@ export const TRACK_CHAPTER_IDS = [
   "mix",
 ] as const satisfies readonly ChapterId[];
 export type TrackChapterId = (typeof TRACK_CHAPTER_IDS)[number];
-
-/**
- * Saved with the bites done (`lessonsDone`) once "Finish a track" starts, so
- * the lesson is under way, and resumable, even while it is still on "Make a
- * beat", whose bites alone say nothing about it. Shaped like a bite ID, as
- * the profile requires, and never one.
- */
-export const TRACK_UNDER_WAY = "track-under-way";
 
 /** Every bite, chapter by chapter, in the order each chapter teaches them. */
 export const BITE_IDS = [
@@ -102,11 +95,16 @@ export function isChapterId(value: string): value is ChapterId {
 }
 
 /**
- * What a lesson can be started as (GRV-44): a chapter taught alone, or
- * "track", "Finish a track" from wherever it was left.
+ * Every lesson (GRV-190): an ordered list of chapters. The three chapters
+ * taught alone are each a lesson of one, and "track", "Finish a track", is
+ * a lesson of five (`LESSONS` in `chapters.ts`).
  */
-export const LESSON_CHOICES = [...SOLO_CHAPTER_IDS, "track"] as const;
-export type LessonChoice = (typeof LESSON_CHOICES)[number];
+export const LESSON_IDS = [...SOLO_CHAPTER_IDS, "track"] as const;
+export type LessonId = (typeof LESSON_IDS)[number];
+
+export function isLessonId(value: string): value is LessonId {
+  return (LESSON_IDS as readonly string[]).includes(value);
+}
 
 export function isTrackChapterId(value: string): value is TrackChapterId {
   return (TRACK_CHAPTER_IDS as readonly string[]).includes(value);

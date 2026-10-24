@@ -4,15 +4,44 @@ import { CONTROL_PARTS, controlAddress } from "../../commands/controlAddress";
 import { createControlRegistry } from "../../controls/registry";
 import type { Project } from "../../domain/entities";
 import { TICKS_PER_BAR } from "../../domain/time";
-import { BITE_IDS, TRACK_UNDER_WAY } from "../../lessons/ids";
-import { biteOf } from "../../lessons/session";
+import { bite } from "../../lessons/chapters";
+import { BITE_IDS } from "../../lessons/ids";
+import { biteOf, chapterOf } from "../../lessons/session";
 import { BEAT_PATTERNS, beatStyleFor } from "../../lessons/style";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
+import { InMemoryLessonRepository } from "../../persistence/inMemoryLessonRepository";
+import { emptyLessonRecord, type LessonRecord } from "../../persistence/lessonDocuments";
 import { emptyProfile, type ProducerProfile } from "../../persistence/profileDocuments";
-import { starterWorld } from "../../testing/lessonWorld";
+import { createManualClock } from "../../shared/clock";
+import { showBite, starterWorld } from "../../testing/lessonWorld";
 import type { EditorViewName } from "../composition/editorViews";
-import { createLessonStore, type LessonStore } from "./lessonStore";
-import { type LessonEditorPort, SHOW_ME_SETTLE_MS, useLesson } from "./useLesson";
+import { useLesson } from "./useLesson";
+import { useLessonRecord } from "./useLessonRecord";
+import { type LessonEditorPort, SHOW_ME_SETTLE_MS } from "./useLessonShowMe";
+
+const OWNER = { uid: "user_1", projectId: "prj_1" } as const;
+
+/** A store for the lesson records, as another page load would find it. */
+function recordStore(record?: LessonRecord): InMemoryLessonRepository {
+  const repository = new InMemoryLessonRepository({ clock: createManualClock(10) });
+  if (record) void repository.saveRecord(OWNER.uid, OWNER.projectId, record);
+  return repository;
+}
+
+/** Lets the record's reads and writes settle, then draws. */
+async function settle(): Promise<void> {
+  for (let round = 0; round < 3; round += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    flush();
+  }
+}
+
+async function stored(
+  repository: InMemoryLessonRepository,
+): Promise<LessonRecord | null> {
+  const result = await repository.loadRecord(OWNER.uid, OWNER.projectId);
+  return result.ok ? result.record : null;
+}
 
 /** `project` at `tempo` BPM, as a committed edit would leave it. */
 function tempoed(project: Project | null, tempo: number): Project {
@@ -45,7 +74,7 @@ function setup(
   editor?: LessonEditorPort,
   open = true,
   profile?: ProducerProfileStore,
-  saved?: { key: () => string | null; store: LessonStore },
+  repository?: InMemoryLessonRepository,
 ) {
   const [project, setProject] = createSignal<Project | null>(
     open ? starterWorld().project : null,
@@ -73,7 +102,13 @@ function setup(
       editor,
       profile,
       analytics: () => ({ log, logFeatureFirstUse: vi.fn() }),
-      saved,
+      record: repository
+        ? useLessonRecord({
+            owner: () => OWNER,
+            repository: async () => repository,
+            profile,
+          })
+        : undefined,
     }),
   );
   return {
@@ -207,7 +242,7 @@ describe("the lesson under way (GRV-43)", () => {
     expect(open.lesson.start("beat", "nudge", "beat-kick")).toBe(true);
   });
 
-  it("keeps how each bite ended, and starts a chapter at its first bite not done", () => {
+  it("keeps how each bite ended, and starts a left lesson over from its first bite (GRV-190)", () => {
     const h = setup();
     h.lesson.start("tour", "asked", "tour-arrangement");
     flush();
@@ -220,11 +255,14 @@ describe("the lesson under way (GRV-43)", () => {
     h.setView("arrangement");
     flush();
     expect(h.lesson.state()?.endings).toEqual({ "tour-arrangement": "did_it" });
-    expect(h.lesson.done()).toEqual(["tour-arrangement"]);
+    expect(h.lesson.finished()).toEqual({ "tour-arrangement": "did_it" });
     h.lesson.leave();
     h.lesson.start("tour", "asked");
     flush();
-    expect(h.lesson.state()?.biteIndex).toBe(1);
+    // Nothing is inferred from what is finished: a restart is from the top,
+    // and this time through nothing is done yet.
+    expect(h.lesson.state()?.biteIndex).toBe(0);
+    expect(h.lesson.state()?.endings).toEqual({});
   });
 
   it("counts Show me only once the editor has acted", async () => {
@@ -321,7 +359,7 @@ describe("the lesson under way (GRV-43)", () => {
       expect(h.lesson.state()).toBeNull();
       vi.advanceTimersByTime(SHOW_ME_SETTLE_MS);
       flush();
-      expect(h.lesson.done()).toContain("tour-mixer");
+      expect(h.lesson.finished()["tour-mixer"]).toBe("show_me");
       expect(h.log).toHaveBeenCalledWith(
         "lesson_bite_completed",
         expect.objectContaining({ bite_id: "tour-mixer", how: "show_me" }),
@@ -422,85 +460,179 @@ describe("the lesson under way (GRV-43)", () => {
     expect(h.lesson.canShowMe).toBe(false);
   });
 
-  it("does not count a skipped bite as done, so it is still the next unfinished one", () => {
-    const h = setup();
+  it("keeps a skipped bite as skipped, never as done, on the profile or in the record", async () => {
+    const profile = profileStore([]);
+    const repository = recordStore();
+    const h = setup(undefined, true, profile, repository);
+    await settle();
     h.lesson.start("tour", "asked", "tour-sequence");
     flush();
     h.lesson.skip();
-    flush();
+    await settle();
     expect(h.lesson.state()?.endings).toEqual({ "tour-sequence": "skipped" });
-    expect(h.lesson.done()).toEqual([]);
-    h.lesson.leave();
-    h.lesson.start("tour", "asked");
-    flush();
-    expect(h.lesson.state()?.biteIndex).toBe(0);
+    expect(h.lesson.finished()).toEqual({ "tour-sequence": "skipped" });
+    expect(profile.profile()?.lessonsDone).toEqual([]);
+    expect((await stored(repository))?.finished["tour-sequence"]?.how).toBe("skipped");
   });
 
-  it("comes back after a reload at the bite it was on, with how the others ended", () => {
-    const storage = new Map<string, string>();
-    const store = createLessonStore({
-      getItem: (key) => storage.get(key) ?? null,
-      setItem: (key, value) => void storage.set(key, value),
-      removeItem: (key) => void storage.delete(key),
-    });
-    const saved = { key: () => "lesson-key", store };
-    const before = setup(undefined, true, undefined, saved);
+  it("writes the bites done onto the profile's list, derived from the record", async () => {
+    const profile = profileStore(["beat-kick"]);
+    const repository = recordStore();
+    const h = setup(undefined, true, profile, repository);
+    await settle();
+    h.lesson.start("tour", "asked", "tour-library");
+    flush();
+    h.setView("library");
+    await settle();
+    expect(profile.profile()?.lessonsDone).toEqual(["beat-kick", "tour-library"]);
+  });
+
+  it("sends one turn for one transition, however often it is handled", () => {
+    const h = setup();
+    h.lesson.start("tour", "asked", "tour-sequence");
+    flush();
+    expect(h.sendLesson).toHaveBeenCalledTimes(1);
+    h.lesson.skip();
+    flush();
+    expect(h.sendLesson).toHaveBeenCalledTimes(2);
+    // The bite is over: a second Skip has nothing to end, and says nothing.
+    h.lesson.skip();
+    flush();
+    expect(h.sendLesson).toHaveBeenCalledTimes(2);
+  });
+
+  it("comes back after a reload at the bite and step it was on, from the record alone", async () => {
+    const repository = recordStore();
+    const before = setup(undefined, true, undefined, repository);
+    await settle();
     before.lesson.start("tour", "asked", "tour-sequence");
     flush();
     before.lesson.skip();
     flush();
     before.lesson.next();
-    flush();
+    await settle();
     expect(before.lesson.state()?.biteIndex).toBe(2);
+    const step = before.lesson.state()?.step?.index;
 
-    // The page reloads: a new lesson, over the same storage.
-    const after = setup(undefined, true, undefined, saved);
-    flush();
+    // The page reloads, or another tab opens: a new lesson, over the same record.
+    const after = setup(undefined, true, undefined, repository);
+    await settle();
     expect(after.lesson.state()).toMatchObject({
-      chapter: "tour",
+      lessonId: "tour",
       biteIndex: 2,
       endings: { "tour-sequence": "skipped" },
+      step: { index: step },
     });
-    expect(after.lesson.state()?.step).not.toBeNull();
     // Coming back is not a new start: nothing is said or logged.
     expect(after.sendLesson).not.toHaveBeenCalled();
     expect(after.log).not.toHaveBeenCalled();
 
-    // Leaving forgets it.
+    // Leaving keeps the bites finished, and nothing is under way any more.
     after.lesson.leave();
-    flush();
-    expect(storage.size).toBe(0);
-    const again = setup(undefined, true, undefined, saved);
-    flush();
+    await settle();
+    const left = await stored(repository);
+    expect(left?.underWay).toBeNull();
+    expect(left?.finished["tour-sequence"]?.how).toBe("skipped");
+    const again = setup(undefined, true, undefined, repository);
+    await settle();
     expect(again.lesson.state()).toBeNull();
   });
 
-  it("waits for the project before bringing a lesson back, and keeps it meanwhile", () => {
-    const storage = new Map<string, string>();
-    const store = createLessonStore({
-      getItem: (key) => storage.get(key) ?? null,
-      setItem: (key, value) => void storage.set(key, value),
-      removeItem: (key) => void storage.delete(key),
-    });
-    store.save("lesson-key", { chapter: "beat", bite: "beat-kick", endings: {} });
-    const h = setup(undefined, false, undefined, { key: () => "lesson-key", store });
+  it("is under way no more once its last bite is over, its bites kept", async () => {
+    const repository = recordStore();
+    const h = setup(undefined, true, undefined, repository);
+    await settle();
+    h.lesson.start("tour", "asked", "tour-mixer");
     flush();
+    h.lesson.skip();
+    await settle();
     expect(h.lesson.state()).toBeNull();
-    expect(storage.size).toBe(1);
+    expect(await stored(repository)).toMatchObject({
+      underWay: null,
+      finished: { "tour-mixer": { how: "skipped" } },
+    });
+  });
+
+  it("waits for the project before bringing a lesson back", async () => {
+    const repository = recordStore({
+      ...emptyLessonRecord(),
+      underWay: {
+        lessonId: "beat",
+        chapterIndex: 0,
+        biteId: "beat-kick",
+        stepIndex: 0,
+        endings: {},
+        passed: [],
+      },
+    });
+    const h = setup(undefined, false, undefined, repository);
+    await settle();
+    expect(h.lesson.state()).toBeNull();
     h.setProject(starterWorld().project);
     flush();
-    expect(h.lesson.state()).toMatchObject({ chapter: "beat", biteIndex: 1 });
+    expect(h.lesson.state()).toMatchObject({ lessonId: "beat", biteIndex: 1 });
+  });
+
+  it("starts a lesson asked for before its record was read from where the record has it", async () => {
+    const repository = recordStore({
+      ...emptyLessonRecord(),
+      underWay: {
+        lessonId: "track",
+        chapterIndex: 3,
+        biteId: "arrange-breakdown",
+        stepIndex: 0,
+        endings: {},
+        passed: [],
+      },
+    });
+    const h = setup(undefined, true, undefined, repository);
+    // Asked for at once: the record has not been read yet.
+    expect(h.lesson.start("track", "asked")).toBe(true);
+    flush();
+    expect(h.lesson.state()).toBeNull();
+    await settle();
+    const back = h.lesson.state();
+    expect(back).toMatchObject({ lessonId: "track", chapterIndex: 3 });
+    expect(back && biteOf(back).id).toBe("arrange-breakdown");
+    // Nothing wrote the empty record's chapter 1 over the stored place.
+    expect((await stored(repository))?.underWay).toMatchObject({
+      chapterIndex: 3,
+      biteId: "arrange-breakdown",
+    });
+  });
+
+  it("starts nothing asked for before the read once it is left", async () => {
+    const repository = recordStore();
+    const h = setup(undefined, true, undefined, repository);
+    h.lesson.start("tour", "asked");
+    h.lesson.leave();
+    await settle();
+    expect(h.lesson.state()).toBeNull();
+    expect((await stored(repository))?.underWay ?? null).toBeNull();
+  });
+
+  it("writes a lesson started before its record was read over what was stored", async () => {
+    const repository = recordStore({
+      ...emptyLessonRecord(),
+      finished: { "beat-kick": { how: "did_it", at: 1 } },
+    });
+    const h = setup(undefined, true, undefined, repository);
+    h.lesson.start("tour", "asked", "tour-mixer");
+    flush();
+    await settle();
+    const record = await stored(repository);
+    expect(record?.underWay?.biteId).toBe("tour-mixer");
+    expect(record?.finished["beat-kick"]?.how).toBe("did_it");
   });
 });
 
 describe("Finish a track in the panel (GRV-44)", () => {
-  it("starts on the beat, passing over the starter's kick and saving it as done", () => {
+  it("starts on the beat, passing over the starter's kick", () => {
     const h = setup();
     expect(h.lesson.start("track", "asked")).toBe(true);
     flush();
     const state = h.lesson.state();
-    expect(state?.track).toBe(true);
-    expect(state?.chapter).toBe("beat");
+    expect(state).toMatchObject({ lessonId: "track", chapterIndex: 0 });
     expect(state?.passed).toEqual(["beat-kick"]);
     h.lesson.skip();
     flush();
@@ -508,35 +640,41 @@ describe("Finish a track in the panel (GRV-44)", () => {
     flush();
     // Pick a kick, then straight on to Hear it: the starter already plays the kick.
     expect(h.lesson.state()?.biteIndex).toBe(2);
-    expect(h.lesson.done()).toContain("beat-kick");
+    // What the song had is passed over, never finished.
+    expect(h.lesson.finished()).toEqual({ "beat-library": "skipped" });
     const completed = h.log.mock.calls
       .filter(([name]) => (name as string) === "lesson_bite_completed")
       .map((call) => (call as unknown as [string, { bite_id: string }])[1].bite_id);
     expect(completed).toEqual(["beat-library"]);
   });
 
-  it("saves the lesson as under way as it starts, before any bite is done", () => {
-    const profile = profileStore([]);
-    const h = setup(undefined, true, profile);
+  it("keeps the lesson under way in the record from its first bite", async () => {
+    const repository = recordStore();
+    const h = setup(undefined, true, undefined, repository);
+    await settle();
     h.lesson.start("track", "asked");
-    flush();
-    expect(profile.profile()?.lessonsDone).toContain(TRACK_UNDER_WAY);
-    expect(h.lesson.done()).toContain(TRACK_UNDER_WAY);
+    await settle();
+    expect((await stored(repository))?.underWay).toMatchObject({
+      lessonId: "track",
+      chapterIndex: 0,
+      biteId: "beat-library",
+      passed: ["beat-kick"],
+    });
   });
 
   it("teaches the beat in a song without one, though its bites were done before", () => {
     // Make a beat done in another song: this one has only its kick, so the
     // beat is taught from Pick a kick, and only the kick is passed over.
     const beat = BITE_IDS.filter((id) => id.startsWith("beat-"));
-    const h = setup(undefined, true, profileStore([TRACK_UNDER_WAY, ...beat]));
+    const h = setup(undefined, true, profileStore(beat));
     expect(h.lesson.start("track", "nudge")).toBe(true);
     flush();
-    const state = h.lesson.state();
-    expect(state?.track).toBe(true);
-    expect(state?.chapter).toBe("beat");
-    expect(state?.biteIndex).toBe(0);
-    expect(state?.passed).toEqual(["beat-kick"]);
-    expect(state?.behind).toEqual([]);
+    expect(h.lesson.state()).toMatchObject({
+      lessonId: "track",
+      chapterIndex: 0,
+      biteIndex: 0,
+      passed: ["beat-kick"],
+    });
     expect(h.log).toHaveBeenCalledWith(
       "lesson_bite_started",
       expect.objectContaining({
@@ -547,42 +685,23 @@ describe("Finish a track in the panel (GRV-44)", () => {
     );
   });
 
-  it("picks the beat up inside it when left part-way through, so Bass follows", () => {
-    const done = [TRACK_UNDER_WAY, "beat-library", "beat-kick"];
-    // The nudge offers the beat's next bite, and starts it as its chapter.
-    const h = setup(undefined, true, profileStore(done));
-    expect(h.lesson.start("beat", "nudge", "beat-play")).toBe(true);
-    flush();
-    expect(h.lesson.state()?.track).toBe(true);
-    expect(h.lesson.state()?.chapter).toBe("beat");
-    expect(h.lesson.state()?.biteIndex).toBe(2);
-    // Asked for "Finish a track" instead, the beat goes by the song: this one
-    // has only its kick, so Pick a kick is taught again.
-    const resumed = setup(undefined, true, profileStore(done));
-    resumed.lesson.start("track", "asked");
-    flush();
-    expect(resumed.lesson.state()?.track).toBe(true);
-    expect(resumed.lesson.state()?.chapter).toBe("beat");
-    expect(resumed.lesson.state()?.biteIndex).toBe(0);
-  });
-
-  it("keeps Make a beat a chapter alone when the lesson is not under way on it", () => {
-    const solo = setup(undefined, true, profileStore(["beat-library"]));
-    solo.lesson.start("beat", "asked");
-    flush();
-    expect(solo.lesson.state()?.track).toBe(false);
+  it("keeps Make a beat a lesson of its own, whatever the track has done", () => {
     const beat = BITE_IDS.filter((id) => id.startsWith("beat-"));
-    const past = setup(undefined, true, profileStore([TRACK_UNDER_WAY, ...beat]));
-    past.lesson.start("beat", "asked");
+    const h = setup(undefined, true, profileStore(beat));
+    h.lesson.start("beat", "asked");
     flush();
-    expect(past.lesson.state()?.track).toBe(false);
+    expect(h.lesson.state()).toMatchObject({
+      lessonId: "beat",
+      biteIndex: 0,
+      passed: [],
+    });
   });
 
   it("goes on to the next chapter after a chapter's last bite, without leaving the panel", () => {
     const h = setup();
-    h.lesson.start("bass", "asked", "bass-sound");
+    h.lesson.start("track", "asked", "bass-sound");
     flush();
-    expect(h.lesson.state()?.track).toBe(true);
+    expect(h.lesson.state()?.lessonId).toBe("track");
     // The starter has no Bass track: adding one comes first. Skip both steps.
     h.lesson.skip();
     flush();
@@ -595,7 +714,8 @@ describe("Finish a track in the panel (GRV-44)", () => {
     });
     h.lesson.next();
     flush();
-    expect(h.lesson.state()?.chapter).toBe("chords");
+    const now = h.lesson.state();
+    expect(now && chapterOf(now).id).toBe("chords");
     expect(h.log).toHaveBeenCalledWith(
       "lesson_bite_started",
       expect.objectContaining({
@@ -606,41 +726,121 @@ describe("Finish a track in the panel (GRV-44)", () => {
     );
   });
 
-  it("still offers the next chapter after a reload at a chapter's end (GRV-43 resume)", () => {
-    const storage = new Map<string, string>();
-    const store = createLessonStore({
-      getItem: (key) => storage.get(key) ?? null,
-      setItem: (key, value) => void storage.set(key, value),
-      removeItem: (key) => void storage.delete(key),
-    });
-    const saved = { key: () => "lesson-key", store };
-    const before = setup(undefined, true, undefined, saved);
-    before.lesson.start("bass", "asked", "bass-sound");
+  it("still offers the next chapter after a reload at a chapter's end", async () => {
+    const repository = recordStore();
+    const before = setup(undefined, true, undefined, repository);
+    await settle();
+    before.lesson.start("track", "asked", "bass-sound");
     flush();
     before.lesson.skip();
     flush();
     before.lesson.skip();
-    flush();
-    expect(before.lesson.state()).toMatchObject({ chapter: "bass", step: null });
+    await settle();
+    expect(before.lesson.state()).toMatchObject({ chapterIndex: 1, step: null });
 
     // The page reloads at Bass's end: the card is still "Finish a track".
-    const after = setup(undefined, true, undefined, saved);
-    flush();
+    const after = setup(undefined, true, undefined, repository);
+    await settle();
     expect(after.lesson.state()).toMatchObject({
-      chapter: "bass",
-      track: true,
+      lessonId: "track",
+      chapterIndex: 1,
       step: null,
     });
-    expect(after.lesson.upcoming()?.chapter).toBe("chords");
+    const ahead = after.lesson.upcoming();
+    expect(ahead && chapterOf(ahead).id).toBe("chords");
     after.lesson.next();
     flush();
-    expect(after.lesson.state()).toMatchObject({ chapter: "chords", track: true });
+    expect(after.lesson.state()).toMatchObject({ lessonId: "track", chapterIndex: 2 });
+  });
+
+  it("after Leave, asking again starts at chapter 1 and passes over only what the song has", async () => {
+    const repository = recordStore({
+      ...emptyLessonRecord(),
+      underWay: {
+        lessonId: "track",
+        chapterIndex: 3,
+        biteId: "arrange-breakdown",
+        stepIndex: 0,
+        endings: { "arrange-copy": "did_it", "arrange-intro": "did_it" },
+        passed: [],
+      },
+      finished: { "bass-sound": { how: "skipped", at: 1 } },
+    });
+    const h = setup(undefined, true, undefined, repository);
+    await settle();
+    // Back after a reload, then left, then asked for again.
+    expect(h.lesson.state()?.lessonId).toBe("track");
+    h.lesson.leave();
+    await settle();
+    expect(h.lesson.start("track", "asked")).toBe(true);
+    flush();
+    // Left, it is under way no more: it starts from the top, and passes over
+    // only the starter's kick, which is all this song has.
+    expect(h.lesson.state()).toMatchObject({
+      chapterIndex: 0,
+      biteIndex: 0,
+      passed: ["beat-kick"],
+    });
+
+    const fresh = setup(
+      undefined,
+      true,
+      undefined,
+      recordStore({
+        ...emptyLessonRecord(),
+        underWay: {
+          lessonId: "track",
+          chapterIndex: 3,
+          biteId: "arrange-breakdown",
+          stepIndex: 0,
+          endings: {},
+          passed: [],
+        },
+      }),
+    );
+    await settle();
+    fresh.lesson.leave();
+    flush();
+    expect(fresh.lesson.state()).toBeNull();
+  });
+
+  it("after Leave, asking again lands past the chapters this song already has", async () => {
+    const repository = recordStore({
+      ...emptyLessonRecord(),
+      underWay: {
+        lessonId: "track",
+        chapterIndex: 3,
+        biteId: "arrange-breakdown",
+        stepIndex: 0,
+        endings: {},
+        passed: [],
+      },
+    });
+    const h = setup(undefined, true, undefined, repository);
+    await settle();
+    h.lesson.leave();
+    await settle();
+    // The song gains a whole beat, as Make a beat would leave it.
+    const settings = { style: beatStyleFor([]) };
+    let world = starterWorld();
+    for (const id of ["beat-snare", "beat-hats", "beat-loop"] as const) {
+      world = showBite(bite(id), world, settings);
+    }
+    h.setProject(world.project);
+    flush();
+    expect(h.lesson.start("track", "asked")).toBe(true);
+    flush();
+    const state = h.lesson.state();
+    expect(state && chapterOf(state).id).toBe("bass");
+    expect(state).toMatchObject({ lessonId: "track", chapterIndex: 1 });
+    await settle();
+    expect((await stored(repository))?.underWay).toMatchObject({ chapterIndex: 1 });
   });
 
   it("opens the Export dialog as the last bite starts, and ends the lesson once stems are exported", () => {
     const editor = recordingEditor();
     const h = setup(editor);
-    h.lesson.start("mix", "asked", "mix-export");
+    h.lesson.start("track", "asked", "mix-export");
     flush();
     expect(editor.openExport).toHaveBeenCalledTimes(1);
     expect(h.lesson.state()?.step).not.toBeNull();
@@ -660,62 +860,10 @@ describe("Finish a track in the panel (GRV-44)", () => {
     ]);
   });
 
-  it("picks up where the producer is, not at a bite they skipped on the way", () => {
-    // "Round it off" skipped (not saved), everything else done up to the intro.
-    const done = [
-      TRACK_UNDER_WAY,
-      "bass-key",
-      "bass-line",
-      "chords-loop",
-      "chords-hook",
-      "chords-pluck",
-      "arrange-copy",
-      "arrange-intro",
-    ];
-    const h = setup(undefined, true, profileStore(done));
-    expect(h.lesson.start("track", "nudge")).toBe(true);
-    flush();
-    expect(h.lesson.state()?.chapter).toBe("arrange");
-    const resumed = h.lesson.state();
-    expect(resumed && biteOf(resumed).id).toBe("arrange-breakdown");
-  });
-
-  it("goes back for a skipped bite, then on past what is done, not over it again", () => {
-    const done = [
-      TRACK_UNDER_WAY,
-      "bass-key",
-      "bass-line",
-      "chords-loop",
-      "chords-hook",
-      "chords-pluck",
-      "arrange-copy",
-      "arrange-intro",
-    ];
-    const h = setup(undefined, true, profileStore(done));
-    h.lesson.start("bass", "asked");
-    flush();
-    const back = h.lesson.state();
-    expect(back && biteOf(back).id).toBe("bass-sound");
-    h.lesson.skip();
-    flush();
-    h.lesson.skip();
-    flush();
-    const ahead = h.lesson.upcoming();
-    expect(ahead && biteOf(ahead).id).toBe("arrange-breakdown");
-    h.lesson.next();
-    flush();
-    const now = h.lesson.state();
-    expect(now && biteOf(now).id).toBe("arrange-breakdown");
-    const started = h.log.mock.calls
-      .filter(([name]) => (name as string) === "lesson_bite_started")
-      .map((call) => (call as unknown as [string, { bite_id: string }])[1].bite_id);
-    expect(started).toEqual(["bass-sound", "arrange-breakdown"]);
-  });
-
   it("does not count the track completed when its last bite, the export, is skipped", () => {
     const editor = recordingEditor();
     const h = setup(editor);
-    h.lesson.start("mix", "asked", "mix-export");
+    h.lesson.start("track", "asked", "mix-export");
     flush();
     h.lesson.skip();
     flush();
@@ -727,7 +875,7 @@ describe("Finish a track in the panel (GRV-44)", () => {
   it("plays from where Show me says, for the drop", () => {
     const editor = recordingEditor();
     const h = setup(editor);
-    h.lesson.start("arrange", "asked", "arrange-drop");
+    h.lesson.start("track", "asked", "arrange-drop");
     flush();
     // The starter's beat stops after bar 1, so bringing it back for the drop
     // comes first; skip to the listening.

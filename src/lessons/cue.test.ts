@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { starterWorld } from "../testing/lessonWorld";
+import { startedAt, starterWorld } from "../testing/lessonWorld";
 import { cueMessage, foldTurns, type LessonTurn, lessonCue, wrapUpPointers } from "./cue";
 import { BITE_IDS, MAX_EARLIER } from "./ids";
-import { type LessonTransition, skip, startBite, startNextBite } from "./session";
+import { type LessonTransition, skip, startNextBite } from "./session";
 
 const settings = { style: "trap" } as const;
 
 describe("what a lesson tells Coproducer (GRV-43)", () => {
   it("says which bite has started, its step in plain words and the beat it teaches", () => {
     const world = starterWorld();
-    const { state, event } = startBite("beat", "beat-kick", world, settings);
+    const { state, event } = startedAt("beat", "beat-kick", world, settings);
     const cue = lessonCue(state, event, settings, []);
     expect(cue).toMatchObject({
       chapterId: "beat",
@@ -32,7 +32,7 @@ describe("what a lesson tells Coproducer (GRV-43)", () => {
 
   it("gives the quiz and the next bite once a bite is over", () => {
     const world = starterWorld();
-    const started = startBite("beat", "beat-play", world, settings).state;
+    const started = startedAt("beat", "beat-play", world, settings).state;
     // Hear it sets the tempo first, then plays: skip both.
     const tempoSkipped = skip(started, world, settings);
     const ended = tempoSkipped && skip(tempoSkipped.state, world, settings);
@@ -48,7 +48,7 @@ describe("what a lesson tells Coproducer (GRV-43)", () => {
 
   it("wraps a chapter up with pointers to what is left, and no style outside the beat", () => {
     const world = starterWorld();
-    const started = startBite("tour", "tour-mixer", world, settings).state;
+    const started = startedAt("tour", "tour-mixer", world, settings).state;
     const ended = skip(started, world, settings);
     if (!ended) throw new Error("not skipped");
     const cue = lessonCue(ended.state, ended.event, settings, ["tour-mixer"]);
@@ -60,14 +60,14 @@ describe("what a lesson tells Coproducer (GRV-43)", () => {
       'Skipped "The Mixer". That was the last bite of "Tour the studio".',
     );
     // Once every other chapter is done, only the chapter's own pointers are left.
-    expect(wrapUpPointers("tour", [...BITE_IDS])).toEqual([
+    expect(wrapUpPointers("tour", 0, [...BITE_IDS])).toEqual([
       "Ask Coproducer for a loop to start from",
     ]);
   });
 
   it("is under way for a turn the producer sends mid-lesson", () => {
     const world = starterWorld();
-    const { state } = startBite("sound", null, world, settings);
+    const { state } = startedAt("sound", null, world, settings);
     expect(lessonCue(state, null, settings, []).moment).toBe("under_way");
   });
 });
@@ -90,12 +90,12 @@ describe("turns that waited for a reply (GRV-43)", () => {
   }
 
   it("goes as it is when it waited alone", () => {
-    const one = turnOf(startBite("beat", "beat-kick", world, settings));
+    const one = turnOf(startedAt("beat", "beat-kick", world, settings));
     expect(foldTurns([one])).toBe(one);
   });
 
   it("carries a finished bite into the next bite's intro, so it is still celebrated", () => {
-    const started = startBite("beat", "beat-play", world, settings);
+    const started = startedAt("beat", "beat-play", world, settings);
     const intro = turnOf(started);
     const finished = skipped(started);
     const next = startNextBite(finished.state, world, settings);
@@ -116,7 +116,7 @@ describe("turns that waited for a reply (GRV-43)", () => {
   });
 
   it("keeps the intro of the bite still under way, and keeps at most a few moments", () => {
-    const started = startBite("beat", "beat-kick", world, settings);
+    const started = startedAt("beat", "beat-kick", world, settings);
     const intro = turnOf(started);
     const step = skip(started.state, world, settings);
     if (!step) throw new Error("not skipped");

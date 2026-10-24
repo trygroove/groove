@@ -9,9 +9,9 @@ import {
 import { SONG_SWING } from "../domain/parameters";
 import { createStarterProject } from "../editor/composition/starterProject";
 import { foldTurns, lessonCue } from "../lessons/cue";
-import { skip, startBite } from "../lessons/session";
+import { skip } from "../lessons/session";
 import { buildAssistantLibrary, DRUM_PACK_ID } from "../testing/assistantLibrary";
-import { starterWorld } from "../testing/lessonWorld";
+import { startedAt, starterWorld } from "../testing/lessonWorld";
 import {
   createEmulatorAssistantProvider,
   DUSTIER_ROLE,
@@ -281,7 +281,7 @@ describe("the emulator's assistant provider", () => {
   it("answers a lesson's turn naming its bite, or the chapter at its end (CF-037)", async () => {
     const world = starterWorld();
     const settings = { style: "boom_bap" } as const;
-    const started = startBite("beat", "beat-kick", world, settings);
+    const started = startedAt("beat", "beat-kick", world, settings);
     const startedCue = lessonCue(started.state, started.event, settings, []);
     const project = createStarterProject("owner-1", () => 0.5);
     const answer = (lesson: AssistantLessonContext) =>
@@ -299,14 +299,14 @@ describe("the emulator's assistant provider", () => {
     expect((await answer(startedCue)).text).toBe(lessonReplyText(startedCue));
     expect(lessonReplyText(startedCue)).toContain('"The kick pattern"');
 
-    const last = startBite("beat", "beat-loop", world, settings).state;
+    const last = startedAt("beat", "beat-loop", world, settings).state;
     const over = skip(last, world, settings);
     if (!over) throw new Error("not skipped");
     const wrapUp = lessonCue(over.state, over.event, settings, []);
     expect((await answer(wrapUp)).text).toContain('"Make a beat" finished');
     // A turn that waited answers what it waited with first.
     const finished = skip(
-      startBite("beat", "beat-library", world, settings).state,
+      startedAt("beat", "beat-library", world, settings).state,
       world,
       settings,
     );

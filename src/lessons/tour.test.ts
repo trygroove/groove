@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { EDITOR_VIEWS, type EditorViewName } from "../analytics/catalog";
-import { applyShowMe, lessonContext, starterWorld } from "../testing/lessonWorld";
+import {
+  applyShowMe,
+  lessonContext,
+  startedAt,
+  starterWorld,
+} from "../testing/lessonWorld";
 import { nextStep } from "./chapters";
-import { observe, skip, startBite } from "./session";
+import { observe, skip } from "./session";
 import { TOUR_CHAPTER } from "./tour";
 
 describe("Tour the studio (GRV-43)", () => {
@@ -43,7 +48,7 @@ describe("Tour the studio (GRV-43)", () => {
     const world = starterWorld();
     expect(world.view).toBe("arrangement");
     const bite = biteFor("arrangement");
-    let state = startBite("tour", bite.id, world, settings).state;
+    let state = startedAt("tour", bite.id, world, settings).state;
     expect(state.step?.index).toBe(0);
     expect(bite.steps[0].id).toBe("away");
     // Being on it is not going there.
@@ -80,7 +85,7 @@ describe("Tour the studio (GRV-43)", () => {
   it("moves on to the next bite when the step away is skipped (QA, GRV-43)", () => {
     // The editor opens on the arrangement, so its bite asks to step away first.
     const world = starterWorld();
-    const started = startBite("tour", "tour-arrangement", world, settings).state;
+    const started = startedAt("tour", "tour-arrangement", world, settings).state;
     expect(started.step?.index).toBe(0);
     const skipped = skip(started, world, settings);
     // Still on the arrangement, there is nothing left to open: the bite is over.

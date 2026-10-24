@@ -8,25 +8,25 @@ import {
   Show,
   Switch,
 } from "solid-js";
-import { chapter as chapterById } from "../../lessons/chapters";
 import { GLOSSARY, instructionParts, type TermId } from "../../lessons/glossary";
-import { type BiteEnding, type BiteId, TRACK_CHAPTER_IDS } from "../../lessons/ids";
+import type { BiteEnding, BiteId } from "../../lessons/ids";
 import {
   biteOf,
   chapterFinished,
   chapterOf,
   followingBite,
   followingChapter,
+  hasChapters,
   type LessonState,
+  lessonOf,
 } from "../../lessons/session";
-import { TRACK_TITLE, trackChapterNumber } from "../../lessons/track";
 import type { Lesson } from "./useLesson";
 
 /** The lesson card's accessible name (GRV-43). */
 export const LESSON_LABEL = "Lesson";
 
-/** How a bite in the list stands: how it ended, or done before, or passed over. */
-export type BiteStatus = BiteEnding | "earlier" | "passed";
+/** How a bite in the list stands: how it ended this time through, or passed over. */
+export type BiteStatus = BiteEnding | "passed";
 
 /** What a bite's line says once it is over. */
 export function endingWord(ending: BiteStatus): string {
@@ -39,9 +39,9 @@ export function lessonPlace(state: LessonState): string {
   // A bite over waits for Next, so the place says it is done, not still to do.
   const over = state.step === null ? " · done" : "";
   const bites = `bite ${state.biteIndex + 1} of ${chapterOf(state).bites.length}${over}`;
-  if (!state.track) return `Lesson · ${bites}`;
-  const chapter = state.chapter as (typeof TRACK_CHAPTER_IDS)[number];
-  return `${TRACK_TITLE} · chapter ${trackChapterNumber(chapter)} of ${TRACK_CHAPTER_IDS.length} · ${bites}`;
+  if (!hasChapters(state.lessonId)) return `Lesson · ${bites}`;
+  const chapters = lessonOf(state).chapters.length;
+  return `${lessonOf(state).title} · chapter ${state.chapterIndex + 1} of ${chapters} · ${bites}`;
 }
 
 /**
@@ -68,7 +68,7 @@ export default function LessonCard(props: {
   const nextChapter = () => {
     if (!chapterFinished(props.state) || !followingChapter(props.state)) return null;
     const next = props.lesson.upcoming();
-    return next ? chapterById(next.chapter) : null;
+    return next ? chapterOf(next) : null;
   };
   const [term, setTerm] = createSignal<TermId | null>(null);
   const instruction = () => props.state.step?.instruction ?? "";
@@ -82,11 +82,9 @@ export default function LessonCard(props: {
   const status = (id: BiteId): BiteStatus | null => {
     const ending = props.state.endings[id];
     if (ending) return ending;
-    if (props.state.passed.includes(id)) return "passed";
-    // "Finish a track" passes over only what it says it does (GRV-44): a bite
-    // done in another lesson or song, and taught again here, is not done yet.
-    if (props.state.track) return props.state.behind.includes(id) ? "earlier" : null;
-    return props.lesson.done().includes(id) ? "earlier" : null;
+    // Only this time through: a bite done before, and taught again, is not
+    // done yet (GRV-190).
+    return props.state.passed.includes(id) ? "passed" : null;
   };
   const definitionId = "lesson-definition";
 

@@ -9,6 +9,8 @@ import { createSeededIdFactory } from "../domain/ids";
 import { TICKS_PER_BAR } from "../domain/time";
 import { createStarterProject } from "../editor/composition/starterProject";
 import { nextStep } from "../lessons/chapters";
+import type { BiteId, LessonId } from "../lessons/ids";
+import { type LessonTransition, startLesson } from "../lessons/session";
 import type { LessonBite, LessonSettings, LessonWorld, ShowMe } from "../lessons/types";
 
 /** A world over `project`, at rest on the arrangement. */
@@ -108,4 +110,19 @@ export function showBite(
     at = nextStep(bite, now, settings, at.index);
   }
   return now;
+}
+
+/**
+ * Lesson `lessonId` started fresh at `biteId` (its first bite, with null),
+ * as `startLesson` starts it with no record; throws when it does not start.
+ */
+export function startedAt(
+  lessonId: LessonId,
+  biteId: BiteId | null,
+  world: LessonWorld,
+  settings: LessonSettings,
+): LessonTransition {
+  const started = startLesson(lessonId, null, world, settings, biteId ?? undefined);
+  if (!started) throw new Error(`"${lessonId}" did not start`);
+  return started;
 }

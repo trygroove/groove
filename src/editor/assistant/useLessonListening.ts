@@ -9,10 +9,44 @@
  */
 import { type Accessor, createEffect, createMemo, createSignal } from "solid-js";
 import type { LoopRange } from "../../audio/loopRange";
+import type { Project } from "../../domain/entities";
 import { TICKS_PER_BAR } from "../../domain/time";
+import type { LessonWorld } from "../../lessons/types";
+import type { EditorViewName } from "../composition/editorViews";
 import type { ExportFormat } from "../export/FormatCards";
 import type { TrackLevel } from "../tracks/trackLevels";
-import type { LessonListening } from "./useLesson";
+
+/** What the editor reports to "Finish a track" (GRV-44), each an accessor. */
+export interface LessonListening {
+  readonly bar: Accessor<number>;
+  readonly barsHeard: Accessor<number>;
+  readonly masterClips: Accessor<number>;
+  readonly stemExports: Accessor<number>;
+}
+
+/**
+ * The world a lesson's step is read against, as the editor stands now: the
+ * project, the view, the transport, and what `listening` counts (0 without
+ * it). Null while no project is open. Every read is reactive.
+ */
+export function lessonWorld(
+  project: Project | null,
+  view: EditorViewName,
+  playing: boolean,
+  listening?: LessonListening,
+): LessonWorld | null {
+  return project
+    ? {
+        project,
+        view,
+        playing,
+        bar: listening?.bar() ?? 0,
+        barsHeard: listening?.barsHeard() ?? 0,
+        masterClips: listening?.masterClips() ?? 0,
+        stemExports: listening?.stemExports() ?? 0,
+      }
+    : null;
+}
 
 export interface UseLessonListeningOptions {
   readonly playing: Accessor<boolean>;

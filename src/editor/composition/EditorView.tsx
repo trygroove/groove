@@ -40,6 +40,7 @@ import type { LibraryPackSummary } from "../../library/manifest";
 import { useFavourites } from "../../library/useFavourites";
 import { useProducerProfile } from "../../memory/useProducerProfile";
 import type { FavouritesRepository } from "../../persistence/favouritesRepository";
+import type { LessonRepository } from "../../persistence/lessonRepository";
 import type { ProfileRepository } from "../../persistence/profileRepository";
 import { getProjectRepository } from "../../projectRepositoryClient";
 import type { ArrangementSelection } from "../../selection";
@@ -152,6 +153,11 @@ export interface EditorViewProps {
    * Injected in tests; Firestore (or memory) otherwise.
    */
   readonly profileRepository?: () => Promise<ProfileRepository>;
+  /**
+   * Where each lesson stands in this project (GRV-190). Injected in tests;
+   * Firestore (or memory) otherwise.
+   */
+  readonly lessonRepository?: () => Promise<LessonRepository>;
   /**
    * The assistant's way to the gateway (GRV-26). Injected in tests; the
    * app's composition root (`src/assistantClientProvider.ts`) otherwise.
@@ -533,6 +539,14 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
     conversationKey: () => {
       const uid = props.libraryAccount?.uid;
       return uid ? conversationStorageKey(uid, props.projectId) : null;
+    },
+    // A signed-in producer's lessons are kept with the project (GRV-190).
+    lessonRecord: {
+      owner: () =>
+        props.libraryAccount?.registered && props.libraryAccount.uid
+          ? { uid: props.libraryAccount.uid, projectId: props.projectId }
+          : null,
+      repository: props.lessonRepository,
     },
     view: () => props.view,
     sources: assistantSources,

@@ -61,6 +61,8 @@ const FIRESTORE_SURFACES: Record<string, string> = {
     "userDataRules.emulator.test.ts, this file",
   "/databases/{database}/documents/users/{uid}/profile/{document}":
     "firestoreProfileRepository.emulator.test.ts, this file",
+  "/databases/{database}/documents/users/{uid}/lessons/{projectId}":
+    "firestoreLessonRepository.emulator.test.ts, this file",
   "/databases/{database}/documents/projects/{projectId}":
     "firestoreRules.emulator.test.ts, firestoreProjectRepository.emulator.test.ts, this file",
   "/databases/{database}/documents/projects/{projectId}/song/{songId}":
@@ -515,10 +517,11 @@ describe("users/{uid}: nothing outside the named folders", () => {
     await assertFails(setDoc(doc(db, `users/${OWNER}/usage/other`), { totalBytes: 0 }));
   });
 
-  it("refuses a profile or favourite to someone signed out", async () => {
+  it("refuses a profile, lesson record or favourite to someone signed out", async () => {
     const db = testEnv.unauthenticatedContext().firestore();
     await assertFails(setDoc(doc(db, `users/${OWNER}/profile/current`), {}));
     await assertFails(getDoc(doc(db, `users/${OWNER}/profile/current`)));
+    await assertFails(getDoc(doc(db, `users/${OWNER}/lessons/prj_any`)));
     await assertFails(getDocs(collection(db, `users/${OWNER}/favourites`)));
     await assertFails(getDocs(collection(db, `users/${OWNER}/packs`)));
   });
@@ -533,6 +536,7 @@ describe("an account that is not on the allowlist", () => {
     await assertFails(getDoc(doc(db, projectPath)));
     await assertFails(getDoc(doc(db, clipPath)));
     await assertFails(getDoc(doc(db, `users/${OWNER}/profile/current`)));
+    await assertFails(getDocs(collection(db, `users/${OWNER}/lessons`)));
     await assertFails(getDocs(collection(db, `users/${OWNER}/packs`)));
     await assertFails(getDocs(collection(db, `users/${OWNER}/favourites`)));
     await assertFails(

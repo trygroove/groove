@@ -5,8 +5,8 @@ import { TICKS_PER_SIXTEENTH } from "../domain/time";
 import { foldTurns, lessonCue } from "../lessons/cue";
 import { beatTrack, kickPad } from "../lessons/drums";
 import { MAX_EARLIER } from "../lessons/ids";
-import { observe, skip, startBite, startTrack } from "../lessons/session";
-import { applied, lessonContext, starterWorld } from "../testing/lessonWorld";
+import { observe, skip, startLesson } from "../lessons/session";
+import { applied, lessonContext, startedAt, starterWorld } from "../testing/lessonWorld";
 import { MINIMAL_ASSISTANT_CONTEXT } from "../testing/scriptedAssistantProvider";
 import { lessonReplyText } from "./emulatorProvider";
 import {
@@ -30,7 +30,7 @@ const settings = { style: "boom_bap" } as const;
 
 function cue(): AssistantLessonContext {
   const world = starterWorld();
-  const { state, event } = startBite("beat", "beat-kick", world, settings);
+  const { state, event } = startedAt("beat", "beat-kick", world, settings);
   return lessonCue(state, event, settings, []);
 }
 
@@ -38,7 +38,7 @@ describe("a lesson as a turn carries it (GRV-43)", () => {
   it("takes every cue the lessons build, started or over", () => {
     expect(assistantLessonContextSchema.parse(cue())).toEqual(cue());
     const world = starterWorld();
-    const { state } = startBite("tour", "tour-mixer", world, settings);
+    const { state } = startedAt("tour", "tour-mixer", world, settings);
     const over = skip(state, world, settings);
     if (!over) throw new Error("not skipped");
     const wrapUp = lessonCue(over.state, over.event, settings, []);
@@ -47,7 +47,7 @@ describe("a lesson as a turn carries it (GRV-43)", () => {
 
   it("takes Finish a track's cues: a chapter in it, passed bites, and its end (GRV-44)", () => {
     const world = starterWorld();
-    const started = startTrack("beat", null, world, settings);
+    const started = startLesson("track", null, world, settings);
     if (!started) throw new Error("not started");
     const first = lessonCue(started.state, started.event, settings, []);
     expect(first.track).toEqual({
@@ -57,12 +57,8 @@ describe("a lesson as a turn carries it (GRV-43)", () => {
     });
     expect(assistantLessonContextSchema.safeParse(first).success).toBe(true);
 
-    const last = startBite("mix", "mix-export", world, settings);
-    const over = observe(
-      { ...last.state, track: true },
-      { ...world, stemExports: 1 },
-      settings,
-    );
+    const last = startedAt("track", "mix-export", world, settings);
+    const over = observe(last.state, { ...world, stemExports: 1 }, settings);
     if (!over) throw new Error("not over");
     const end = lessonCue(over.state, over.event, settings, []);
     expect(end.moment).toBe("track_done");
@@ -83,7 +79,7 @@ describe("a lesson as a turn carries it (GRV-43)", () => {
     const pad = track && kickPad(track);
     const clip = world.project.clips[0];
     if (!track || !pad || !clip) throw new Error("no beat");
-    const { state } = startBite("beat", "beat-hats", world, settings);
+    const { state } = startedAt("beat", "beat-hats", world, settings);
     const context = lessonContext();
     // 48 hits on one pad, each its own position: a line listing them all ran
     // past what a change line may be.
@@ -111,7 +107,7 @@ describe("a lesson as a turn carries it (GRV-43)", () => {
 
   it("takes a cue that carries the moments it waited with", () => {
     const world = starterWorld();
-    const started = startBite("beat", "beat-play", world, settings);
+    const started = startedAt("beat", "beat-play", world, settings);
     const over = skip(started.state, world, settings);
     if (!over) throw new Error("not skipped");
     const folded = foldTurns([
