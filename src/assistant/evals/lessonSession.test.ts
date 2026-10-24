@@ -286,6 +286,65 @@ describe("judging a lesson session", () => {
     expect(record.checks.startsLesson).toBeUndefined();
   });
 
+  it("passes a true 'above the chords' on hook-shown's bite_done, and fails the QA's range", async () => {
+    const evalCase = find("hook-shown");
+    const judged = async (text: string) => {
+      const turn = await runLessonSession(evalCase, async (turnCase) =>
+        reply(turnCase.lesson?.moment === "bite_done" ? text : "Good."),
+      );
+      return evaluateTurn(evalCase, 1, turn).checks.saysOnlyChanges;
+    };
+    // Show me writes the hook at A4-F5 over chords at A3-D5: the step's
+    // "above the chords" is gone by bite_done, but the registers say it.
+    expect(
+      (
+        await judged(
+          "Show me wrote your hook: 8 notes in bar 1, from A4 up to F5, just above the chords.",
+        )
+      )?.status,
+    ).toBe("pass");
+    expect(
+      (await judged("Your hook runs from A5 to F5, above the chords."))?.detail,
+    ).toMatch(/pitches not in what it was sent: A5/);
+    expect((await judged("Your hook sits below the chords."))?.detail).toMatch(
+      /claims not in what it was sent: hook below chords/,
+    );
+  });
+
+  it("fails wrap-up-once when the wrap-up asks the chapter's quiz through ask_producer", async () => {
+    const evalCase = find("wrap-up-once");
+    const quiz: AssistantAsk = {
+      id: "toolu_quiz",
+      question: "How do you make one bar play for four on the arrangement?",
+      options: [{ label: "Loop its clip and stretch it" }, { label: "Copy it" }],
+      multiSelect: false,
+      suggested: 0,
+    };
+    const asked = await runLessonSession(evalCase, async (turnCase) =>
+      turnCase.lesson?.moment === "chapter_done"
+        ? reply("That's your first beat, four bars of it. One last thing:", { ask: quiz })
+        : reply("Good."),
+    );
+    const failed = evaluateTurn(evalCase, 1, asked);
+    expect(failed.checks.asksThroughTool?.detail).toMatch(
+      /^Turn 2: Asks "How do you make one bar play/,
+    );
+    expect(failed.checks.namesOnlyBlockBites?.detail).toMatch(
+      /^Turn 2: A wrap-up offering 0 of "next" as pointers/,
+    );
+
+    const wrapped = await runLessonSession(evalCase, async (turnCase) =>
+      turnCase.lesson?.moment === "chapter_done"
+        ? reply(
+            "That's your first beat, looping for four bars. When you want more, Finish a track takes it all the way to stems, or Shape a sound builds a pluck from scratch.",
+          )
+        : reply("Good."),
+    );
+    const passed = evaluateTurn(evalCase, 1, wrapped);
+    expect(passed.checks.asksThroughTool?.status).toBe("pass");
+    expect(passed.checks.namesOnlyBlockBites?.status).toBe("pass");
+  });
+
   it("fails check 8 on a lesson turn that changes the song", () => {
     const evalCase = find("under-way-question");
     const record = evaluateTurn(

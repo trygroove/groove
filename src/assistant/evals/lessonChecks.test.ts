@@ -118,17 +118,22 @@ describe("24. Starts the lesson asked for", () => {
     ).toMatch(/Changed the song beside it: set_parameter/);
   });
 
-  it("lets an explanation or a memory proposal ride along", () => {
-    expect(
-      checkStartsLesson(
-        "sound",
-        started([
-          call("start_lesson", { chapter: "sound" }),
-          call("explain_change", { text: "why" }),
-          call("remember_producer", { kind: "note", text: "likes plucks" }),
-        ]),
-      ).status,
-    ).toBe("pass");
+  it("fails anything else proposed beside it: a memory, an explanation, a recommendation", () => {
+    for (const other of [
+      call("remember_producer", { kind: "note", text: "likes plucks" }),
+      call("explain_change", { text: "why" }),
+      call("recommend_sounds", { query: "pluck" }),
+    ]) {
+      expect(
+        checkStartsLesson(
+          "sound",
+          started([call("start_lesson", { chapter: "sound" }), other]),
+        ),
+      ).toEqual({
+        status: "fail",
+        detail: `Proposed something beside it: ${other.name}`,
+      });
+    }
   });
 
   it("is skipped by runLessonCheck on a case that asks for no lesson", () => {
@@ -139,13 +144,38 @@ describe("24. Starts the lesson asked for", () => {
 describe("25. Says only what changes says", () => {
   it("passes a reply that restates the changes and the description", () => {
     const result = checkSaysOnlyChanges(
-      "That's your hook: 8 notes in bar 1, from A3 up to F4, sitting over the chords. Show me wrote it so you can see how a short phrase repeats.",
+      "That's your hook: 8 notes in bar 1, from A3 up to F4, tucked in among the chords. Show me wrote it so you can see how a short phrase repeats.",
       sent(block()),
     );
     expect(result).toEqual({
       status: "pass",
       detail: "Every figure it gives is in what the turn sent",
     });
+  });
+
+  it("judges above and below between tracks on the registers the description sends", () => {
+    // The skill's "over the chords" backs no claim the registers deny: a hook
+    // at A3-F4 does not sit over chords at A3-D5.
+    expect(
+      checkSaysOnlyChanges("Your hook sits over the chords.", sent(block())).detail,
+    ).toMatch(/claims not in what it was sent: hook over chords/);
+    const higher = {
+      ...sent(block()),
+      described: DESCRIBED.replace(
+        "Hook track: 8 notes from A3 to F4",
+        "Hook track: 8 notes from A4 to F5",
+      ),
+    };
+    for (const said of [
+      "Your hook sits just above the chords.",
+      "It sits on top of the chords.",
+      "The chords sit under the hook, and the bass below them all.",
+    ]) {
+      expect(checkSaysOnlyChanges(said, higher).status, said).toBe("pass");
+    }
+    expect(checkSaysOnlyChanges("The bass sits above the hook.", higher).detail).toMatch(
+      /bass above hook/,
+    );
   });
 
   it("fails a pitch range and an above-the-chords claim no change makes (GRV-44 r2 F3)", () => {
@@ -155,7 +185,7 @@ describe("25. Says only what changes says", () => {
     );
     expect(result.status).toBe("fail");
     expect(result.detail).toMatch(/pitches not in what it was sent: A5, F5/);
-    expect(result.detail).toMatch(/claims not in what it was sent: above chords/);
+    expect(result.detail).toMatch(/claims not in what it was sent: hook above chords/);
   });
 
   it("fails a count the changes give in other numbers (GRV-44 r1 F3)", () => {
@@ -201,11 +231,69 @@ describe("25. Says only what changes says", () => {
         sent(key),
       ).status,
     ).toBe("pass");
+    // A "will" or a "next" elsewhere in the sentence excuses nothing; a
+    // song set to a key, or in one now, is the same claim.
+    for (const said of [
+      "That set the key to A minor, so the bass will agree.",
+      "Show me added a Bass track and set the song to A minor.",
+      "Done: a Bass track, and the song is set to A minor.",
+      "Your song is in A minor now.",
+      "It's now in Am, ready for the bass to try.",
+    ]) {
+      expect(checkSaysOnlyChanges(said, sent(key)).detail, said).toMatch(
+        /says the key was set/,
+      );
+    }
+    // What is still to do, or only possible, is no claim.
+    for (const said of [
+      "Next, set the key to A minor in the Key panel.",
+      "You can set the song to A minor when you're ready.",
+      "Once you've picked A minor, the bass will have a home.",
+      "Set the key to A minor next, and the bass has somewhere to live.",
+      "Show me put the Bass track in; the key is yours to pick.",
+    ]) {
+      expect(checkSaysOnlyChanges(said, sent(key)).status, said).toBe("pass");
+    }
     // Once a change says the key was set, saying so is right.
     expect(
       checkSaysOnlyChanges(
         "You set the key to A minor.",
         sent({ ...key, changes: ["Key: no key (chromatic) to A minor."] }),
+      ).status,
+    ).toBe("pass");
+  });
+
+  it("reads 'one' and 'first' as a figure only beside a unit", () => {
+    const hats = block({
+      changes: ["Hat: 4 notes added in bars 2-3."],
+      quiz: null,
+      skill: "hats",
+      bite: "Hats",
+      next: [],
+    });
+    const plain = { ...sent(hats), described: "124 BPM" };
+    expect(
+      checkSaysOnlyChanges("One hat per bar would be sparse.", plain).detail,
+    ).toMatch(/numbers not in what it was sent: One hat per bar/);
+    expect(checkSaysOnlyChanges("It starts on the first beat.", plain).detail).toMatch(
+      /first beat/,
+    );
+    // "one" that counts nothing is no figure.
+    expect(
+      checkSaysOnlyChanges(
+        "That one works: one of the best tricks there is. First, listen.",
+        plain,
+      ).status,
+    ).toBe("pass");
+    // Once 1 is sent ("bar 1"), one chord a bar restates it.
+    expect(
+      checkSaysOnlyChanges(
+        "One chord per bar, starting on the first bar.",
+        sent(
+          block({
+            changes: ["Chords: 12 notes added in bars 1-4, as 4 chords of 3 notes."],
+          }),
+        ),
       ).status,
     ).toBe("pass");
   });
@@ -300,6 +388,68 @@ describe("26. Names only the block's bites", () => {
     ).toBe("pass");
   });
 
+  describe("a wrap-up offers two or three of next", () => {
+    const wrapUp = block({
+      chapterId: "beat",
+      chapter: "Make a beat",
+      biteId: "beat-loop",
+      bite: "Loop it",
+      moment: "chapter_done",
+      changes: ["BD's clips now play in bars 1-4 (were bar 1)."],
+      next: [
+        'The "Finish a track" lesson: a beat, a bass, chords and a hook, arranged, mixed and exported as stems',
+        'The "Shape a sound" chapter: a synth pluck, from a raw waveform through the filter and the envelope',
+        "Roll new hat patterns from the Generate panel under the step grid",
+      ],
+      track: null,
+    });
+
+    it("passes two or three pointers, by title or by their words", () => {
+      expect(
+        checkNamesOnlyBlockBites(
+          "That's your first beat. Finish a track takes it to stems, and Shape a sound builds a pluck.",
+          wrapUp,
+        ).detail,
+      ).toMatch(/offers 2 of "next"/);
+      expect(
+        checkNamesOnlyBlockBites(
+          'Lovely loop. Try "Finish a track", the Shape a sound chapter, or roll some new hat patterns in the Generate panel.',
+          wrapUp,
+        ).detail,
+      ).toMatch(/offers 3 of "next"/);
+    });
+
+    it("fails a wrap-up with one pointer or none (the quiz in its place)", () => {
+      expect(
+        checkNamesOnlyBlockBites("Four bars of beat. Finish a track is next.", wrapUp),
+      ).toEqual({
+        status: "fail",
+        detail: 'A wrap-up offering 1 of "next" as pointers, not two or three',
+      });
+      // A pointer's summary is what any wrap-up talks about: no pointer.
+      expect(
+        checkNamesOnlyBlockBites(
+          "That's a beat with a hook-ready groove, looping in bars 1-4. One last thing:",
+          wrapUp,
+        ).status,
+      ).toBe("fail");
+    });
+
+    it("asks a chapter of Finish a track for its one pointer", () => {
+      const trackWrap = block({
+        moment: "chapter_done",
+        next: ['Chapter 4 of "Finish a track", "Arrange": sections, from intro to outro'],
+      });
+      expect(
+        checkNamesOnlyBlockBites("Chords and hook, done. Arrange is next.", trackWrap)
+          .status,
+      ).toBe("pass");
+      expect(
+        checkNamesOnlyBlockBites("Chords and hook, done.", trackWrap).detail,
+      ).toMatch(/offering 0 of "next" as pointers, not its one/);
+    });
+  });
+
   it("finds titles quoted, beside bite or chapter, and after next", () => {
     expect(
       namedTitles('the "Hats" bite, then the Drop chapter. Next up: Sections'),
@@ -353,6 +503,98 @@ describe("27. Asks through the tool, never in text", () => {
         block(),
       ).detail,
     ).toMatch(/options into its text/);
+  });
+
+  it("fails options written out in text, lettered or bulleted after a question", () => {
+    for (const text of [
+      "Quick quiz, what makes a hook stick.\nA. It repeats\nB. It's loud",
+      "Quiz time:\n- It repeats\n- It's loud\n- It's long",
+      "Here's one to think about: what makes a hook stick (pick one) A) It repeats B) It's loud",
+    ]) {
+      expect(checkAsksThroughTool({ text }, block()).detail, text).toMatch(
+        /Writes options out in its text/,
+      );
+    }
+    expect(
+      checkAsksThroughTool(
+        { text: "Lovely hook. Which sticks?\n\n- It repeats\n- It's loud", ask: quiz },
+        block(),
+      ).status,
+    ).toBe("fail");
+  });
+
+  it("passes a bulleted explanation that follows no question", () => {
+    expect(
+      checkAsksThroughTool(
+        {
+          text: "Show me did two things:\n- added a Hook track\n- wrote 8 notes in bar 1",
+        },
+        block(),
+      ).status,
+    ).toBe("pass");
+  });
+
+  describe("a wrap-up asks nothing", () => {
+    const wrapUp = block({
+      moment: "chapter_done",
+      quiz: "How do you make one bar play for four on the arrangement? (Loop its clip, and stretch it.)",
+      next: ['The "Shape a sound" chapter: a synth pluck'],
+      track: null,
+    });
+
+    it("fails the chapter's quiz asked through ask_producer (the review's example)", () => {
+      expect(
+        checkAsksThroughTool(
+          {
+            text: "That's your first beat. One last thing:",
+            ask: {
+              question: "How do you make one bar play for four on the arrangement?",
+              options: [{ label: "Loop its clip" }, { label: "Copy it" }],
+            },
+          },
+          wrapUp,
+        ),
+      ).toEqual({
+        status: "fail",
+        detail:
+          'Asks "How do you make one bar play for four on the arrangement?" in a wrap-up, which asks nothing',
+      });
+    });
+
+    it("fails a question in its text, or the quiz set without a question mark", () => {
+      expect(
+        checkAsksThroughTool({ text: "Nice. Ready for the next one?" }, wrapUp).detail,
+      ).toMatch(/in a wrap-up, which asks nothing/);
+      expect(
+        checkAsksThroughTool(
+          {
+            text: "Before you go, have a think: how do you make one bar play for four on the arrangement.",
+          },
+          wrapUp,
+        ).detail,
+      ).toMatch(/Sets the bite's quiz in a wrap-up/);
+      expect(
+        checkAsksThroughTool({ text: "Quick quiz: loop or copy." }, wrapUp).status,
+      ).toBe("fail");
+    });
+
+    it("fails an ask at the end of Finish a track too, and passes a plain wrap-up", () => {
+      expect(
+        checkAsksThroughTool(
+          {
+            text: "",
+            ask: { question: "Another?", options: [{ label: "Yes" }, { label: "No" }] },
+          },
+          { ...wrapUp, moment: "track_done" },
+        ).status,
+      ).toBe("fail");
+      expect(
+        checkAsksThroughTool(
+          { text: "That's your first beat. Shape a sound is a good next step." },
+          wrapUp,
+        ).status,
+      ).toBe("pass");
+    });
   });
 
   it("fails a quiz of one option, or of five", () => {

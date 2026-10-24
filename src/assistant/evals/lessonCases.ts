@@ -214,6 +214,11 @@ export const LESSON_CASES: readonly EvalCase[] = [
     lessonChecks: START_CHECKS,
   },
   // GRV-44 r2 F3: the hook Show me wrote was called "A5-F5, above the chords".
+  // Today's Show me writes it at A4-F5 over chords at A3-D5 (`chords.ts`
+  // counts the hook up from C4), not A3-F4 under them as on the QA project,
+  // and `changes` names no pitch ("Hook: 8 notes added in bar 1."): the
+  // registers come with the description, and check 25 judges a range or an
+  // above/below claim against those.
   biteCase(
     "hook-shown",
     {
@@ -262,6 +267,7 @@ export const LESSON_CASES: readonly EvalCase[] = [
     BEAT_STARTED,
   ),
   // GRV-43's spec, GRV-129: the chapter's wrap-up, with its three pointers.
+  // Check 26 holds it to two or three of them, 27 to no question and no quiz.
   biteCase(
     "wrap-up-once",
     { track: false, chapter: "beat", bite: "beat-loop", how: "show_me", settings: HOUSE },
