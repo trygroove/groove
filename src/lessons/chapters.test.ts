@@ -4,13 +4,13 @@ import { starterWorld } from "../testing/lessonWorld";
 import {
   ALL_BITES,
   bite,
-  bitesDoneIn,
   CHAPTERS,
   chapter,
   chapterForGoal,
+  LESSONS,
+  lesson,
   nextBite,
   nextStep,
-  withBiteDone,
 } from "./chapters";
 import { BITE_IDS, CHAPTER_IDS } from "./ids";
 
@@ -50,7 +50,7 @@ describe("the chapters (GRV-43)", () => {
     expect(nextBite([])?.id).toBe("beat-library");
     expect(nextBite(["beat-library", "beat-kick"])?.id).toBe("beat-play");
     expect(nextBite([], "tour")?.id).toBe("tour-arrangement");
-    const tourDone = bitesDoneIn("tour", [...BITE_IDS]);
+    const tourDone = BITE_IDS.filter((id) => id.startsWith("tour-"));
     expect(nextBite(tourDone, "tour")?.id).toBe("beat-library");
     expect(nextBite([...BITE_IDS])).toBeNull();
     // Finish a track's own chapters are not offered as a chapter alone (GRV-44).
@@ -62,14 +62,12 @@ describe("the chapters (GRV-43)", () => {
     expect(nextBite(["beat-gone"])?.id).toBe("beat-library");
   });
 
-  it("records a bite as done once, as the latest", () => {
-    expect(withBiteDone(["beat-kick", "beat-play"], "beat-kick")).toEqual([
-      "beat-play",
-      "beat-kick",
-    ]);
-    expect(bitesDoneIn("beat", ["tour-mixer", "beat-play", "beat-kick"])).toEqual([
-      "beat-kick",
-      "beat-play",
+  it("are lessons of one chapter each, then Finish a track's five (GRV-190)", () => {
+    expect(LESSONS.map((one) => one.id)).toEqual(["beat", "sound", "tour", "track"]);
+    expect(LESSONS.map((one) => one.chapters.length)).toEqual([1, 1, 1, 5]);
+    expect(lesson("tour").chapters).toEqual([chapter("tour")]);
+    expect(LESSONS.filter((one) => one.passesOverMade).map((one) => one.id)).toEqual([
+      "track",
     ]);
   });
 

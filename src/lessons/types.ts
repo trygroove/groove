@@ -14,7 +14,7 @@ import type { RawCommandInput } from "../commands/types";
 import type { Project } from "../domain/entities";
 import type { DomainFactoryContext } from "../domain/factories";
 import type { PadId, TrackId } from "../domain/ids";
-import type { BiteId, ChapterId } from "./ids";
+import type { BiteId, ChapterId, LessonId } from "./ids";
 import type { BeatStyle } from "./style";
 
 /** What a step reads: the project, and where the editor is. */
@@ -128,4 +128,23 @@ export interface LessonChapter {
   /** What it makes, in a few words. */
   readonly summary: string;
   readonly bites: readonly LessonBite[];
+}
+
+/**
+ * A lesson (GRV-190): an ordered list of chapters, taken one after another.
+ * "Make a beat", "Shape a sound" and "Tour the studio" are lessons of one
+ * chapter each; "Finish a track" is a lesson of five.
+ */
+export interface LessonDefinition {
+  readonly id: LessonId;
+  readonly title: string;
+  /** What it makes, in a few words. */
+  readonly summary: string;
+  readonly chapters: readonly LessonChapter[];
+  /**
+   * Whether each chapter, as it starts, passes over the bites the song
+   * already has (`LessonBite.made`): "Finish a track" builds on what is
+   * there, while a chapter taken alone teaches every bite.
+   */
+  readonly passesOverMade: boolean;
 }

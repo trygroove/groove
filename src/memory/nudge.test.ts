@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BITE_IDS, TRACK_UNDER_WAY } from "../lessons/ids";
+import { BITE_IDS } from "../lessons/ids";
 import { emptyProfile, type ProducerProfile } from "../persistence/profileDocuments";
 import { localDay, nudgeBite, nudgeDue, nudgeWords } from "./nudge";
 
@@ -52,72 +52,14 @@ describe("Coproducer's daily nudge (GRV-25)", () => {
   });
 });
 
-describe("the nudge for Finish a track (GRV-44)", () => {
-  it("offers to pick it up at the chapter it was left in, while it is under way", () => {
+describe("the nudge, once lessons are kept per project (GRV-190)", () => {
+  it("offers a bite taught alone, never a place in Finish a track", () => {
     const profile = onboarded(NOON - DAY, {
       lessonsDone: ["bass-key", "bass-line", "bass-sound", "chords-loop"],
     });
     const offered = nudgeBite(profile);
-    expect(offered?.id).toBe("chords-hook");
     if (!offered) throw new Error("nothing offered");
-    expect(nudgeWords(offered, profile.lessonsDone)).toBe(
-      'Pick up chapter 3 of "Finish a track", "Chords and hook"?',
-    );
-  });
-
-  it("offers the chapter the producer is on, not one where they skipped a bite", () => {
-    // "Round it off" (Bass) skipped, so not saved; the rest done through the intro.
-    const profile = onboarded(NOON - DAY, {
-      lessonsDone: [
-        TRACK_UNDER_WAY,
-        "bass-key",
-        "bass-line",
-        "chords-loop",
-        "chords-hook",
-        "chords-pluck",
-        "arrange-copy",
-        "arrange-intro",
-      ],
-    });
-    const offered = nudgeBite(profile);
-    expect(offered?.id).toBe("arrange-breakdown");
-    if (!offered) throw new Error("nothing offered");
-    expect(nudgeWords(offered, profile.lessonsDone)).toBe(
-      'Pick up chapter 4 of "Finish a track", "Arrange, subtractively"?',
-    );
-  });
-
-  it("offers chapter 2 once the beat is done in it and Bass is not started", () => {
-    const beat = BITE_IDS.filter((id) => id.startsWith("beat-"));
-    const profile = onboarded(NOON - DAY, { lessonsDone: [TRACK_UNDER_WAY, ...beat] });
-    const offered = nudgeBite(profile);
-    expect(offered?.id).toBe("bass-key");
-    if (!offered) throw new Error("nothing offered");
-    expect(nudgeWords(offered, profile.lessonsDone)).toBe(
-      'Pick up chapter 2 of "Finish a track", "Bass"?',
-    );
-  });
-
-  it("offers chapter 1 of it, not the beat alone, when left part-way through the beat", () => {
-    const profile = onboarded(NOON - DAY, {
-      // A goal that would otherwise suggest another chapter.
-      memory: { ...emptyProfile(1).memory, goal: "sound_design" },
-      lessonsDone: [TRACK_UNDER_WAY, "beat-library", "beat-kick"],
-    });
-    const offered = nudgeBite(profile);
-    expect(offered?.id).toBe("beat-play");
-    if (!offered) throw new Error("nothing offered");
-    expect(nudgeWords(offered, profile.lessonsDone)).toBe(
-      'Pick up chapter 1 of "Finish a track", "Make a beat"?',
-    );
-  });
-
-  it("offers a bite as before when it is not under way", () => {
-    const profile = onboarded(NOON - DAY, { lessonsDone: ["beat-library", "beat-kick"] });
-    const offered = nudgeBite(profile);
-    if (!offered) throw new Error("nothing offered");
-    expect(nudgeWords(offered, profile.lessonsDone)).toBe(
-      `Want to try "${offered.title}"?`,
-    );
+    expect(["beat", "sound", "tour"]).toContain(offered.chapter);
+    expect(nudgeWords(offered)).toBe(`Want to try "${offered.title}"?`);
   });
 });

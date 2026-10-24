@@ -97,6 +97,8 @@ const RULES: Rule[] = [
       "src/persistence/firestoreFavouritesRepository.ts": "the favourites repository",
       "src/persistence/firestoreProfileRepository.ts":
         "the producer's profile and memory (GRV-25)",
+      "src/persistence/firestoreLessonRepository.ts":
+        "where each lesson stands in a project (GRV-190)",
       "src/userLibrary/firebaseUserLibraryRepository.ts":
         "the personal library's packs (#282)",
       "src/access/firestoreAccessRepository.ts": "the alpha allowlist (#854)",

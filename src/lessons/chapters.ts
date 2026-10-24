@@ -1,20 +1,29 @@
 /**
- * Every chapter (GRV-43, GRV-44), and what the rest of the app asks of them:
- * a bite by ID, the chapter a producer's goal suggests, the next bite they
- * have not been through, and the steps of a bite that apply to their project.
+ * Every chapter (GRV-43, GRV-44) and every lesson (GRV-190), and what the
+ * rest of the app asks of them: a bite by ID, a lesson by ID, the chapter a
+ * producer's goal suggests, the next bite they have not been through, and
+ * the steps of a bite that apply to their project.
  */
 import type { ProducerGoal } from "../persistence/profileDocuments";
 import { ARRANGE_CHAPTER } from "./arrange";
 import { BASS_CHAPTER } from "./bass";
 import { BEAT_CHAPTER } from "./beat";
 import { CHORDS_CHAPTER } from "./chords";
-import { type BiteId, type ChapterId, SOLO_CHAPTER_IDS, type SoloChapterId } from "./ids";
+import {
+  type BiteId,
+  type ChapterId,
+  type LessonId,
+  SOLO_CHAPTER_IDS,
+  type SoloChapterId,
+  TRACK_CHAPTER_IDS,
+} from "./ids";
 import { MIX_CHAPTER } from "./mix";
 import { SOUND_CHAPTER } from "./sound";
 import { TOUR_CHAPTER } from "./tour";
 import type {
   LessonBite,
   LessonChapter,
+  LessonDefinition,
   LessonSettings,
   LessonStep,
   LessonWorld,
@@ -43,6 +52,41 @@ export function bite(id: BiteId): LessonBite {
     if (found) return found;
   }
   throw new TypeError(`No bite "${id}"`);
+}
+
+/** A chapter taught alone, as a lesson of one. */
+function soloLesson(id: SoloChapterId): LessonDefinition {
+  const one = chapter(id);
+  return {
+    id,
+    title: one.title,
+    summary: one.summary,
+    chapters: [one],
+    passesOverMade: false,
+  };
+}
+
+/** "Finish a track" (GRV-44): the long lesson, from a beat to stems. */
+export const TRACK_LESSON: LessonDefinition = {
+  id: "track",
+  title: "Finish a track",
+  summary: "a beat, a bass, chords and a hook, arranged, mixed and exported as stems",
+  chapters: TRACK_CHAPTER_IDS.map(chapter),
+  passesOverMade: true,
+};
+
+/** Every lesson, in the order the Lessons list shows them. */
+export const LESSONS: readonly LessonDefinition[] = [
+  soloLesson("beat"),
+  soloLesson("sound"),
+  soloLesson("tour"),
+  TRACK_LESSON,
+];
+
+export function lesson(id: LessonId): LessonDefinition {
+  const found = LESSONS.find((candidate) => candidate.id === id);
+  if (!found) throw new TypeError(`No lesson "${id}"`);
+  return found;
 }
 
 /** The chapter a goal from onboarding suggests starting with. */
@@ -75,19 +119,6 @@ export function nextBite(
     if (found) return found;
   }
   return null;
-}
-
-/** `done` with `biteId` recorded, once, as the latest. */
-export function withBiteDone(done: readonly string[], biteId: BiteId): string[] {
-  return [...done.filter((id) => id !== biteId), biteId];
-}
-
-/** The bites of `chapterId` that `done` records, in the chapter's order. */
-export function bitesDoneIn(chapterId: ChapterId, done: readonly string[]): BiteId[] {
-  const finished = new Set(done);
-  return chapter(chapterId)
-    .bites.map((one) => one.id)
-    .filter((id) => finished.has(id));
 }
 
 /**

@@ -9,7 +9,7 @@
  * user's newest message is always kept.
  */
 
-import type { LessonChoice } from "../lessons/ids";
+import type { LessonId } from "../lessons/ids";
 import { type AssistantAsk, askTranscript } from "./ask";
 import { ASSISTANT_REQUEST_LIMITS, ESTIMATED_CHARS_PER_TOKEN } from "./config";
 import { START_LESSON_TOOL_NAME } from "./lessonTool";
@@ -58,7 +58,7 @@ export function proposalNote(proposal: HistoryProposal): string {
  * reply only says it is starting one; without the line, a later turn reads
  * that sentence as what started it, and says it again with no call.
  */
-export function lessonNote(chapter: LessonChoice): string {
+export function lessonNote(chapter: LessonId): string {
   return `[I called ${START_LESSON_TOOL_NAME} with chapter "${chapter}", which put the lesson's card in the panel. Saying I'd start one did not start it; only the call did.]`;
 }
 
@@ -76,7 +76,7 @@ export type HistoryEntry =
       /** What became of the proposal the reply made, when it made one (GRV-150). */
       readonly proposal?: HistoryProposal;
       /** The lesson the reply started, when it started one (GRV-43). */
-      readonly lesson?: LessonChoice;
+      readonly lesson?: LessonId;
     }
   | { readonly kind: "video"; readonly video: { readonly videoId: string } }
   | { readonly kind: "proposal" | "recommendation" | "memory" | "error" };

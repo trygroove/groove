@@ -20,9 +20,11 @@ import { createSessionHealth, type SessionTurn } from "../../assistant/sessionHe
 import type { ReplyRating } from "../../assistant/transcripts";
 import type { Project } from "../../domain/entities";
 import { chapterForGoal } from "../../lessons/chapters";
+import { isLessonId } from "../../lessons/ids";
 import { memoryContext } from "../../memory/memoryEdits";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import { LESSON_OFFER_ASK_ID, LESSON_OFFER_YES } from "../../onboarding/questions";
+import type { LessonRepository } from "../../persistence/lessonRepository";
 import type { Suggestion } from "../../projection/projectAnalysisProjection";
 import { type Clock, systemClock } from "../../shared/clock";
 import type { Scheduler } from "../../shared/scheduler";
@@ -40,7 +42,6 @@ import {
 import { assistantSuggestions } from "./assistantSuggestions";
 import { type CardQueue, useCardQueue } from "./cardQueue";
 import type { ConversationStore } from "./conversationStore";
-import { createLessonStore, type LessonStore, lessonStorageKey } from "./lessonStore";
 import { MISSING_SLOT } from "./recommendationCardModel";
 import { type AskDraft, useAskDraft } from "./useAskDraft";
 import {
@@ -61,12 +62,10 @@ import {
 import { type AssistantRetention, useAssistantRetention } from "./useAssistantRetention";
 import { type CueNudge, useCueNudge } from "./useCueNudge";
 import { useFollowUp } from "./useFollowUp";
-import {
-  type Lesson,
-  type LessonEditorPort,
-  type LessonListening,
-  useLesson,
-} from "./useLesson";
+import { type Lesson, useLesson } from "./useLesson";
+import type { LessonListening } from "./useLessonListening";
+import { type LessonRecordOwner, useLessonRecord } from "./useLessonRecord";
+import type { LessonEditorPort } from "./useLessonShowMe";
 import { type AssistantMemoryProposals, useMemoryProposals } from "./useMemoryProposals";
 
 /** Who is here to talk: a signed-in account, or someone who must sign in. */
@@ -133,10 +132,14 @@ export interface UseAssistantChatOptions {
   /** The store it is kept in; this tab's session storage by default. */
   readonly conversationStore?: ConversationStore;
   /**
-   * The store the lesson under way is kept in beside it (GRV-43); this
-   * tab's session storage by default.
+   * Whose lesson record, for which project (GRV-190), and the store it is
+   * kept in: where each lesson stands, across a reload, a tab and a device.
+   * Without it, nothing is kept.
    */
-  readonly lessonStore?: LessonStore;
+  readonly lessonRecord?: {
+    readonly owner: Accessor<LessonRecordOwner | null>;
+    readonly repository?: () => Promise<LessonRepository>;
+  };
   /** What times a proposal's undo against its apply (GRV-103); the real clock by default. */
   readonly clock?: Clock;
   /**
@@ -466,16 +469,12 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     editor: options.lessonEditor,
     registry: editor?.controls.registry,
     analytics: options.analytics,
-    // Kept wherever the conversation is, so a reload brings both back.
-    saved: options.conversationKey
-      ? {
-          key: () => {
-            const key = options.conversationKey?.();
-            return key ? lessonStorageKey(key) : null;
-          },
-          store: options.lessonStore ?? createLessonStore(),
-        }
-      : undefined,
+    // Where each lesson stands in this project (GRV-190).
+    record: useLessonRecord({
+      owner: options.lessonRecord?.owner ?? (() => null),
+      repository: options.lessonRecord?.repository,
+      profile,
+    }),
   });
 
   // Applying a proposal has the assistant say what next (GRV-195). The cards
@@ -494,7 +493,8 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         ready: () => (retention ? retention.answered() : true),
         conversation,
         analytics: options.analytics,
-        startLesson: (bite) => lesson.start(bite.chapter, "nudge", bite.id),
+        startLesson: (bite) =>
+          isLessonId(bite.chapter) && lesson.start(bite.chapter, "nudge", bite.id),
       })
     : null;
 

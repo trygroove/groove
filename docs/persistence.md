@@ -113,6 +113,18 @@ A producer's favourite sounds (LIB-011, #691) belong to the person, not to a pro
 
 A favourite whose pack or sound the library no longer holds is not the repository's call — it stores references, not library facts. `resolveFavourites` (`src/library/favourites.ts`) resolves each one against the packs the library has loaded and reports it as missing (`pack_unavailable` or `asset_unavailable`) in its place in the list, rather than dropping it. `createFavouriteActions` in the same module is the one add/remove path a surface calls, and logs `library_favourite_changed` once per successful action (plus `feature_first_use` for `library_favourites` on the first add) without naming the sound or its pack. `getFavouritesRepository()` (`src/favouritesRepositoryClient.ts`) picks the in-memory or Firestore store the way `getProjectRepository()` does.
 
+## Lesson records
+
+Where a producer's lessons stand in a project (GRV-190) belongs to the producer, not to the project (a collaborator has lessons of their own), so it lives under the user: `users/{uid}/lessons/{projectId}`, one document per project. `src/persistence/lessonDocuments.ts` owns that path and the body:
+
+- **`underWay`**: the lesson under way, or `null` once it ended or was left: its `lessonId`, `chapterIndex`, `biteId` and `stepIndex` (the bite's step count once the bite is over and waits on Next), how its bites have ended this time through (`endings`) and the bites its chapter passed over because the song already had them (`passed`).
+- **`finished`**: every bite finished in the project, `{ how: "did_it" | "show_me" | "skipped", at }`. A position is never read from it; `src/lessons/session.ts`'s `startLesson` reads `underWay` alone.
+- **`version`** (`1`) and **`updatedAt`** (integer epoch milliseconds).
+
+IDs are checked by their shape, not against today's lessons, so an older build still reads a record that names a newer bite, and the lessons layer drops what it does not know. The profile's `lessonsDone` stays, derived: written as the union of the done bites (never skipped ones) whenever a bite finishes, and read only for the producer's progress across projects.
+
+`LessonRepository` (`src/persistence/lessonRepository.ts`) mirrors `ProfileRepository`: one document read whole and written whole, `InMemoryLessonRepository` and `FirestoreLessonRepository` running one contract suite (`lessonRepositoryContract.ts`, executed by `src/persistence/inMemoryLessonRepository.test.ts` and `tests/emulator/firestoreLessonRepository.emulator.test.ts`), and `getLessonRepository()` (`src/lessonRepositoryClient.ts`) picking between them. The editor reads it once per account and project and writes it on every lesson transition (`src/editor/assistant/useLessonRecord.ts`), so a reload, another tab or another device brings the lesson back at the same step.
+
 ## Autosave
 
 `ProjectAutosave` (`src/persistence/autosave.ts`) implements PRJ-03 and has no SolidJS dependency — it exposes a plain listener a provider can adapt into a signal.
@@ -150,6 +162,8 @@ The current schema is **v6**. v1 was the first production schema; **v2 ([LIB-08]
 `firestore.rules` enforces the layout: owner-or-collaborator access resolved from the metadata document, no ownership reassignment, no backwards revision, a `song` collection that only accepts `current`, clip and chunk documents whose ID matches their path, and a `projectId` that must match the path a document is written to. Structurally wrong writes — unknown schema version, missing revision, missing pack dependency list or shelf, unexpected metadata field — are rejected by the rules as well as by the decoder. Each child write costs one document read for the parent lookup, which is the price of not duplicating ownership onto every tier.
 
 `users/{uid}/favourites/{favouriteId}` is readable and writable by `uid` alone. A write must carry exactly `schemaVersion` (`1`), a `pak_` `packId`, an `assetId` of 1–200 characters and an integer `favouritedAt`, under a document ID that starts with that pack ID.
+
+`users/{uid}/lessons/{projectId}` is readable and writable by `uid` alone. A write must carry exactly `version` (`1`), `underWay` (`null` or a map of exactly its six fields), a `finished` map of at most 100 bites and an integer `updatedAt`.
 
 Anonymous Firebase identities are ordinary identities here (PRJ-01): they own projects exactly like registered users, and upgrading an account keeps the same uid, so no rule distinguishes them.
 

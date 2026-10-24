@@ -10,10 +10,12 @@ import type { RawCommandInput } from "../../commands/types";
 import type { Project } from "../../domain/entities";
 import type { PadId, TrackId } from "../../domain/ids";
 import { beatTrack, kickPad } from "../../lessons/drums";
-import { BITE_IDS, TRACK_UNDER_WAY } from "../../lessons/ids";
+import { BITE_IDS } from "../../lessons/ids";
 import { useProducerProfile } from "../../memory/useProducerProfile";
 import { lessonOfferAsk } from "../../onboarding/questions";
+import { InMemoryLessonRepository } from "../../persistence/inMemoryLessonRepository";
 import { InMemoryProfileRepository } from "../../persistence/inMemoryProfileRepository";
+import type { LessonRecord } from "../../persistence/lessonDocuments";
 import { emptyProfile, type ProducerProfile } from "../../persistence/profileDocuments";
 import { clickAndFlush } from "../../testing/events";
 import { createFakeAssistantClient } from "../../testing/fakeAssistantClient";
@@ -25,11 +27,12 @@ import { DEFAULT_LAYOUT, float, saveLayout } from "./assistantPanelLayout";
 import { LESSON_LABEL } from "./LessonCard";
 import { type AssistantChat, useAssistantChat } from "./useAssistantChat";
 import { useAssistantPanel } from "./useAssistantPanel";
-import { NO_SOUND } from "./useLesson";
+import { NO_SOUND } from "./useLessonShowMe";
 
 afterEach(cleanup);
 
 const UID = "user-1";
+const PROJECT = "prj_lesson";
 
 function producer(taste: string[] = ["Hip hop"]): ProducerProfile {
   return {
@@ -46,7 +49,7 @@ function producer(taste: string[] = ["Hip hop"]): ProducerProfile {
  * signals the test can move.
  */
 async function renderLesson(
-  options: { putSound?: boolean; profile?: ProducerProfile } = {},
+  options: { putSound?: boolean; profile?: ProducerProfile; record?: LessonRecord } = {},
 ) {
   const client = createFakeAssistantClient();
   const transport = createRecordingTransport();
@@ -57,6 +60,8 @@ async function renderLesson(
   });
   const profiles = new InMemoryProfileRepository();
   await profiles.saveProfile(UID, options.profile ?? producer());
+  const records = new InMemoryLessonRepository();
+  if (options.record) await records.saveRecord(UID, PROJECT, options.record);
   const [project, setProject] = createSignal<Project>(starterWorld().project);
   const [view, setView] = createSignal<EditorViewName>("arrangement");
   const [playing, setPlaying] = createSignal(false);
@@ -112,6 +117,10 @@ async function renderLesson(
       analytics: () => analytics,
       profile: store,
       playing,
+      lessonRecord: {
+        owner: () => ({ uid: UID, projectId: PROJECT }),
+        repository: async () => records,
+      },
       lessonEditor: {
         apply,
         goTo: (next) => setView(next),
@@ -433,7 +442,7 @@ describe("Finish a track in the panel (GRV-44)", () => {
   it("marks only what this song has, not beat bites done in another lesson", async () => {
     const beat = BITE_IDS.filter((id) => id.startsWith("beat-"));
     const h = await renderLesson({
-      profile: { ...producer(["House"]), lessonsDone: [TRACK_UNDER_WAY, ...beat] },
+      profile: { ...producer(["House"]), lessonsDone: beat },
     });
     h.start("track", "asked");
     expect(place(h)).toHaveTextContent("Finish a track · chapter 1 of 5 · bite 1 of 6");
@@ -443,11 +452,31 @@ describe("Finish a track in the panel (GRV-44)", () => {
     }
   });
 
-  it("picks the lesson up where it was left", async () => {
+  it("picks the lesson up where the project's record left it (GRV-190)", async () => {
     const h = await renderLesson({
-      profile: { ...producer(), lessonsDone: ["bass-key", "bass-line", "bass-sound"] },
+      // The profile's list says nothing about where a lesson is.
+      profile: { ...producer(), lessonsDone: ["bass-key", "bass-line"] },
+      record: {
+        underWay: {
+          lessonId: "track",
+          chapterIndex: 2,
+          biteId: "chords-loop",
+          stepIndex: 0,
+          endings: { "bass-sound": "skipped" },
+          passed: [],
+        },
+        finished: {},
+        updatedAt: 1,
+      },
     });
-    h.start("track", "nudge");
+    // A reload brings it back on its own, at the same bite.
+    await waitFor(() =>
+      expect(
+        within(h.lesson()).getByRole("heading", { name: "Chords and hook" }),
+      ).toBeVisible(),
+    );
+    expect(h.client.turns).toHaveLength(0);
+    h.start("track", "asked");
     expect(
       within(h.lesson()).getByRole("heading", { name: "Chords and hook" }),
     ).toBeVisible();
@@ -456,7 +485,7 @@ describe("Finish a track in the panel (GRV-44)", () => {
 
   it("offers the next chapter once one is over, and goes on to it", async () => {
     const h = await renderLesson();
-    h.start("bass", "asked", "bass-sound");
+    h.start("track", "asked", "bass-sound");
     // No Bass track in the starter: adding one comes first. Skip both steps.
     clickAndFlush(within(h.lesson()).getByRole("button", { name: "Skip" }));
     clickAndFlush(within(h.lesson()).getByRole("button", { name: "Skip" }));

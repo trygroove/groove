@@ -10,29 +10,29 @@
  * except the track and pad names in `changes`, which the project context
  * already carries to the same provider.
  */
-import { bite as biteById, chapter } from "./chapters";
+import { bite as biteById, chapter, lesson, TRACK_LESSON } from "./chapters";
 import {
   type BeatStyle,
   type BiteEnding,
   type BiteId,
   type ChapterId,
-  isTrackChapterId,
+  type LessonId,
   type LessonMoment,
   MAX_EARLIER,
   SOLO_CHAPTER_IDS,
   type SoloChapterId,
-  TRACK_CHAPTER_IDS,
 } from "./ids";
 import {
   biteOf,
   chapterOf,
   followingBite,
   followingChapter,
+  hasChapters,
   type LessonEvent,
   type LessonState,
+  lessonOf,
   stepWords,
 } from "./session";
-import { TRACK_SUMMARY, TRACK_TITLE, trackChapterNumber, trackResume } from "./track";
 import type { LessonSettings } from "./types";
 
 export interface LessonCue {
@@ -109,34 +109,35 @@ const TRACK_POINTERS: readonly string[] = [
 ];
 
 /** "Finish a track", as a pointer to it. */
-const TRACK_POINTER = `The "${TRACK_TITLE}" lesson: ${TRACK_SUMMARY}`;
+const TRACK_POINTER = `The "${TRACK_LESSON.title}" lesson: ${TRACK_LESSON.summary}`;
 
 /**
- * The pointers after `chapterId` (GRV-43): "Finish a track" after "Make a
- * beat", unless it is under way or done, then the chapters taught alone not
- * yet finished (by `done`), then the chapter's own related skills, at most
- * three. Inside "Finish a track" (GRV-44), the chapter after it; after its
- * last, where to take the stems.
+ * The pointers after chapter `chapterIndex` of `lessonId` (GRV-43): for a
+ * chapter taught alone, "Finish a track" after "Make a beat" unless one of
+ * its own chapters is begun (by `done`), then the chapters taught alone not
+ * yet finished, then the chapter's own related skills, at most three. Inside
+ * a lesson of several chapters (GRV-44), the chapter after it; after its
+ * last, where to take what it made.
  */
 export function wrapUpPointers(
-  chapterId: ChapterId,
+  lessonId: LessonId,
+  chapterIndex: number,
   done: readonly string[],
-  track = false,
 ): string[] {
   const finished = new Set(done);
-  if (track && isTrackChapterId(chapterId)) {
-    const next = TRACK_CHAPTER_IDS[trackChapterNumber(chapterId)];
-    if (!next) return [...TRACK_POINTERS, ...soloLeft(chapterId, finished)].slice(0, 3);
-    const following = chapter(next);
+  const definition = lesson(lessonId);
+  const chapterId = definition.chapters[chapterIndex].id;
+  if (hasChapters(lessonId)) {
+    const following = definition.chapters[chapterIndex + 1];
+    if (!following)
+      return [...TRACK_POINTERS, ...soloLeft(chapterId, finished)].slice(0, 3);
     return [
-      `Chapter ${trackChapterNumber(next)} of "${TRACK_TITLE}", "${following.title}": ${following.summary}`,
+      `Chapter ${chapterIndex + 2} of "${definition.title}", "${following.title}": ${following.summary}`,
     ];
   }
-  const trackStarted =
-    trackResume(done) !== null ||
-    TRACK_CHAPTER_IDS.slice(1).some((id) =>
-      chapter(id).bites.some((each) => finished.has(each.id)),
-    );
+  const trackStarted = TRACK_LESSON.chapters
+    .slice(1)
+    .some((one) => one.bites.some((each) => finished.has(each.id)));
   const toTrack = chapterId === "beat" && !trackStarted ? [TRACK_POINTER] : [];
   const own = (SOLO_CHAPTER_IDS as readonly string[]).includes(chapterId)
     ? POINTERS[chapterId as SoloChapterId]
@@ -170,10 +171,11 @@ export function lessonCue(
 ): LessonCue {
   const lessonChapter = chapterOf(state);
   const lessonBite = biteOf(state);
+  const chapters = hasChapters(state.lessonId);
   const moment: LessonMoment =
     event === null
       ? "under_way"
-      : event.kind === "bite_done" && event.trackDone
+      : event.kind === "bite_done" && event.lessonDone && chapters
         ? "track_done"
         : event.kind === "bite_done" && event.chapterDone
           ? "chapter_done"
@@ -196,18 +198,17 @@ export function lessonCue(
     quiz: over ? lessonBite.quiz : null,
     next:
       moment === "chapter_done" || moment === "track_done"
-        ? wrapUpPointers(lessonChapter.id, done, state.track)
+        ? wrapUpPointers(state.lessonId, state.chapterIndex, done)
         : over && following
           ? [following.title]
           : [],
-    track:
-      state.track && isTrackChapterId(lessonChapter.id)
-        ? {
-            title: TRACK_TITLE,
-            chapterNumber: trackChapterNumber(lessonChapter.id),
-            chapterCount: TRACK_CHAPTER_IDS.length,
-          }
-        : null,
+    track: chapters
+      ? {
+          title: lessonOf(state).title,
+          chapterNumber: state.chapterIndex + 1,
+          chapterCount: lessonOf(state).chapters.length,
+        }
+      : null,
     passed:
       event?.kind === "bite_started" ? event.passed.map((id) => biteById(id).title) : [],
     earlier: [],
@@ -274,11 +275,13 @@ export function cueMessage(state: LessonState, event: LessonEvent): string {
         event.how === "skipped"
           ? `Skipped ${title}`
           : `Finished ${title}: ${HOW_WORDS[event.how]}`;
-      if (event.trackDone) return `${said}. That was the last bite of "${TRACK_TITLE}".`;
+      const lessonTitle = lessonOf(state).title;
+      if (event.lessonDone && hasChapters(state.lessonId)) {
+        return `${said}. That was the last bite of "${lessonTitle}".`;
+      }
       if (!event.chapterDone) return `${said}.`;
-      const next = followingChapter(state);
-      return next
-        ? `${said}. That was the last bite of "${chapterOf(state).title}". Next is chapter ${trackChapterNumber(next)} of "${TRACK_TITLE}".`
+      return followingChapter(state)
+        ? `${said}. That was the last bite of "${chapterOf(state).title}". Next is chapter ${state.chapterIndex + 2} of "${lessonTitle}".`
         : `${said}. That was the last bite of "${chapterOf(state).title}".`;
     }
   }

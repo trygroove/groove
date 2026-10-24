@@ -9,7 +9,7 @@
  * Firebase-free and SDK-free, like the rest of `src/assistant`.
  */
 import { z } from "zod";
-import { LESSON_CHOICES, type LessonChoice } from "../lessons/ids";
+import { LESSON_IDS, type LessonId } from "../lessons/ids";
 import type { AssistantProposal, AssistantToolCall } from "./protocol";
 import { makesChanges } from "./tools";
 
@@ -19,7 +19,7 @@ export const START_LESSON_TOOL_NAME = "start_lesson";
 /** What `start_lesson` takes. */
 export const startLessonInputSchema = z.strictObject({
   chapter: z
-    .enum(LESSON_CHOICES)
+    .enum(LESSON_IDS)
     .describe(
       'Which lesson: "beat" (Make a beat: kick, backbeat, hats, a loop), "sound" (Shape a sound: a synth\'s wave, filter and envelope into a pluck), "tour" (Tour the studio: the five views) or "track" (Finish a track: the long one, five chapters from a beat through bass, chords and a hook, arranging and mixing to exported stems; it picks up where they left it).',
     ),
@@ -58,7 +58,7 @@ export function isLessonCall(call: Pick<AssistantToolCall, "name">): boolean {
 }
 
 /** The lesson a call starts, or null when it is not a valid one. */
-export function parseLessonCall(call: AssistantToolCall): LessonChoice | null {
+export function parseLessonCall(call: AssistantToolCall): LessonId | null {
   const parsed = startLessonInputSchema.safeParse(call.input);
   return parsed.success ? parsed.data.chapter : null;
 }
