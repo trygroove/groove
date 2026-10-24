@@ -658,8 +658,10 @@ describe("the Lessons list and lesson mode (GRV-190)", () => {
     clickAndFlush(row("Tour the studio") as HTMLElement);
     expect(h.transport.named("lesson_bite_started")).toHaveLength(1);
     expect(h.transport.named("lesson_dropped_out")).toHaveLength(0);
+    expect(h.transport.named("lesson_started_from_list")).toHaveLength(0);
     clickAndFlush(lessonsButton());
     clickAndFlush(row("Make a beat") as HTMLElement);
+    expect(h.transport.named("lesson_started_from_list")).toHaveLength(1);
     expect(
       within(h.lesson()).getByRole("heading", { name: "Lesson · Make a beat" }),
     ).toBeVisible();

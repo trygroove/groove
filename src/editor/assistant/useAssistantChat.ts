@@ -486,6 +486,15 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
       profile,
     }),
     onEnded: () => lessonQuizLapses(),
+    // Logged as a lesson from the list begins, not as its row is pressed: a
+    // start held for the record's read may never begin, and Continue on the
+    // lesson under way begins nothing.
+    onStarted: (lessonId, source) => {
+      if (source !== "list") return;
+      logLessons((analytics) =>
+        analytics.log("lesson_started_from_list", { lesson: lessonId }),
+      );
+    },
   });
 
   // A lesson's quiz goes with the lesson (GRV-190): one waiting as it ends or
@@ -506,12 +515,16 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
   function askedInLapsedLesson(replyId: string): boolean {
     if (lapsedThrough === null) return false;
     const asked = lessonTurnBefore(replyId);
-    const through = conversation.entries().findIndex((entry) => entry.id === lapsedThrough);
+    const through = conversation
+      .entries()
+      .findIndex((entry) => entry.id === lapsedThrough);
     return asked >= 0 && asked <= through;
   }
   function lessonQuizLapses(): void {
     const all = conversation.entries();
-    const last = all.findLast((entry) => entry.kind === "message" && entry.lesson !== undefined);
+    const last = all.findLast(
+      (entry) => entry.kind === "message" && entry.lesson !== undefined,
+    );
     if (last) lapsedThrough = last.id;
     const pending = conversation.pendingAsk();
     if (pending && askedInLapsedLesson(pending.replyId)) conversation.dismissAsk();
@@ -620,15 +633,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         analytics.logFeatureFirstUse("lessons_list");
       });
     },
-    pickLesson(lessonId) {
-      const started = lesson.start(lessonId, "list");
-      if (started) {
-        logLessons((analytics) =>
-          analytics.log("lesson_started_from_list", { lesson: lessonId }),
-        );
-      }
-      return started;
-    },
+    pickLesson: (lessonId) => lesson.start(lessonId, "list"),
     openedInstagram() {
       logLessons((analytics) => analytics.log("instagram_link_opened", {}));
     },

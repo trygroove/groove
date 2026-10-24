@@ -75,6 +75,7 @@ function setup(
   open = true,
   profile?: ProducerProfileStore,
   repository?: InMemoryLessonRepository,
+  onStarted?: (lesson: string, source: string) => void,
 ) {
   const [project, setProject] = createSignal<Project | null>(
     open ? starterWorld().project : null,
@@ -102,6 +103,7 @@ function setup(
       editor,
       profile,
       analytics: () => ({ log, logFeatureFirstUse: vi.fn() }),
+      onStarted,
       record: repository
         ? useLessonRecord({
             owner: () => OWNER,
@@ -629,6 +631,29 @@ describe("the lesson under way (GRV-43)", () => {
       chapterIndex: 3,
       biteId: "arrange-breakdown",
     });
+  });
+
+  it("hears a held start begin only once the read is over, and once", async () => {
+    const onStarted = vi.fn();
+    const h = setup(undefined, true, undefined, recordStore(), onStarted);
+    expect(h.lesson.start("tour", "asked")).toBe(true);
+    flush();
+    expect(onStarted).not.toHaveBeenCalled();
+    await settle();
+    expect(onStarted).toHaveBeenCalledTimes(1);
+    expect(onStarted).toHaveBeenCalledWith("tour", "asked");
+  });
+
+  it("hears nothing begin while a held start waits for a project", async () => {
+    const onStarted = vi.fn();
+    const h = setup(undefined, true, undefined, recordStore(), onStarted);
+    h.lesson.start("tour", "asked");
+    // The project closes before the read is over: there is nothing to start in yet.
+    h.setProject(null);
+    flush();
+    await settle();
+    expect(h.lesson.state()).toBeNull();
+    expect(onStarted).not.toHaveBeenCalled();
   });
 
   it("starts nothing asked for before the read once it is left", async () => {

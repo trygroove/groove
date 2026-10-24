@@ -84,7 +84,9 @@ export const LESSON_EVENTS = {
     params: {},
   },
 
-  // A lesson started, or continued, from a row of the Lessons list (GRV-190).
+  // A lesson begun from a row of the Lessons list (GRV-190), once each time
+  // one begins: anew, or picked up where the project's record has it.
+  // Continue on the lesson already under way begins nothing and is not logged.
   lesson_started_from_list: {
     phase: 3,
     owners: ["GRV-190"],

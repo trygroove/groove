@@ -39,6 +39,11 @@ export interface UseLessonOptions {
   readonly factoryContext?: () => DomainFactoryContext;
   /** Hears that the lesson ended or was left (GRV-190), so its quiz can go. */
   readonly onEnded?: () => void;
+  /**
+   * Hears that a lesson began from `source`: started, not carried on where it
+   * is, and not held for the record's read until it actually begins.
+   */
+  readonly onStarted?: (lesson: LessonId, source: LessonSource) => void;
 }
 
 export interface Lesson {
