@@ -1508,10 +1508,9 @@ onboarding, with no projects.
    said: House, Techno, Four Tet, Played around, Drums and beats and A
    synth. Its box to share your answers is unticked. Coproducer offers a first lesson.
 7. Choose Open the studio. A new project opens on the arrangement, with Coproducer's
-   panel open. A producer who has not yet answered the notice about Groove
-   keeping conversations (GRV-8) sees it first; choose OK. The same
-   conversation is in the panel: your answers, and Coproducer's offer of a first
-   lesson.
+   panel open. The same conversation is in the panel: your answers, and
+   Coproducer's offer of a first lesson, with the one-line note about how
+   Coproducer handles your data under it (GRV-205).
 8. Reload the page. The conversation is still in Coproducer's panel.
 9. Open the dashboard. It stays on the dashboard, and lists the project.
 
@@ -1584,8 +1583,8 @@ use.
 1. Open the dashboard. At the welcome, pick Hip hop and send, skip how much
    music you have made, pick "My first track", and skip the last two
    questions. Coproducer offers a first lesson, "Make a beat".
-2. Choose Open the studio, and OK on the notice about Groove keeping
-   conversations. The offer waits in Coproducer's panel.
+2. Choose Open the studio. The offer waits in Coproducer's panel, the note
+   about how Coproducer handles your data under it (GRV-205).
 3. Choose "Let's go". The lesson appears in the panel: "Make a beat", its six
    bites listed with none done, and the first, "Pick a kick", under way. It
    asks you to put a kick from the Library on BD's pad, offers Show me and
