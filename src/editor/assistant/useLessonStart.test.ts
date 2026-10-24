@@ -70,12 +70,12 @@ describe("starting a lesson beside its record (GRV-190)", () => {
 
   it("holds a start asked for before the read, then begins it from the record", async () => {
     const h = setup(TOUR_AT_MIXER);
-    expect(h.starts.start("tour", "list")).toBe(true);
+    expect(h.starts.start("tour", "nudge")).toBe(true);
     flush();
     expect(h.begun).toHaveLength(0);
     await settle();
     expect(h.begun).toHaveLength(1);
-    expect(h.begun[0]?.source).toBe("list");
+    expect(h.begun[0]?.source).toBe("nudge");
     expect(biteOf(h.begun[0]?.transition.state as LessonState).id).toBe("tour-mixer");
   });
 
@@ -94,7 +94,7 @@ describe("starting a lesson beside its record (GRV-190)", () => {
     h.starts.start("tour", "asked");
     flush();
     expect(h.log).not.toHaveBeenCalled();
-    h.starts.start("beat", "list");
+    h.starts.start("beat", "nudge");
     expect(h.log).toHaveBeenCalledTimes(1);
     expect(h.log).toHaveBeenCalledWith("lesson_dropped_out", {
       chapter_id: "tour",
@@ -106,7 +106,7 @@ describe("starting a lesson beside its record (GRV-190)", () => {
 
   it("drops out of another lesson the record had under way when a held start replaces it", async () => {
     const h = setup(TOUR_AT_MIXER);
-    h.starts.start("beat", "list");
+    h.starts.start("beat", "nudge");
     await settle();
     expect(h.state()?.lessonId).toBe("beat");
     expect(h.log).toHaveBeenCalledTimes(1);
@@ -118,7 +118,7 @@ describe("starting a lesson beside its record (GRV-190)", () => {
 
   it("does not drop out of the stored lesson when a held start carries it on", async () => {
     const h = setup(TOUR_AT_MIXER);
-    h.starts.start("tour", "list");
+    h.starts.start("tour", "nudge");
     await settle();
     expect(h.state() && biteOf(h.state() as LessonState).id).toBe("tour-mixer");
     expect(h.log).not.toHaveBeenCalled();
