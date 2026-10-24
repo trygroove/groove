@@ -5,7 +5,6 @@ import { SendIcon, SparkIcon, StopIcon } from "../../components/icons";
 import { nudgeWords } from "../../memory/nudge";
 import AssistantAskCard from "./AssistantAskCard";
 import {
-  RETENTION_LOADING,
   RetentionNote,
   RetentionSettings,
 } from "./AssistantRetention";
