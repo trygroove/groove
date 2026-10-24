@@ -5,8 +5,8 @@
  * a lesson started over another one under way drops out of that one first.
  * `useLesson.ts` holds the state; this decides when and from where it starts.
  *
- * Analytics: `lesson_dropped_out` for the lesson a start replaces, by chapter
- * and bite ID only.
+ * Analytics: `lesson_dropped_out` for the lesson a start replaces, the one
+ * on screen or the one the record had under way, by chapter and bite ID only.
  */
 import { type Accessor, createEffect, untrack } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
@@ -23,7 +23,7 @@ import {
 } from "../../lessons/session";
 import type { LessonSettings, LessonWorld } from "../../lessons/types";
 import { lessonIds } from "./lessonAnalytics";
-import type { LessonRecordStore } from "./useLessonRecord";
+import type { LessonRecordStore, LoadedLessonRecord } from "./useLessonRecord";
 
 export interface UseLessonStartOptions {
   readonly record: LessonRecordStore;
@@ -79,34 +79,46 @@ export function useLessonStart(options: UseLessonStartOptions): LessonStart {
         const asked = pending;
         pending = null;
         if (loaded) restored = loaded.key;
-        launch(asked.lesson, asked.source, asked.biteId);
+        // Another lesson the record had under way is left for this one.
+        const stored = loaded && !options.current() ? storedLesson(loaded) : null;
+        const replacing = stored?.lessonId === asked.lesson ? null : stored;
+        launch(asked.lesson, asked.source, asked.biteId, replacing);
         return;
       }
       if (!loaded || restored === loaded.key) return;
       restored = loaded.key;
-      const underWay = loaded.record.underWay;
-      const now = untrack(world);
-      if (!underWay || !now || options.current()) return;
-      const lessonId = underWay.lessonId;
-      const back = isLessonId(lessonId)
-        ? startLesson(lessonId, loaded.record, now, untrack(settings))
-        : null;
-      if (back) options.restore(back.state);
+      if (options.current()) return;
+      const back = storedLesson(loaded);
+      if (back) options.restore(back);
     },
   );
 
-  function launch(lesson: LessonId, source: LessonSource, biteId?: BiteId): boolean {
+  /** The lesson `loaded` has under way, read against the world as it stands. */
+  function storedLesson(loaded: LoadedLessonRecord): LessonState | null {
+    const underWay = loaded.record.underWay;
+    const now = untrack(world);
+    if (!underWay || !now || !isLessonId(underWay.lessonId)) return null;
+    return (
+      startLesson(underWay.lessonId, loaded.record, now, untrack(settings))?.state ?? null
+    );
+  }
+
+  function launch(
+    lesson: LessonId,
+    source: LessonSource,
+    biteId?: BiteId,
+    replacing: LessonState | null = options.current(),
+  ): boolean {
     const now = world();
     if (!now) return false;
     const transition = startLesson(lesson, record.current(), now, settings(), biteId);
     if (!transition) return false;
-    dropOut();
+    dropOut(replacing);
     options.begin(transition, source);
     return true;
   }
 
-  function dropOut(): void {
-    const current = options.current();
+  function dropOut(current: LessonState | null = options.current()): void {
     if (current) options.analytics().log("lesson_dropped_out", lessonIds(current));
   }
 
@@ -122,6 +134,6 @@ export function useLessonStart(options: UseLessonStartOptions): LessonStart {
     forget() {
       pending = null;
     },
-    dropOut,
+    dropOut: () => dropOut(),
   };
 }

@@ -103,4 +103,24 @@ describe("starting a lesson beside its record (GRV-190)", () => {
     flush();
     expect(h.state()?.lessonId).toBe("beat");
   });
+
+  it("drops out of another lesson the record had under way when a held start replaces it", async () => {
+    const h = setup(TOUR_AT_MIXER);
+    h.starts.start("beat", "list");
+    await settle();
+    expect(h.state()?.lessonId).toBe("beat");
+    expect(h.log).toHaveBeenCalledTimes(1);
+    expect(h.log).toHaveBeenCalledWith("lesson_dropped_out", {
+      chapter_id: "tour",
+      bite_id: "tour-mixer",
+    });
+  });
+
+  it("does not drop out of the stored lesson when a held start carries it on", async () => {
+    const h = setup(TOUR_AT_MIXER);
+    h.starts.start("tour", "list");
+    await settle();
+    expect(h.state() && biteOf(h.state() as LessonState).id).toBe("tour-mixer");
+    expect(h.log).not.toHaveBeenCalled();
+  });
 });
