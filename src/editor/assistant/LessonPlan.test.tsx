@@ -19,6 +19,10 @@ import type { LessonRecord } from "../../persistence/lessonDocuments";
 import { emptyProfile, type ProducerProfile } from "../../persistence/profileDocuments";
 import { clickAndFlush } from "../../testing/events";
 import { createFakeAssistantClient } from "../../testing/fakeAssistantClient";
+import {
+  createFakeRetentionClient,
+  type FakeRetentionClient,
+} from "../../testing/fakeRetentionClient";
 import { applied, starterWorld } from "../../testing/lessonWorld";
 import { memoryStorage } from "../../testing/storage";
 import type { EditorViewName } from "../composition/editorViews";
@@ -55,6 +59,8 @@ async function renderLesson(
     record?: LessonRecord;
     /** The records another page load left, for a reload. */
     records?: InMemoryLessonRepository;
+    /** The account's answer about keeping conversations (GRV-8). */
+    retention?: FakeRetentionClient;
   } = {},
 ) {
   const client = createFakeAssistantClient();
@@ -71,6 +77,8 @@ async function renderLesson(
   const [project, setProject] = createSignal<Project>(starterWorld().project);
   const [view, setView] = createSignal<EditorViewName>("arrangement");
   const [playing, setPlaying] = createSignal(false);
+  // Whether a project is open: with none, there is nothing to start a lesson in.
+  const [open, setOpen] = createSignal(true);
   const putSound = vi.fn(async (_role: "kick", trackId: TrackId, padId: PadId) => {
     if (!options.putSound) return false;
     setProject((current) => {
@@ -114,7 +122,7 @@ async function renderLesson(
     });
     profileStore = store;
     chat = useAssistantChat({
-      project,
+      project: () => (open() ? project() : null),
       view,
       sources: () => ({ selection: null, track: project().song.tracks[0] ?? null }),
       account: () => ({ registered: true }),
@@ -123,6 +131,12 @@ async function renderLesson(
       analytics: () => analytics,
       profile: store,
       playing,
+      retention: options.retention
+        ? {
+            client: async () => options.retention as FakeRetentionClient,
+            internal: () => false,
+          }
+        : undefined,
       lessonRecord: {
         owner: () => ({ uid: UID, projectId: PROJECT }),
         repository: async () => records,
@@ -158,6 +172,7 @@ async function renderLesson(
     records,
     project,
     setProject,
+    setOpen,
     view,
     setView,
     setPlaying,
@@ -554,6 +569,28 @@ describe("the Lessons list and lesson mode (GRV-190)", () => {
     expect(h.transport.named("lessons_list_opened")).toHaveLength(2);
   });
 
+  it("opens for a registered account before the data disclosure is answered (GRV-205)", async () => {
+    const h = await renderLesson({ retention: createFakeRetentionClient({ uid: UID }) });
+    await waitFor(() => expect(h.chat.retention?.known()).toBe(true));
+    expect(h.chat.retention?.answered()).toBe(false);
+    clickAndFlush(lessonsButton());
+    expect(list()).toBeVisible();
+    clickAndFlush(row("Make a beat") as HTMLElement);
+    expect(screen.queryByRole("region", { name: "Lessons" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Lesson · Make a beat" })).toBeVisible();
+  });
+
+  it("stays open when a lesson cannot start, with no project open", async () => {
+    const h = await renderLesson();
+    h.setOpen(false);
+    flush();
+    clickAndFlush(lessonsButton());
+    clickAndFlush(row("Make a beat") as HTMLElement);
+    expect(list()).toBeVisible();
+    expect(h.chat.lesson.state()).toBeNull();
+    expect(h.transport.named("lesson_started_from_list")).toHaveLength(0);
+  });
+
   it("shows each lesson's progress from the record and the profile", async () => {
     const tour = BITE_IDS.filter((id) => id.startsWith("tour-"));
     const h = await renderLesson({
@@ -742,6 +779,45 @@ describe("the Lessons list and lesson mode (GRV-190)", () => {
     h.client.last().done();
     expect(await screen.findByRole("button", { name: /^2/ })).toBeVisible();
     clickAndFlush(within(h.lesson()).getByRole("button", { name: "Leave" }));
+    await waitFor(() => expect(h.chat.conversation.pendingAsk()).toBeNull());
+    expect(screen.queryByRole("button", { name: /^2/ })).toBeNull();
+  });
+
+  /** Starts `biteId` of the tour and has Coproducer answer it with a quiz. */
+  async function quizzed(h: Awaited<ReturnType<typeof renderLesson>>, biteId: string) {
+    h.start("tour", "asked", biteId as never);
+    await waitFor(() => expect(h.client.turns).toHaveLength(1));
+    h.client.last().emit({
+      type: "ask",
+      ask: {
+        id: "quiz",
+        question: "Which key opens the view?",
+        options: [{ label: "2" }, { label: "5" }],
+        multiSelect: false,
+      },
+    });
+    h.client.last().done();
+    expect(await screen.findByRole("button", { name: /^2/ })).toBeVisible();
+  }
+
+  it("puts a quiz away once its lesson is over", async () => {
+    const h = await renderLesson();
+    // The tour's Mixer is its last bite: Show me finishes the lesson.
+    await quizzed(h, "tour-mixer");
+    clickAndFlush(within(h.lesson()).getByRole("button", { name: "Show me" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: LESSON_LABEL })).toBeNull(),
+    );
+    await waitFor(() => expect(h.chat.conversation.pendingAsk()).toBeNull());
+    expect(screen.queryByRole("button", { name: /^2/ })).toBeNull();
+  });
+
+  it("puts a quiz away when another lesson from the list replaces its lesson", async () => {
+    const h = await renderLesson();
+    await quizzed(h, "tour-sequence");
+    expect(h.chat.pickLesson("beat")).toBe(true);
+    flush();
+    expect(h.chat.lesson.state()?.lessonId).toBe("beat");
     await waitFor(() => expect(h.chat.conversation.pendingAsk()).toBeNull());
     expect(screen.queryByRole("button", { name: /^2/ })).toBeNull();
   });
