@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { walkthrough } from "../../support/walkthrough";
-import { arrangement } from "../support/assistant";
+import { arrangement, dataNote } from "../support/assistant";
 import { seedRegisteredSession } from "../support/authSession";
 import {
   askOption,
@@ -121,9 +121,9 @@ test.describe("CF-035", () => {
       const projectUrl = page.url();
       await arrangement(page).waitFor();
       await expect(cuePanel(page)).toBeVisible();
-      // Coproducer's panel opens on its first-run notice (GRV-8) until it is
-      // answered; the conversation is behind it.
-      await cuePanel(page).getByRole("button", { name: "OK" }).click();
+      // The data note sits under the conversation (GRV-205); nothing stands
+      // in front of it.
+      await expect(dataNote(page)).toBeVisible();
       await expect(conversationIn(cuePanel(page))).toContainText("Four Tet");
       await expect(cuePanel(page)).toContainText(/first lesson/i);
       await step("The studio opens, and the conversation carries on in Coproducer's panel");
