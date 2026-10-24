@@ -2,8 +2,8 @@
  * Show me (GRV-43): what a lesson's step does in the editor when the
  * producer asks to be shown, through the editor as the assistant: commands as
  * one undoable change, a view switch, Play, the Export dialog, or a library
- * sound on a pad. A step whose Show me only opens where to act (the Export
- * dialog, GRV-44) opens it as the step starts.
+ * sound on a pad. Nothing opens by itself as a step starts (GRV-190): the
+ * Export dialog is Show me's to open, beside the lesson, never over it.
  *
  * While a step is under way its control wears the dashed proposal mark
  * (`UI-004`), and what it belongs to is selected, so the view the step names
@@ -21,7 +21,7 @@ import type { ControlRegistry } from "../../controls/registry";
 import type { DomainFactoryContext } from "../../domain/factories";
 import type { PadId, TrackId } from "../../domain/ids";
 import { biteOf, type LessonState, markShown } from "../../lessons/session";
-import type { LessonSettings, LessonWorld, ShowMe } from "../../lessons/types";
+import type { LessonSettings, LessonWorld } from "../../lessons/types";
 import type { EditorViewName } from "../composition/editorViews";
 
 /** What Show me does in the editor. */
@@ -45,8 +45,11 @@ export interface LessonEditorPort {
   putSound(role: "kick", trackId: TrackId, padId: PadId): Promise<boolean>;
 }
 
-/** What Show me says when it has nothing to do. */
+/** What Show me says when the step is done already. */
 export const NOTHING_TO_SHOW = "There's nothing to show here: this step is already done.";
+/** What Show me says when it cannot act on a step that is not done (GRV-190). */
+export const CANNOT_SHOW =
+  "Show me can't do this one from here. Do it by hand, or press Skip.";
 /** What Show me says when the change would not go in. */
 export const SHOW_ME_FAILED = "That didn't go in. Try it by hand, or press Skip.";
 /** What Show me says when the library has no other kick to offer. */
@@ -79,14 +82,17 @@ export interface UseLessonShowMeOptions {
 export interface LessonShowMe {
   /** A word after Show me could not do anything. */
   readonly notice: Accessor<string | null>;
+  /** Whether Show me is still at work (a library sound on its way), so cannot be pressed. */
+  readonly busy: Accessor<boolean>;
   clearNotice(): void;
   showMe(): void;
-  /** A step just started: one whose Show me only opens where to act opens it now. */
-  arrive(next: LessonState): void;
+  /** Opens a view a step's term names (GRV-190). */
+  openView(view: EditorViewName): void;
 }
 
 export function useLessonShowMe(options: UseLessonShowMeOptions): LessonShowMe {
   const [notice, setNotice] = createSignal<string | null>(null);
+  const [busy, setBusy] = createSignal(false);
 
   // Where to act wears the dashed mark while its step is under way, and is
   // selected. The target is read off the world the step started in, so it
@@ -108,47 +114,17 @@ export function useLessonShowMe(options: UseLessonShowMeOptions): LessonShowMe {
     },
   );
 
-  /** Has the editor do what Show me says, with nothing to take back. */
-  function act(shown: ShowMe): void {
-    const editor = options.editor;
-    if (!editor) return;
-    switch (shown.kind) {
-      case "commands":
-        editor.apply(shown.commands);
-        return;
-      case "view":
-        editor.goTo(shown.view);
-        return;
-      case "play":
-        void editor.play(shown.from);
-        return;
-      case "export":
-        editor.openExport();
-        return;
-      case "sound":
-        void editor.putSound(shown.role, shown.trackId, shown.padId);
-    }
-  }
-
-  function arrive(next: LessonState): void {
-    if (!next.step) return;
-    const step = biteOf(next).steps[next.step.index];
-    if (!step.showsAtStart) return;
-    const now = options.world();
-    // It is not the step done, so nothing is marked shown.
-    const shown = now && step.showMe(now, untrack(options.settings), options.factory());
-    if (shown) act(shown);
-  }
-
   function showMe(): void {
     const current = options.state();
     const now = options.world();
     const editor = options.editor;
-    if (!current?.step || !now || !editor) return;
+    if (!current?.step || !now || !editor || busy()) return;
     const step = biteOf(current).steps[current.step.index];
     const shown = step.showMe(now, options.settings(), options.factory());
     if (!shown) {
-      setNotice(NOTHING_TO_SHOW);
+      // Said as done only when it is: otherwise Show me just cannot act here.
+      const done = step.done(now, current.step.start, options.settings());
+      setNotice(done ? NOTHING_TO_SHOW : CANNOT_SHOW);
       return;
     }
     setNotice(null);
@@ -182,13 +158,24 @@ export function useLessonShowMe(options: UseLessonShowMeOptions): LessonShowMe {
         editor.openExport();
         return;
       case "sound":
-        void editor.putSound(shown.role, shown.trackId, shown.padId).then((put) => {
-          if (put) return;
-          unmark();
-          setNotice(NO_SOUND);
-        });
+        // One sound at a time: Show me waits for the library to answer.
+        setBusy(true);
+        void editor
+          .putSound(shown.role, shown.trackId, shown.padId)
+          .then((put) => {
+            if (put) return;
+            unmark();
+            setNotice(NO_SOUND);
+          })
+          .finally(() => setBusy(false));
     }
   }
 
-  return { notice, clearNotice: () => setNotice(null), showMe, arrive };
+  return {
+    notice,
+    busy,
+    clearNotice: () => setNotice(null),
+    showMe,
+    openView: (view) => options.editor?.goTo(view),
+  };
 }

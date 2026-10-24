@@ -160,6 +160,15 @@ export function SettingsIcon(props: IconProps) {
   );
 }
 
+/** The lessons (GRV-190): a page with its heading rule and a tick. */
+export function LessonsIcon(props: IconProps) {
+  return (
+    <Icon size={props.size}>
+      <path d="M4 4.5h16v15H4zM4 9.5h16M8 14l2.5 2.5 5-5" fill="none" stroke-width="2" />
+    </Icon>
+  );
+}
+
 /** Minimise a floating panel to a bar. */
 export function MinimiseIcon(props: IconProps) {
   return (

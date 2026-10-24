@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { exportControl } from "../commands/controlAddress";
 import { setDeviceBypass } from "../commands/definitions/devices";
 import { setParameter } from "../commands/definitions/parameters";
 import { TRACK_VOLUME } from "../domain/parameters";
@@ -127,10 +128,12 @@ describe("Mix and export (GRV-44)", () => {
     });
   });
 
-  it("opens the Export dialog as the last bite starts, and is done once stems are exported", () => {
+  it("has Show me open the Export dialog, marks Export, and is done once stems are exported", () => {
     const world = partsWorld();
     const step = mix("mix-export").steps[0];
-    expect(step.showsAtStart).toBe(true);
+    // Nothing opens over the lesson as the step starts (GRV-190).
+    expect(step).not.toHaveProperty("showsAtStart");
+    expect(step.target(world, settings)).toEqual(exportControl());
     expect(step.showMe(world, settings, lessonContext())).toEqual({ kind: "export" });
     expect(step.done(world, world, settings)).toBe(false);
     expect(step.done({ ...world, stemExports: 1 }, world, settings)).toBe(true);

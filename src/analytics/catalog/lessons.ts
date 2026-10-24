@@ -1,16 +1,23 @@
 // Lessons with Coproducer (GRV-43): bite-sized chapters taught in the
-// producer's own project, and the daily nudge that names the next bite; and
-// "Finish a track" (GRV-44), five chapters from a beat to stems.
+// producer's own project, and the daily nudge that names the next bite;
+// "Finish a track" (GRV-44), five chapters from a beat to stems; and the
+// Lessons list in Coproducer's panel (GRV-190), where any lesson starts.
 //
 // Every parameter is one of our own IDs (`src/lessons/ids.ts`): which chapter
 // and bite, how a bite ended and where it was started from. Never a step's
 // words, a project's content or anything Coproducer said.
 
-import { BITE_ENDINGS, BITE_IDS, CHAPTER_IDS, LESSON_SOURCES } from "../../lessons/ids";
+import {
+  BITE_ENDINGS,
+  BITE_IDS,
+  CHAPTER_IDS,
+  LESSON_IDS,
+  LESSON_SOURCES,
+} from "../../lessons/ids";
 import { type AnalyticsEventDefinition, enumParam } from "./params";
 
 /** Lessons' `feature_first_use` keys (see `FEATURE_KEYS`). */
-export const LESSON_FEATURE_KEYS = ["lessons"] as const;
+export const LESSON_FEATURE_KEYS = ["lessons", "lessons_list"] as const;
 
 const bite = {
   chapter_id: enumParam(CHAPTER_IDS),
@@ -19,8 +26,8 @@ const bite = {
 
 export const LESSON_EVENTS = {
   // A bite under way, and where it was started from: the producer asking,
-  // the offer at the end of onboarding, the daily nudge, or "Next" after the
-  // bite before.
+  // the offer at the end of onboarding, the daily nudge, "Next" after the
+  // bite before, or the Lessons list (GRV-190).
   lesson_bite_started: {
     phase: 3,
     owners: ["GRV-43"],
@@ -68,5 +75,28 @@ export const LESSON_EVENTS = {
     phase: 3,
     owners: ["GRV-43"],
     params: bite,
+  },
+
+  // The Lessons list opened in Coproducer's panel (GRV-190), once per open.
+  lessons_list_opened: {
+    phase: 3,
+    owners: ["GRV-190"],
+    params: {},
+  },
+
+  // A lesson begun from a row of the Lessons list (GRV-190), once each time
+  // one begins: anew, or picked up where the project's record has it.
+  // Continue on the lesson already under way begins nothing and is not logged.
+  lesson_started_from_list: {
+    phase: 3,
+    owners: ["GRV-190"],
+    params: { lesson: enumParam(LESSON_IDS) },
+  },
+
+  // The list's "follow @trygroove.app" link opened (GRV-190).
+  instagram_link_opened: {
+    phase: 3,
+    owners: ["GRV-190"],
+    params: {},
   },
 } as const satisfies Record<string, AnalyticsEventDefinition>;

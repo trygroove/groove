@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { playControl } from "../commands/controlAddress";
 import { PRODUCER_GOALS } from "../persistence/profileDocuments";
 import { starterWorld } from "../testing/lessonWorld";
 import {
@@ -9,8 +10,10 @@ import {
   chapterForGoal,
   LESSONS,
   lesson,
+  lessonForGoal,
   nextBite,
   nextStep,
+  TRACK_LESSON,
 } from "./chapters";
 import { BITE_IDS, CHAPTER_IDS } from "./ids";
 
@@ -41,9 +44,11 @@ describe("the chapters (GRV-43)", () => {
     }
   });
 
-  it("suggests a chapter for every goal", () => {
-    expect(PRODUCER_GOALS.map(chapterForGoal)).toEqual(["beat", "beat", "sound", "tour"]);
+  it("suggests the tour for every goal, and the goal's lesson after it (GRV-190)", () => {
+    expect(PRODUCER_GOALS.map(chapterForGoal)).toEqual(["tour", "tour", "tour", "tour"]);
     expect(chapterForGoal(null)).toBe("tour");
+    expect(PRODUCER_GOALS.map(lessonForGoal)).toEqual(["beat", "beat", "sound", "beat"]);
+    expect(lessonForGoal(null)).toBe("beat");
   });
 
   it("finds the next bite not done, from a chapter on and round to the first", () => {
@@ -63,8 +68,16 @@ describe("the chapters (GRV-43)", () => {
   });
 
   it("are lessons of one chapter each, then Finish a track's five (GRV-190)", () => {
-    expect(LESSONS.map((one) => one.id)).toEqual(["beat", "sound", "tour", "track"]);
+    // The tour first (GRV-190).
+    expect(LESSONS.map((one) => one.id)).toEqual(["tour", "beat", "sound", "track"]);
     expect(LESSONS.map((one) => one.chapters.length)).toEqual([1, 1, 1, 5]);
+    expect(TRACK_LESSON.chapters.map((one) => one.short)).toEqual([
+      "Beat",
+      "Bass",
+      "Chords",
+      "Arrange",
+      "Mix",
+    ]);
     expect(lesson("tour").chapters).toEqual([chapter("tour")]);
     expect(LESSONS.filter((one) => one.passesOverMade).map((one) => one.id)).toEqual([
       "track",
@@ -81,5 +94,22 @@ describe("the chapters (GRV-43)", () => {
     expect(
       nextStep(bite("beat-kick"), world, { style: "four_on_the_floor" })?.step.id,
     ).toBe("clear");
+  });
+});
+
+describe("where every step points (GRV-190)", () => {
+  it("marks the dock tile on every tour step, and Play on Hear it", () => {
+    const world = starterWorld();
+    const settings = { style: "boom_bap" } as const;
+    for (const one of chapter("tour").bites) {
+      for (const step of one.steps) {
+        expect(step.target(world, settings), `${one.id} ${step.id}`).not.toBeNull();
+        expect(step.target(world, settings)?.param).toMatch(/^view\./);
+      }
+    }
+    const hear = bite("beat-play").steps.find((step) => step.id === "play");
+    expect(hear?.target(world, settings)).toEqual(playControl());
+    const drop = bite("arrange-drop").steps.find((step) => step.id === "listen");
+    expect(drop?.target(world, settings)).toEqual(playControl());
   });
 });

@@ -46,7 +46,13 @@ const EVERY_VIEW_TRACK_KEYS = new Set<string>([
   CONTROL_PARTS.soloed,
 ]);
 /** Song keys the editor header shows in every view. */
-const HEADER_SONG_KEYS = new Set(["tempo", "swing", CONTROL_PARTS.name]);
+const HEADER_SONG_KEYS = new Set([
+  "tempo",
+  "swing",
+  CONTROL_PARTS.name,
+  CONTROL_PARTS.play,
+  CONTROL_PARTS.export,
+]);
 
 export function controlHome(project: Project, address: ControlAddress): ControlHome {
   const { entity, param } = address;
@@ -54,7 +60,9 @@ export function controlHome(project: Project, address: ControlAddress): ControlH
     home(view, track, null, undefined);
 
   if (entity === SONG_ENTITY) {
-    return HEADER_SONG_KEYS.has(param) ? stay(null) : stay("arrangement");
+    // The dock's tiles are on every view (GRV-190).
+    if (HEADER_SONG_KEYS.has(param) || param.startsWith("view.")) return stay(null);
+    return stay("arrangement");
   }
   if (entity === MASTER_ENTITY) return stay("mixer");
 

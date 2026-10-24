@@ -1,5 +1,7 @@
 import { For, type JSX } from "@solidjs/web";
 import { createSignal, createUniqueId, Show } from "solid-js";
+import { viewControl } from "../../commands/controlAddress";
+import { control } from "../../controls/control";
 import { MASK_CONTENT } from "../../monitoring/replayPrivacy";
 import { EDITOR_VIEW_SPECS, type EditorViewName } from "./editorViews";
 import { ViewIcon } from "./viewIcons";
@@ -58,9 +60,12 @@ export default function ViewDock(props: ViewDockProps): JSX.Element {
             const current = () => props.view === spec.view;
             const showTip = () => setTipFor(spec.view);
             const hideTip = () => setTipFor((open) => (open === spec.view ? null : open));
+            // A lesson's tour marks the tile of the view to open (GRV-190).
+            const tile = control(viewControl(spec.view));
             return (
               <li class="view-dock-item">
                 <a
+                  ref={tile}
                   class={[
                     "view-dock-link",
                     { "view-dock-dimmed": props.dimmed?.(spec.view) ?? false },

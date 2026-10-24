@@ -7,7 +7,9 @@ import type { LessonState } from "../../lessons/session";
 import { startedAt, starterWorld } from "../../testing/lessonWorld";
 import type { EditorViewName } from "../composition/editorViews";
 import {
+  CANNOT_SHOW,
   type LessonEditorPort,
+  NOTHING_TO_SHOW,
   SHOW_ME_FAILED,
   useLessonShowMe,
 } from "./useLessonShowMe";
@@ -19,11 +21,12 @@ function setup(editor?: LessonEditorPort) {
   const [view] = createSignal<EditorViewName>("arrangement");
   const registry = createControlRegistry();
   const world = starterWorld();
+  const [now, setNow] = createSignal(world);
   const shows = createRoot(() =>
     useLessonShowMe({
       state,
       setState,
-      world: () => world,
+      world: now,
       settings: () => settings,
       view,
       playing: () => false,
@@ -32,7 +35,7 @@ function setup(editor?: LessonEditorPort) {
       factory: () => createFactoryContext(),
     }),
   );
-  return { shows, state, setState, registry, world };
+  return { shows, state, setState, registry, world, setNow };
 }
 
 function editorPort(): LessonEditorPort {
@@ -88,10 +91,67 @@ describe("Show me (GRV-190)", () => {
     expect(h.shows.notice()).toBeNull();
   });
 
-  it("opens the Export dialog as a step that only opens it starts", () => {
+  it("says it cannot act when a step is not done, and waits for a sound on its way", async () => {
+    let resolve: (put: boolean) => void = () => {};
+    const editor = {
+      ...editorPort(),
+      putSound: vi.fn(
+        () =>
+          new Promise<boolean>((done) => {
+            resolve = done;
+          }),
+      ),
+    };
+    const h = setup(editor);
+    h.setState(startedAt("beat", "beat-library", h.world, settings).state);
+    flush();
+    h.shows.showMe();
+    flush();
+    expect(h.shows.busy()).toBe(true);
+    // A second press while the library looks does nothing.
+    h.shows.showMe();
+    expect(editor.putSound).toHaveBeenCalledTimes(1);
+    resolve(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    flush();
+    expect(h.shows.busy()).toBe(false);
+  });
+
+  it("says done only of a step that is done, and otherwise that it cannot act", () => {
+    const h = setup(editorPort());
+    // The arrangement is already on screen: going there is done.
+    h.setState(startedAt("tour", "tour-arrangement", h.world, settings).state);
+    flush();
+    const started = h.state();
+    if (!started?.step) throw new Error("no step");
+    // Away from it and back: the "open" step is under way, and done here.
+    h.setState({ ...started, step: { ...started.step, index: 1 } });
+    flush();
+    h.shows.showMe();
+    flush();
+    expect(h.shows.notice()).not.toBe(CANNOT_SHOW);
+
+    // The backbeat with no drum machine left: Show me has nothing to write
+    // into, and the step is not done.
+    h.setState(startedAt("beat", "beat-snare", h.world, settings).state);
+    flush();
+    const song = h.world.project.song;
+    h.setNow({
+      ...h.world,
+      project: { ...h.world.project, song: { ...song, tracks: [], placements: [] } },
+    });
+    flush();
+    h.shows.showMe();
+    flush();
+    expect(h.shows.notice()).toBe(CANNOT_SHOW);
+    expect(CANNOT_SHOW).not.toBe(NOTHING_TO_SHOW);
+  });
+
+  it("opens the view a term names", () => {
     const editor = editorPort();
     const h = setup(editor);
-    h.shows.arrive(startedAt("track", "mix-export", h.world, settings).state);
-    expect(editor.openExport).toHaveBeenCalledTimes(1);
+    h.shows.openView("library");
+    expect(editor.goTo).toHaveBeenCalledWith("library");
   });
 });

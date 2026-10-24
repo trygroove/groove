@@ -84,6 +84,10 @@ export const CONTROL_PARTS = {
   loop: "loop",
   /** The song's key. */
   key: "key",
+  /** The transport's Play button, which a lesson points at (GRV-190). */
+  play: "play",
+  /** The header's Export button, which a lesson points at (GRV-190). */
+  export: "export",
   /** The project's packs and assets: library bookkeeping with no control of its own. */
   packs: "packs",
   assets: "assets",
@@ -101,6 +105,24 @@ export function controlAddress(entity: string, param: string): ControlAddress {
  */
 export function parameterControl(entity: string, parameterId: string): ControlAddress {
   return { entity, param: bareParameterId(parameterId) };
+}
+
+/**
+ * A view's tile in the dock (GRV-190): where a lesson's tour points. Views
+ * are the editor's, so the name is a plain string here.
+ */
+export function viewControl(view: string): ControlAddress {
+  return { entity: SONG_ENTITY, param: `view.${view}` };
+}
+
+/** The transport's Play button (GRV-190). */
+export function playControl(): ControlAddress {
+  return { entity: SONG_ENTITY, param: CONTROL_PARTS.play };
+}
+
+/** The header's Export button (GRV-190). */
+export function exportControl(): ControlAddress {
+  return { entity: SONG_ENTITY, param: CONTROL_PARTS.export };
 }
 
 /** A track's send level to one return bus: one fader per return. */

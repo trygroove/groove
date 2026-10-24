@@ -35,6 +35,8 @@ export interface UseLessonStartOptions {
   readonly restore: (state: LessonState) => void;
   /** Begins the lesson `transition` starts, as started from `source`. */
   readonly begin: (transition: LessonTransition, source: LessonSource) => void;
+  /** Hears that a start left the lesson under way for another. */
+  readonly replaced?: () => void;
   readonly analytics: () => Pick<Analytics, "log">;
 }
 
@@ -42,7 +44,8 @@ export interface LessonStart {
   /**
    * Starts `lesson` where the record has it, or from its first bite (at
    * `biteId` when given); whether it could (not while no project is open).
-   * Asked for while the record is still being read, it waits for the read.
+   * The lesson under way, asked for again with no bite, carries on where it
+   * is. Asked for while the record is still being read, it waits for the read.
    */
   start(lesson: LessonId, source: LessonSource, biteId?: BiteId): boolean;
   /** Forgets a start still waiting for the record's read. */
@@ -111,9 +114,13 @@ export function useLessonStart(options: UseLessonStartOptions): LessonStart {
   ): boolean {
     const now = world();
     if (!now) return false;
+    // The lesson under way, asked for again, carries on where it is.
+    const current = options.current();
+    if (biteId === undefined && current?.lessonId === lesson) return true;
     const transition = startLesson(lesson, record.current(), now, settings(), biteId);
     if (!transition) return false;
     dropOut(replacing);
+    if (current) options.replaced?.();
     options.begin(transition, source);
     return true;
   }

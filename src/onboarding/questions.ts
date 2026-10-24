@@ -272,7 +272,10 @@ export const WELCOME_TEXT = `Welcome to Groove! I'm ${ASSISTANT_NAME}, the produ
 export const SAVED_TEXT =
   "That's everything. I've saved it to memory, and you can see or change it any time on the Memory page.";
 
-/** The chapter Coproducer suggests starting with, by its title, from the producer's goal (GRV-43). */
+/**
+ * The lesson Coproducer suggests starting with, by its title (GRV-43): the
+ * tour, whatever the goal (GRV-190).
+ */
 export function suggestedLesson(goal: ProducerGoal | null): string {
   return chapter(chapterForGoal(goal)).title;
 }
@@ -290,7 +293,7 @@ export function lessonOfferText(
   goal: ProducerGoal | null,
   where: "welcome" | "studio",
 ): string {
-  const offer = `Want to start with a first lesson? From what you told me, I'd suggest "${suggestedLesson(goal)}".`;
+  const offer = `Want to start with a first lesson? Let's start with a quick tour of the studio, then we'll make something: "${suggestedLesson(goal)}".`;
   return where === "welcome" ? `${offer} Open the studio and we'll begin.` : offer;
 }
 

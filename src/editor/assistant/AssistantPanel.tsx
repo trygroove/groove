@@ -5,6 +5,7 @@ import {
   CloseIcon,
   DockRightIcon,
   FloatIcon,
+  LessonsIcon,
   MinimiseIcon,
   RestoreIcon,
   SettingsIcon,
@@ -60,6 +61,12 @@ function panelStatus(chat: AssistantChat | undefined): string {
   return "";
 }
 
+/** What the panel's title says while a lesson is under way (GRV-190). */
+export const LESSON_TITLE = `${ASSISTANT_NAME} · Lesson`;
+
+/** The Lessons button's name and its tip (GRV-190). */
+export const LESSONS_BUTTON = "Lessons";
+
 /** The note under the composer while there is no conversation to hold. */
 export const UNAVAILABLE_NOTE = `${ASSISTANT_NAME} isn't available yet`;
 
@@ -82,6 +89,18 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const hasSettings = () =>
     Boolean(props.chat?.retention && props.chat.account().registered);
+  // The Lessons list (GRV-190), in place of the conversation like the
+  // settings, and reachable wherever the conversation is: for any registered
+  // account, the data disclosure answered or not (GRV-205).
+  const [lessonsOpen, setLessonsOpen] = createSignal(false);
+  const hasLessons = () => Boolean(props.chat?.account().registered);
+  function toggleLessons(): void {
+    const opening = !lessonsOpen();
+    setLessonsOpen(opening);
+    if (opening) setSettingsOpen(false);
+    if (opening) props.chat?.openedLessons();
+  }
+  const lessonUnderWay = () => props.chat?.lesson.state() != null;
 
   // The room the panel takes at the window's right edge, published for the
   // app's bottom-right chrome so none of it is ever drawn over the panel's
@@ -140,7 +159,7 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
           >
             <span class="assistant-panel-title">
               <SparkIcon size={12} />
-              {ASSISTANT_NAME}
+              {lessonUnderWay() ? LESSON_TITLE : ASSISTANT_NAME}
             </span>
             {/* The status slot, so the minimised bar still says it:
                 "Writing…" while a reply streams, "Previewing a change" while a
@@ -183,6 +202,18 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
               </HeaderButton>
             </Match>
           </Switch>
+          <Show when={expanded() && hasLessons()}>
+            <button
+              type="button"
+              class="assistant-panel-button"
+              aria-label={LESSONS_BUTTON}
+              title={`${LESSONS_BUTTON}: every lesson, with your progress`}
+              aria-pressed={lessonsOpen() ? "true" : "false"}
+              onClick={toggleLessons}
+            >
+              <LessonsIcon size={14} />
+            </button>
+          </Show>
           <Show when={expanded() && hasSettings()}>
             <button
               type="button"
@@ -190,7 +221,10 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
               aria-label={SETTINGS_TITLE}
               title={`${SETTINGS_TITLE}: what Groove keeps of your conversations`}
               aria-pressed={settingsOpen() ? "true" : "false"}
-              onClick={() => setSettingsOpen((open) => !open)}
+              onClick={() => {
+                setSettingsOpen((open) => !open);
+                setLessonsOpen(false);
+              }}
             >
               <SettingsIcon size={14} />
             </button>
@@ -209,6 +243,8 @@ export default function AssistantPanel(props: AssistantPanelProps): JSX.Element 
               reclaimComposerFocus={() => props.panel.reclaimComposerFocus()}
               settingsOpen={settingsOpen}
               closeSettings={() => setSettingsOpen(false)}
+              lessonsOpen={() => lessonsOpen() && hasLessons()}
+              closeLessons={() => setLessonsOpen(false)}
               openSettings={() => setSettingsOpen(true)}
               holdExpandedVideo={(collapse) => props.panel.holdExpandedVideo(collapse)}
             />

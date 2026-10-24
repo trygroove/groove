@@ -75,6 +75,7 @@ function setup(
   open = true,
   profile?: ProducerProfileStore,
   repository?: InMemoryLessonRepository,
+  onStarted?: (lesson: string, source: string) => void,
 ) {
   const [project, setProject] = createSignal<Project | null>(
     open ? starterWorld().project : null,
@@ -102,6 +103,7 @@ function setup(
       editor,
       profile,
       analytics: () => ({ log, logFeatureFirstUse: vi.fn() }),
+      onStarted,
       record: repository
         ? useLessonRecord({
             owner: () => OWNER,
@@ -487,6 +489,36 @@ describe("the lesson under way (GRV-43)", () => {
     expect(profile.profile()?.lessonsDone).toEqual(["beat-kick", "tour-library"]);
   });
 
+  it("drops out of a lesson under way when the editor closes, and keeps it under way (GRV-190)", async () => {
+    const repository = recordStore();
+    let dispose: () => void = () => {};
+    const log = vi.fn();
+    const [project] = createSignal<Project | null>(starterWorld().project);
+    const lesson = createRoot((done) => {
+      dispose = done;
+      return useLesson({
+        project,
+        view: () => "arrangement",
+        playing: () => false,
+        conversation: { sendLesson: vi.fn(() => true), streaming: () => false },
+        analytics: () => ({ log, logFeatureFirstUse: vi.fn() }),
+        record: useLessonRecord({
+          owner: () => OWNER,
+          repository: async () => repository,
+        }),
+      });
+    });
+    await settle();
+    lesson.start("tour", "asked", "tour-sequence");
+    await settle();
+    dispose();
+    expect(log).toHaveBeenCalledWith("lesson_dropped_out", {
+      chapter_id: "tour",
+      bite_id: "tour-sequence",
+    });
+    expect((await stored(repository))?.underWay?.biteId).toBe("tour-sequence");
+  });
+
   it("sends one turn for one transition, however often it is handled", () => {
     const h = setup();
     h.lesson.start("tour", "asked", "tour-sequence");
@@ -599,6 +631,29 @@ describe("the lesson under way (GRV-43)", () => {
       chapterIndex: 3,
       biteId: "arrange-breakdown",
     });
+  });
+
+  it("hears a held start begin only once the read is over, and once", async () => {
+    const onStarted = vi.fn();
+    const h = setup(undefined, true, undefined, recordStore(), onStarted);
+    expect(h.lesson.start("tour", "asked")).toBe(true);
+    flush();
+    expect(onStarted).not.toHaveBeenCalled();
+    await settle();
+    expect(onStarted).toHaveBeenCalledTimes(1);
+    expect(onStarted).toHaveBeenCalledWith("tour", "asked");
+  });
+
+  it("hears nothing begin while a held start waits for a project", async () => {
+    const onStarted = vi.fn();
+    const h = setup(undefined, true, undefined, recordStore(), onStarted);
+    h.lesson.start("tour", "asked");
+    // The project closes before the read is over: there is nothing to start in yet.
+    h.setProject(null);
+    flush();
+    await settle();
+    expect(h.lesson.state()).toBeNull();
+    expect(onStarted).not.toHaveBeenCalled();
   });
 
   it("starts nothing asked for before the read once it is left", async () => {
@@ -837,13 +892,17 @@ describe("Finish a track in the panel (GRV-44)", () => {
     expect((await stored(repository))?.underWay).toMatchObject({ chapterIndex: 1 });
   });
 
-  it("opens the Export dialog as the last bite starts, and ends the lesson once stems are exported", () => {
+  it("opens the Export dialog by Show me, never by itself, and ends once stems are exported", () => {
     const editor = recordingEditor();
     const h = setup(editor);
     h.lesson.start("track", "asked", "mix-export");
     flush();
-    expect(editor.openExport).toHaveBeenCalledTimes(1);
+    // Nothing opens over the lesson as the bite starts (GRV-190).
+    expect(editor.openExport).not.toHaveBeenCalled();
     expect(h.lesson.state()?.step).not.toBeNull();
+    h.lesson.showMe();
+    flush();
+    expect(editor.openExport).toHaveBeenCalledTimes(1);
     h.setStemExports(1);
     flush();
     expect(h.lesson.state()).toBeNull();

@@ -290,6 +290,7 @@ const pluck: LessonBite = {
 export const CHORDS_CHAPTER: LessonChapter = {
   id: "chords",
   title: "Chords and hook",
+  short: "Chords",
   summary: "a four-bar chord loop, and a plucked hook over it",
   bites: [loop, hook, pluck],
 };

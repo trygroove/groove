@@ -20,7 +20,7 @@ import { createSessionHealth, type SessionTurn } from "../../assistant/sessionHe
 import type { ReplyRating } from "../../assistant/transcripts";
 import type { Project } from "../../domain/entities";
 import { chapterForGoal } from "../../lessons/chapters";
-import { isLessonId } from "../../lessons/ids";
+import { isLessonId, type LessonId } from "../../lessons/ids";
 import { memoryContext } from "../../memory/memoryEdits";
 import type { ProducerProfileStore } from "../../memory/useProducerProfile";
 import { LESSON_OFFER_ASK_ID, LESSON_OFFER_YES } from "../../onboarding/questions";
@@ -192,8 +192,19 @@ export interface AssistantChat {
   readonly memory: AssistantMemoryProposals | null;
   /** Coproducer's one nudge a day, when there is a profile to read it from (GRV-25). */
   readonly nudge: CueNudge | null;
-  /** The lesson under way, if any, and what its card's buttons do (GRV-43). */
+  /** The lesson under way, if any, and what its plan's buttons do (GRV-43). */
   readonly lesson: Lesson;
+  /** The bites the producer has done in any project, by the profile (GRV-190). */
+  readonly doneAnywhere: Accessor<readonly string[]>;
+  /** The Lessons list opened (GRV-190): logged once per open. */
+  openedLessons(): void;
+  /**
+   * A row of the Lessons list pressed (GRV-190): starts that lesson, or
+   * carries on with it, with no message sent. Whether it could.
+   */
+  pickLesson(lessonId: LessonId): boolean;
+  /** The list's Instagram link opened (GRV-190). */
+  openedInstagram(): void;
   /** The account's answer about keeping conversations, when it is asked for. */
   readonly retention: AssistantRetention | null;
   /**
@@ -474,7 +485,56 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
       repository: options.lessonRecord?.repository,
       profile,
     }),
+    onEnded: () => lessonQuizLapses(),
+    // Logged as a lesson from the list begins, not as its row is pressed: a
+    // start held for the record's read may never begin, and Continue on the
+    // lesson under way begins nothing.
+    onStarted: (lessonId, source) => {
+      if (source !== "list") return;
+      logLessons((analytics) =>
+        analytics.log("lesson_started_from_list", { lesson: lessonId }),
+      );
+    },
   });
+
+  // A lesson's quiz goes with the lesson (GRV-190): one waiting as it ends or
+  // is left is put away, and so is one its reply still on the way asks, even
+  // once another lesson is under way. What marks a lesson's turns as over is
+  // the last lesson turn in the conversation as it ended: a quiz asked in
+  // reply to it or one before it belongs to a lesson that is gone.
+  let lapsedThrough: string | null = null;
+  /** Where the lesson turn `replyId` answers sits, or -1 for no lesson turn. */
+  function lessonTurnBefore(replyId: string): number {
+    const all = conversation.entries();
+    for (let at = all.findIndex((entry) => entry.id === replyId) - 1; at >= 0; at -= 1) {
+      const entry = all[at];
+      if (entry.kind === "message") return entry.lesson !== undefined ? at : -1;
+    }
+    return -1;
+  }
+  function askedInLapsedLesson(replyId: string): boolean {
+    if (lapsedThrough === null) return false;
+    const asked = lessonTurnBefore(replyId);
+    const through = conversation
+      .entries()
+      .findIndex((entry) => entry.id === lapsedThrough);
+    return asked >= 0 && asked <= through;
+  }
+  function lessonQuizLapses(): void {
+    const all = conversation.entries();
+    const last = all.findLast(
+      (entry) => entry.kind === "message" && entry.lesson !== undefined,
+    );
+    if (last) lapsedThrough = last.id;
+    const pending = conversation.pendingAsk();
+    if (pending && askedInLapsedLesson(pending.replyId)) conversation.dismissAsk();
+  }
+  createEffect(
+    () => conversation.pendingAsk(),
+    (pending) => {
+      if (pending && askedInLapsedLesson(pending.replyId)) conversation.dismissAsk();
+    },
+  );
 
   // Applying a proposal has the assistant say what next (GRV-195). The cards
   // and the conversation above tell it of each Apply and turn, only ever
@@ -533,6 +593,15 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     }
   }
 
+  /** Logs `name` once; an analytics failure is not the lesson's. */
+  function logLessons(log: (analytics: Analytics) => void): void {
+    try {
+      log(options.analytics());
+    } catch {
+      // The list works on without it.
+    }
+  }
+
   return {
     conversation,
     scope,
@@ -557,6 +626,17 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     memory,
     nudge,
     lesson,
+    doneAnywhere: () => profile?.profile()?.lessonsDone ?? [],
+    openedLessons() {
+      logLessons((analytics) => {
+        analytics.log("lessons_list_opened", {});
+        analytics.logFeatureFirstUse("lessons_list");
+      });
+    },
+    pickLesson: (lessonId) => lesson.start(lessonId, "list"),
+    openedInstagram() {
+      logLessons((analytics) => analytics.log("instagram_link_opened", {}));
+    },
     retention,
     rateReply,
     analytics: options.analytics,

@@ -225,6 +225,8 @@ export const NOT_LOADED_HOSTS = {
   "www.youtube.com": "watch links a person follows from a video card",
   "policies.google.com": "a link to Google's privacy policy beside the video player",
   "tally.so": "the request-an-invite form, opened as a link",
+  "www.instagram.com":
+    "the Lessons list's Instagram handle, opened as a link in a new tab",
   "firebase.google.com": "documentation links in Firebase SDK error messages",
   "securetoken.google.com":
     "the issuer a Firebase ID token names, compared, never fetched",

@@ -9,6 +9,7 @@
 import {
   CONTROL_PARTS,
   controlAddress,
+  exportControl,
   MASTER_ENTITY,
   parameterControl,
   SONG_ENTITY,
@@ -320,10 +321,10 @@ const stems: LessonBite = {
   steps: [
     {
       id: "export",
-      showsAtStart: true,
+      // Show me opens the dialog beside the lesson, never over it (GRV-190).
       instruction: () =>
-        "Here's the Export dialog, with [stems](stems) chosen and every track in them: one file per track, all lined up from bar 1. Press Export to take them with you.",
-      target: () => null,
+        "Open Export at the top of the studio, choose [stems](stems) and keep every track in them: one file per track, all lined up from bar 1. Show me opens it that way. Then press Export to take them with you.",
+      target: () => exportControl(),
       done: (world, start) => world.stemExports > start.stemExports,
       showMe: () => ({ kind: "export" }),
     },
@@ -333,6 +334,7 @@ const stems: LessonBite = {
 export const MIX_CHAPTER: LessonChapter = {
   id: "mix",
   title: "Mix and export",
+  short: "Mix",
   summary: "a balanced, panned mix with reverb on the hook, and its stems exported",
   bites: [balance, pan, reverb, master, stems],
 };

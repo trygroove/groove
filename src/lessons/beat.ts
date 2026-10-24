@@ -8,7 +8,7 @@
  * over what the song already has: the whole chapter when the song has a beat
  * ({@link beatMade}), and otherwise each bite whose part is in place already.
  */
-import { CONTROL_PARTS, controlAddress } from "../commands/controlAddress";
+import { CONTROL_PARTS, controlAddress, playControl } from "../commands/controlAddress";
 import { parameterTargetControl, setParameter } from "../commands/definitions/parameters";
 import { updatePlacement } from "../commands/definitions/placements";
 import { addTrack } from "../commands/definitions/tracks";
@@ -287,7 +287,7 @@ const play: LessonBite = {
       id: "play",
       instruction: () =>
         "Press [Play](play), or Space, and listen to your kick loop. Notice where it lands against the count.",
-      target: () => null,
+      target: () => playControl(),
       done: (world) => world.playing,
       showMe: () => ({ kind: "play" }),
     },
@@ -596,6 +596,7 @@ export function beatMade(world: LessonWorld): boolean {
 export const BEAT_CHAPTER: LessonChapter = {
   id: "beat",
   title: "Make a beat",
+  short: "Beat",
   summary: "a one-bar beat, kick, backbeat and hats, looped for four bars",
   bites: [library, kick, play, snare, hats, loop],
 };

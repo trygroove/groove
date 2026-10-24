@@ -8,7 +8,7 @@
  * when and from where a lesson starts (`useLessonStart.ts`).
  *
  * - **Where it stands** is the project's lesson record, written on every
- *   transition, so a reload, another tab or another device brings the card
+ *   transition, so a reload, another tab or another device brings the plan
  *   back at the same step. A lesson that ended or was left is under way no
  *   more; the bites it finished stay finished.
  *
@@ -17,7 +17,7 @@
  * `lesson_dropped_out` and `feature_first_use` `lessons`, by chapter and bite
  * ID only.
  */
-import { createEffect, createMemo, createSignal, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
 import { createFactoryContext } from "../../domain/factories";
 import { lessonCue } from "../../lessons/cue";
 import type { LessonSource } from "../../lessons/ids";
@@ -43,11 +43,21 @@ export type { Lesson, UseLessonOptions } from "./lessonTypes";
 
 export function useLesson(options: UseLessonOptions): Lesson {
   const [state, setState] = createSignal<LessonState | null>(null);
+  // A plain copy: Solid 2 batches writes, so a start straight after a Leave
+  // must not read the lesson from before it.
+  let live: LessonState | null = null;
+  function put(
+    next: LessonState | null | ((now: LessonState | null) => LessonState | null),
+  ): void {
+    live = typeof next === "function" ? next(live) : next;
+    setState(live);
+  }
   const factory = options.factoryContext ?? (() => createFactoryContext());
   const record = options.record ?? useLessonRecord({ owner: () => null });
   const settings = createMemo(
     (): LessonSettings => ({
       style: beatStyleFor(options.profile?.profile()?.memory.taste ?? []),
+      goal: options.profile?.profile()?.memory.goal ?? null,
     }),
   );
   const done = createMemo((): readonly string[] => [
@@ -60,7 +70,7 @@ export function useLesson(options: UseLessonOptions): Lesson {
   const turns = useLessonTurns({ conversation: options.conversation, settings, done });
   const shows = useLessonShowMe({
     state,
-    setState,
+    setState: put,
     world,
     settings,
     view: options.view,
@@ -81,17 +91,18 @@ export function useLesson(options: UseLessonOptions): Lesson {
         : undefined,
     );
     turns.queue(next, event);
-    setState(over ? null : next);
-    if (event.kind === "step_done") shows.arrive(next);
+    put(over ? null : next);
+    // An ended lesson's quiz goes with it.
+    if (over) options.onEnded?.();
   }
 
   function begin(transition: LessonTransition, source: LessonSource): void {
     shows.clearNotice();
-    setState(transition.state);
+    put(transition.state);
     record.save(transition.state);
     logStarted(options.analytics(), transition.state, source);
+    options.onStarted?.(transition.state.lessonId, source);
     turns.queue(transition.state, transition.event);
-    shows.arrive(transition.state);
   }
 
   // The step under way is read against the world as it changes: once its
@@ -109,17 +120,27 @@ export function useLesson(options: UseLessonOptions): Lesson {
     record,
     world,
     settings,
-    current: state,
-    restore: (back) => setState(back),
+    current: () => live,
+    restore: put,
     begin,
+    // Another lesson under way is left first, its turns and its quiz with it.
+    replaced: () => {
+      turns.clear();
+      options.onEnded?.();
+    },
     analytics: options.analytics,
   });
+  // Leaving the editor mid-lesson drops out of it (GRV-190); the record keeps
+  // it under way, so it comes back where it was.
+  onCleanup(() => starts.dropOut());
 
   return {
     state,
     finished: record.finished,
     notice: shows.notice,
     canShowMe: options.editor !== undefined,
+    busy: shows.busy,
+    openView: shows.openView,
     start: starts.start,
     next() {
       const current = state();
@@ -142,12 +163,13 @@ export function useLesson(options: UseLessonOptions): Lesson {
     },
     leave() {
       starts.forget();
-      if (!state()) return;
+      if (!live) return;
       starts.dropOut();
       turns.clear();
       shows.clearNotice();
-      setState(null);
+      put(null);
       record.save(null);
+      options.onEnded?.();
     },
     context() {
       const current = state();

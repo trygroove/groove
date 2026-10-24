@@ -4,7 +4,12 @@ import { type Accessor, createEffect, createSignal, Show, untrack } from "solid-
 import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import { type Analytics, analytics as defaultAnalytics } from "../../analytics/analytics";
 import { MAX_TEMPO_BPM, MIN_TEMPO_BPM } from "../../audio/Transport";
-import { parameterControl, SONG_ENTITY } from "../../commands/controlAddress";
+import {
+  exportControl,
+  parameterControl,
+  playControl,
+  SONG_ENTITY,
+} from "../../commands/controlAddress";
 import type { ControlSettle } from "../../commands/controlGesture";
 import {
   HelpIcon,
@@ -133,6 +138,10 @@ export default function EditorHeader(props: EditorHeaderProps) {
   const [exporting, setExporting] = createSignal(false);
   const [exportFormat, setExportFormat] = createSignal<ExportFormat | undefined>();
   const online = useOnline();
+  // Play, where a lesson's "Hear it" points (GRV-190).
+  const playTile = control(playControl());
+  // Export, where a lesson's last bite points (GRV-190).
+  const exportTile = control(exportControl());
   // A request opens the dialog on its format; the request is the one read.
   createEffect(
     () => props.exportRequest?.() ?? null,
@@ -194,6 +203,7 @@ export default function EditorHeader(props: EditorHeaderProps) {
       <div class="editor-header-center transport-controls">
         <div class="header-cell-group">
           <button
+            ref={playTile}
             type="button"
             class="transport-toggle"
             onClick={() => void props.audio.toggle()}
@@ -318,6 +328,7 @@ export default function EditorHeader(props: EditorHeaderProps) {
             Export is pressed, and never edits it. It is portalled to the body
             so the header's own button styles do not reach its controls. */}
         <button
+          ref={exportTile}
           type="button"
           class="export-button"
           disabled={history().project === null}

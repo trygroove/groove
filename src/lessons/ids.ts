@@ -87,7 +87,7 @@ export const BITE_ENDINGS = ["did_it", "show_me", "skipped"] as const;
 export type BiteEnding = (typeof BITE_ENDINGS)[number];
 
 /** Where a bite was started from. */
-export const LESSON_SOURCES = ["asked", "onboarding", "nudge", "next"] as const;
+export const LESSON_SOURCES = ["asked", "onboarding", "nudge", "next", "list"] as const;
 export type LessonSource = (typeof LESSON_SOURCES)[number];
 
 export function isChapterId(value: string): value is ChapterId {

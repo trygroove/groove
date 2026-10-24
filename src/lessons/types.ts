@@ -14,6 +14,7 @@ import type { RawCommandInput } from "../commands/types";
 import type { Project } from "../domain/entities";
 import type { DomainFactoryContext } from "../domain/factories";
 import type { PadId, TrackId } from "../domain/ids";
+import type { ProducerGoal } from "../persistence/profileDocuments";
 import type { BiteId, ChapterId, LessonId } from "./ids";
 import type { BeatStyle } from "./style";
 
@@ -42,6 +43,11 @@ export interface LessonWorld {
 export interface LessonSettings {
   /** The beat the "Make a beat" chapter teaches. */
   readonly style: BeatStyle;
+  /**
+   * What they said they want to make at the welcome (GRV-190): the tour's
+   * wrap-up points at the lesson for it first. Null when they did not say.
+   */
+  readonly goal?: ProducerGoal | null;
 }
 
 /**
@@ -90,12 +96,6 @@ export interface LessonStep {
    * world as the step began.
    */
   done(world: LessonWorld, start: LessonWorld, settings: LessonSettings): boolean;
-  /**
-   * Whether Show me runs as the step starts (GRV-44), for a step whose Show
-   * me only opens where to act (the Export dialog): it is not the step done,
-   * so the step is still the producer's.
-   */
-  readonly showsAtStart?: boolean;
   /** What Show me does now, or null when it has nothing it can do. */
   showMe(
     world: LessonWorld,
@@ -125,6 +125,8 @@ export interface LessonBite {
 export interface LessonChapter {
   readonly id: ChapterId;
   readonly title: string;
+  /** Its name in a word, over its column of a lesson's chapter strip (GRV-190). */
+  readonly short: string;
   /** What it makes, in a few words. */
   readonly summary: string;
   readonly bites: readonly LessonBite[];

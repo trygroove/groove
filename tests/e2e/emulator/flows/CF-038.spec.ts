@@ -24,8 +24,9 @@ import { dockTile, expectView } from "../support/views";
  * suite's `test` seeds it so), so its beat is four on the floor, in A minor.
  *
  * **Locators.** The panel's are `../support/onboarding.ts`'s, the lesson's
- * CF-037's: a region named "Lesson" headed by its chapter's title, a list
- * named "Bites" whose items say "done", "skipped" or "already in your song",
+ * CF-037's: a region named "Lesson" headed "Lesson · Finish a track", with a
+ * list named "Chapters" whose column under way names its chapter (GRV-190), a
+ * list named "Bites" whose items say "done", "skipped" or "already in your song",
  * "Show me" and "Skip" buttons, "Next: <bite>" within a chapter and "Next
  * chapter: <chapter>" between them. The arrangement's clips are read from
  * its "Clips" list, whose options end "on <track>, bars <first> to <last>".
@@ -86,6 +87,10 @@ const bite = (page: Page, name: string): Locator =>
       hasText: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s*·|$)`),
     });
 
+/** The plan's column for the chapter under way, which names it. */
+const chapterUnderWay = (page: Page): Locator =>
+  lesson(page).getByRole("list", { name: "Chapters" }).locator('[data-state="current"]');
+
 const lessonButton = (page: Page, name: string): Locator =>
   lesson(page).getByRole("button", { name, exact: true });
 
@@ -113,7 +118,7 @@ async function nextChapter(
   chapter: { readonly title: string; readonly bites: readonly string[] },
 ): Promise<void> {
   await lessonButton(page, `Next chapter: ${chapter.title}`).click({ timeout: 15_000 });
-  await expect(lesson(page).getByRole("heading", { name: chapter.title })).toBeVisible();
+  await expect(chapterUnderWay(page)).toContainText(chapter.title);
   await expect(bite(page, chapter.bites[0])).toHaveAttribute("aria-current", "step");
 }
 
@@ -176,18 +181,22 @@ test.describe("CF-038", () => {
       });
 
       // 1. Make a new project, open Coproducer and ask it to teach you to
-      //    finish a track. The lesson appears in the panel: "Finish a track",
-      //    chapter 1 of 5, "Make a beat", with "Pick a kick" under way and
-      //    "The kick pattern" marked as already in your song.
+      //    finish a track. The lesson's plan appears at the top of the panel:
+      //    "Finish a track", its five chapters in a strip, the first, "Make a
+      //    beat", under way, with "Pick a kick" under way and "The kick
+      //    pattern" marked as already in your song.
       await newProject(page);
       await assistantButton(page).click();
       await composer(page).fill(ASK);
       await page.keyboard.press("Enter");
       await expect(lesson(page)).toBeVisible({ timeout: 15_000 });
-      await expect(lesson(page)).toContainText("Finish a track · chapter 1 of 5");
       await expect(
-        lesson(page).getByRole("heading", { name: CHAPTERS.beat.title }),
+        lesson(page).getByRole("heading", { name: "Lesson · Finish a track" }),
       ).toBeVisible();
+      await expect(
+        lesson(page).getByRole("list", { name: "Chapters" }).getByRole("listitem"),
+      ).toHaveCount(5);
+      await expect(chapterUnderWay(page)).toContainText(CHAPTERS.beat.title);
       await expect(bite(page, "Pick a kick")).toHaveAttribute("aria-current", "step");
       await expect(bite(page, "The kick pattern")).toContainText("already in your song");
       await step("Finish a track starts in Coproducer's panel");
@@ -236,10 +245,28 @@ test.describe("CF-038", () => {
       await nextChapter(page, CHAPTERS.arrange);
       await showMe(page, "Copy the loop out");
       await expect(clip(page, "Hook", "bars 1 to 32")).toHaveCount(1);
-      for (const name of ["An intro", "A breakdown"]) {
-        await next(page, name);
-        await showMe(page, name);
-      }
+      await next(page, "An intro");
+      await showMe(page, "An intro");
+      // Leave the studio mid-lesson, with "A breakdown" under way, and come
+      // back: the lesson is where it was left. In the Lessons list "Finish a
+      // track" is in progress, and pressing it continues at the same bite.
+      await next(page, "A breakdown");
+      await reloadSaved(page);
+      await expect(bite(page, "A breakdown")).toHaveAttribute("aria-current", "step", {
+        timeout: 15_000,
+      });
+      await cuePanel(page).getByRole("button", { name: "Lessons", exact: true }).click();
+      const track = cuePanel(page)
+        .getByRole("region", { name: "Lessons", exact: true })
+        .getByRole("button", { name: /^Finish a track/ });
+      await expect(track).toContainText("In progress");
+      await expect(track).toContainText("Continue");
+      await track.click();
+      await expect(chapterUnderWay(page)).toContainText(CHAPTERS.arrange.title);
+      await expect(bite(page, "A breakdown")).toHaveAttribute("aria-current", "step");
+      await expect(bite(page, "An intro")).toContainText("done");
+      await step("Back where it was left, from the Lessons list");
+      await showMe(page, "A breakdown");
       await next(page, "The drop");
       await listen(page, "The drop", browserName);
       await next(page, "A short outro");
@@ -266,11 +293,13 @@ test.describe("CF-038", () => {
       await next(page, "Watch the master");
       await listen(page, "Watch the master", browserName);
       await step("Mixed, with the master meter watched");
-      // 7. The last bite opens the Export dialog by itself with Stems (ZIP)
-      //    chosen and every track included in its list. Press Export. The bite is done and the lesson leaves the
+      // 7. The last bite, "Export the stems": press Show me, and the Export
+      //    dialog opens with Stems (ZIP) chosen and every track included in
+      //    its list. Press Export. The bite is done and the lesson leaves the
       //    panel. Close the dialog. Coproducer's wrap-up of the whole track
       //    follows in the conversation.
       await lessonButton(page, "Next: Export the stems").click({ timeout: 15_000 });
+      await lessonButton(page, "Show me").click();
       const dialog = page.getByRole("dialog", { name: "Export" });
       await expect(dialog).toBeVisible();
       await expect(dialog.getByRole("radio", { name: "Stems (ZIP)" })).toBeChecked();
