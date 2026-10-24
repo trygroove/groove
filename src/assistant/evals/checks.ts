@@ -23,8 +23,9 @@
  *    track or clip for each.
  *
  * Check 8, the expected outcome (a proposal, or a question and no proposal),
- * and the checks only some cases name (GRV-99) live in `caseChecks.ts`; their
- * IDs and labels are here so a report tallies them with the rest.
+ * and the checks only some cases name (GRV-99) live in `caseChecks.ts`, and
+ * the lesson checks, 24 to 28 (GRV-208), in `lessonChecks.ts`; their IDs and
+ * labels are here so a report tallies them with the rest.
  */
 import {
   CONTROL_PARTS,
@@ -47,6 +48,7 @@ import { createProposalExecutor, type ProposalTarget } from "../proposalExecutor
 import { ASSISTANT_COMMAND_TYPES } from "../tools";
 import { CASE_CHECK_IDS } from "./caseChecks";
 import type { EvalPart, ResolvedScope } from "./cases";
+import { LESSON_CHECK_IDS } from "./lessonChecks";
 
 export type CheckStatus = "pass" | "fail" | "skip";
 
@@ -70,6 +72,7 @@ export const CHECK_IDS = [
   "coverage",
   "outcome",
   ...CASE_CHECK_IDS,
+  ...LESSON_CHECK_IDS,
 ] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
@@ -97,6 +100,11 @@ export const CHECK_LABELS: Record<CheckId, string> = {
   recommendationTargets: "21. Each sound lands on its own pad",
   noDeniedTrack: "22. Never denies a track the project has",
   noAbsentTrack: "23. Never mentions a track the project lacks",
+  startsLesson: "24. Starts the lesson asked for",
+  saysOnlyChanges: "25. Says only what changes says",
+  namesOnlyBlockBites: "26. Names only the block's bites",
+  asksThroughTool: "27. Asks through the tool, never in text",
+  noHistoryNote: "28. No history note echoed",
 };
 
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });
