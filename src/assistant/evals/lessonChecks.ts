@@ -30,9 +30,8 @@
  * against what that turn sent; 24 judges the cases that ask for a lesson.
  */
 import type { Project } from "../../domain/entities";
-import { ALL_BITES, CHAPTERS } from "../../lessons/chapters";
-import type { LessonChoice } from "../../lessons/ids";
-import { TRACK_TITLE } from "../../lessons/track";
+import { ALL_BITES, CHAPTERS, TRACK_LESSON } from "../../lessons/chapters";
+import type { LessonId } from "../../lessons/ids";
 import { ASK_PRODUCER_TOOL_NAME } from "../ask";
 import type { AssistantLessonContext } from "../lesson";
 import { isLessonCall, parseLessonCall } from "../lessonTool";
@@ -117,10 +116,7 @@ export function songChangeCalls(
 // 24. Starts the lesson asked for
 // ---------------------------------------------------------------------------
 
-export function checkStartsLesson(
-  expected: LessonChoice,
-  reply: LessonReply,
-): CheckResult {
+export function checkStartsLesson(expected: LessonId, reply: LessonReply): CheckResult {
   const calls = reply.proposal?.calls ?? [];
   const lessons = calls.filter(isLessonCall);
   // "Nothing else proposed": not a song change, and not a memory, an
@@ -636,7 +632,7 @@ export function checkSaysOnlyChanges(text: string, sent: LessonTurnSent): CheckR
 const TITLES: readonly string[] = [
   ...ALL_BITES.map((bite) => bite.title),
   ...CHAPTERS.map((chapter) => chapter.title),
-  TRACK_TITLE,
+  TRACK_LESSON.title,
 ];
 
 const normalTitle = (title: string) =>
@@ -1081,7 +1077,7 @@ export function runLessonCheck(
   id: LessonCheckId,
   reply: LessonReply,
   sent: LessonTurnSent,
-  startsLesson?: LessonChoice,
+  startsLesson?: LessonId,
 ): CheckResult {
   switch (id) {
     case "startsLesson":

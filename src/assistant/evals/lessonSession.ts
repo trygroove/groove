@@ -32,7 +32,7 @@
  */
 import type { Project } from "../../domain/entities";
 import { cueMessage, lessonCue } from "../../lessons/cue";
-import type { BiteId, ChapterId, TrackChapterId } from "../../lessons/ids";
+import { type BiteId, type ChapterId, isLessonId } from "../../lessons/ids";
 import {
   biteOf,
   type LessonState,
@@ -40,9 +40,8 @@ import {
   markShown,
   observe,
   skip,
-  startBite,
+  startLesson,
   startNextBite,
-  startTrack,
 } from "../../lessons/session";
 import type { LessonSettings, LessonWorld } from "../../lessons/types";
 import { applyShowMe, lessonContext, starterWorld } from "../../testing/lessonWorld";
@@ -113,9 +112,10 @@ function lessonStart(
   script: Pick<EvalLessonScript, "track" | "chapter" | "settings">,
   world: LessonWorld,
 ): LessonTransition {
-  const start = script.track
-    ? startTrack("beat" satisfies TrackChapterId, null, world, script.settings)
-    : startBite(script.chapter, null, world, script.settings);
+  const lesson = script.track ? "track" : script.chapter;
+  const start = isLessonId(lesson)
+    ? startLesson(lesson, null, world, script.settings)
+    : null;
   if (!start) throw new Error(`The "${script.chapter}" lesson has nothing to teach`);
   return start;
 }
