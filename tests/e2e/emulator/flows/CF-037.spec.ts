@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { walkthrough } from "../../support/walkthrough";
-import { arrangement, reloadSaved } from "../support/assistant";
+import { arrangement, dataNote, reloadSaved } from "../support/assistant";
 import { seedRegisteredSession } from "../support/authSession";
 import {
   askOption,
@@ -145,12 +145,12 @@ test.describe("CF-037", () => {
       await expect(conversationIn(page)).toContainText(CHAPTER);
       await step("Coproducer offers a first lesson");
 
-      // 2. Choose Open the studio, and OK on the notice about Groove keeping
-      //    conversations. The offer waits in Coproducer's panel.
+      // 2. Choose Open the studio. The offer waits in Coproducer's panel, the
+      //    note about how Coproducer handles your data under it (GRV-205).
       await page.getByRole("button", { name: "Open the studio" }).click();
       await arrangement(page).waitFor();
-      await cuePanel(page).getByRole("button", { name: "OK" }).click();
       await expect(askOption(cuePanel(page), "Let's go")).toBeVisible();
+      await expect(dataNote(page)).toBeVisible();
 
       // 3. Choose "Let's go". The lesson appears in the panel: "Make a beat",
       //    its six bites listed with none done, and the first, "Pick a kick",
