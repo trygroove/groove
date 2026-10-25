@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createReferenceProject } from "../../domain/fixtures";
-import { offerTakesCall } from "../../testing/takes";
+import { drumTakesCall, offerTakesCall } from "../../testing/takes";
 import type { AssistantToolCall } from "../protocol";
 import { expandTakesCall, type OfferTakesInput } from "../takes";
-import { checkNoTakes, checkOffersTakes } from "./takesChecks";
+import { checkDrumTakes, checkNoTakes, checkOffersTakes } from "./takesChecks";
 
 const STEM = "Stem0000000000000";
 const project = createReferenceProject();
@@ -66,5 +66,24 @@ describe("30. No takes offered (GRV-207)", () => {
   it("passes a turn with no offer and fails one with any", () => {
     expect(checkNoTakes([]).status).toBe("pass");
     expect(checkNoTakes([offer()]).status).toBe("fail");
+  });
+});
+
+describe("31. Takes of a drum pattern (GRV-213)", () => {
+  function drums(): AssistantToolCall {
+    const written = expandTakesCall({ id: "toolu_d", ...drumTakesCall(project) }, STEM);
+    if (!written.ok) throw new Error(written.message);
+    return written.call;
+  }
+
+  it("passes an offer of pad hits, which check 29 passes too", () => {
+    expect(checkDrumTakes([drums()]).status).toBe("pass");
+    expect(checkOffersTakes([drums()]).status).toBe("pass");
+  });
+
+  it("fails melodic takes, no offer, or more than one", () => {
+    expect(checkDrumTakes([offer()]).detail).toContain("not a drum pattern");
+    expect(checkDrumTakes([]).status).toBe("fail");
+    expect(checkDrumTakes([drums(), drums()]).status).toBe("fail");
   });
 });

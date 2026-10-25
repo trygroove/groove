@@ -5,7 +5,10 @@
  * - **Hear** opens the session's uncommitted preview of one take (#851) and
  *   plays the song with it in place, from where the take starts when the
  *   song was stopped or is playing somewhere the take is not, so the take
- *   is heard in context with the rest of the track. Another take's Hear swaps the preview with the song still
+ *   is heard in context with the rest of the track. A drum pattern's take
+ *   (GRV-213) is heard on a loop: its preview sets the song's loop on the
+ *   pattern's bars, a loop that is the preview's alone and ends with it.
+ *   Another take's Hear swaps the preview with the song still
  *   playing, so switching is instant; pressed again it stops, and a song it
  *   started is paused back where it was. Nothing is applied.
  * - **Use this** hands that one take on as a proposal of its own
@@ -20,15 +23,16 @@
  *
  * Analytics: `assistant_take_picked` with the take's position (1 to 4),
  * `assistant_takes_declined`, and `assistant_takes_rerolled`, each with how
- * many takes fitted and how many times "4 more" was pressed for the part.
- * Never a take's notes, its label or the part's name.
+ * many takes fitted, how many times "4 more" was pressed for the part, and
+ * whether it was melodic or a drum pattern (`part_type`, GRV-213). Never a
+ * take's notes, its label or the part's name.
  *
  * Nothing here mutates a project itself: the preview goes through the editor
  * session, and the pick through the proposal path.
  */
 import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
-import type { AssistantToolCall } from "../../assistant/protocol";
+import type { AssistantToolCall, TakePartType } from "../../assistant/protocol";
 import {
   type AssistantTakes as Offer,
   parseTakesCall,
@@ -37,7 +41,12 @@ import {
 import type { Project } from "../../domain/entities";
 import type { Preview } from "../composition/sessionPreview";
 import type { ProjectAudioControls } from "../composition/useProjectAudio";
-import { checkTakes, type TakeRow, type TakesCard } from "./takesCardModel";
+import {
+  checkTakes,
+  hearingCommands,
+  type TakeRow,
+  type TakesCard,
+} from "./takesCardModel";
 import type { TurnOrigin } from "./useAssistantConversation";
 import type { ProposalSessionPort } from "./useAssistantProposals";
 
@@ -109,6 +118,8 @@ interface Entry {
   readonly rows: readonly TakeRow[];
   /** How many times "4 more" was pressed for the part before this offer. */
   readonly rerolls: number;
+  /** A melodic part or a drum pattern (GRV-213), for the analytics. */
+  readonly partType: TakePartType;
 }
 
 /** What {@link AssistantTakes.hear} started, so stopping can undo it. */
@@ -163,12 +174,14 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
         baseRevision,
         rows: [],
         rerolls: origin.takesRerolls ?? 0,
+        partType: takes?.partType ?? "melodic",
       });
       setCards((current) =>
         new Map(current).set(entryId, {
           ...base,
           status: "invalid",
           part: takes?.part ?? "Takes",
+          partType: takes?.partType ?? "melodic",
           takes: [],
         }),
       );
@@ -181,6 +194,7 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
       baseRevision,
       rows: checked.rows,
       rerolls: origin.takesRerolls ?? 0,
+      partType: takes.partType,
     });
     // A change made elsewhere while the reply was written moved the song
     // under it, though not this session's revision, as it does a proposal's.
@@ -193,6 +207,7 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
         ...shownTakes(checked.rows, checked.stale || movedElsewhere),
         trackName: shownTrackName(checked.rows),
         part: takes.part,
+        partType: takes.partType,
       }),
     );
   }
@@ -252,11 +267,12 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     }
     const card = cards().get(entryId);
     const row = entries.get(entryId)?.rows[index];
-    if (card?.status !== "choosing" || !row?.commands) return;
+    const commands = row ? hearingCommands(row) : null;
+    if (card?.status !== "choosing" || !row || !commands) return;
     // The take heard before, if any: the session ends its preview as this
     // one opens, with the song still playing, so switching is instant.
     const previous = hearing;
-    const opened = options.session.beginPreview(row.commands);
+    const opened = options.session.beginPreview(commands);
     if (!opened?.ok) {
       update(entryId, { notice: NO_LONGER_FITS });
       return;
@@ -278,19 +294,18 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     };
     update(entryId, { hearing: index });
     if (!audio) return;
+    // A drum pattern's take plays within the bars it loops on.
+    const startTicks = row.loop?.startTicks ?? row.startTicks;
+    const endTicks = row.loop?.endTicks ?? row.endTicks;
     if (!playing) {
-      if (row.startTicks !== null) audio.seekTicks(row.startTicks);
+      if (startTicks !== null) audio.seekTicks(startTicks);
       void audio.play();
       return;
     }
     // Already playing: a take the playhead is not in is heard from its start.
     const at = audio.positionTicks();
-    if (
-      row.startTicks !== null &&
-      row.endTicks !== null &&
-      (at < row.startTicks || at >= row.endTicks)
-    ) {
-      audio.seekTicks(row.startTicks);
+    if (startTicks !== null && endTicks !== null && (at < startTicks || at >= endTicks)) {
+      audio.seekTicks(startTicks);
     }
   }
 
@@ -302,11 +317,17 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
   const fitting = (entryId: string) =>
     entries.get(entryId)?.rows.filter((row) => row.commands !== null).length ?? 0;
 
-  function logged(log: (analytics: Analytics) => void): void {
+  /** Whether the card's takes are of a melodic part or a drum pattern. */
+  const partType = (entryId: string): TakePartType =>
+    entries.get(entryId)?.partType ?? "melodic";
+
+  function logged(entryId: string, log: (analytics: Analytics) => void): void {
+    const type = partType(entryId);
     try {
       const analytics = options.analytics();
       log(analytics);
       analytics.logFeatureFirstUse("assistant_takes");
+      if (type === "drums") analytics.logFeatureFirstUse("assistant_drum_takes");
     } catch {
       // The decision stands; an analytics failure is not this card's.
     }
@@ -328,11 +349,12 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     }
     closed.add(entryId);
     update(entryId, { status: "picked", picked: index });
-    logged((analytics) =>
+    logged(entryId, (analytics) =>
       analytics.log("assistant_take_picked", {
         position: index + 1,
         take_count: fitting(entryId),
         reroll_count: entry.rerolls,
+        part_type: partType(entryId),
       }),
     );
     options.onOutcome?.(entryId, "picked", index + 1);
@@ -346,10 +368,11 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     closed.add(entryId);
     update(entryId, { status: "declined" });
     const rerolls = entries.get(entryId)?.rerolls ?? 0;
-    logged((analytics) =>
+    logged(entryId, (analytics) =>
       analytics.log("assistant_takes_declined", {
         take_count: fitting(entryId),
         reroll_count: rerolls,
+        part_type: partType(entryId),
       }),
     );
     options.onOutcome?.(entryId, "none");
@@ -370,8 +393,11 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     closed.add(entryId);
     update(entryId, { status: "more" });
     const rerolls = (entries.get(entryId)?.rerolls ?? 0) + 1;
-    logged((analytics) =>
-      analytics.log("assistant_takes_rerolled", { reroll_count: rerolls }),
+    logged(entryId, (analytics) =>
+      analytics.log("assistant_takes_rerolled", {
+        reroll_count: rerolls,
+        part_type: partType(entryId),
+      }),
     );
   }
 

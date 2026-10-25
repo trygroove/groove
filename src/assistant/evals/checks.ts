@@ -110,6 +110,7 @@ export const CHECK_LABELS: Record<CheckId, string> = {
   noHistoryNote: "28. No history note echoed",
   offersTakes: "29. Four takes, each with notes of its own",
   noTakes: "30. No takes offered",
+  drumTakes: "31. Takes of a drum pattern",
 };
 
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { createReferenceProject } from "../domain/fixtures";
-import { offerTakesCall, offerTakesInput, TAKE_LABELS } from "../testing/takes";
+import {
+  DRUM_TAKE_LABELS,
+  drumTakesCall,
+  drumTakesIds,
+  drumTakesInput,
+  offerTakesCall,
+  offerTakesInput,
+  TAKE_LABELS,
+} from "../testing/takes";
 import { historyOf } from "./history";
 import { validateProposal } from "./proposal";
 import {
@@ -15,6 +23,7 @@ import {
   takeNoteContent,
   takeProposal,
   takesNote,
+  takesPartType,
   takesWithSameNotes,
   withFirstTake,
 } from "./takes";
@@ -37,11 +46,15 @@ describe("offer_takes (GRV-207)", () => {
       .takes;
     expect(takes.minItems).toBe(4);
     expect(takes.maxItems).toBe(4);
-    // The contrast it asks for is named, and drums are left to the usual path.
+    // The contrast it asks for is named, for a melodic part and for drums.
     expect(tool.description).toMatch(
       /rhythm density, register, contour and use of rests/,
     );
-    expect(tool.description).toContain("Never use it for drums");
+    expect(tool.description).not.toContain("Never use it for drums");
+    expect(tool.description).toMatch(
+      /density, groove feel \(straight or swung, where the hits sit and how hard\), kick placement, hat and percussion variation, and fills/,
+    );
+    expect(tool.description).toContain("never some of each");
   });
 
   it("writes each take's compact notes out in a counter of its own, from 1 in every take", () => {
@@ -230,5 +243,64 @@ describe("takes in the conversation's history (GRV-207)", () => {
     expect(note.startsWith("[4 more]")).toBe(true);
     expect(note).toContain("Busy and high");
     expect(note).toContain(OFFER_TAKES_TOOL_NAME);
+  });
+});
+
+describe("four takes of a drum pattern (GRV-213)", () => {
+  function expandedDrums() {
+    const result = expandTakesCall({ id: "toolu_d", ...drumTakesCall(project) }, STEM);
+    if (!result.ok) throw new Error(result.message);
+    return result.call;
+  }
+
+  it("writes out each take's pad hits and reads the offer as a drum pattern", () => {
+    const takes = parseTakesCall(expandedDrums());
+    if (!takes) throw new Error("the takes parse");
+    expect(takes.part).toBe("Drum pattern");
+    expect(takes.partType).toBe("drums");
+    expect(takes.takes.map((take) => take.label)).toEqual([...DRUM_TAKE_LABELS]);
+    const clip = takes.takes[0].calls[1]?.input as {
+      content: { events: { id: string; trigger: unknown }[] };
+    };
+    expect(clip.content.events[0]?.id).toBe(`evt_${STEM}${TAKE_NOTE_MARK}001`);
+    expect(clip.content.events[0]?.trigger).toEqual({
+      kind: "pad",
+      padId: drumTakesIds().kick,
+    });
+  });
+
+  it("reads a melodic offer as melodic", () => {
+    expect(parseTakesCall(expanded())?.partType).toBe("melodic");
+    expect(takesPartType([])).toBe("melodic");
+  });
+
+  it("makes each drum take a proposal of its own that applies to the song, alone", () => {
+    const takes = parseTakesCall(expandedDrums());
+    if (!takes) throw new Error("the takes parse");
+    for (const index of [0, 1, 2, 3]) {
+      const validation = validateProposal(
+        project,
+        takeProposal(takes, index, project.metadata.revision),
+      );
+      expect(validation.ok).toBe(true);
+    }
+  });
+
+  it("refuses two drum takes that hit the same pads at the same times", () => {
+    const input = drumTakesInput(project);
+    input.takes[2] = { ...input.takes[2], calls: input.takes[0].calls };
+    const result = expandTakesCall({ id: "t", name: OFFER_TAKES_TOOL_NAME, input }, STEM);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toMatch(/^takes 1 and 3 play the same notes/);
+  });
+
+  it("refuses an offer that mixes drum takes with melodic ones", () => {
+    const input = drumTakesInput(project);
+    input.takes[3] = offerTakesInput(project).takes[3];
+    const result = expandTakesCall({ id: "t", name: OFFER_TAKES_TOOL_NAME, input }, STEM);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toContain("mix drum hits on pads with pitched notes");
+    }
   });
 });

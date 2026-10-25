@@ -114,8 +114,11 @@ import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
  *    from wherever it was left (`lessonTool.ts`, GRV-44).
  * 12: `offer_takes` offers the producer four takes of a melodic or harmonic
  *    part to pick from (`takes.ts`, GRV-207).
+ * 13: `offer_takes` offers four takes of a drum pattern as well, contrasting
+ *    along drum-specific axes, and refuses takes that mix drum hits with
+ *    pitched notes (GRV-213).
  */
-export const ASSISTANT_TOOLSET_VERSION = 12;
+export const ASSISTANT_TOOLSET_VERSION = 13;
 
 /** The song's own parameters the assistant may set: its tempo and its swing. */
 const SONG_PARAMETER_IDS: readonly string[] = [SONG_TEMPO.id, SONG_SWING.id];
@@ -743,9 +746,9 @@ export const TOOL_TEXT: Readonly<Record<string, TrimmedText>> = {
   },
   offer_takes: {
     moderate:
-      "Offer the producer 4 takes of one melodic or harmonic part (melody, bassline, lead, chords) to pick from, instead of one proposal. Each take is the change calls that write it. Make them clearly different in rhythm density, register, contour and rests, each fitting the song. They hear each in the song and pick one; nothing changes until they do. Never for drums. Your last call: one line before it, nothing after, no other change tool or explain_change in the turn.",
+      "Offer the producer 4 takes of one new part to pick from, instead of one proposal: a melodic or harmonic part (melody, bassline, lead, chords) or a drum pattern, never some of each. Each take is the change calls that write it. Make them clearly different: a melodic part in rhythm density, register, contour and rests, in key; a drum pattern in density, groove feel, kick placement, hats and percussion, and fills, its hits on a drum machine's pads. They hear each in the song (drums on a loop) and pick one; nothing changes until they do. Your last call: one line before it, nothing after, no other change tool or explain_change in the turn.",
     aggressive:
-      "Offer 4 clearly different takes (density, register, contour, rests) of one melodic or harmonic part, never drums. Each take is its change calls. Last call; nothing after, no other changes or explain_change.",
+      "Offer 4 clearly different takes of one new part: melodic (density, register, contour, rests) or a drum pattern on pads (density, groove, kick, hats, fills), never both. Each take is its change calls. Last call; nothing after, no other changes or explain_change.",
   },
   // The conditional tools, offered only on a turn that carries the library, can
   // search YouTube or carries memory. The one-line tools with no entry here (the
@@ -841,20 +844,20 @@ export const SCHEMA_TEXT: Readonly<Record<string, TrimmedText>> = {
     moderate: "One of your change tools, such as clip_create.",
     aggressive: "A change tool's name.",
   },
-  'A few words on how this take differs from the others ("Sparse, low, lots of rests").':
+  'A few words on how this take differs from the others ("Sparse, low, lots of rests", "Half-time, kick on 1 only").':
     {
       moderate: 'A few words on how this take differs ("Sparse, low, lots of rests").',
       aggressive: "How this take differs, in a few words.",
     },
-  "Every change that writes this take, in order, as a proposal of its own: its track if the part needs a new one, its clip with its notes, and its placement.":
+  "Every change that writes this take, in order, as a proposal of its own: its track if the part needs a new one, its clip with its notes (a drum pattern's hits on its drum machine's pads), and its placement.":
     {
       moderate:
         "Every change that writes this take, in order, as its own proposal: a new track if needed, its clip with notes, its placement.",
       aggressive: "The take's changes, in order: track if new, clip, placement.",
     },
-  'The part the takes are of, as the producer would name it ("Lead melody", "Bassline", "Chords").':
+  'The part the takes are of, as the producer would name it ("Lead melody", "Bassline", "Chords", "Drum pattern").':
     {
-      moderate: 'The part the takes are of ("Lead melody", "Bassline").',
+      moderate: 'The part the takes are of ("Lead melody", "Drum pattern").',
       aggressive: "The part's name.",
     },
   "Exactly 4 takes of the part, each clearly different.": {

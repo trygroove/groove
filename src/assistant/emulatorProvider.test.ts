@@ -559,6 +559,35 @@ describe("the emulator's assistant provider", () => {
     }
   });
 
+  it("answers [drum takes] with four takes of a drum pattern, each applying on its own, and four others for [4 more] (GRV-213)", async () => {
+    const project = createReferenceProject();
+    const takesOf = async (text: string) => {
+      const reply = await turn(gateway(), text, undefined, project).result;
+      const [offer] = reply.proposal?.calls ?? [];
+      const takes = offer && parseTakesCall(offer);
+      if (!takes) throw new Error("no takes");
+      return takes;
+    };
+    const first = await takesOf("Write me a beat [drum takes]");
+    expect(first.part).toBe("Drum pattern");
+    expect(first.partType).toBe("drums");
+    expect(first.takes).toHaveLength(4);
+    const more = await takesOf("Write me a beat [drum takes]\n\n[4 more] None of these.");
+    expect(more.partType).toBe("drums");
+    expect(more.takes.map((take) => take.label)).not.toEqual(
+      first.takes.map((take) => take.label),
+    );
+    for (const takes of [first, more]) {
+      for (const index of [0, 1, 2, 3]) {
+        const validation = validateProposal(
+          project,
+          takeProposal(takes, index, project.metadata.revision),
+        );
+        expect(validation.ok ? null : validation.issues).toBeNull();
+      }
+    }
+  });
+
   it("is only chosen in the emulator, and only with no key", () => {
     expect(usesEmulatorProvider({ FUNCTIONS_EMULATOR: "true" }, "")).toBe(true);
     expect(usesEmulatorProvider({ FUNCTIONS_EMULATOR: "true" }, "sk-real")).toBe(false);

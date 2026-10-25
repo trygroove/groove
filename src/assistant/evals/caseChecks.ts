@@ -27,7 +27,7 @@
  * `clipsPlaced` are in `caseChecksQa.ts`; GRV-119's two (`exactEdit`, `nothingElse`), which judge
  * a basic production action, are in `basicActionChecks.ts`.
  * `noEmptyClips` and `clipsPlaced` judge every case ({@link EVERY_CASE_CHECKS}).
- * GRV-207's two (`offersTakes`, `noTakes`), which read the turn's offer of
+ * GRV-207's and GRV-213's three (`offersTakes`, `noTakes`, `drumTakes`), which read the turn's offer of
  * takes, are in `takesChecks.ts`.
  */
 
@@ -635,6 +635,7 @@ export function runCaseCheck(
       return runReplyCheck(id, text, inputs.facts);
     case "offersTakes":
     case "noTakes":
+    case "drumTakes":
       return runTakesCheck(id, inputs.offers ?? []);
   }
 }

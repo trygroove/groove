@@ -428,6 +428,8 @@ describe("runCaseCheck", () => {
       // GRV-207's: the turn offered no takes.
       offersTakes: "fail",
       noTakes: "pass",
+      // GRV-213's: no offer, so no drum pattern's.
+      drumTakes: "fail",
     });
   });
 });

@@ -479,6 +479,7 @@ describe("catalog cross-references", () => {
         "assistant_recommendation",
         "assistant_retention",
         "assistant_takes",
+        "assistant_drum_takes",
         "assistant_video",
         "assistant_rating",
         "audio_loop",
