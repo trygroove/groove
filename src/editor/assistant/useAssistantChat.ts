@@ -344,6 +344,12 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
           onMore: (entryId) => conversation.moreTakes(entryId),
           onOutcome: (entryId, outcome, picked) =>
             conversation.recordTakesOutcome(entryId, outcome, picked),
+          // A card with no take that fits keeps why in the turn's transcript,
+          // as a refused proposal does.
+          onUnfit: (origin, issues) => {
+            if (origin.turnId)
+              retention?.reportOutcome(origin.turnId, "rejected", issues);
+          },
           remoteChanges: () => proposals.remoteChanges(),
         })
       : null;

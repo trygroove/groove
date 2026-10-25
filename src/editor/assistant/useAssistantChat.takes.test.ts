@@ -470,6 +470,10 @@ describe("four takes to pick from (GRV-207)", () => {
     }
     const entryId = offer(() => made);
     expect(chat.takes?.card(entryId)?.status).toBe("invalid");
+    // The card says which change did not fit, as a refused proposal's does.
+    expect(chat.takes?.card(entryId)?.reason).toBe(
+      "The assistant tried to add a track that doesn't fit your song.",
+    );
     expect(named("assistant_takes_unfit")).toEqual([
       { issue_code: "rejected", take_count: 4 },
     ]);
@@ -690,6 +694,78 @@ describe("four takes of a drum pattern (GRV-213)", () => {
     expect(
       firstUses.filter((event) => event.feature === "assistant_drum_takes"),
     ).toHaveLength(1);
+  });
+
+  it("stops the song it started when the song moves under the take heard (GRV-213 QA)", async () => {
+    const { chat, askForDrums, audio, session, track, previewing } = await setUp();
+    const entryId = await askForDrums();
+    chat.takes?.hear(entryId, 1);
+    flush();
+    expect(audio.play).toHaveBeenCalledTimes(1);
+    expect(audio.isPlaying()).toBe(true);
+
+    // An edit while it plays: the preview ends, and nothing is left to hear.
+    session.dispatch(
+      setParameter(
+        { scope: "track", trackId: track.id, parameterId: TRACK_VOLUME.id },
+        -6,
+      ),
+    );
+    flush();
+    expect(previewing()).toBe(false);
+    expect(chat.takes?.card(entryId)?.status).toBe("stale");
+    expect(chat.takes?.card(entryId)?.hearing).toBeNull();
+    expect(audio.pause).toHaveBeenCalledTimes(1);
+    expect(audio.isPlaying()).toBe(false);
+    expect(audio.seekTicks).toHaveBeenLastCalledWith(1_536);
+  });
+
+  it("leaves a song that was already playing to play on when the song moves under the take", async () => {
+    const { chat, askForDrums, audio, session, track, setPlaying } = await setUp();
+    const entryId = await askForDrums();
+    setPlaying(true);
+    flush();
+    chat.takes?.hear(entryId, 1);
+    flush();
+    session.dispatch(
+      setParameter(
+        { scope: "track", trackId: track.id, parameterId: TRACK_VOLUME.id },
+        -6,
+      ),
+    );
+    flush();
+    expect(chat.takes?.card(entryId)?.hearing).toBeNull();
+    expect(audio.pause).not.toHaveBeenCalled();
+  });
+
+  it("says why a later drum card cannot be used, after a take was used and undone", async () => {
+    const { chat, askForDrums, offer, session, named } = await setUp();
+    const first = await askForDrums();
+    chat.takes?.pick(first, 1);
+    flush();
+    session.undo();
+    flush();
+    // A new set of hits written into the clip the undone take had made.
+    expect(chat.conversation.send("Make me a new drum pattern")).toBe(true);
+    await settle();
+    const gone = clipOf(2);
+    const again = (project: Project) => {
+      const made = drumTakesCall(project, "StemB000000000000");
+      for (const take of made.input.takes) {
+        const clip = take.calls.find((call) => call.name === "clip_create");
+        const { events } = clip?.input.content as { events: unknown[] };
+        take.calls = [{ name: "note_add", input: { clipId: gone, notes: events } }];
+      }
+      return made;
+    };
+    const second = offer(again);
+    expect(chat.takes?.card(second)?.status).toBe("invalid");
+    expect(chat.takes?.card(second)?.reason).toBe(
+      "The assistant tried to add a note that doesn't fit your song.",
+    );
+    expect(named("assistant_takes_unfit")).toEqual([
+      { issue_code: "rejected", take_count: 4 },
+    ]);
   });
 
   it("applies nothing when declined or re-rolled, logging the part as drums", async () => {

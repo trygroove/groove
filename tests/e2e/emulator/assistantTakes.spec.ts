@@ -1,3 +1,4 @@
+import { walkthrough } from "../support/walkthrough";
 import {
   answerDisclosure,
   assistantButton,
@@ -105,5 +106,18 @@ test.describe("four takes to pick from", () => {
     await expect(proposal(page).getByRole("status")).toContainText(
       "Applied as one undo step",
     );
+  });
+
+  test("says which change did not fit when not one drum take fits", async ({ page }) => {
+    const step = walkthrough(page, { id: "GRV-213", title: "Drum takes that don't fit" });
+    await newProject(page);
+    await askForTakes(page, "Write me a beat [drum takes] [unfit]");
+    const card = takesCard(page);
+    await expect(card.getByRole("status")).toHaveText(
+      "The assistant tried to add a note that doesn't fit your song. These takes don't fit your song as it is. Nothing changed.",
+    );
+    await expect(card.getByRole("button", { name: "Hear take 1" })).toBeDisabled();
+    await expect(card.getByRole("button", { name: "Use take 1" })).toBeDisabled();
+    await step("A drum takes card none of whose takes fits, saying which change did not");
   });
 });

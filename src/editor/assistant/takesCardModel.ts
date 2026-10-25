@@ -10,10 +10,13 @@ import type { ProposalTarget } from "../../assistant/proposalExecutor";
 import { editsLeaveProposalValid } from "../../assistant/proposalStaleness";
 import type { TakePartType } from "../../assistant/protocol";
 import { type AssistantTakes, takeProposal } from "../../assistant/takes";
+import type { TranscriptIssue } from "../../assistant/transcripts";
 import { type RawCommandInput, setLoopEnabled, setLoopRange } from "../../commands";
 import type { Project } from "../../domain/entities";
 import { TICKS_PER_BAR, toTicks } from "../../domain/time";
 import { projectAfter } from "./proposalCardModel";
+import { rejectionReason } from "./rejectionReason";
+import { transcriptIssues } from "./transcriptIssues";
 
 /** One take as the card holds it. */
 export interface TakeRow {
@@ -28,6 +31,11 @@ export interface TakeRow {
   readonly trackName: string | null;
   /** Why it does not fit, as the first issue that refused it, or null when it fits. */
   readonly issue: ProposalIssueCode | null;
+  /**
+   * Every reason it does not fit, as a refused proposal's are kept (GRV-98),
+   * blaming its calls by tool; empty when it fits.
+   */
+  readonly issues: readonly TranscriptIssue[];
   /**
    * For a drum pattern's take (GRV-213): the bars its pattern fills from where
    * it starts, which hearing it loops on. Null for a melodic take, or one
@@ -57,11 +65,9 @@ export function checkTakes(
 ): CheckedTakes {
   let staleCount = 0;
   const rows = takes.takes.map((take, index): TakeRow => {
-    const validation = validateProposal(
-      project,
-      takeProposal(takes, index, baseRevision),
-      (base, types) =>
-        editsLeaveProposalValid(target?.commandTypesSince?.(base) ?? null, types),
+    const proposal = takeProposal(takes, index, baseRevision);
+    const validation = validateProposal(project, proposal, (base, types) =>
+      editsLeaveProposalValid(target?.commandTypesSince?.(base) ?? null, types),
     );
     if (!validation.ok) {
       if (validation.issues.some((issue) => issue.code === "stale_revision")) {
@@ -74,6 +80,7 @@ export function checkTakes(
         endTicks: null,
         trackName: null,
         issue: validation.issues[0]?.code ?? "malformed",
+        issues: transcriptIssues(proposal, validation.issues),
         loop: null,
       };
     }
@@ -86,10 +93,22 @@ export function checkTakes(
       endTicks: span?.end ?? null,
       trackName: span?.trackName ?? null,
       issue: null,
+      issues: [],
       loop: takes.partType === "drums" ? takePatternLoop(project, after) : null,
     };
   });
   return { rows, stale: staleCount > 0 && staleCount === rows.length };
+}
+
+/**
+ * Why a card none of whose takes fits cannot be used, in the producer's
+ * words, as a refused proposal's card says it (GRV-98): the first take's
+ * first reason, which `assistant_takes_unfit` logs too. Null when a take
+ * fits, or when there is nothing more to say than that none does.
+ */
+export function unfitReason(rows: readonly TakeRow[]): string | null {
+  if (rows.length === 0 || rows.some((row) => row.commands !== null)) return null;
+  return rejectionReason(rows[0]?.issues ?? []);
 }
 
 /**
@@ -223,6 +242,8 @@ export interface TakesCard {
   readonly picked: number | null;
   /** A one-off note after something could not be done. */
   readonly notice: string | null;
+  /** For `invalid`: which change did not fit, when that can be said ({@link unfitReason}). */
+  readonly reason: string | null;
 }
 
 /** The line under the card's buttons: where it stands, announced as it changes. */
@@ -244,7 +265,9 @@ export function takesStatusText(card: TakesCard): string {
       case "stale":
         return "Out of date. The song changed after these were written. 4 more writes new ones.";
       case "invalid":
-        return "These takes don't fit your song as it is. Nothing changed.";
+        return card.reason
+          ? `${card.reason} These takes don't fit your song as it is. Nothing changed.`
+          : "These takes don't fit your song as it is. Nothing changed.";
     }
   })();
   return card.notice ? `${say} ${card.notice}` : say;

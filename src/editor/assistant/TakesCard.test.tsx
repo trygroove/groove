@@ -31,6 +31,7 @@ const CHOOSING: Card = {
   hearing: null,
   picked: null,
   notice: null,
+  reason: null,
 };
 
 function renderCard(initial: Card = CHOOSING, canAsk = true, parsed = true) {
@@ -78,6 +79,18 @@ describe("TakesCard (GRV-207)", () => {
     renderCard({ ...CHOOSING, status: "invalid", trackName: null });
     const head = screen.getByRole("region").querySelector(".assistant-entry-label");
     expect(head?.textContent?.trim()).toBe("4 takes");
+  });
+
+  it("says which change did not fit when none of the takes fits", () => {
+    renderCard({
+      ...CHOOSING,
+      status: "invalid",
+      trackName: null,
+      reason: "The assistant tried to add a note that doesn't fit your song.",
+    });
+    expect(screen.getByRole("status").textContent).toBe(
+      "The assistant tried to add a note that doesn't fit your song. These takes don't fit your song as it is. Nothing changed.",
+    );
   });
 
   it("hears a take, pressed in while it plays, and stops it pressed again", () => {
@@ -258,6 +271,7 @@ describe("a drum pattern's takes (GRV-213)", () => {
       endTicks: 3_072,
       trackName: "Drums",
       issue: null,
+      issues: [],
       loop: { startTicks: 0, endTicks: 768 },
     };
     expect(hearingCommands(row)).toEqual([
