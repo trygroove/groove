@@ -8,10 +8,13 @@ import {
   offerTakesCall,
   offerTakesInput,
   TAKE_LABELS,
+  takesTrackId,
 } from "../testing/takes";
 import { historyOf } from "./history";
 import { validateProposal } from "./proposal";
+import type { AssistantContextPayload } from "./protocol";
 import {
+  contextEntityIds,
   expandTakesCall,
   historyTakes,
   moreTakesNote,
@@ -105,6 +108,41 @@ describe("offer_takes (GRV-207)", () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.message).toContain("4 takes");
+  });
+
+  it("refuses a take that makes a track, clip or placement under an ID the song already has", () => {
+    const placement = project.song.placements[0];
+    if (!placement) throw new Error("the reference project has a placement");
+    const context = {
+      tracks: [
+        { id: takesTrackId(STEM), placements: [] },
+        { id: placement.trackId, placements: [placement] },
+      ],
+    } as unknown as Pick<AssistantContextPayload, "tracks">;
+    const inSong = contextEntityIds(context);
+    expect(inSong).toEqual(
+      new Set([takesTrackId(STEM), placement.trackId, placement.id, placement.clipId]),
+    );
+    const result = expandTakesCall(
+      { id: "toolu_1", ...offerTakesCall(project) },
+      STEM,
+      undefined,
+      inSong,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toContain("take 1, call 1 (track_create)");
+      expect(result.message).toContain(`${takesTrackId(STEM)} is already in the song`);
+    }
+    // IDs the song does not have are fine.
+    expect(
+      expandTakesCall(
+        { id: "toolu_1", ...offerTakesCall(project) },
+        STEM,
+        undefined,
+        new Set([placement.id]),
+      ).ok,
+    ).toBe(true);
   });
 
   it("refuses two takes under one label", () => {

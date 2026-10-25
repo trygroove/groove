@@ -257,6 +257,7 @@ describe("a drum pattern's takes (GRV-213)", () => {
       startTicks: 0,
       endTicks: 3_072,
       trackName: "Drums",
+      issue: null,
       loop: { startTicks: 0, endTicks: 768 },
     };
     expect(hearingCommands(row)).toEqual([

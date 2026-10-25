@@ -1,6 +1,7 @@
 import { Errored, type JSX } from "@solidjs/web";
 import { createEffect, For, Match, onSettled, Show, Switch } from "solid-js";
 import { ASSISTANT_NAME } from "../../../site.config.mjs";
+import { withoutHistoryNotes } from "../../assistant/history";
 import { SendIcon, SparkIcon, StopIcon } from "../../components/icons";
 import { nudgeWords } from "../../memory/nudge";
 import AssistantAskCard from "./AssistantAskCard";
@@ -395,7 +396,9 @@ function Entry(props: {
               {ASSISTANT_NAME}
             </span>{" "}
             <p>
-              {reply().text}
+              {/* A history note the model copied into its reply is Groove's
+                  own line, not something it said (GRV-207). */}
+              {withoutHistoryNotes(reply().text)}
               <Show when={reply().streaming}>
                 <span class="assistant-caret" aria-hidden="true" />
               </Show>

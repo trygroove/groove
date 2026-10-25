@@ -63,6 +63,26 @@ export function lessonNote(chapter: LessonId): string {
   return `[I called ${START_LESSON_TOOL_NAME} with chapter "${chapter}", which put the lesson's card in the panel. Saying I'd start one did not start it; only the call did.]`;
 }
 
+/** How every bracketed note {@link historyOf} adds to a reply opens (here, `ask.ts`, `takes.ts`). */
+const NOTE_OPENING = String.raw`\[(?:I called |I asked the producer|I offered the producer|I recommended |The producer (?:applied|cancelled|has not)|This proposal )`;
+
+/** One such note, or the start of one still arriving at the end of the text. */
+const ECHOED_NOTE = new RegExp(`${NOTE_OPENING}[^\\]]*(?:\\]|$)`, "g");
+
+/**
+ * `text` without the bracketed notes {@link historyOf} adds after a reply.
+ * They are Groove's lines about what a reply did, written as the model would,
+ * and a model reading them back sometimes writes one into its own reply
+ * instead of making the call it describes (GRV-207: "[I offered the producer
+ * 4 takes …]" where `offer_takes` should have been). Such a copy is not shown
+ * as something it said, and is not resent as if it had.
+ */
+export function withoutHistoryNotes(text: string): string {
+  if (!text.includes("[")) return text;
+  const kept = text.replace(ECHOED_NOTE, "");
+  return kept === text ? text : kept.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 /**
  * What {@link historyOf} reads of one thing in a conversation's log. The
  * panel's `ConversationEntry` is one.
@@ -120,7 +140,7 @@ export function historyOf(entries: readonly HistoryEntry[]): AssistantMessage[] 
     // model reads its question back beside the answer.
     // So is a lesson it started (GRV-43), which only its call could start.
     const said = [
-      entry.text.trim(),
+      withoutHistoryNotes(entry.text).trim(),
       entry.lesson ? lessonNote(entry.lesson) : "",
       entry.ask ? askTranscript(entry.ask) : "",
       entry.takes ? takesNote(entry.takes) : "",

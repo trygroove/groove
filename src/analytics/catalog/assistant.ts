@@ -259,6 +259,20 @@ export const ASSISTANT_EVENTS = {
     },
   },
 
+  /**
+   * A takes card arrived with not one take that fits the song, though the
+   * song had not moved under it: why the first take was refused, as
+   * `assistant_proposal_rejected` says it of a proposal. Once per card.
+   */
+  assistant_takes_unfit: {
+    phase: 3,
+    owners: ["GRV-207"],
+    params: {
+      issue_code: enumParam(ASSISTANT_PROPOSAL_ISSUE_CODES),
+      take_count: countParam(MAX_TAKES),
+    },
+  },
+
   assistant_proposal_shown: {
     phase: 3,
     owners: ["AI-003"],

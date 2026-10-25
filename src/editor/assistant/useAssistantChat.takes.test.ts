@@ -456,6 +456,32 @@ describe("four takes to pick from (GRV-207)", () => {
     expect(client.turns).toHaveLength(1);
   });
 
+  it("says why once when not one take fits a song that did not move", async () => {
+    const { chat, session, track, offer, named } = await setUp();
+    expect(chat.conversation.send("Write me a lead melody")).toBe(true);
+    await settle();
+    // Every take makes its track under the ID of one the song already has.
+    const made = offerTakesCall(session.committedProject);
+    for (const take of made.input.takes) {
+      for (const call of take.calls) {
+        if (call.name === "track_create") call.input = { ...call.input, id: track.id };
+        else call.input = { ...call.input, trackId: track.id };
+      }
+    }
+    const entryId = offer(() => made);
+    expect(chat.takes?.card(entryId)?.status).toBe("invalid");
+    expect(named("assistant_takes_unfit")).toEqual([
+      { issue_code: "rejected", take_count: 4 },
+    ]);
+    expect(named("feature_first_use")).not.toContainEqual({ feature: "assistant_takes" });
+  });
+
+  it("says nothing of a card whose takes fit", async () => {
+    const { ask, named } = await setUp();
+    await ask();
+    expect(named("assistant_takes_unfit")).toEqual([]);
+  });
+
   it("logs no take's notes, label or part", async () => {
     const { chat, ask, named } = await setUp();
     const entryId = await ask();

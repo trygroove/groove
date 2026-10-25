@@ -5,7 +5,7 @@
  * where the card stands. Pure functions of the project and the
  * offer, so the card's words are testable without rendering it.
  */
-import { validateProposal } from "../../assistant/proposal";
+import { type ProposalIssueCode, validateProposal } from "../../assistant/proposal";
 import type { ProposalTarget } from "../../assistant/proposalExecutor";
 import { editsLeaveProposalValid } from "../../assistant/proposalStaleness";
 import type { TakePartType } from "../../assistant/protocol";
@@ -26,6 +26,8 @@ export interface TakeRow {
   readonly endTicks: number | null;
   /** The name of the track it plays on, or null with {@link startTicks}. */
   readonly trackName: string | null;
+  /** Why it does not fit, as the first issue that refused it, or null when it fits. */
+  readonly issue: ProposalIssueCode | null;
   /**
    * For a drum pattern's take (GRV-213): the bars its pattern fills from where
    * it starts, which hearing it loops on. Null for a melodic take, or one
@@ -71,6 +73,7 @@ export function checkTakes(
         startTicks: null,
         endTicks: null,
         trackName: null,
+        issue: validation.issues[0]?.code ?? "malformed",
         loop: null,
       };
     }
@@ -82,6 +85,7 @@ export function checkTakes(
       startTicks: span?.start ?? null,
       endTicks: span?.end ?? null,
       trackName: span?.trackName ?? null,
+      issue: null,
       loop: takes.partType === "drums" ? takePatternLoop(project, after) : null,
     };
   });
