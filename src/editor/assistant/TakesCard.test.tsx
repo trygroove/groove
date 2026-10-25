@@ -22,7 +22,7 @@ afterEach(cleanup);
 const CHOOSING: Card = {
   status: "choosing",
   part: "Lead melody",
-  scopeLabel: "Song",
+  trackName: "Lead",
   takes: TAKE_LABELS.map((label) => ({ label, fits: true })),
   hearing: null,
   picked: null,
@@ -65,6 +65,14 @@ describe("TakesCard (GRV-207)", () => {
     within(card).getByRole("button", { name: MORE_TAKES_LABEL });
     within(card).getByRole("button", { name: NO_TAKE_LABEL });
     expect(card.textContent).toContain("Nothing changes until you do.");
+    // The head names the track the takes play on, not the turn's scope.
+    expect(card.textContent).toContain("4 takes · Lead");
+  });
+
+  it("names no track when none of the takes fits", () => {
+    renderCard({ ...CHOOSING, status: "invalid", trackName: null });
+    const head = screen.getByRole("region").querySelector(".assistant-entry-label");
+    expect(head?.textContent?.trim()).toBe("4 takes");
   });
 
   it("hears a take, pressed in while it plays, and stops it pressed again", () => {

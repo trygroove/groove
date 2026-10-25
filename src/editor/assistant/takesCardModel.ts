@@ -19,6 +19,10 @@ export interface TakeRow {
   readonly commands: readonly RawCommandInput[] | null;
   /** Where in the song it starts playing, in ticks, or null when it adds nothing to play. */
   readonly startTicks: number | null;
+  /** Where it stops playing, in ticks, or null with {@link startTicks}. */
+  readonly endTicks: number | null;
+  /** The name of the track it plays on, or null with {@link startTicks}. */
+  readonly trackName: string | null;
 }
 
 /** The offer checked against the song. */
@@ -52,13 +56,22 @@ export function checkTakes(
       if (validation.issues.some((issue) => issue.code === "stale_revision")) {
         staleCount += 1;
       }
-      return { label: take.label, commands: null, startTicks: null };
+      return {
+        label: take.label,
+        commands: null,
+        startTicks: null,
+        endTicks: null,
+        trackName: null,
+      };
     }
     const after = projectAfter(project, validation.proposal);
+    const span = takeSpanTicks(project, after);
     return {
       label: take.label,
       commands: validation.proposal.commands,
-      startTicks: takeStartTicks(project, after),
+      startTicks: span?.start ?? null,
+      endTicks: span?.end ?? null,
+      trackName: span?.trackName ?? null,
     };
   });
   return { rows, stale: staleCount > 0 && staleCount === rows.length };
@@ -70,6 +83,22 @@ export function checkTakes(
  * touches nothing that plays, so hearing it plays from where the song is.
  */
 export function takeStartTicks(before: Project, after: Project): number | null {
+  return takeSpanTicks(before, after)?.start ?? null;
+}
+
+/**
+ * Where a take plays in the song: from the start {@link takeStartTicks}
+ * finds to the end of the last of the same placements, and the track the
+ * first of them is on. Null when it touches nothing that plays.
+ */
+export function takeSpanTicks(
+  before: Project,
+  after: Project,
+): {
+  readonly start: number;
+  readonly end: number;
+  readonly trackName: string | null;
+} | null {
   const placed = new Set(before.song.placements.map((placement) => placement.id));
   const clipsBefore = new Map(before.clips.map((clip) => [clip.id, clip]));
   const touched = new Set(
@@ -84,7 +113,16 @@ export function takeStartTicks(before: Project, after: Project): number | null {
       ? added
       : after.song.placements.filter((placement) => touched.has(placement.clipId));
   if (candidates.length === 0) return null;
-  return Math.min(...candidates.map((placement) => placement.startTicks));
+  const start = Math.min(...candidates.map((placement) => placement.startTicks));
+  const first = candidates.find((placement) => placement.startTicks === start);
+  const track = after.song.tracks.find((candidate) => candidate.id === first?.trackId);
+  return {
+    start,
+    trackName: track?.name ?? null,
+    end: Math.max(
+      ...candidates.map((placement) => placement.startTicks + placement.durationTicks),
+    ),
+  };
 }
 
 /**
@@ -108,7 +146,8 @@ export interface TakesCard {
   readonly status: TakesCardStatus;
   /** The part the takes are of ("Lead melody"), which titles the card. */
   readonly part: string;
-  readonly scopeLabel: string;
+  /** The track the takes play on ("Lead"), or null when none of them fits. */
+  readonly trackName: string | null;
   readonly takes: readonly { readonly label: string; readonly fits: boolean }[];
   /** The take being heard in the song, by index, or null. */
   readonly hearing: number | null;

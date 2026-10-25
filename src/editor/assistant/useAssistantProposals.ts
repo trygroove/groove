@@ -287,6 +287,10 @@ export function useAssistantProposals(
     get latestCorrelationId() {
       return required().latestCorrelationId;
     },
+    // Which edits landed since a proposal's revision, so one that leaves it
+    // valid (the loop, the name) does not make it stale (GRV-132). A take
+    // picked (GRV-207) is checked the same way before it becomes a proposal.
+    commandTypesSince: (revision) => required().commandTypesSince?.(revision) ?? null,
     execute: (commands, transaction) => required().execute(commands, transaction),
     undo: () => required().undo(),
   };

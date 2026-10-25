@@ -4,13 +4,16 @@
  *
  * - **Hear** opens the session's uncommitted preview of one take (#851) and
  *   plays the song with it in place, from where the take starts when the
- *   song was stopped, so the take is heard in context with the rest of the
- *   track. Another take's Hear swaps the preview with the song still
+ *   song was stopped or is playing somewhere the take is not, so the take
+ *   is heard in context with the rest of the track. Another take's Hear swaps the preview with the song still
  *   playing, so switching is instant; pressed again it stops, and a song it
  *   started is paused back where it was. Nothing is applied.
  * - **Use this** hands that one take on as a proposal of its own
  *   (`onPick`), which the proposal cards apply through the executor
  *   (GRV-4): one transaction, one undo entry. The other takes are discarded.
+ *   Every edit checks the open cards' takes again, as it checks proposals,
+ *   and picking checks the one picked once more, so a take the song no
+ *   longer fits is never used: its card stays open and says so.
  * - **None of these** applies nothing and sets them all aside.
  * - **4 more** asks again for a fresh set (`onMore`), one new turn, which
  *   replaces this card's takes with its own.
@@ -26,7 +29,11 @@
 import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
 import type { Analytics } from "../../analytics/analytics";
 import type { AssistantToolCall } from "../../assistant/protocol";
-import { parseTakesCall, type TakesOutcome } from "../../assistant/takes";
+import {
+  type AssistantTakes as Offer,
+  parseTakesCall,
+  type TakesOutcome,
+} from "../../assistant/takes";
 import type { Project } from "../../domain/entities";
 import type { Preview } from "../composition/sessionPreview";
 import type { ProjectAudioControls } from "../composition/useProjectAudio";
@@ -43,7 +50,7 @@ export type TakesAudioPort = Pick<
 export interface UseAssistantTakesOptions {
   readonly session: Pick<
     ProposalSessionPort,
-    "proposalTarget" | "beginPreview" | "onRemoteChange" | "previewing"
+    "proposalTarget" | "beginPreview" | "onEdit" | "onRemoteChange" | "previewing"
   >;
   /** The song's playback, which a take is heard through. Without it, nothing plays. */
   readonly audio?: TakesAudioPort;
@@ -86,6 +93,9 @@ export interface AssistantTakes {
 
 /** What a card keeps beside what it shows. */
 interface Entry {
+  /** The offer, to check again as the song changes; null when it was malformed. */
+  readonly offer: Offer | null;
+  readonly baseRevision: number;
   readonly rows: readonly TakeRow[];
   /** How many times "4 more" was pressed for the part before this offer. */
   readonly rerolls: number;
@@ -106,6 +116,13 @@ const NO_LONGER_FITS = "That take no longer fits the song as it is.";
 export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantTakes {
   const [cards, setCards] = createSignal<ReadonlyMap<string, TakesCard>>(new Map());
   const entries = new Map<string, Entry>();
+  /**
+   * The cards decided (picked, declined, 4 more) or moved under from
+   * elsewhere, kept apart from the signal, which a write leaves unreadable
+   * until it flushes: picking applies at once, and that edit must not check
+   * the card it decided again.
+   */
+  const closed = new Set<string>();
   let hearing: Hearing | null = null;
 
   const update = (entryId: string, change: Partial<TakesCard>) =>
@@ -124,13 +141,18 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     const takes = parseTakesCall(call);
     const target = options.session.proposalTarget();
     const base = {
-      scopeLabel: origin.scope.label,
+      trackName: null,
       hearing: null,
       picked: null,
       notice: null,
     };
     if (!takes || !target) {
-      entries.set(entryId, { rows: [], rerolls: origin.takesRerolls ?? 0 });
+      entries.set(entryId, {
+        offer: null,
+        baseRevision,
+        rows: [],
+        rerolls: origin.takesRerolls ?? 0,
+      });
       setCards((current) =>
         new Map(current).set(entryId, {
           ...base,
@@ -142,19 +164,48 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
       return;
     }
     const checked = checkTakes(target.project, takes, baseRevision, target);
-    const fitting = checked.rows.filter((row) => row.commands !== null).length;
-    entries.set(entryId, { rows: checked.rows, rerolls: origin.takesRerolls ?? 0 });
+    entries.set(entryId, {
+      offer: takes,
+      baseRevision,
+      rows: checked.rows,
+      rerolls: origin.takesRerolls ?? 0,
+    });
     setCards((current) =>
       new Map(current).set(entryId, {
         ...base,
-        status: checked.stale ? "stale" : fitting === 0 ? "invalid" : "choosing",
+        ...shownTakes(checked.rows, checked.stale),
+        trackName: checked.rows.find((row) => row.commands !== null)?.trackName ?? null,
         part: takes.part,
-        takes: checked.rows.map((row) => ({
-          label: row.label,
-          fits: row.commands !== null,
-        })),
       }),
     );
+  }
+
+  /** What a card shows of its takes once checked: which fit, and so where it stands. */
+  function shownTakes(
+    rows: readonly TakeRow[],
+    stale: boolean,
+  ): Pick<TakesCard, "status" | "takes"> {
+    const fitting = rows.filter((row) => row.commands !== null).length;
+    return {
+      status: stale ? "stale" : fitting === 0 ? "invalid" : "choosing",
+      takes: rows.map((row) => ({ label: row.label, fits: row.commands !== null })),
+    };
+  }
+
+  /**
+   * Checks a card's takes again against the song as it is now, as a
+   * proposal's are on every edit: a take an edit broke no longer fits, and
+   * the card goes stale when the song moved under all of them. Returns the
+   * rows it found, or null when there was nothing to check.
+   */
+  function recheck(entryId: string): readonly TakeRow[] | null {
+    const entry = entries.get(entryId);
+    const target = options.session.proposalTarget();
+    if (!entry?.offer || !target) return null;
+    const checked = checkTakes(target.project, entry.offer, entry.baseRevision, target);
+    entries.set(entryId, { ...entry, rows: checked.rows });
+    update(entryId, shownTakes(checked.rows, checked.stale));
+    return checked.rows;
   }
 
   /** Puts away what is being heard; a song the hearing started is paused back. */
@@ -200,9 +251,20 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
       from: previous ? previous.from : (audio?.positionTicks() ?? 0),
     };
     update(entryId, { hearing: index });
-    if (audio && !playing) {
+    if (!audio) return;
+    if (!playing) {
       if (row.startTicks !== null) audio.seekTicks(row.startTicks);
       void audio.play();
+      return;
+    }
+    // Already playing: a take the playhead is not in is heard from its start.
+    const at = audio.positionTicks();
+    if (
+      row.startTicks !== null &&
+      row.endTicks !== null &&
+      (at < row.startTicks || at >= row.endTicks)
+    ) {
+      audio.seekTicks(row.startTicks);
     }
   }
 
@@ -230,6 +292,15 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     if (card?.status !== "choosing" || !entry?.rows[index]?.commands) return;
     // The take is heard no more: what applies is the proposal it becomes.
     if (hearing?.entryId === entryId) endHearing(true);
+    // The song may have changed since the takes were last checked: only a
+    // take that still fits is used, or the choice would be lost to a stale
+    // proposal. One that does not leaves the card open, saying so.
+    const rows = recheck(entryId);
+    if (!rows?.[index]?.commands) {
+      update(entryId, { notice: NO_LONGER_FITS });
+      return;
+    }
+    closed.add(entryId);
     update(entryId, { status: "picked", picked: index });
     logged((analytics) =>
       analytics.log("assistant_take_picked", {
@@ -246,6 +317,7 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     const status = cards().get(entryId)?.status;
     if (status !== "choosing" && status !== "stale" && status !== "invalid") return;
     if (hearing?.entryId === entryId) endHearing(true);
+    closed.add(entryId);
     update(entryId, { status: "declined" });
     const rerolls = entries.get(entryId)?.rerolls ?? 0;
     logged((analytics) =>
@@ -263,6 +335,7 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     if (!options.onMore(entryId)) return;
     // The new turn asked about the committed song; the take heard stops now.
     if (hearing?.entryId === entryId) endHearing(true);
+    closed.add(entryId);
     update(entryId, { status: "more" });
     const rerolls = (entries.get(entryId)?.rerolls ?? 0) + 1;
     logged((analytics) =>
@@ -287,12 +360,22 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     () => [options.session.previewing(), options.project()] as const,
     () => reconcile(),
   );
+  // An edit here (the producer's, an applied proposal's, an undo) is checked
+  // against every offer still open, as it is against every proposal.
+  onCleanup(
+    options.session.onEdit(() => {
+      for (const [entryId, card] of cards()) {
+        if (card.status === "choosing" && !closed.has(entryId)) recheck(entryId);
+      }
+    }),
+  );
   // A change made elsewhere moves the song under every offer still open.
   onCleanup(
     options.session.onRemoteChange(() => {
       for (const [entryId, card] of cards()) {
-        if (card.status !== "choosing") continue;
+        if (card.status !== "choosing" || closed.has(entryId)) continue;
         if (hearing?.entryId === entryId) endHearing(true);
+        closed.add(entryId);
         update(entryId, { status: "stale" });
       }
     }),

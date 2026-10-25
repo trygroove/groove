@@ -151,6 +151,14 @@ export interface TurnOrigin {
    */
   readonly takesRerolls?: number;
   /**
+   * For "4 more" (GRV-207): what the first request for the part sent, which
+   * every "4 more" sends again with one note of its own, so the notes never
+   * pile up turn on turn.
+   */
+  readonly takesRequest?: string;
+  /** For "4 more" (GRV-207): every take of the part set aside before this turn's, in order. */
+  readonly takesSetAside?: readonly string[];
+  /**
    * The proposal is a take the producer picked (GRV-207): picking is
    * applying, so its card applies it as it arrives rather than previewing.
    */
@@ -930,6 +938,10 @@ export function useAssistantConversation(
     takes?: {
       /** How many times "4 more" has been pressed for the part, this time included. */
       readonly rerolls: number;
+      /** What the first request for the part sent. */
+      readonly request: string;
+      /** Every take set aside so far, by label, in order. */
+      readonly setAside: readonly string[];
     },
   ): void {
     // "4 more" (GRV-207) is pressed while a take may still be heard: the song
@@ -982,7 +994,13 @@ export function useAssistantConversation(
     startTurn(request, {
       ...message,
       scope,
-      ...(takes ? { takesRerolls: takes.rerolls } : {}),
+      ...(takes
+        ? {
+            takesRerolls: takes.rerolls,
+            takesRequest: takes.request,
+            takesSetAside: takes.setAside,
+          }
+        : {}),
       sentAt: clock.now(),
       remoteChanges: options.remoteChanges?.() ?? 0,
       ...(turnId ? { turnId } : {}),
@@ -1094,14 +1112,18 @@ export function useAssistantConversation(
     if (!entry || !takes || !canStart()) return false;
     // The producer pressed it, so the log shows it as their message, whatever
     // the turn that offered the takes was.
-    const { text, wire, scope, takesRerolls } = entry.origin;
-    const more = moreTakesNote(historyTakes(takes));
+    const { text, wire, scope, takesRerolls, takesRequest, takesSetAside } = entry.origin;
+    // Each "4 more" is the first request again with one note naming every
+    // take set aside so far, never the last turn's words and its note.
+    const request = takesRequest ?? wire ?? text;
+    const setAside = [...(takesSetAside ?? []), ...historyTakes(takes).labels];
+    const more = moreTakesNote({ part: takes.part, labels: setAside });
     sendMessage(
-      { text: `${TAKE_COUNT} more takes`, wire: `${wire ?? text}\n\n${more}` },
+      { text: `${TAKE_COUNT} more takes`, wire: `${request}\n\n${more}` },
       scope,
       undefined,
       false,
-      { rerolls: (takesRerolls ?? 0) + 1 },
+      { rerolls: (takesRerolls ?? 0) + 1, request, setAside },
     );
     return true;
   }

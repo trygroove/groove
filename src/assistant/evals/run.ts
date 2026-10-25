@@ -49,7 +49,7 @@ import { continuesTurn, type ProviderMessagesRequest } from "../providerRequest"
 import { splitRecommendations } from "../recommendation";
 import type { ProviderUsage } from "../streamEvents";
 import { resolveTactics, type TacticOverrides, type TacticValues } from "../tactics";
-import { withFirstTake } from "../takes";
+import { splitTakes, withFirstTake } from "../takes";
 import type { AssistantTurnLog, ToolBundleFallback } from "../telemetry";
 import { ASSISTANT_TOOLSET_VERSION, type ToolBundleId } from "../tools";
 import { caseChecksFor, checkOutcome, runCaseCheck } from "./caseChecks";
@@ -622,7 +622,10 @@ export function evaluateTurn(
   }
   const project = evalCase.fixture();
   const judged = turn.session
-    ? fromSession(sessionJudgement(project, turn.session, whyNoProposal(turn)))
+    ? fromSession(
+        sessionJudgement(project, turn.session, whyNoProposal(turn)),
+        turn.session,
+      )
     : singleJudgement(project, turn);
   if (!judged.applied) {
     const notJudged = skip("The proposal did not apply");
@@ -664,6 +667,7 @@ export function evaluateTurn(
             recommendations: judged.recommendations,
             library: evalCase.library ? evalLibrary() : null,
             facts: evalCase.facts,
+            offers: judged.offers,
           }),
         ]),
       ),
@@ -719,11 +723,24 @@ interface Judgement {
   } | null;
   readonly atomicUndo: () => CheckResult;
   readonly recommendations: AssistantProposal["calls"];
+  /** The turn's offers of takes (GRV-207), which the takes checks read as they came. */
+  readonly offers: AssistantProposal["calls"];
+}
+
+/** A turn's offers of takes, before {@link withFirstTake} stands take 1 in for them. */
+function offersOf(
+  proposal: AssistantProposal | null | undefined,
+): AssistantProposal["calls"] {
+  return proposal ? [...splitTakes(proposal).offers] : [];
 }
 
 /** A session's proposals, applied turn by turn (`session.ts`). */
-function fromSession(judged: SessionJudgement): Judgement {
-  return { ...judged, atomicUndo: () => judged.atomicUndo };
+function fromSession(judged: SessionJudgement, session: EvalSession): Judgement {
+  return {
+    ...judged,
+    atomicUndo: () => judged.atomicUndo,
+    offers: session.turns.flatMap((turn) => (turn.error ? [] : offersOf(turn.proposal))),
+  };
 }
 
 /** One turn's proposal validated and applied to the case's fixture. */
@@ -742,6 +759,7 @@ function singleJudgement(project: Project, turn: EvalTurn): Judgement {
     },
     atomicUndo: () => checkAtomicUndo(project, changes),
     recommendations: split?.recommendations ?? [],
+    offers: offersOf(turn.proposal),
   };
 }
 

@@ -5,9 +5,11 @@ import { ConsentStore } from "../../analytics/consent";
 import { createRecordingTransport } from "../../analytics/transport";
 import { expandTakesCall } from "../../assistant/takes";
 import { ASSISTANT_TOOLSET_VERSION } from "../../assistant/tools";
+import { setParameter } from "../../commands";
 import { createControlRegistry } from "../../controls/registry";
 import type { Project } from "../../domain/entities";
 import { createSliceFixtureProject } from "../../domain/fixtures";
+import { TRACK_VOLUME } from "../../domain/parameters";
 import { createInMemoryProjectRepository } from "../../persistence/inMemoryProjectRepository";
 import { createManualClock } from "../../shared/clock";
 import { createManualScheduler } from "../../shared/scheduler";
@@ -64,6 +66,9 @@ async function setUp() {
   });
   const [playing, setPlaying] = createSignal(false);
   let position = 1_536;
+  const setPosition = (ticks: number) => {
+    position = ticks;
+  };
   const audio = {
     isPlaying: playing,
     play: vi.fn(async () => {
@@ -172,6 +177,9 @@ async function setUp() {
     shownClips,
     named,
     previewing,
+    track,
+    setPosition,
+    setPlaying,
   };
 }
 
@@ -259,6 +267,68 @@ describe("four takes to pick from (GRV-207)", () => {
     expect(named("feature_first_use")).toContainEqual({ feature: "assistant_takes" });
   });
 
+  it("loses no choice to an edit after the offer: the card goes stale and Use this applies nothing", async () => {
+    const { chat, ask, clips, session, track, named } = await setUp();
+    const entryId = await ask();
+    // The producer turns a fader down before picking: a song edit, which
+    // moves the song under every take as it does under a proposal.
+    session.dispatch(
+      setParameter(
+        { scope: "track", trackId: track.id, parameterId: TRACK_VOLUME.id },
+        -6,
+      ),
+    );
+    flush();
+    const revision = session.committedProject.metadata.revision;
+    expect(chat.takes?.card(entryId)?.status).toBe("stale");
+
+    chat.takes?.pick(entryId, 2);
+    flush();
+    expect(clips()).not.toContain(clipOf(3));
+    expect(session.committedProject.metadata.revision).toBe(revision);
+    expect(chat.takes?.card(entryId)?.status).toBe("stale");
+    expect(chat.takes?.decided(entryId)).toBe(false);
+    expect(chat.conversation.entries().some((entry) => entry.kind === "proposal")).toBe(
+      false,
+    );
+    expect(named("assistant_take_picked")).toEqual([]);
+  });
+
+  it("still uses a take after an edit that leaves it fitting", async () => {
+    const { chat, ask, clips, session } = await setUp();
+    const entryId = await ask();
+    // Where the song loops: no take depends on it.
+    session.dispatch({
+      type: "loop.setEnabled",
+      payload: { enabled: !session.committedProject.song.loop.enabled },
+    });
+    flush();
+    expect(chat.takes?.card(entryId)?.status).toBe("choosing");
+    chat.takes?.pick(entryId, 2);
+    flush();
+    expect(clips()).toContain(clipOf(3));
+    expect(chat.takes?.card(entryId)?.status).toBe("picked");
+  });
+
+  it("jumps a song already playing elsewhere to where the take starts", async () => {
+    const { chat, ask, audio, setPlaying, setPosition } = await setUp();
+    const entryId = await ask();
+    setPlaying(true);
+    setPosition(3_072);
+    flush();
+    chat.takes?.hear(entryId, 0);
+    flush();
+    expect(audio.seekTicks).toHaveBeenLastCalledWith(0);
+    expect(audio.play).not.toHaveBeenCalled();
+
+    // Inside the take, the playhead stays where it is.
+    audio.seekTicks.mockClear();
+    setPosition(384);
+    chat.takes?.hear(entryId, 1);
+    flush();
+    expect(audio.seekTicks).not.toHaveBeenCalled();
+  });
+
   it("tells the next turn which take was picked", async () => {
     const { chat, ask, client } = await setUp();
     const entryId = await ask();
@@ -325,6 +395,13 @@ describe("four takes to pick from (GRV-207)", () => {
       { reroll_count: 1 },
       { reroll_count: 2 },
     ]);
+    // Each "4 more" is the first request with one note naming every take
+    // set aside, never the last turn's words with their note on top.
+    const again = client.last().request.messages.at(-1)?.text ?? "";
+    expect(again.startsWith("Write me a lead melody\n\n[4 more]")).toBe(true);
+    expect(again.match(/\[4 more\]/g)).toHaveLength(1);
+    expect(again).toContain("None of your last 8 takes");
+    expect(again).toContain("8. Lots of space");
     const third = offer();
     chat.takes?.pick(third, 0);
     flush();

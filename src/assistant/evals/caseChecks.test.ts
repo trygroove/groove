@@ -425,6 +425,9 @@ describe("runCaseCheck", () => {
       // GRV-150's: no facts named, so nothing to contradict.
       noDeniedTrack: "pass",
       noAbsentTrack: "pass",
+      // GRV-207's: the turn offered no takes.
+      offersTakes: "fail",
+      noTakes: "pass",
     });
   });
 });

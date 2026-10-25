@@ -63,7 +63,8 @@ export default function TakesCard(props: TakesCardProps): JSX.Element {
       >
         <div class="assistant-proposal-head">
           <span class="assistant-entry-label">
-            {current().takes.length} takes · {current().scopeLabel}
+            {current().takes.length} takes
+            {current().trackName ? ` · ${current().trackName}` : ""}
           </span>{" "}
           <b>{current().part}</b>
         </div>

@@ -7,7 +7,7 @@
  * The split is stratified by capability: within each, about a third of the
  * cases are held out (a third of its count, rounded; so one of each
  * conventional/extreme pair, and none of a capability with one case), which
- * holds out 27 of the 73 cases, a JSON case's own split included. Within a capability the held-out cases are
+ * holds out 28 of the 77 cases, a JSON case's own split included. Within a capability the held-out cases are
  * picked to spread across its kinds of request: the extreme of one pair and
  * the conventional of the next, and three of the eight heavy-output cases
  * (`sets.ts`), so an output-token experiment on that group has a gate.
@@ -57,6 +57,8 @@ export const HELDOUT_CASE_IDS = [
   "lesson-start-no-echo",
   "chords-shown",
   "wrap-up-once",
+  // takes (GRV-207): one of four.
+  "takes-chords",
 ] as const;
 
 /** The cases written in TypeScript that train; with the held-out ones, every such case. */
@@ -107,6 +109,9 @@ export const TRAIN_CASE_IDS = [
   "skip-names-next",
   "quiz-is-a-call",
   "under-way-question",
+  "takes-melody",
+  "takes-bass",
+  "takes-drums",
 ] as const;
 
 const SPLITS: ReadonlyMap<string, EvalSplit> = new Map([
