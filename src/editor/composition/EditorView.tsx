@@ -579,6 +579,8 @@ export default function EditorView(props: EditorViewProps): JSX.Element {
         previewing: () => session.state.previewing,
       },
       controls: editorControls,
+      // A take is heard in the song as it plays (GRV-207).
+      audio,
       // A recommended sound is tried through the library's hot-swap and kept
       // through its Insert (GRV-23).
       recommendations: {

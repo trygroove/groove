@@ -15,6 +15,7 @@ import ProposalCard from "./ProposalCard";
 import RecommendationCard from "./RecommendationCard";
 import ReplyRating from "./ReplyRating";
 import StreamedProposalCard from "./StreamedProposalCard";
+import TakesCard from "./TakesCard";
 import type { AssistantChat } from "./useAssistantChat";
 import { type ConversationEntry, MAX_MESSAGE_CHARS } from "./useAssistantConversation";
 import VideoCard from "./VideoCard";
@@ -501,6 +502,33 @@ function Entry(props: {
                 heldAfter={props.chat.cards.heldAfter(props.entry.id)}
               />
             </>
+          )}
+        </Show>
+      </Match>
+      {/* Four takes to pick from (GRV-207), held like any card of its turn. */}
+      <Match
+        when={props.entry.kind === "takes" && !props.chat.cards.held(props.entry.id)}
+      >
+        <Show
+          when={props.chat.takes}
+          fallback={
+            // No editor to hear them in: the reply says takes were offered
+            // and nothing more. Nothing in the song changes.
+            <section class="assistant-card" aria-label="Takes">
+              <b>Takes were offered</b>
+              <span>Open a project to hear and pick one. Your song is unchanged.</span>
+            </section>
+          }
+        >
+          {(takes) => (
+            <TakesCard
+              entryId={props.entry.id}
+              takes={takes()}
+              canAsk={
+                props.chat.account().registered && !props.chat.conversation.streaming()
+              }
+              heldAfter={props.chat.cards.heldAfter(props.entry.id)}
+            />
           )}
         </Show>
       </Match>

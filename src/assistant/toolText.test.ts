@@ -13,6 +13,7 @@ import { buildAssistantPayload } from "./payload";
 import { ASSISTANT_SYSTEM_PROMPT, buildSystemBlocks, SHARED_TOOL_RULES } from "./prompt";
 import { recommendationTool } from "./recommendation";
 import { TACTIC_DEFAULTS, TACTICS } from "./tactics";
+import { offerTakesTool } from "./takes";
 import {
   assistantTools,
   EXPLAIN_TOOL,
@@ -42,6 +43,7 @@ function offered(level: ToolTextLevel) {
     ...assistantTools(level, "off", "off", "off"),
     withToolText(EXPLAIN_TOOL, level),
     withToolText(askProducerTool(), level),
+    withToolText(offerTakesTool(), level),
     ...conditional,
     withToolText(rememberTool(), level),
     withToolText(startLessonTool(), level),

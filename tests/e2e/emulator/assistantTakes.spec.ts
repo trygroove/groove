@@ -1,0 +1,83 @@
+import {
+  answerDisclosure,
+  assistantButton,
+  composer,
+  newProject,
+  panel,
+  proposal,
+} from "./support/assistant";
+import { expect, type Page, test } from "./support/test";
+
+/**
+ * Four takes of a part to pick from (GRV-207), against the real gateway and
+ * its scripted provider (`[takes]` in `emulatorProvider.ts`): one card holds
+ * the four, each heard in the song before choosing; Use this applies that one
+ * take through the proposal path, "4 more" replaces the four with a fresh
+ * set, and "None of these" applies nothing.
+ */
+
+const takesCards = (page: Page) => panel(page).getByRole("region", { name: /^Takes:/ });
+const takesCard = (page: Page) => takesCards(page).last();
+
+async function askForTakes(page: Page): Promise<void> {
+  await assistantButton(page).click();
+  await answerDisclosure(page);
+  await composer(page).fill("Write me a lead melody [takes]");
+  await page.keyboard.press("Enter");
+  await expect(takesCard(page).getByRole("listitem")).toHaveCount(4, { timeout: 15_000 });
+}
+
+test.describe("four takes to pick from", () => {
+  test("hears a take in the song, then uses another, applying only that one", async ({
+    page,
+  }) => {
+    await newProject(page);
+    await askForTakes(page);
+    const card = takesCard(page);
+    await expect(card).toContainText("Lead melody");
+    await expect(card).toContainText("Busy and high");
+
+    await card.getByRole("button", { name: "Hear take 2" }).click();
+    await expect(card.getByRole("button", { name: "Stop take 2" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(card.getByRole("status")).toContainText("Hearing take 2");
+    // Switching is one press, and the song keeps playing.
+    await card.getByRole("button", { name: "Hear take 4" }).click();
+    await expect(card.getByRole("status")).toContainText("Hearing take 4");
+
+    await card.getByRole("button", { name: "Use take 3" }).click();
+    await expect(card.getByRole("status")).toContainText("Using take 3");
+    await expect(card.getByRole("listitem")).toHaveCount(0);
+    await expect(proposal(page)).toContainText("Lead melody · take 3");
+    await expect(proposal(page).getByRole("status")).toContainText(
+      "Applied as one undo step",
+    );
+    await expect(proposal(page).getByRole("button", { name: "Undo" })).toBeVisible();
+  });
+
+  test("4 more replaces the takes with a fresh set, and None of these applies nothing", async ({
+    page,
+  }) => {
+    await newProject(page);
+    await askForTakes(page);
+    const first = takesCard(page);
+    // Pressed while a take is heard: the fresh set is for the song as it is.
+    await first.getByRole("button", { name: "Hear take 1" }).click();
+    await expect(first.getByRole("status")).toContainText("Hearing take 1");
+    await first.getByRole("button", { name: "4 more", exact: true }).click();
+    await expect(takesCards(page)).toHaveCount(2, { timeout: 15_000 });
+    await expect(takesCards(page).first().getByRole("status")).toContainText(
+      "Set aside for 4 more",
+    );
+    const fresh = takesCard(page);
+    await expect(fresh.getByRole("listitem")).toHaveCount(4);
+    await expect(fresh).toContainText("Syncopated mid");
+    await expect(fresh.getByRole("button", { name: "Use take 1" })).toBeEnabled();
+
+    await fresh.getByRole("button", { name: "None of these", exact: true }).click();
+    await expect(fresh.getByRole("status")).toContainText("None of these used");
+    await expect(panel(page).getByRole("region", { name: /^Proposal\b/ })).toHaveCount(0);
+  });
+});

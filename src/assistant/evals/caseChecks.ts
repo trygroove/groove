@@ -27,6 +27,8 @@
  * `clipsPlaced` are in `caseChecksQa.ts`; GRV-119's two (`exactEdit`, `nothingElse`), which judge
  * a basic production action, are in `basicActionChecks.ts`.
  * `noEmptyClips` and `clipsPlaced` judge every case ({@link EVERY_CASE_CHECKS}).
+ * GRV-207's two (`offersTakes`, `noTakes`), which read the turn's offer of
+ * takes, are in `takesChecks.ts`.
  */
 
 import type { RawCommandInput } from "../../commands/types";
@@ -55,6 +57,7 @@ import {
 } from "./caseChecksQa";
 import type { CheckResult } from "./checks";
 import { drumPartOf } from "./evalLibrary";
+import { runTakesCheck, TAKES_CHECK_IDS } from "./takesChecks";
 
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });
 const fail = (detail: string): CheckResult => ({ status: "fail", detail });
@@ -87,6 +90,8 @@ export const CASE_CHECK_IDS = [
   "recommendationTargets",
   // GRV-150: the reply agrees with the project context (`caseChecksContext.ts`).
   ...REPLY_CHECK_IDS,
+  // GRV-207: four takes to pick from (`takesChecks.ts`).
+  ...TAKES_CHECK_IDS,
 ] as const;
 export type CaseCheckId = (typeof CASE_CHECK_IDS)[number];
 
@@ -578,6 +583,8 @@ export interface CaseCheckInputs {
   readonly library?: AssistantLibraryContext | null;
   /** What the case knows of its project, for the reply checks (GRV-150). */
   readonly facts?: ProjectFacts;
+  /** The turn's `offer_takes` calls, for the takes checks (GRV-207). */
+  readonly offers?: readonly AssistantToolCall[];
 }
 
 /** Runs the case check `id` on an applied proposal. */
@@ -626,5 +633,8 @@ export function runCaseCheck(
     case "noDeniedTrack":
     case "noAbsentTrack":
       return runReplyCheck(id, text, inputs.facts);
+    case "offersTakes":
+    case "noTakes":
+      return runTakesCheck(id, inputs.offers ?? []);
   }
 }

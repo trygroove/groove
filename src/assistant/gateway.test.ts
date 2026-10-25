@@ -56,6 +56,7 @@ import {
 } from "./protocol";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
 import { ADDED_RESULT, CHANGE_STEPS_SPENT } from "./steps";
+import { OFFER_TAKES_TOOL_NAME } from "./takes";
 import { type AssistantTurnLog, TURN_LOG_KEYS } from "./telemetry";
 import {
   ASSISTANT_TOOLSET_VERSION,
@@ -461,6 +462,7 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
       ...assistantTools().map((tool) => tool.name),
       EXPLAIN_TOOL_NAME,
       ASK_PRODUCER_TOOL_NAME,
+      OFFER_TAKES_TOOL_NAME,
     ]);
     for (const tool of sent.tools) expect(tool.input_schema.type).toBe("object");
   });
@@ -484,6 +486,7 @@ describe("runAssistantTurn: tools and proposals (GRV-4)", () => {
       ...assistantTools().map((tool) => tool.name),
       EXPLAIN_TOOL_NAME,
       ASK_PRODUCER_TOOL_NAME,
+      OFFER_TAKES_TOOL_NAME,
       RECOMMEND_SOUNDS_TOOL,
     ]);
     // The prompt, the project, the library, then the turn's ID stem (GRV-6).
@@ -2126,7 +2129,7 @@ describe("runAssistantTurn: tool bundles (GRV-143)", () => {
     input: { goal: "The track drops out.", technique: "Muting takes it out of the mix." },
   };
   const needMore = { name: NEED_MORE_TOOLS_NAME, input: {} };
-  const ALWAYS = [EXPLAIN_TOOL_NAME, ASK_PRODUCER_TOOL_NAME];
+  const ALWAYS = [EXPLAIN_TOOL_NAME, ASK_PRODUCER_TOOL_NAME, OFFER_TAKES_TOOL_NAME];
   const EVERY_TOOL = [...assistantTools().map((tool) => tool.name), ...ALWAYS];
 
   function bundled(h: Harness): Harness {

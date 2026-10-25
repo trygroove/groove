@@ -78,6 +78,16 @@ import {
 } from "../../assistant/protocol";
 import { splitRecommendations } from "../../assistant/recommendation";
 import type { SessionHealth, SessionTurn } from "../../assistant/sessionHealth";
+import {
+  type HistoryTakes,
+  historyTakes,
+  moreTakesNote,
+  parseTakesCall,
+  splitTakes,
+  TAKE_COUNT,
+  type TakesOutcome,
+  takeProposal,
+} from "../../assistant/takes";
 import type { ProposalOutcome, ReplyRating } from "../../assistant/transcripts";
 import type { AssistantVideo } from "../../assistant/video";
 import type { Project } from "../../domain/entities";
@@ -134,6 +144,25 @@ export interface TurnOrigin {
    * the conversation and handed back, and a proposal of it is out of date.
    */
   readonly restored?: boolean;
+  /**
+   * For "4 more" (GRV-207): how many times the producer has asked for more
+   * takes of this part, counting this turn, so the next offer's analytics say
+   * how deep in re-rolls it came.
+   */
+  readonly takesRerolls?: number;
+  /**
+   * For "4 more" (GRV-207): what the first request for the part sent, which
+   * every "4 more" sends again with one note of its own, so the notes never
+   * pile up turn on turn.
+   */
+  readonly takesRequest?: string;
+  /** For "4 more" (GRV-207): every take of the part set aside before this turn's, in order. */
+  readonly takesSetAside?: readonly string[];
+  /**
+   * The proposal is a take the producer picked (GRV-207): picking is
+   * applying, so its card applies it as it arrives rather than previewing.
+   */
+  readonly fromTake?: true;
 }
 
 /** One thing in the conversation's log. */
@@ -191,6 +220,11 @@ export type ConversationEntry =
        * reads that the call started it, not the sentence.
        */
       readonly lesson?: LessonId;
+      /**
+       * The takes it offered (GRV-207) and what became of them, resent with
+       * its text so the next turn knows which was picked, if any.
+       */
+      readonly takes?: HistoryTakes;
     }
   /**
    * A change the reply proposes, as the gateway returned it, and the turn
@@ -202,6 +236,21 @@ export type ConversationEntry =
       readonly proposal: AssistantProposal;
       readonly origin: TurnOrigin;
       /** The reply that made it, which carries its outcome (GRV-150). */
+      readonly replyId: string;
+    }
+  /**
+   * Four takes of a part the reply offers to pick from (GRV-207), as the
+   * gateway wrote them out, with the revision the turn was sent against and
+   * the turn that asked, so "4 more" can ask again and a pick can become a
+   * proposal.
+   */
+  | {
+      readonly kind: "takes";
+      readonly id: string;
+      readonly call: AssistantToolCall;
+      readonly baseRevision: number;
+      readonly origin: TurnOrigin;
+      /** The reply that offered them, which carries what became of them. */
       readonly replyId: string;
     }
   /**
@@ -352,6 +401,16 @@ export interface UseAssistantConversationOptions {
   readonly onMemoryQuestionAsked?: (
     question: NonNullable<AssistantAsk["memoryQuestion"]>,
   ) => void;
+  /**
+   * Hears each offer of takes as it arrives, under its entry's ID (GRV-207),
+   * with the revision the turn was sent against.
+   */
+  readonly onTakes?: (
+    entryId: string,
+    call: AssistantToolCall,
+    baseRevision: number,
+    origin: TurnOrigin,
+  ) => void;
   /** Hears each recommendation as it arrives, under its entry's ID (GRV-23). */
   readonly onRecommendation?: (
     entryId: string,
@@ -443,6 +502,21 @@ export interface AssistantConversation {
    * it went: not while a reply streams, nor with no account.
    */
   followUp(): boolean;
+  /**
+   * The producer picked take `index` (from 0) of the offer in entry
+   * `entryId` (GRV-207): it joins the log as a proposal of its own, handed to
+   * `onProposal` like any other, titled by the part and the take. Returns the
+   * proposal's entry ID, or null when there is no such offer or take.
+   */
+  pickTake(entryId: string, index: number): string | null;
+  /**
+   * "4 more" on the offer in entry `entryId` (GRV-207): its request again,
+   * with a note naming the takes to move on from, in its scope. Returns
+   * whether it went: not while a reply streams, nor with no account.
+   */
+  moreTakes(entryId: string): boolean;
+  /** Records what became of the offer in entry `entryId` on the reply that made it (GRV-207). */
+  recordTakesOutcome(entryId: string, outcome: TakesOutcome, picked?: number): void;
   /** The question waiting for an answer, if there is one (GRV-42). */
   readonly pendingAsk: Accessor<PendingAsk | null>;
   /**
@@ -721,7 +795,31 @@ export function useAssistantConversation(
             options.onMemoryProposal?.(entryId, proposal);
           }
           if (!remembered.proposal) return;
-          const split = splitRecommendations(remembered.proposal);
+          // An offer of takes (GRV-207) is a card of its own; the turn
+          // offers one at most, so any after the first is dropped.
+          const offered = splitTakes(remembered.proposal);
+          const [offer] = offered.offers;
+          if (offer) {
+            const entryId = id();
+            const takes = parseTakesCall(offer);
+            append({
+              kind: "takes",
+              id: entryId,
+              call: offer,
+              baseRevision: request.projectRevision,
+              origin,
+              replyId,
+            });
+            if (takes) {
+              const offeredTakes = historyTakes(takes);
+              update(replyId, (entry) =>
+                entry.kind === "reply" ? { ...entry, takes: offeredTakes } : entry,
+              );
+            }
+            options.onTakes?.(entryId, offer, request.projectRevision, origin);
+          }
+          if (!offered.proposal) return;
+          const split = splitRecommendations(offered.proposal);
           if (split.proposal && partsEntryId) {
             // The parts' entry takes the whole proposal in their place.
             const whole = split.proposal;
@@ -837,8 +935,26 @@ export function useAssistantConversation(
     scope: AssistantScope,
     lessonNow?: AssistantLessonContext,
     followingUp = false,
+    takes?: {
+      /** How many times "4 more" has been pressed for the part, this time included. */
+      readonly rerolls: number;
+      /** What the first request for the part sent. */
+      readonly request: string;
+      /** Every take set aside so far, by label, in order. */
+      readonly setAside: readonly string[];
+      /**
+       * The reply whose takes this sets aside. Its history line says so
+       * already, though the outcome recorded just now is not readable yet
+       * (a signal write is not until it flushes).
+       */
+      readonly setAsideReply: string;
+    },
   ): void {
-    const project = options.project();
+    // "4 more" (GRV-207) is pressed while a take may still be heard: the song
+    // it asks about is the committed one, never a take's preview.
+    const project = takes
+      ? (options.committedProject?.() ?? options.project())
+      : options.project();
     if (!project) return;
     const said = message.wire ?? message.text;
     const memory = options.memory?.() ?? null;
@@ -849,7 +965,7 @@ export function useAssistantConversation(
     const request: AssistantTurnRequest = {
       projectRevision: project.metadata.revision,
       messages: [
-        ...historyOf(entries()),
+        ...historyOf(takes ? setAsideIn(entries(), takes.setAsideReply) : entries()),
         { role: "user", text: said.slice(0, MAX_MESSAGE_CHARS) },
       ],
       context: scopedContext(project, scope),
@@ -884,6 +1000,13 @@ export function useAssistantConversation(
     startTurn(request, {
       ...message,
       scope,
+      ...(takes
+        ? {
+            takesRerolls: takes.rerolls,
+            takesRequest: takes.request,
+            takesSetAside: takes.setAside,
+          }
+        : {}),
       sentAt: clock.now(),
       remoteChanges: options.remoteChanges?.() ?? 0,
       ...(turnId ? { turnId } : {}),
@@ -946,6 +1069,95 @@ export function useAssistantConversation(
       scope,
     );
     return true;
+  }
+
+  /**
+   * The reply each picked take's proposal came from (GRV-207): the proposal
+   * is applied as it joins the log, before the new entry can be read back,
+   * and its outcome belongs on that reply.
+   */
+  const pickedReplies = new Map<string, string>();
+
+  function takesEntry(entryId: string) {
+    const entry = entries().find((candidate) => candidate.id === entryId);
+    return entry?.kind === "takes" ? entry : null;
+  }
+
+  function pickTake(entryId: string, index: number): string | null {
+    const entry = takesEntry(entryId);
+    const takes = entry && parseTakesCall(entry.call);
+    const take = takes?.takes[index];
+    if (!entry || !takes || !take) return null;
+    const proposal = takeProposal(takes, index, entry.baseRevision);
+    // A turn of its own for the card queue, titled by the take; Refresh on it
+    // asks the turn's request again.
+    const { origin } = entry;
+    const picked: TurnOrigin = {
+      ...origin,
+      text: `${takes.part} · take ${index + 1}`,
+      wire: origin.wire ?? origin.text,
+      fromTake: true,
+    };
+    const proposalId = id();
+    // Applied as it arrives, before the log's new entry can be read back.
+    pickedReplies.set(proposalId, entry.replyId);
+    append({
+      kind: "proposal",
+      id: proposalId,
+      proposal,
+      origin: picked,
+      replyId: entry.replyId,
+    });
+    options.onProposal?.(proposalId, proposal, picked);
+    return proposalId;
+  }
+
+  function moreTakes(entryId: string): boolean {
+    const entry = takesEntry(entryId);
+    const takes = entry && parseTakesCall(entry.call);
+    if (!entry || !takes || !canStart()) return false;
+    // The producer pressed it, so the log shows it as their message, whatever
+    // the turn that offered the takes was.
+    const { text, wire, scope, takesRerolls, takesRequest, takesSetAside } = entry.origin;
+    // Each "4 more" is the first request again with one note naming every
+    // take set aside so far, never the last turn's words and its note.
+    const request = takesRequest ?? wire ?? text;
+    const setAside = [...(takesSetAside ?? []), ...historyTakes(takes).labels];
+    const more = moreTakesNote({ part: takes.part, labels: setAside });
+    sendMessage(
+      { text: `${TAKE_COUNT} more takes`, wire: `${request}\n\n${more}` },
+      scope,
+      undefined,
+      false,
+      {
+        rerolls: (takesRerolls ?? 0) + 1,
+        request,
+        setAside,
+        setAsideReply: entry.replyId,
+      },
+    );
+    return true;
+  }
+
+  function recordTakesOutcome(
+    entryId: string,
+    outcome: TakesOutcome,
+    picked?: number,
+  ): void {
+    const entry = takesEntry(entryId);
+    if (!entry) return;
+    update(entry.replyId, (reply) => {
+      if (reply.kind !== "reply" || !reply.takes) return reply;
+      const { picked: _previous, ...offered } = reply.takes;
+      return {
+        ...reply,
+        takes: {
+          ...offered,
+          outcome,
+          ...(outcome === "picked" && picked !== undefined ? { picked } : {}),
+        },
+      };
+    });
   }
 
   function followUp(): boolean {
@@ -1026,8 +1238,9 @@ export function useAssistantConversation(
 
   function recordProposalOutcome(entryId: string, outcome: ProposalOutcome): void {
     const card = entries().find((entry) => entry.id === entryId);
-    if (card?.kind !== "proposal") return;
-    update(card.replyId, (entry) =>
+    const replyId = card?.kind === "proposal" ? card.replyId : pickedReplies.get(entryId);
+    if (replyId === undefined) return;
+    update(replyId, (entry) =>
       entry.kind === "reply" ? { ...entry, proposal: outcome } : entry,
     );
   }
@@ -1171,9 +1384,24 @@ export function useAssistantConversation(
     refresh,
     followUp,
     recordProposalOutcome,
+    pickTake,
+    moreTakes,
+    recordTakesOutcome,
     pendingAsk,
     answerAsk,
     dismissAsk,
     rateReply,
   };
+}
+
+/** The entries with reply `replyId`'s takes marked as set aside for "4 more" (GRV-207). */
+function setAsideIn(
+  entries: readonly ConversationEntry[],
+  replyId: string,
+): readonly ConversationEntry[] {
+  return entries.map((entry) => {
+    if (entry.id !== replyId || entry.kind !== "reply" || !entry.takes) return entry;
+    const { picked: _picked, ...offered } = entry.takes;
+    return { ...entry, takes: { ...offered, outcome: "more" } };
+  });
 }

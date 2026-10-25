@@ -53,6 +53,10 @@
  *   step: a "Bass" synth track, then a one-bar line on it, then that line
  *   placed at bar 1 with `explain_change`. Each streams to the card as a part
  *   while the rest are on their way.
+ * - `[takes]` (GRV-207): a short reply that ends in `offer_takes`, four
+ *   takes of a lead melody, each a new "Lead" synth track with a one-bar clip
+ *   looped over four bars ({@link EMULATOR_TAKES_TRACK_ID}); with "[4 more]"
+ *   in the message too, four others.
  * - `[remember]`: a short reply that ends in `remember_producer` (GRV-25),
  *   proposing {@link EMULATOR_REMEMBER}'s note. The gateway only lets it
  *   through on a turn that carries the producer's memory.
@@ -81,6 +85,7 @@ import type { AssistantProvider } from "./provider";
 import { ProviderFailure } from "./provider";
 import { continuesTurn, type ProviderMessagesRequest } from "./providerRequest";
 import { RECOMMEND_SOUNDS_TOOL } from "./recommendation";
+import { OFFER_TAKES_TOOL_NAME } from "./takes";
 import {
   CREATE_EXAMPLES,
   EXPLAIN_TOOL_NAME,
@@ -880,6 +885,119 @@ function sketchStep(request: ProviderMessagesRequest): Step[] {
   ];
 }
 
+/** The track every `[takes]` take makes (GRV-207). */
+export const EMULATOR_TAKES_TRACK_ID = "trk_EmuLead00000000000001";
+
+/** `[takes]`'s four takes: a label and a bar of notes, as compact notes. */
+const EMULATOR_TAKES: readonly {
+  readonly label: string;
+  readonly notes: readonly (readonly number[])[];
+}[] = [
+  {
+    label: "Sparse and low",
+    notes: [
+      [0, 57, 288, 0.8],
+      [384, 60, 192, 0.7],
+    ],
+  },
+  {
+    label: "Busy and high",
+    notes: [76, 74, 72, 74, 76, 79, 76, 74].map((pitch, step) => [
+      step * 96,
+      pitch,
+      96,
+      0.7,
+    ]),
+  },
+  {
+    label: "Climbing line",
+    notes: [69, 71, 72, 76].map((pitch, step) => [step * 192, pitch, 192, 0.75]),
+  },
+  {
+    label: "Lots of space",
+    notes: [
+      [0, 64, 96, 0.8],
+      [576, 67, 96, 0.7],
+    ],
+  },
+];
+
+/** What "4 more" gets instead: four new labels, the same lines a step higher. */
+const EMULATOR_MORE_TAKES = [
+  "Syncopated mid",
+  "Arpeggio up",
+  "Long held notes",
+  "Call and answer",
+];
+
+/**
+ * `[takes]` (GRV-207): a short reply that ends in `offer_takes`, four takes
+ * of a lead melody, each a new "Lead" synth with a one-bar clip looped over
+ * four bars. Asked again with "[4 more]", four others.
+ */
+function takesReply(request: ProviderMessagesRequest): Step[] {
+  const more = lastUserMessage(request).includes("[4 more]");
+  const trackId = EMULATOR_TAKES_TRACK_ID;
+  const order = contextTracks(request).length;
+  const takes = EMULATOR_TAKES.map((take, index) => {
+    const clipId = `clp_EmuLead0000000000000${index + 1}`;
+    return {
+      label: more ? (EMULATOR_MORE_TAKES[index] ?? take.label) : take.label,
+      calls: [
+        {
+          name: "track_create",
+          input: {
+            id: trackId,
+            name: "Lead",
+            color: "#808080",
+            order,
+            type: "instrument",
+            instrument: { kind: "synth", parameters: {} },
+            devices: [],
+            sendConfig: [],
+            mixer: { volume: -6, pan: 0, muted: false, soloed: false },
+          },
+        },
+        {
+          name: "clip_create",
+          input: {
+            id: clipId,
+            trackId,
+            name: "Lead",
+            color: "#808080",
+            lengthTicks: 768,
+            content: {
+              kind: "notes",
+              events: take.notes.map(([start, pitch, length, velocity]) => [
+                start,
+                (pitch ?? 60) + (more ? 2 : 0),
+                length,
+                velocity,
+              ]),
+            },
+          },
+        },
+        {
+          name: "placement_create",
+          input: {
+            id: `plc_EmuLead0000000000000${index + 1}`,
+            clipId,
+            trackId,
+            startTicks: 0,
+            durationTicks: 3072,
+            clipOffsetTicks: 0,
+            looped: true,
+          },
+        },
+      ],
+    };
+  });
+  return proposalReply(
+    more ? "Four new takes of the lead." : "Here are four takes of a lead to pick from.",
+    [{ name: OFFER_TAKES_TOOL_NAME, input: { part: "Lead melody", takes } }],
+  );
+}
+
 /** A provider that answers from the scripts above. */
 export function createEmulatorAssistantProvider(
   firstTime: FirstTimeCheck = inProcessFirstTime(),
@@ -887,6 +1005,7 @@ export function createEmulatorAssistantProvider(
   function scriptFor(request: ProviderMessagesRequest): Step[] {
     const message = lastUserMessage(request);
     if (message.includes("[sketch]")) return sketchStep(request);
+    if (message.includes("[takes]")) return takesReply(request);
     // A scripted proposal is whole in one step; the step after it ends the turn.
     if (continuesTurn(request)) return finishedReply();
     if (message.includes("[hang]")) {

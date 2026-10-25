@@ -49,6 +49,7 @@ import { ASSISTANT_COMMAND_TYPES } from "../tools";
 import { CASE_CHECK_IDS } from "./caseChecks";
 import type { EvalPart, ResolvedScope } from "./cases";
 import { LESSON_CHECK_IDS } from "./lessonChecks";
+import { isTakesCheck, TAKES_CHECK_IDS } from "./takesChecks";
 
 export type CheckStatus = "pass" | "fail" | "skip";
 
@@ -71,8 +72,10 @@ export const CHECK_IDS = [
   "notFlattened",
   "coverage",
   "outcome",
-  ...CASE_CHECK_IDS,
+  // In number order: GRV-207's takes checks (29, 30) come after the lessons'.
+  ...CASE_CHECK_IDS.filter((id) => !isTakesCheck(id)),
   ...LESSON_CHECK_IDS,
+  ...TAKES_CHECK_IDS,
 ] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
@@ -105,6 +108,8 @@ export const CHECK_LABELS: Record<CheckId, string> = {
   namesOnlyBlockBites: "26. Names only the block's bites",
   asksThroughTool: "27. Asks through the tool, never in text",
   noHistoryNote: "28. No history note echoed",
+  offersTakes: "29. Four takes, each with notes of its own",
+  noTakes: "30. No takes offered",
 };
 
 const pass = (detail: string): CheckResult => ({ status: "pass", detail });

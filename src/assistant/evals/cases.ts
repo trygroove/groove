@@ -33,6 +33,10 @@
  * `memory`), run a bite of a lesson as a session (`lessonSession`,
  * `lessonSession.ts`), and is judged by the lesson checks it names
  * (`lessonChecks`, `lessonChecks.ts`).
+ *
+ * GRV-207 adds four `takes` cases: a melody, a bassline and chords on a beat,
+ * each judged by check 29 (one offer of four takes, each playing notes no
+ * other take plays), and drums, judged by check 30 (no takes offered).
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -99,6 +103,8 @@ export const EVAL_CAPABILITIES = [
   "projectContext",
   // GRV-208: Coproducer's lesson turns.
   "lesson",
+  // GRV-207: four takes of a part to pick from.
+  "takes",
 ] as const;
 export type EvalCapability = (typeof EVAL_CAPABILITIES)[number];
 
@@ -311,6 +317,21 @@ function relativeDbCase(
     scope: BD_ONLY,
     checks: ["endsAt"],
     expectedValue: { track: "BD", parameter: "volume", value: to, tolerance: 0.05 },
+  };
+}
+
+/** GRV-207: a new melodic or harmonic part on a drums-only loop, which check 29 holds to four takes. */
+function takesCase(id: string, request: string): EvalCase {
+  return {
+    id,
+    capability: "takes",
+    axis: "conventional",
+    request,
+    expect: "proposal",
+    fixture: createTechnoDrumsProject,
+    selection: null,
+    scope: NEW_TRACKS_ONLY,
+    checks: ["offersTakes"],
   };
 }
 
@@ -732,6 +753,22 @@ export const TYPESCRIPT_CASES: readonly EvalCase[] = [
     scope: { tracks: [], createTracks: false, ...NOTHING_ELSE },
     checks: ["noAbsentTrack", "noDeniedTrack"],
     facts: { present: SNARE_WORDS, absent: ["closed hat", "hi-hat", "hat"] },
+  },
+  // GRV-207: a melodic or harmonic part gets four takes to pick from, drums
+  // do not. Checks 1 to 5 judge the first take, as the producer who picks it.
+  takesCase("takes-melody", "Write me a lead melody over this beat."),
+  takesCase("takes-bass", "Give me a bassline for this beat."),
+  takesCase("takes-chords", "Add some chords over this."),
+  {
+    id: "takes-drums",
+    capability: "takes",
+    axis: "conventional",
+    request: "Add a snare and some hats to go with the BD.",
+    expect: "proposal",
+    fixture: () => createBdOnlyProject(),
+    selection: null,
+    scope: { tracks: ["BD"], createTracks: true, ...NOTHING_ELSE },
+    checks: ["noTakes"],
   },
   // GRV-119: the basic production actions, a set of their own.
   ...BASIC_ACTION_CASES,

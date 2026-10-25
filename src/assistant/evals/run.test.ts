@@ -8,6 +8,7 @@ import {
   replyEvents,
   toolUseEvents,
 } from "../../testing/scriptedAssistantProvider";
+import { offerTakesCall } from "../../testing/takes";
 import {
   ASSISTANT_PROMPT_VERSION,
   assistantSystemPrompt,
@@ -16,6 +17,7 @@ import {
 } from "../prompt";
 import { continuesTurn } from "../providerRequest";
 import { describeTactics, resolveTactics, TACTIC_DEFAULTS } from "../tactics";
+import { expandTakesCall } from "../takes";
 import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { createHouseLoopProject } from "./fixtures";
@@ -161,7 +163,7 @@ describe("runEvals", () => {
     const markdown = renderMarkdown(report);
     expect(markdown).toContain("**Errored turns: 1 of 2**");
     expect(markdown).toContain(
-      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | 0/0 | - | - | - | 0/0 | - | - | - | - | - | - | - | - | 1 |",
+      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | 0/0 | - | - | - | 0/0 | - | - | - | - | - | - | - | - | - | - | 1 |",
     );
     expect(markdown).toContain(
       "**Run 2** (0 s): errored, not judged: provider_error: The assistant could not take that request. (provider: rejected, HTTP 400)",
@@ -899,5 +901,43 @@ describe("the sound-pick cases (GRV-129)", () => {
       status: "fail",
       detail: expect.stringMatching(/hat and the snare are both aimed at/),
     });
+  });
+});
+
+describe("the takes cases (GRV-207)", () => {
+  const find = (id: string) => EVAL_CASES.find((entry) => entry.id === id) as EvalCase;
+  const base = { durationMs: 1, error: null, stopReason: null, text: "" };
+  const offered = (evalCase: EvalCase) => {
+    const project = evalCase.fixture();
+    const written = expandTakesCall(
+      { id: "toolu_takes", ...offerTakesCall(project) },
+      "Stem0000000000000",
+    );
+    if (!written.ok) throw new Error(written.message);
+    return {
+      baseRevision: project.metadata.revision,
+      toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+      calls: [written.call],
+    };
+  };
+
+  it("judges a melodic request's offer by check 29, and its first take by the proposal checks", () => {
+    const evalCase = find("takes-melody");
+    const record = evaluateTurn(evalCase, 1, {
+      ...base,
+      proposal: offered(evalCase),
+    } as never);
+    expect(record.checks.valid?.status).toBe("pass");
+    expect(record.checks.inScope?.status).toBe("pass");
+    expect(record.checks.offersTakes?.status).toBe("pass");
+  });
+
+  it("fails check 30 on a drums request that got takes", () => {
+    const evalCase = find("takes-drums");
+    const record = evaluateTurn(evalCase, 1, {
+      ...base,
+      proposal: offered(evalCase),
+    } as never);
+    expect(record.checks.noTakes?.status).toBe("fail");
   });
 });
