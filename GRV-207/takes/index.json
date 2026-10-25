@@ -1,0 +1,22 @@
+{
+  "id": "takes",
+  "title": "Four takes to pick from",
+  "steps": [
+    {
+      "file": "01-one-card-holds-four-takes-each-with-its-.png",
+      "caption": "One card holds four takes, each with its own Hear and Use this"
+    },
+    {
+      "file": "02-take-2-heard-in-the-song-the-lead-track-.png",
+      "caption": "Take 2 heard in the song: the Lead track is previewed and the song plays"
+    },
+    {
+      "file": "03-4-more-sets-the-first-four-aside-and-off.png",
+      "caption": "4 more sets the first four aside and offers a fresh set"
+    },
+    {
+      "file": "04-use-this-applies-only-take-3-through-a-p.png",
+      "caption": "Use this applies only take 3, through a proposal card with Undo"
+    }
+  ]
+}
