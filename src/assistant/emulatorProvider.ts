@@ -60,7 +60,8 @@
  * - `[drum takes]` (GRV-213): the same for a drum pattern: four takes, each a
  *   new "Drums" drum machine ({@link EMULATOR_DRUM_TAKES_TRACK_ID}) with
  *   kick, snare and hat pads and a one-bar pattern of hits looped over four
- *   bars; with "[4 more]", four others.
+ *   bars; with "[4 more]", four others; with "[unfit]", four whose hits go
+ *   in a clip the song does not have, so not one fits (the card says why).
  * - `[remember]`: a short reply that ends in `remember_producer` (GRV-25),
  *   proposing {@link EMULATOR_REMEMBER}'s note. The gateway only lets it
  *   through on a turn that carries the producer's memory.
@@ -1010,6 +1011,9 @@ const EMULATOR_DRUM_PADS = {
   hat: "pad_EmuDrumHat00000000001",
 } as const;
 
+/** The clip `[drum takes] [unfit]` writes into, which no song has. */
+const UNFIT_CLIP_ID = "clp_EmuDrumsGone000000001";
+
 /** `[drum takes]`'s four takes: a label and the 16th steps each pad hits on. */
 const EMULATOR_DRUM_TAKES: readonly {
   readonly label: string;
@@ -1052,10 +1056,13 @@ const EMULATOR_DRUM_TAKES: readonly {
  * `[drum takes]` (GRV-213): a short reply that ends in `offer_takes`, four
  * takes of a drum pattern, each a new "Drums" drum machine with a one-bar
  * pattern looped over four bars. Asked again with "[4 more]", four others,
- * each a step later.
+ * each a step later. With "[unfit]", each take only adds its kicks to a clip
+ * the song does not have: the gateway lets it through, and the browser finds
+ * that not one take fits.
  */
 function drumTakesReply(request: ProviderMessagesRequest): Step[] {
   const more = lastUserMessage(request).includes("[4 more]");
+  const unfit = lastUserMessage(request).includes("[unfit]");
   const trackId = EMULATOR_DRUM_TAKES_TRACK_ID;
   const order = contextTracks(request).length;
   const shift = more ? 1 : 0;
@@ -1068,8 +1075,16 @@ function drumTakesReply(request: ProviderMessagesRequest): Step[] {
         SIXTEENTH_TICKS,
         velocity,
       ]);
+    const label = more ? take.more : take.label;
+    if (unfit) {
+      const notes = hits(EMULATOR_DRUM_PADS.kick, take.kick, 0.9);
+      return {
+        label,
+        calls: [{ name: "note_add", input: { clipId: UNFIT_CLIP_ID, notes } }],
+      };
+    }
     return {
-      label: more ? take.more : take.label,
+      label,
       calls: [
         {
           name: "track_create",

@@ -38,6 +38,7 @@ import {
   parseTakesCall,
   type TakesOutcome,
 } from "../../assistant/takes";
+import type { TranscriptIssue } from "../../assistant/transcripts";
 import type { Project } from "../../domain/entities";
 import type { Preview } from "../composition/sessionPreview";
 import type { ProjectAudioControls } from "../composition/useProjectAudio";
@@ -46,6 +47,7 @@ import {
   hearingCommands,
   type TakeRow,
   type TakesCard,
+  unfitReason,
 } from "./takesCardModel";
 import type { TurnOrigin } from "./useAssistantConversation";
 import type { ProposalSessionPort } from "./useAssistantProposals";
@@ -74,6 +76,12 @@ export interface UseAssistantTakesOptions {
   onMore(entryId: string): boolean;
   /** Hears what became of an offer, for the conversation's history. */
   onOutcome?(entryId: string, outcome: TakesOutcome, picked?: number): void;
+  /**
+   * An offer arrived with no take that fits a song that did not move under
+   * it: the first take's issues, for a kept transcript to say why, as a
+   * refused proposal's does (GRV-98).
+   */
+  onUnfit?(origin: TurnOrigin, issues: readonly TranscriptIssue[]): void;
   /**
    * How many changes made elsewhere have been adopted this session (the
    * proposal cards' count), so an offer that arrives after one more is
@@ -166,6 +174,7 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
       hearing: null,
       picked: null,
       notice: null,
+      reason: null,
     };
     if (!takes || !target) {
       entries.set(entryId, {
@@ -201,7 +210,10 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     const movedElsewhere =
       !origin.restored && (options.remoteChanges?.() ?? 0) !== origin.remoteChanges;
     if (movedElsewhere) closed.add(entryId);
-    if (!origin.restored && !checked.stale && !movedElsewhere) logUnfit(checked.rows);
+    if (!origin.restored && !checked.stale && !movedElsewhere) {
+      logUnfit(checked.rows);
+      reportUnfit(origin, checked.rows);
+    }
     setCards((current) =>
       new Map(current).set(entryId, {
         ...base,
@@ -231,6 +243,13 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     }
   }
 
+  /** Hands the first take's issues on when none fits, so a kept turn says why. */
+  function reportUnfit(origin: TurnOrigin, rows: readonly TakeRow[]): void {
+    const issues = rows[0]?.issues;
+    if (!issues?.length || rows.some((row) => row.commands !== null)) return;
+    options.onUnfit?.(origin, issues);
+  }
+
   /** The track the card names: the first fitting take's. */
   const shownTrackName = (rows: readonly TakeRow[]) =>
     rows.find((row) => row.commands !== null)?.trackName ?? null;
@@ -239,11 +258,12 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
   function shownTakes(
     rows: readonly TakeRow[],
     stale: boolean,
-  ): Pick<TakesCard, "status" | "takes"> {
+  ): Pick<TakesCard, "status" | "takes" | "reason"> {
     const fitting = rows.filter((row) => row.commands !== null).length;
     return {
       status: stale ? "stale" : fitting === 0 ? "invalid" : "choosing",
       takes: rows.map((row) => ({ label: row.label, fits: row.commands !== null })),
+      reason: stale ? null : unfitReason(rows),
     };
   }
 
@@ -420,12 +440,22 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     );
   }
 
-  /** A take's preview the session ended by itself (an edit, another preview) is heard no more. */
+  /**
+   * A take's preview the session ended by itself (an edit, another preview)
+   * is heard no more. When the song moved under it (an edit, an undo, a
+   * change from elsewhere), there is no take left to hear, so a song the
+   * hearing started stops as Stop would stop it (GRV-213 QA); another
+   * preview taking its place keeps the song playing for that one.
+   */
   function reconcile(): void {
     if (hearing && hearing.preview.status !== "open") {
       const ended = hearing;
       hearing = null;
       update(ended.entryId, { hearing: null });
+      if (ended.preview.status === "stale" && ended.startedSong && options.audio) {
+        options.audio.pause();
+        options.audio.seekTicks(ended.from);
+      }
     }
   }
 
