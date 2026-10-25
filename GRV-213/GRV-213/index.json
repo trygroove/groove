@@ -1,0 +1,10 @@
+{
+  "id": "GRV-213",
+  "title": "Drum takes that don't fit",
+  "steps": [
+    {
+      "file": "01-a-drum-takes-card-none-of-whose-takes-fi.png",
+      "caption": "A drum takes card none of whose takes fits, saying which change did not"
+    }
+  ]
+}
