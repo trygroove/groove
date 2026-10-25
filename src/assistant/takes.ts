@@ -160,6 +160,73 @@ function repeatedLabel(input: OfferTakesInput): string | null {
   return null;
 }
 
+/** A written-out note as it sounds, or null when `value` is not one. */
+function soundingNote(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const note = value as Record<string, unknown>;
+  const trigger = note.trigger as Record<string, unknown> | undefined;
+  if (typeof trigger !== "object" || trigger === null) return null;
+  return JSON.stringify([
+    trigger.pitch ?? trigger.padId,
+    note.startTicks,
+    note.durationTicks,
+  ]);
+}
+
+/** The notes a call writes once written out: a new clip's, or the ones `note_add` adds. */
+function writtenNotes(call: {
+  readonly name: string;
+  readonly input: unknown;
+}): unknown[] {
+  const input = call.input as Record<string, unknown> | null;
+  if (typeof input !== "object" || input === null) return [];
+  if (call.name === "clip_create") {
+    const content = input.content as Record<string, unknown> | undefined;
+    return content?.kind === "notes" && Array.isArray(content.events)
+      ? content.events
+      : [];
+  }
+  if (call.name === "note_add") return Array.isArray(input.notes) ? input.notes : [];
+  return [];
+}
+
+/**
+ * A take's notes as they sound, once written out: pitch (or pad), start and
+ * length of every note its calls write, in order, without the IDs and
+ * velocities that make two takes look different when they play the same.
+ * Null when the take writes no notes, so there is nothing to compare.
+ */
+export function takeNoteContent(
+  calls: readonly { readonly name: string; readonly input: unknown }[],
+): string | null {
+  const notes = calls
+    .flatMap(writtenNotes)
+    .map(soundingNote)
+    .filter((note): note is string => note !== null)
+    .sort();
+  return notes.length > 0 ? JSON.stringify(notes) : null;
+}
+
+/**
+ * The first two takes (by number, from 1) whose notes are the same, or null
+ * when every take that writes notes writes different ones.
+ */
+export function takesWithSameNotes(
+  takes: readonly {
+    readonly calls: readonly { readonly name: string; readonly input: unknown }[];
+  }[],
+): readonly [number, number] | null {
+  const seen = new Map<string, number>();
+  for (const [index, take] of takes.entries()) {
+    const content = takeNoteContent(take.calls);
+    if (content === null) continue;
+    const earlier = seen.get(content);
+    if (earlier !== undefined) return [earlier + 1, index + 1];
+    seen.set(content, index);
+  }
+  return null;
+}
+
 /** What {@link expandTakesCall} makes of an offer. */
 export type ExpandedTakes =
   | { readonly ok: true; readonly call: AssistantToolCall }
@@ -174,9 +241,9 @@ const fitsItsTool: ExpandedCheck = (written) => {
 /**
  * The offer with every take's compact notes written out, each take in a
  * counter of its own ({@link TAKE_NOTE_MARK}) from `stem`, or why it cannot
- * be shown: not an offer of four takes, two takes under one label, or a take
+ * be shown: not an offer of four takes, two takes under one label, a take
  * with a call that does not fit its tool (named by take and call, counting
- * from 1). Never throws.
+ * from 1), or two takes that play the same notes. Never throws.
  */
 export function expandTakesCall(
   call: AssistantToolCall,
@@ -220,6 +287,13 @@ export function expandTakesCall(
       });
     }
     takes.push({ label: take.label, calls: written });
+  }
+  const same = takesWithSameNotes(takes);
+  if (same !== null) {
+    return {
+      ok: false,
+      message: `takes ${same[0]} and ${same[1]} play the same notes; make each take clearly different`,
+    };
   }
   return {
     ok: true,
