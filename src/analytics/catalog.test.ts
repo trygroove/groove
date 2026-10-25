@@ -110,6 +110,7 @@ describe("event names", () => {
         "assistant_take_picked",
         "assistant_takes_declined",
         "assistant_takes_rerolled",
+        "assistant_takes_unfit",
         "assistant_turn_failed",
         "assistant_video_expanded",
         "assistant_video_failed",

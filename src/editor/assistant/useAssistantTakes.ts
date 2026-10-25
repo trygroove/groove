@@ -187,6 +187,7 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     const movedElsewhere =
       !origin.restored && (options.remoteChanges?.() ?? 0) !== origin.remoteChanges;
     if (movedElsewhere) closed.add(entryId);
+    if (!origin.restored && !checked.stale && !movedElsewhere) logUnfit(checked.rows);
     setCards((current) =>
       new Map(current).set(entryId, {
         ...base,
@@ -195,6 +196,24 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
         part: takes.part,
       }),
     );
+  }
+
+  /**
+   * Says why, when a card arrives with no take that fits a song that did not
+   * move under it: nothing on the card can be used, and the reason is
+   * otherwise lost (GRV-207's QA saw such cards and nothing to say why).
+   */
+  function logUnfit(rows: readonly TakeRow[]): void {
+    const issue = rows[0]?.issue;
+    if (!issue || rows.some((row) => row.commands !== null)) return;
+    try {
+      options.analytics().log("assistant_takes_unfit", {
+        issue_code: issue,
+        take_count: rows.length,
+      });
+    } catch {
+      // The card still shows; an analytics failure is not this card's.
+    }
   }
 
   /** The track the card names: the first fitting take's. */

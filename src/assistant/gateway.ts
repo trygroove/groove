@@ -147,7 +147,7 @@ import {
 } from "./steps";
 import { NO_USAGE, type ProviderUsage, StreamReader } from "./streamEvents";
 import { resolveTactics, type TacticOverrides, type TacticValues } from "./tactics";
-import { expandTakesCall, offerTakesTool } from "./takes";
+import { contextEntityIds, expandTakesCall, offerTakesTool } from "./takes";
 import { type AssistantTurnLog, type ToolBundleFallback, toTurnLog } from "./telemetry";
 import { toolBundleFor } from "./toolBundleRule";
 import {
@@ -953,8 +953,11 @@ export async function runAssistantTurn(
     const stepStrings = stepStringOptions(tactics, turn.context);
     const notes = createNoteExpander(idStem, undefined, stepStrings);
     // An offer of takes (GRV-207) writes out each take's notes in a counter
-    // of its own, from the same stem and with the same note forms.
-    const takes: TakesWriter = (call) => expandTakesCall(call, idStem, stepStrings);
+    // of its own, from the same stem and with the same note forms, and is
+    // refused when a take remakes a track, clip or placement the song has.
+    const inSong = contextEntityIds(turn.context);
+    const takes: TakesWriter = (call) =>
+      expandTakesCall(call, idStem, stepStrings, inSong);
     history = prepared.history;
     toolBundle = prepared.bundle;
     // The tools each step offers: the turn's bundle until the model asks for

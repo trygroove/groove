@@ -4,7 +4,7 @@
  * that says where the card stands. Pure functions of the project and the
  * offer, so the card's words are testable without rendering it.
  */
-import { validateProposal } from "../../assistant/proposal";
+import { type ProposalIssueCode, validateProposal } from "../../assistant/proposal";
 import type { ProposalTarget } from "../../assistant/proposalExecutor";
 import { editsLeaveProposalValid } from "../../assistant/proposalStaleness";
 import { type AssistantTakes, takeProposal } from "../../assistant/takes";
@@ -23,6 +23,8 @@ export interface TakeRow {
   readonly endTicks: number | null;
   /** The name of the track it plays on, or null with {@link startTicks}. */
   readonly trackName: string | null;
+  /** Why it does not fit, as the first issue that refused it, or null when it fits. */
+  readonly issue: ProposalIssueCode | null;
 }
 
 /** The offer checked against the song. */
@@ -62,6 +64,7 @@ export function checkTakes(
         startTicks: null,
         endTicks: null,
         trackName: null,
+        issue: validation.issues[0]?.code ?? "malformed",
       };
     }
     const after = projectAfter(project, validation.proposal);
@@ -72,6 +75,7 @@ export function checkTakes(
       startTicks: span?.start ?? null,
       endTicks: span?.end ?? null,
       trackName: span?.trackName ?? null,
+      issue: null,
     };
   });
   return { rows, stale: staleCount > 0 && staleCount === rows.length };

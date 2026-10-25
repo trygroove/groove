@@ -30,7 +30,11 @@ import {
   type ExpandedCheck,
   type StepStringOptions,
 } from "./compactNotes";
-import type { AssistantProposal, AssistantToolCall } from "./protocol";
+import type {
+  AssistantContextPayload,
+  AssistantProposal,
+  AssistantToolCall,
+} from "./protocol";
 import { ASSISTANT_TOOLSET_VERSION, resolveToolCall } from "./tools";
 
 /** The tool's name, as the model calls it. */
@@ -238,17 +242,54 @@ const fitsItsTool: ExpandedCheck = (written) => {
   return resolution.ok ? null : resolution.message;
 };
 
+/** The tools that make an entity, which a take's new track, clip and placement come from. */
+const CREATE_TOOLS = new Set(["track_create", "clip_create", "placement_create"]);
+
+/**
+ * Every track, clip and placement ID the song already has, as a turn's
+ * context lists them, for {@link expandTakesCall} to keep a take from making
+ * one again.
+ */
+export function contextEntityIds(
+  context: Pick<AssistantContextPayload, "tracks">,
+): ReadonlySet<string> {
+  return new Set(
+    context.tracks.flatMap((track) => [
+      track.id,
+      ...track.placements.flatMap((placement) => [placement.id, placement.clipId]),
+    ]),
+  );
+}
+
+/**
+ * Why a take's written-out call cannot apply to the song: it makes a track,
+ * clip or placement under an ID the song already has. The browser would
+ * refuse the take, and the producer would see a card of takes none of which
+ * can be used (GRV-207), so the model is told instead and can make new IDs.
+ */
+function remadeId(
+  call: { readonly name: string; readonly input: Record<string, unknown> },
+  inSong: ReadonlySet<string>,
+): string | null {
+  if (!CREATE_TOOLS.has(call.name)) return null;
+  const id = call.input.id;
+  if (typeof id !== "string" || !inSong.has(id)) return null;
+  return `${id} is already in the song; make every new ID from this turn's stem, never reuse one`;
+}
+
 /**
  * The offer with every take's compact notes written out, each take in a
  * counter of its own ({@link TAKE_NOTE_MARK}) from `stem`, or why it cannot
  * be shown: not an offer of four takes, two takes under one label, a take
- * with a call that does not fit its tool (named by take and call, counting
- * from 1), or two takes that play the same notes. Never throws.
+ * with a call that does not fit its tool or that makes an entity under an ID
+ * in `inSong` (named by take and call, counting from 1), or two takes that
+ * play the same notes. Never throws.
  */
 export function expandTakesCall(
   call: AssistantToolCall,
   stem: string,
   stepStrings?: StepStringOptions,
+  inSong: ReadonlySet<string> = new Set(),
 ): ExpandedTakes {
   const parsed = offerTakesInputSchema.safeParse(call.input);
   if (!parsed.success) {
@@ -274,17 +315,19 @@ export function expandTakesCall(
     notes.reserve(asCalls);
     const written: OfferTakesInput["takes"][number]["calls"] = [];
     for (const [callIndex, inner] of asCalls.entries()) {
+      const refused = (why: string): ExpandedTakes => ({
+        ok: false,
+        message: `take ${takeIndex + 1}, call ${callIndex + 1} (${inner.name}): ${why}`,
+      });
       const expanded = notes.expand(inner, fitsItsTool);
-      if (!expanded.ok) {
-        return {
-          ok: false,
-          message: `take ${takeIndex + 1}, call ${callIndex + 1} (${inner.name}): ${expanded.message}`,
-        };
-      }
-      written.push({
+      if (!expanded.ok) return refused(expanded.message);
+      const writtenCall = {
         name: expanded.call.name,
         input: expanded.call.input as Record<string, unknown>,
-      });
+      };
+      const remade = remadeId(writtenCall, inSong);
+      if (remade !== null) return refused(remade);
+      written.push(writtenCall);
     }
     takes.push({ label: take.label, calls: written });
   }
@@ -403,11 +446,13 @@ export function historyTakes(takes: AssistantTakes): HistoryTakes {
 /**
  * The line the model reads after a reply that offered takes: what they were
  * and what the producer did with them. A picked take is a proposal of its
- * own, whose own line follows this one (`history.ts`).
+ * own, whose own line follows this one (`history.ts`). It says the call did
+ * it and that the line is not the model's to write: read back without that,
+ * a model wrote the line into its reply in place of the call (GRV-207).
  */
 export function takesNote(takes: HistoryTakes): string {
   const listed = takes.labels.map((label, index) => `${index + 1}. ${label}`).join("; ");
-  const offered = `[I offered the producer ${takes.labels.length} takes of the ${takes.part} (${OFFER_TAKES_TOOL_NAME}): ${listed}.`;
+  const offered = `[I offered the producer ${takes.labels.length} takes of the ${takes.part} by calling ${OFFER_TAKES_TOOL_NAME}: ${listed}. Only the call showed them; this line is Groove's, never mine to write.`;
   switch (takes.outcome) {
     case "picked":
       return `${offered} They picked take ${takes.picked ?? "?"}, which became a proposal.]`;

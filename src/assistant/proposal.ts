@@ -325,7 +325,11 @@ export function validateProposal(
       project,
       kitAssets,
       resolution.commandType,
-      keepExistingPads(project, resolution.commandType, resolution.payload),
+      keepExistingPads(
+        project,
+        resolution.commandType,
+        withTrackInSong(project, proposed, resolution.commandType, resolution.payload),
+      ),
     );
     kitAssets.push(...kit.assets);
     for (const asset of kit.assets) {
@@ -389,6 +393,29 @@ export function validateProposal(
       },
     },
   };
+}
+
+/**
+ * A `track.create` asking for a position past the last track goes last. The
+ * model is never told where tracks sit (the project description lists them
+ * in order, with no positions), so a position past the end can only mean
+ * "after the others", and refusing it refused a new part for a count it could
+ * not see (GRV-207: every take of a fifth track was unusable). `proposed` is
+ * the commands before this one, whose new tracks count.
+ */
+function withTrackInSong(
+  project: Project,
+  proposed: readonly RawCommandInput[],
+  commandType: string,
+  payload: unknown,
+): unknown {
+  if (commandType !== "track.create") return payload;
+  const created = payload as { track: Track };
+  const last =
+    project.song.tracks.length +
+    proposed.filter((command) => command.type === "track.create").length;
+  if (created.track.order <= last) return payload;
+  return { ...created, track: { ...created.track, order: last } };
 }
 
 /**

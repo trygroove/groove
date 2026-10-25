@@ -12,8 +12,10 @@ import {
   historyOf,
   lessonNote,
   MAX_MESSAGE_CHARS,
+  withoutHistoryNotes,
 } from "./history";
 import type { AssistantMessage } from "./protocol";
+import { takesNote } from "./takes";
 
 const user = (text: string): AssistantMessage => ({ role: "user", text });
 const assistant = (text: string): AssistantMessage => ({ role: "assistant", text });
@@ -139,5 +141,51 @@ describe("historyOf after a reply that started a lesson (GRV-43)", () => {
     // "Finish a track" (GRV-44) is resent the same way.
     expect(lessonNote("track")).toContain('start_lesson with chapter "track"');
     expect(history[3]).toEqual(assistant("Open the Library."));
+  });
+});
+
+describe("a history note copied into a reply (GRV-207)", () => {
+  const offered = takesNote({
+    part: "Bassline",
+    labels: ["Sparse", "Busy", "Climbing", "Call and answer"],
+    outcome: "pending",
+  });
+
+  it("is taken out of what the reply says, leaving the rest as it was", () => {
+    expect(offered).toContain("by calling offer_takes");
+    expect(offered).toContain("never mine to write");
+    const reply = `Here are four new takes rewriting the Bass track's clip.\n\n${offered}`;
+    expect(withoutHistoryNotes(reply)).toBe(
+      "Here are four new takes rewriting the Bass track's clip.",
+    );
+    expect(withoutHistoryNotes(`${offered}\n\nThen this.`)).toBe("Then this.");
+    expect(
+      withoutHistoryNotes(
+        "Done. [The producer applied this proposal. The project description shows the song as it is now.]",
+      ),
+    ).toBe("Done.");
+  });
+
+  it("is hidden while it is still arriving", () => {
+    expect(withoutHistoryNotes("Four takes.\n\n[I offered the producer 4 takes of")).toBe(
+      "Four takes.",
+    );
+  });
+
+  it("leaves a reply with no note, brackets of its own included, exactly as it was", () => {
+    for (const text of ["Try it [softly] first. ", "Plain words\n\n\n spaced", ""]) {
+      expect(withoutHistoryNotes(text)).toBe(text);
+    }
+  });
+
+  it("is not resent as something the reply said; the real note follows once", () => {
+    const history = historyOf([
+      { kind: "message", text: "New takes of the bass" },
+      {
+        kind: "reply",
+        text: `Here are four takes.\n\n${offered}`,
+      },
+    ]);
+    expect(history[1]).toEqual(assistant("Here are four takes."));
   });
 });
