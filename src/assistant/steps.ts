@@ -43,6 +43,7 @@ import {
   type RecommendationTargets,
   withCreatedTargets,
 } from "./recommendationTargets";
+import { type ExpandedTakes, isTakesCall, TAKE_COUNT } from "./takes";
 import { EXPLAIN_TOOL_NAME, isNeedMoreToolsCall, resolveToolCall } from "./tools";
 import { isVideoCall } from "./video";
 
@@ -53,6 +54,15 @@ export const ADDED_RESULT =
   "Added to the proposal. Nothing changes until the producer applies the whole proposal. Go on to the next step; call explain_change once the proposal is complete.";
 
 const NOTED_RESULT = "Noted.";
+
+/** What an `offer_takes` call the gateway could write out is told (GRV-207). */
+export const TAKES_RESULT = `Shown to the producer as ${TAKE_COUNT} takes to hear in the song and pick from. Nothing changes unless they pick one. Say nothing more this turn.`;
+
+/**
+ * Writes out an `offer_takes` call's takes (`expandTakesCall`, GRV-207), the
+ * turn's stem and note forms already bound.
+ */
+export type TakesWriter = (call: AssistantToolCall) => ExpandedTakes;
 
 /**
  * How many steps of change calls a turn may take when the model writes a
@@ -106,14 +116,15 @@ export function addedResult(
 
 /**
  * Whether `call` changes the song, rather than explaining, asking,
- * recommending, proposing something to remember (GRV-25) or starting a
- * lesson (GRV-43).
+ * recommending, proposing something to remember (GRV-25), starting a
+ * lesson (GRV-43) or offering takes to pick from (GRV-207).
  */
 export function isChangeCall(call: AssistantToolCall): boolean {
   return (
     call.name !== EXPLAIN_TOOL_NAME &&
     call.name !== RECOMMEND_SOUNDS_TOOL &&
     !isAskCall(call) &&
+    !isTakesCall(call) &&
     !isVideoCall(call) &&
     !isRememberCall(call) &&
     !isLessonCall(call)
@@ -134,15 +145,19 @@ export function isProposalPart(call: AssistantToolCall): boolean {
 /**
  * Whether the turn takes another step after a reply that ended this way. It
  * does when the reply stopped for change calls and did not finish: it asked
- * no question and has not explained the proposal, which the prompt makes its
- * last call.
+ * no question, offered no takes (GRV-207) and has not explained the
+ * proposal, which the prompt makes its last call.
  */
 export function continuesAfter(
   stopReason: AssistantStopReason,
   calls: readonly AssistantToolCall[],
 ): boolean {
   if (stopReason !== "tool_use") return false;
-  if (calls.some((call) => isAskCall(call) || call.name === EXPLAIN_TOOL_NAME)) {
+  if (
+    calls.some(
+      (call) => isAskCall(call) || isTakesCall(call) || call.name === EXPLAIN_TOOL_NAME,
+    )
+  ) {
     return false;
   }
   return calls.some(isChangeCall);
@@ -173,17 +188,23 @@ export interface AnsweredStep {
  * call that cannot be written out, or that makes a note ID already given to
  * a note, goes on as it came with why as its `refusal`, which the browser
  * reports as the reason it refuses the proposal (nothing is left to answer
- * the model with).
+ * the model with). An offer of takes is written out by `takes` the same way
+ * (GRV-207), its refusal the reason the browser shows none of them.
  */
 export function expandCalls(
   calls: readonly AssistantToolCall[],
   notes: NoteExpander,
+  takes?: TakesWriter,
 ): AssistantToolCall[] {
   const refusals = calls.map((call) =>
     isChangeCall(call) ? notes.refuseMintedIds(call) : null,
   );
   notes.reserve(calls.filter((_, index) => refusals[index] === null));
   return calls.map((call, index) => {
+    if (isTakesCall(call) && takes) {
+      const written = takes(call);
+      return written.ok ? written.call : { ...call, refusal: written.message };
+    }
     if (!isChangeCall(call)) return call;
     const refused = refusals[index];
     if (refused != null) return { ...call, refusal: refused };
@@ -199,13 +220,15 @@ export function expandCalls(
  * recommendation aimed at a track or pad that is neither in `targets` nor
  * made by an earlier call is refused the same way. Any other call is noted
  * and kept. Given `refuseChanges`, every change call is refused with it
- * instead, and numbers no notes (GRV-142's limit on steps of changes).
+ * instead, and numbers no notes (GRV-142's limit on steps of changes). Given
+ * `takes`, an offer of takes is written out by it and kept, or refused with
+ * why (GRV-207).
  */
 export function answerStep(
   calls: readonly AssistantToolCall[],
   targets: RecommendationTargets,
   notes: NoteExpander,
-  options: { readonly refuseChanges?: string } = {},
+  options: { readonly refuseChanges?: string; readonly takes?: TakesWriter } = {},
 ): AnsweredStep {
   const kept: AssistantToolCall[] = [];
   let known = targets;
@@ -223,6 +246,12 @@ export function answerStep(
         misaimed += 1;
         return refuse(call, problem);
       }
+    }
+    if (isTakesCall(call) && options.takes) {
+      const written = options.takes(call);
+      if (!written.ok) return refuse(call, written.message);
+      kept.push(written.call);
+      return { type: "tool_result", tool_use_id: call.id, content: TAKES_RESULT };
     }
     if (!isChangeCall(call)) {
       kept.push(call);
@@ -319,6 +348,18 @@ export function refusedIn(
       return resolution.ok ? null : resolution.message;
     }).ok;
   }).length;
+}
+
+/**
+ * How many of a step's offers of takes `takes` cannot write out (GRV-207),
+ * so a step that would have ended the turn goes on and the model can send
+ * the offer again, corrected. Numbers nothing the turn keeps.
+ */
+export function refusedTakesIn(
+  calls: readonly AssistantToolCall[],
+  takes: TakesWriter,
+): number {
+  return calls.filter((call) => isTakesCall(call) && !takes(call).ok).length;
 }
 
 /**

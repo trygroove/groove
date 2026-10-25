@@ -55,7 +55,11 @@
  * `steps.ts`). A turn whose gateway can search YouTube is offered
  * `recommend_video` too (GRV-16, ADR 0009): its calls are taken out of the
  * proposal, searched for here, and returned as the turn's `videos`, with
- * every search that finds nothing YouTube vouches for dropped.
+ * every search that finds nothing YouTube vouches for dropped. An
+ * `offer_takes` call (GRV-207, `takes.ts`), four takes of a melodic or
+ * harmonic part, has each take's notes written out here and is refused back
+ * to the model whole when a take does not fit its tools; it ends the turn and
+ * comes back among the proposal's calls.
  *
  * Each change call the turn accepts, in call order, is also streamed to the
  * browser as a proposal part the moment the step that made it is answered
@@ -137,9 +141,12 @@ import {
   MAX_CHANGE_STEPS,
   misaimedIn,
   refusedIn,
+  refusedTakesIn,
+  type TakesWriter,
 } from "./steps";
 import { NO_USAGE, type ProviderUsage, StreamReader } from "./streamEvents";
 import { resolveTactics, type TacticOverrides, type TacticValues } from "./tactics";
+import { expandTakesCall } from "./takes";
 import { type AssistantTurnLog, type ToolBundleFallback, toTurnLog } from "./telemetry";
 import { toolBundleFor } from "./toolBundleRule";
 import {
@@ -942,6 +949,9 @@ export async function runAssistantTurn(
     // written out too (`clipReuse.ts`, GRV-131).
     const stepStrings = stepStringOptions(tactics, turn.context);
     const notes = createNoteExpander(idStem, undefined, stepStrings);
+    // An offer of takes (GRV-207) writes out each take's notes in a counter
+    // of its own, from the same stem and with the same note forms.
+    const takes: TakesWriter = (call) => expandTakesCall(call, idStem, stepStrings);
     history = prepared.history;
     toolBundle = prepared.bundle;
     // The tools each step offers: the turn's bundle until the model asks for
@@ -1087,6 +1097,7 @@ export async function runAssistantTurn(
       // last step's notes are numbered once, by `expandCalls`.
       const refused =
         misaimedIn(outcome.toolCalls, targets) +
+        refusedTakesIn(outcome.toolCalls, takes) +
         (oneResponse ? refusedIn(outcome.toolCalls, notes) : 0) +
         (overLimit ? 1 : 0);
       const goesOn =
@@ -1099,7 +1110,7 @@ export async function runAssistantTurn(
         const handed = overLimit
           ? outcome.toolCalls.filter((entry) => !isChangeCall(entry))
           : outcome.toolCalls;
-        const expanded = expandCalls(handed, notes);
+        const expanded = expandCalls(handed, notes, takes);
         calls.push(...expanded);
         await streamParts(expanded);
         // A turn whose steps made calls stopped for them, as one call's would.
@@ -1110,7 +1121,7 @@ export async function runAssistantTurn(
         outcome.toolCalls,
         targets,
         notes,
-        overLimit ? { refuseChanges: CHANGE_STEPS_SPENT } : {},
+        overLimit ? { refuseChanges: CHANGE_STEPS_SPENT, takes } : { takes },
       );
       targets = answered.targets;
       calls.push(...answered.kept);

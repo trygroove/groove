@@ -51,6 +51,7 @@ import type { AssistantMessage, AssistantProposal } from "../protocol";
 import type { AssistantProvider } from "../provider";
 import { splitRecommendations } from "../recommendation";
 import type { ProviderUsage } from "../streamEvents";
+import { withFirstTake } from "../takes";
 import { type ProviderCallRecord, recordCalls } from "./callTranscript";
 import type { EvalExpectation } from "./caseChecks";
 import {
@@ -449,7 +450,7 @@ export async function ask(
   ];
   // The panel drops a reply that wrote nothing and asked nothing, and with it
   // the message from what the next turn resends; a failed turn likewise.
-  const split = turn.proposal ? splitRecommendations(turn.proposal) : null;
+  const split = turn.proposal ? splitRecommendations(withFirstTake(turn.proposal)) : null;
   const card = split?.proposal ? cardOf(session.project, split.proposal) : null;
   if (!turn.error && (turn.text.length > 0 || turn.ask)) {
     entries.push({
