@@ -65,6 +65,12 @@ export interface UseAssistantTakesOptions {
   onMore(entryId: string): boolean;
   /** Hears what became of an offer, for the conversation's history. */
   onOutcome?(entryId: string, outcome: TakesOutcome, picked?: number): void;
+  /**
+   * How many changes made elsewhere have been adopted this session (the
+   * proposal cards' count), so an offer that arrives after one more is
+   * known to have had the song move under it.
+   */
+  remoteChanges?(): number;
 }
 
 export interface AssistantTakes {
@@ -89,12 +95,16 @@ export interface AssistantTakes {
   more(entryId: string): void;
   /** Whether the card has been decided, so the turn's next card can come up. Reactive. */
   decided(entryId: string): boolean;
+  /** Whether "4 more" can ask again from this card: its offer parsed. */
+  canMore(entryId: string): boolean;
 }
 
 /** What a card keeps beside what it shows. */
 interface Entry {
   /** The offer, to check again as the song changes; null when it was malformed. */
   readonly offer: Offer | null;
+  /** The call parsed as an offer, so "4 more" can name its part and takes. */
+  readonly parsed: boolean;
   readonly baseRevision: number;
   readonly rows: readonly TakeRow[];
   /** How many times "4 more" was pressed for the part before this offer. */
@@ -149,6 +159,7 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     if (!takes || !target) {
       entries.set(entryId, {
         offer: null,
+        parsed: takes !== null,
         baseRevision,
         rows: [],
         rerolls: origin.takesRerolls ?? 0,
@@ -166,19 +177,29 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     const checked = checkTakes(target.project, takes, baseRevision, target);
     entries.set(entryId, {
       offer: takes,
+      parsed: true,
       baseRevision,
       rows: checked.rows,
       rerolls: origin.takesRerolls ?? 0,
     });
+    // A change made elsewhere while the reply was written moved the song
+    // under it, though not this session's revision, as it does a proposal's.
+    const movedElsewhere =
+      !origin.restored && (options.remoteChanges?.() ?? 0) !== origin.remoteChanges;
+    if (movedElsewhere) closed.add(entryId);
     setCards((current) =>
       new Map(current).set(entryId, {
         ...base,
-        ...shownTakes(checked.rows, checked.stale),
-        trackName: checked.rows.find((row) => row.commands !== null)?.trackName ?? null,
+        ...shownTakes(checked.rows, checked.stale || movedElsewhere),
+        trackName: shownTrackName(checked.rows),
         part: takes.part,
       }),
     );
   }
+
+  /** The track the card names: the first fitting take's. */
+  const shownTrackName = (rows: readonly TakeRow[]) =>
+    rows.find((row) => row.commands !== null)?.trackName ?? null;
 
   /** What a card shows of its takes once checked: which fit, and so where it stands. */
   function shownTakes(
@@ -204,7 +225,10 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     if (!entry?.offer || !target) return null;
     const checked = checkTakes(target.project, entry.offer, entry.baseRevision, target);
     entries.set(entryId, { ...entry, rows: checked.rows });
-    update(entryId, shownTakes(checked.rows, checked.stale));
+    update(entryId, {
+      ...shownTakes(checked.rows, checked.stale),
+      trackName: shownTrackName(checked.rows),
+    });
     return checked.rows;
   }
 
@@ -232,13 +256,15 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     // The take heard before, if any: the session ends its preview as this
     // one opens, with the song still playing, so switching is instant.
     const previous = hearing;
-    // Another proposal's preview gives way, as theirs do to one another.
-    options.onPreviewOpen?.();
     const opened = options.session.beginPreview(row.commands);
     if (!opened?.ok) {
       update(entryId, { notice: NO_LONGER_FITS });
       return;
     }
+    // Another proposal's preview gives way, as theirs do to one another, but
+    // only once this one opened (the session superseded theirs), so a take
+    // that cannot open leaves the producer's own in place.
+    options.onPreviewOpen?.();
     if (previous && previous.entryId !== entryId)
       update(previous.entryId, { hearing: null });
     const audio = options.audio;
@@ -332,7 +358,13 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
   function more(entryId: string): void {
     const status = cards().get(entryId)?.status;
     if (status !== "choosing" && status !== "stale" && status !== "invalid") return;
-    if (!options.onMore(entryId)) return;
+    // The history the new turn sends says these were set aside, not that the
+    // producer has yet to pick; a request that could not go takes it back.
+    options.onOutcome?.(entryId, "more");
+    if (!options.onMore(entryId)) {
+      options.onOutcome?.(entryId, "pending");
+      return;
+    }
     // The new turn asked about the committed song; the take heard stops now.
     if (hearing?.entryId === entryId) endHearing(true);
     closed.add(entryId);
@@ -341,7 +373,6 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
     logged((analytics) =>
       analytics.log("assistant_takes_rerolled", { reroll_count: rerolls }),
     );
-    options.onOutcome?.(entryId, "more");
   }
 
   /** A take's preview the session ended by itself (an edit, another preview) is heard no more. */
@@ -399,5 +430,6 @@ export function useAssistantTakes(options: UseAssistantTakesOptions): AssistantT
         status === "invalid"
       );
     },
+    canMore: (entryId) => entries.get(entryId)?.parsed ?? false,
   };
 }

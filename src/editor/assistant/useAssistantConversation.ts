@@ -942,6 +942,12 @@ export function useAssistantConversation(
       readonly request: string;
       /** Every take set aside so far, by label, in order. */
       readonly setAside: readonly string[];
+      /**
+       * The reply whose takes this sets aside. Its history line says so
+       * already, though the outcome recorded just now is not readable yet
+       * (a signal write is not until it flushes).
+       */
+      readonly setAsideReply: string;
     },
   ): void {
     // "4 more" (GRV-207) is pressed while a take may still be heard: the song
@@ -959,7 +965,7 @@ export function useAssistantConversation(
     const request: AssistantTurnRequest = {
       projectRevision: project.metadata.revision,
       messages: [
-        ...historyOf(entries()),
+        ...historyOf(takes ? setAsideIn(entries(), takes.setAsideReply) : entries()),
         { role: "user", text: said.slice(0, MAX_MESSAGE_CHARS) },
       ],
       context: scopedContext(project, scope),
@@ -1123,7 +1129,12 @@ export function useAssistantConversation(
       scope,
       undefined,
       false,
-      { rerolls: (takesRerolls ?? 0) + 1, request, setAside },
+      {
+        rerolls: (takesRerolls ?? 0) + 1,
+        request,
+        setAside,
+        setAsideReply: entry.replyId,
+      },
     );
     return true;
   }
@@ -1381,4 +1392,16 @@ export function useAssistantConversation(
     dismissAsk,
     rateReply,
   };
+}
+
+/** The entries with reply `replyId`'s takes marked as set aside for "4 more" (GRV-207). */
+function setAsideIn(
+  entries: readonly ConversationEntry[],
+  replyId: string,
+): readonly ConversationEntry[] {
+  return entries.map((entry) => {
+    if (entry.id !== replyId || entry.kind !== "reply" || !entry.takes) return entry;
+    const { picked: _picked, ...offered } = entry.takes;
+    return { ...entry, takes: { ...offered, outcome: "more" } };
+  });
 }

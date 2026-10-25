@@ -344,6 +344,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
           onMore: (entryId) => conversation.moreTakes(entryId),
           onOutcome: (entryId, outcome, picked) =>
             conversation.recordTakesOutcome(entryId, outcome, picked),
+          remoteChanges: () => proposals.remoteChanges(),
         })
       : null;
 

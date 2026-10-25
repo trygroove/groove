@@ -29,7 +29,7 @@ const CHOOSING: Card = {
   notice: null,
 };
 
-function renderCard(initial: Card = CHOOSING, canAsk = true) {
+function renderCard(initial: Card = CHOOSING, canAsk = true, parsed = true) {
   const [card, setCard] = createSignal<Card>(initial);
   const takes = {
     card: () => card(),
@@ -44,6 +44,7 @@ function renderCard(initial: Card = CHOOSING, canAsk = true) {
     decline: vi.fn(() => setCard({ ...card(), status: "declined" })),
     more: vi.fn(() => setCard({ ...card(), status: "more" })),
     decided: () => false,
+    canMore: () => parsed,
   } satisfies AssistantTakes;
   render(() => <TakesCard entryId="entry-1" takes={takes} canAsk={canAsk} />);
   flush();
@@ -125,6 +126,21 @@ describe("TakesCard (GRV-207)", () => {
     ).toBe(true);
     expect(
       (screen.getByRole("button", { name: "Use take 1" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("offers no four more when the offer did not parse, only declining it", () => {
+    renderCard(
+      { ...CHOOSING, status: "invalid", takes: [], trackName: null },
+      true,
+      false,
+    );
+    expect(
+      (screen.getByRole("button", { name: MORE_TAKES_LABEL }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: NO_TAKE_LABEL }) as HTMLButtonElement).disabled,
     ).toBe(false);
   });
 

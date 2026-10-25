@@ -855,6 +855,36 @@ describe("the proposal card (GRV-5)", () => {
     expect(within(card()).getByRole("button", { name: "Refresh" })).toBeEnabled();
   });
 
+  // GRV-132: an edit that leaves a proposal valid (where the song loops)
+  // does not make it stale; the proposal target hands the cards which
+  // commands landed since its revision (GRV-207 restored it for every card).
+  it("stays open and applies after an edit that leaves it valid, the loop", async () => {
+    const { propose, session } = await setUp();
+    await propose();
+    fireAndFlush(() =>
+      session.dispatch({
+        type: "loop.setEnabled",
+        payload: { enabled: !session.committedProject.song.loop.enabled },
+      }),
+    );
+    flush();
+    expect(cardStatus()).not.toHaveTextContent("Out of date.");
+    expect(cardButton("Apply")).toBeEnabled();
+    await press(cardButton("Apply"));
+    expect(cardStatus()).toHaveTextContent("Applied as one undo step.");
+    expect(session.committedProject.song.swing).toBe(58);
+  });
+
+  it("goes out of date after a song edit, a track's volume", async () => {
+    const { propose, session, volumeTo } = await setUp();
+    await propose();
+    fireAndFlush(() => session.dispatch(volumeTo(-6)));
+    flush();
+    expect(cardStatus()).toHaveTextContent("Out of date.");
+    expect(cardButton("Apply")).toBeDisabled();
+    expect(session.committedProject.song.swing).toBe(50);
+  });
+
   it("logs feature_first_use for assistant_proposal once, across Preview and Apply", async () => {
     const { propose, events } = await setUp();
     await propose();

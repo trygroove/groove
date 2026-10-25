@@ -118,7 +118,7 @@ export default function TakesCard(props: TakesCardProps): JSX.Element {
             <button
               type="button"
               class="assistant-button"
-              disabled={!props.canAsk}
+              disabled={!props.canAsk || !props.takes.canMore(props.entryId)}
               onClick={act(() => props.takes.more(props.entryId))}
             >
               {MORE_TAKES_LABEL}

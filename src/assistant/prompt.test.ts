@@ -33,6 +33,13 @@ describe("the assistant's system prompt", () => {
     expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("four at most");
   });
 
+  // GRV-207: a guided build's step and a change during a lesson stay one proposal each.
+  it("keeps guided-build steps and lesson changes out of takes", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "so is every step of a guided build and anything you change during a lesson: those are one proposal each, never takes",
+    );
+  });
+
   // GRV-99: a request to change a drum part's density can point at the Generate panel.
   it("tells the assistant where the Generate panel is", () => {
     expect(ASSISTANT_SYSTEM_PROMPT).toContain(

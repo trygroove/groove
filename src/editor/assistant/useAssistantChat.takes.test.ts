@@ -20,6 +20,8 @@ import { assistantProposalTarget } from "../composition/assistantProposalTarget"
 import { EditorSession } from "../composition/EditorSession";
 import type { EditorLocation } from "../composition/editorControls";
 import { type AssistantChat, useAssistantChat } from "./useAssistantChat";
+import type { TurnOrigin } from "./useAssistantConversation";
+import { useAssistantTakes } from "./useAssistantTakes";
 
 /**
  * Four takes to pick from (GRV-207), against a real editor session: each take
@@ -170,6 +172,8 @@ async function setUp() {
     chat: theChat,
     client,
     session,
+    repository,
+    project,
     audio,
     ask,
     offer,
@@ -380,6 +384,11 @@ describe("four takes to pick from (GRV-207)", () => {
     expect(asked.startsWith("Write me a lead melody")).toBe(true);
     expect(asked).toContain("[4 more]");
     expect(asked).toContain("Busy and high");
+    // The offer's own line in the history says they were set aside, not
+    // that the producer has yet to pick.
+    const offered = client.last().request.messages.at(-2)?.text ?? "";
+    expect(offered).toContain("They asked for 4 more instead");
+    expect(offered).not.toContain("They have not picked one");
     expect(chat.takes?.card(first)?.status).toBe("more");
     expect(clips()).toEqual(before);
     expect(named("assistant_takes_rerolled")).toEqual([{ reroll_count: 1 }]);
@@ -410,6 +419,32 @@ describe("four takes to pick from (GRV-207)", () => {
     ]);
   });
 
+  it("arrives out of date when a change made elsewhere landed while it was written", async () => {
+    const { chat, client, session, repository, project, clips, offer } = await setUp();
+    expect(chat.conversation.send("Write me a lead melody")).toBe(true);
+    await settle();
+    let adopted = 0;
+    session.subscribeRemoteChanges(() => {
+      adopted += 1;
+    });
+    const saved = await repository.saveMetadata(
+      project.metadata.id,
+      { name: "Renamed in another tab" },
+      project.metadata.revision,
+    );
+    expect(saved.ok).toBe(true);
+    await vi.waitFor(() => expect(adopted).toBe(1));
+    const before = clips();
+    const entryId = offer();
+    expect(chat.takes?.card(entryId)?.status).toBe("stale");
+    chat.takes?.pick(entryId, 0);
+    chat.takes?.hear(entryId, 0);
+    flush();
+    expect(clips()).toEqual(before);
+    expect(session.activePreview).toBeNull();
+    expect(client.turns).toHaveLength(1);
+  });
+
   it("logs no take's notes, label or part", async () => {
     const { chat, ask, named } = await setUp();
     const entryId = await ask();
@@ -421,5 +456,126 @@ describe("four takes to pick from (GRV-207)", () => {
     ]);
     expect(logged).not.toContain("Lead");
     expect(logged).not.toContain("Sparse");
+  });
+});
+
+describe("hearing a take whose preview cannot open (GRV-207)", () => {
+  it("leaves the other proposal previews open and says so", () => {
+    const project = createSliceFixtureProject();
+    const repository = createInMemoryProjectRepository();
+    const session = new EditorSession({
+      repository,
+      project,
+      clock: createManualClock(1_000),
+      analytics: new Analytics({
+        transport: createRecordingTransport(),
+        consent: new ConsentStore(memoryStorage()),
+        storage: memoryStorage(),
+      }),
+      deviceStorage: memoryStorage(),
+    });
+    const onPreviewOpen = vi.fn();
+    const beginPreview = vi.fn(
+      () =>
+        ({ ok: false, issues: [] }) as unknown as ReturnType<
+          EditorSession["beginPreview"]
+        >,
+    );
+    let takes: ReturnType<typeof useAssistantTakes> | undefined;
+    disposers.push(
+      createRoot((dispose) => {
+        takes = useAssistantTakes({
+          session: {
+            proposalTarget: () => assistantProposalTarget(session),
+            beginPreview,
+            onEdit: (listener) => session.subscribeEdits(listener),
+            onRemoteChange: (listener) => session.subscribeRemoteChanges(listener),
+            previewing: () => false,
+          },
+          project: () => session.project,
+          analytics: () => {
+            throw new Error("no analytics here");
+          },
+          onPreviewOpen,
+          onPick: vi.fn(),
+          onMore: () => false,
+        });
+        return dispose;
+      }),
+    );
+    const written = expandTakesCall(
+      { id: "toolu_takes", ...offerTakesCall(project) },
+      TAKES_STEM,
+    );
+    if (!written.ok || !takes) throw new Error("no offer");
+    takes.receive("entry-1", written.call, project.metadata.revision, {
+      text: "Write me a lead melody",
+      scope: { kind: "song", label: "Song", track: null },
+      remoteChanges: 0,
+    } as unknown as TurnOrigin);
+    flush();
+    takes.hear("entry-1", 0);
+    flush();
+    expect(beginPreview).toHaveBeenCalledTimes(1);
+    expect(onPreviewOpen).not.toHaveBeenCalled();
+    expect(takes.card("entry-1")?.hearing).toBeNull();
+    expect(takes.card("entry-1")?.notice).not.toBeNull();
+  });
+
+  it("takes back the outcome when 4 more could not ask", () => {
+    const project = createSliceFixtureProject();
+    const session = new EditorSession({
+      repository: createInMemoryProjectRepository(),
+      project,
+      clock: createManualClock(1_000),
+      analytics: new Analytics({
+        transport: createRecordingTransport(),
+        consent: new ConsentStore(memoryStorage()),
+        storage: memoryStorage(),
+      }),
+      deviceStorage: memoryStorage(),
+    });
+    const outcomes: string[] = [];
+    let takes: ReturnType<typeof useAssistantTakes> | undefined;
+    disposers.push(
+      createRoot((dispose) => {
+        takes = useAssistantTakes({
+          session: {
+            proposalTarget: () => assistantProposalTarget(session),
+            beginPreview: (commands) => session.beginPreview(commands),
+            onEdit: (listener) => session.subscribeEdits(listener),
+            onRemoteChange: (listener) => session.subscribeRemoteChanges(listener),
+            previewing: () => false,
+          },
+          project: () => session.project,
+          analytics: () => {
+            throw new Error("no analytics here");
+          },
+          onPick: vi.fn(),
+          onMore: () => {
+            outcomes.push("asked");
+            return false;
+          },
+          onOutcome: (_entry, outcome) => outcomes.push(outcome),
+        });
+        return dispose;
+      }),
+    );
+    const written = expandTakesCall(
+      { id: "toolu_takes", ...offerTakesCall(project) },
+      TAKES_STEM,
+    );
+    if (!written.ok || !takes) throw new Error("no offer");
+    takes.receive("entry-1", written.call, project.metadata.revision, {
+      text: "Write me a lead melody",
+      scope: { kind: "song", label: "Song", track: null },
+      remoteChanges: 0,
+    } as unknown as TurnOrigin);
+    flush();
+    takes.more("entry-1");
+    flush();
+    // Recorded before the turn goes, so its history says so; taken back when it cannot.
+    expect(outcomes).toEqual(["more", "asked", "pending"]);
+    expect(takes.card("entry-1")?.status).toBe("choosing");
   });
 });
