@@ -40,6 +40,24 @@ describe("the assistant's system prompt", () => {
     );
   });
 
+  // GRV-213: a new drum pattern is four takes too, contrasting on drum axes;
+  // an edit to a pattern's hits stays one proposal.
+  it("offers four takes of a new drum pattern, and keeps edits to its hits a proposal", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "A new drum pattern (a beat, a groove, drums for the song, or another go at one) is offered the same way",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "density, groove feel (straight or swung, where the hits sit and how hard), kick placement, hat and percussion variation, and fills",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "never a drum pattern and a melodic part in one offer",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+      "Changes to notes or hits the song already has (busier hats, a snare moved)",
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("Drums, changes to notes");
+  });
+
   // GRV-99: a request to change a drum part's density can point at the Generate panel.
   it("tells the assistant where the Generate panel is", () => {
     expect(ASSISTANT_SYSTEM_PROMPT).toContain(

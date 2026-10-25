@@ -57,6 +57,10 @@
  *   takes of a lead melody, each a new "Lead" synth track with a one-bar clip
  *   looped over four bars ({@link EMULATOR_TAKES_TRACK_ID}); with "[4 more]"
  *   in the message too, four others.
+ * - `[drum takes]` (GRV-213): the same for a drum pattern: four takes, each a
+ *   new "Drums" drum machine ({@link EMULATOR_DRUM_TAKES_TRACK_ID}) with
+ *   kick, snare and hat pads and a one-bar pattern of hits looped over four
+ *   bars; with "[4 more]", four others.
  * - `[remember]`: a short reply that ends in `remember_producer` (GRV-25),
  *   proposing {@link EMULATOR_REMEMBER}'s note. The gateway only lets it
  *   through on a turn that carries the producer's memory.
@@ -998,6 +1002,138 @@ function takesReply(request: ProviderMessagesRequest): Step[] {
   );
 }
 
+/** The drum machine every `[drum takes]` take makes (GRV-213), and its pads. */
+export const EMULATOR_DRUM_TAKES_TRACK_ID = "trk_EmuDrums0000000000001";
+const EMULATOR_DRUM_PADS = {
+  kick: "pad_EmuDrumKick0000000001",
+  snare: "pad_EmuDrumSnare000000001",
+  hat: "pad_EmuDrumHat00000000001",
+} as const;
+
+/** `[drum takes]`'s four takes: a label and the 16th steps each pad hits on. */
+const EMULATOR_DRUM_TAKES: readonly {
+  readonly label: string;
+  readonly more: string;
+  readonly kick: readonly number[];
+  readonly snare: readonly number[];
+  readonly hat: readonly number[];
+}[] = [
+  {
+    label: "Sparse half-time",
+    more: "Broken kick, open space",
+    kick: [0],
+    snare: [8],
+    hat: [0, 4, 8, 12],
+  },
+  {
+    label: "Busy straight sixteenths",
+    more: "Rolling hats, four on the floor",
+    kick: [0, 4, 8, 12],
+    snare: [4, 12],
+    hat: [...Array(16).keys()],
+  },
+  {
+    label: "Swung shuffle",
+    more: "Skippy garage shuffle",
+    kick: [0, 7, 10],
+    snare: [4, 12],
+    hat: [0, 3, 4, 7, 8, 11, 12, 15],
+  },
+  {
+    label: "Fill at the end",
+    more: "Snare roll into the drop",
+    kick: [0, 8],
+    snare: [4, 12, 13, 14, 15],
+    hat: [0, 2, 4, 6, 8, 10],
+  },
+];
+
+/**
+ * `[drum takes]` (GRV-213): a short reply that ends in `offer_takes`, four
+ * takes of a drum pattern, each a new "Drums" drum machine with a one-bar
+ * pattern looped over four bars. Asked again with "[4 more]", four others,
+ * each a step later.
+ */
+function drumTakesReply(request: ProviderMessagesRequest): Step[] {
+  const more = lastUserMessage(request).includes("[4 more]");
+  const trackId = EMULATOR_DRUM_TAKES_TRACK_ID;
+  const order = contextTracks(request).length;
+  const shift = more ? 1 : 0;
+  const takes = EMULATOR_DRUM_TAKES.map((take, index) => {
+    const clipId = `clp_EmuDrums000000000000${index + 1}`;
+    const hits = (padId: string, steps: readonly number[], velocity: number) =>
+      steps.map((step) => [
+        ((step + shift) % 16) * SIXTEENTH_TICKS,
+        padId,
+        SIXTEENTH_TICKS,
+        velocity,
+      ]);
+    return {
+      label: more ? take.more : take.label,
+      calls: [
+        {
+          name: "track_create",
+          input: {
+            id: trackId,
+            name: "Drums",
+            color: "#808080",
+            order,
+            type: "instrument",
+            instrument: {
+              kind: "drumMachine",
+              pads: [
+                emptyPad(EMULATOR_DRUM_PADS.kick, "Kick"),
+                emptyPad(EMULATOR_DRUM_PADS.snare, "Snare"),
+                emptyPad(EMULATOR_DRUM_PADS.hat, "Hat"),
+              ],
+              parameters: {},
+            },
+            devices: [],
+            sendConfig: [],
+            mixer: { volume: 0, pan: 0, muted: false, soloed: false },
+          },
+        },
+        {
+          name: "clip_create",
+          input: {
+            id: clipId,
+            trackId,
+            name: "Beat",
+            color: "#808080",
+            lengthTicks: BAR_TICKS,
+            content: {
+              kind: "notes",
+              events: [
+                ...hits(EMULATOR_DRUM_PADS.kick, take.kick, 0.9),
+                ...hits(EMULATOR_DRUM_PADS.snare, take.snare, 0.8),
+                ...hits(EMULATOR_DRUM_PADS.hat, take.hat, 0.5),
+              ],
+            },
+          },
+        },
+        {
+          name: "placement_create",
+          input: {
+            id: `plc_EmuDrums000000000000${index + 1}`,
+            clipId,
+            trackId,
+            startTicks: 0,
+            durationTicks: 4 * BAR_TICKS,
+            clipOffsetTicks: 0,
+            looped: true,
+          },
+        },
+      ],
+    };
+  });
+  return proposalReply(
+    more
+      ? "Four new takes of the beat."
+      : "Here are four takes of a drum pattern to pick from.",
+    [{ name: OFFER_TAKES_TOOL_NAME, input: { part: "Drum pattern", takes } }],
+  );
+}
+
 /** A provider that answers from the scripts above. */
 export function createEmulatorAssistantProvider(
   firstTime: FirstTimeCheck = inProcessFirstTime(),
@@ -1005,6 +1141,7 @@ export function createEmulatorAssistantProvider(
   function scriptFor(request: ProviderMessagesRequest): Step[] {
     const message = lastUserMessage(request);
     if (message.includes("[sketch]")) return sketchStep(request);
+    if (message.includes("[drum takes]")) return drumTakesReply(request);
     if (message.includes("[takes]")) return takesReply(request);
     // A scripted proposal is whole in one step; the step after it ends the turn.
     if (continuesTurn(request)) return finishedReply();

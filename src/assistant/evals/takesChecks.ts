@@ -1,15 +1,18 @@
 /**
- * The checks of GRV-207's takes cases: whether a request for a part got four
- * takes to pick from, and whether they are really four different takes.
+ * The checks of GRV-207's and GRV-213's takes cases: whether a request for a
+ * part got four takes to pick from, whether they are really four different
+ * takes, and whether a drum request's takes are of a drum pattern.
  * Code checks, pure functions of the turn's `offer_takes` calls, with no LLM
  * judge:
  *
- * - {@link checkOffersTakes} (29): a melody, bassline, lead or chords request
- *   ends in exactly one offer of four takes, and every take writes notes no
+ * - {@link checkOffersTakes} (29): a melody, bassline, lead, chords or new
+ *   drum pattern request ends in exactly one offer of four takes, and every take writes notes no
  *   other take writes, compared as they sound (pitch, start and length,
  *   never IDs or velocities: `takeNoteContent` in `takes.ts`).
- * - {@link checkNoTakes} (30): a drums request gets no offer of takes; drums
- *   take the usual one proposal (their own card is GRV-213).
+ * - {@link checkNoTakes} (30): an edit to a part the song has (busier hats)
+ *   gets no offer of takes, only the usual one proposal.
+ * - {@link checkDrumTakes} (31): a new drum pattern's offer is of a drum
+ *   pattern, every note a hit on a pad (`takesPartType`, GRV-213).
  *
  * The proposal checks judge such a turn by its first take (`withFirstTake`),
  * so these two are the only ones that read the offer itself.
@@ -23,7 +26,7 @@ import {
 } from "../takes";
 import type { CheckResult } from "./checks";
 
-export const TAKES_CHECK_IDS = ["offersTakes", "noTakes"] as const;
+export const TAKES_CHECK_IDS = ["offersTakes", "noTakes", "drumTakes"] as const;
 export type TakesCheckId = (typeof TAKES_CHECK_IDS)[number];
 
 /** Whether `id` is one of {@link TAKES_CHECK_IDS}. */
@@ -61,10 +64,29 @@ export function checkNoTakes(offers: readonly AssistantToolCall[]): CheckResult 
     : fail(`Offered takes (${offers.length} ${offers.length === 1 ? "set" : "sets"})`);
 }
 
+/** 31: the turn's one offer is of a drum pattern, its notes all hits on pads. */
+export function checkDrumTakes(offers: readonly AssistantToolCall[]): CheckResult {
+  if (offers.length !== 1) {
+    return fail(offers.length === 0 ? "Offered no takes" : "Offered more than one set");
+  }
+  const takes = parseTakesCall(offers[0]);
+  if (!takes) return fail("The offer of takes was refused or did not parse");
+  return takes.partType === "drums"
+    ? pass(`Takes of a drum pattern (${takes.part})`)
+    : fail(`Takes of a melodic part (${takes.part}), not a drum pattern`);
+}
+
 /** Runs the takes check `id` on a turn's offers. */
 export function runTakesCheck(
   id: TakesCheckId,
   offers: readonly AssistantToolCall[],
 ): CheckResult {
-  return id === "offersTakes" ? checkOffersTakes(offers) : checkNoTakes(offers);
+  switch (id) {
+    case "offersTakes":
+      return checkOffersTakes(offers);
+    case "noTakes":
+      return checkNoTakes(offers);
+    case "drumTakes":
+      return checkDrumTakes(offers);
+  }
 }

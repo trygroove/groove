@@ -25,7 +25,8 @@ export const NO_TAKE_LABEL = "None of these";
  * Four takes of a part to pick from (GRV-207), one card holding them all, the
  * way an image generator lays out its candidates: each take a row with its
  * own Hear and Use this, then "4 more" and "None of these". Hearing plays the
- * song with that take in place; only Use this changes anything.
+ * song with that take in place, a drum pattern's on a loop (GRV-213); only
+ * Use this changes anything.
  *
  * Once decided the card says what became of it in one line, and its takes
  * are no longer offered.
@@ -83,9 +84,11 @@ export default function TakesCard(props: TakesCardProps): JSX.Element {
                         heard() ? `Stop take ${index() + 1}` : `Hear take ${index() + 1}`
                       }
                       title={
-                        take.fits
-                          ? "Hear it in your song"
-                          : "It doesn't fit your song as it is"
+                        !take.fits
+                          ? "It doesn't fit your song as it is"
+                          : current().partType === "drums"
+                            ? "Hear it on a loop in your song"
+                            : "Hear it in your song"
                       }
                       disabled={!choosing() || !take.fits}
                       onClick={() => props.takes.hear(props.entryId, index())}

@@ -57,8 +57,9 @@ export const HELDOUT_CASE_IDS = [
   "lesson-start-no-echo",
   "chords-shown",
   "wrap-up-once",
-  // takes (GRV-207): one of four.
+  // takes (GRV-207, GRV-213): two of five.
   "takes-chords",
+  "takes-drum-edit",
 ] as const;
 
 /** The cases written in TypeScript that train; with the held-out ones, every such case. */
