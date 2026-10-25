@@ -12,8 +12,10 @@ import {
   parseTakesCall,
   splitTakes,
   TAKE_NOTE_MARK,
+  takeNoteContent,
   takeProposal,
   takesNote,
+  takesWithSameNotes,
   withFirstTake,
 } from "./takes";
 import { ASSISTANT_TOOLSET_VERSION, EXPLAIN_TOOL_NAME } from "./tools";
@@ -97,6 +99,37 @@ describe("offer_takes (GRV-207)", () => {
     input.takes[1] = { ...input.takes[1], label: input.takes[0].label.toUpperCase() };
     const result = expandTakesCall({ id: "t", name: OFFER_TAKES_TOOL_NAME, input }, STEM);
     expect(result.ok).toBe(false);
+  });
+
+  it("refuses two takes that play the same notes, whatever their IDs, velocities and labels", () => {
+    const input = offerTakesInput(project);
+    const clipOf = (take: number) =>
+      input.takes[take].calls[1].input as { content: { events: number[][] } };
+    // Take 4 plays take 2's notes, only quieter.
+    clipOf(3).content.events = clipOf(1).content.events.map(([start, pitch, length]) => [
+      start,
+      pitch,
+      length,
+      0.3,
+    ]);
+    const result = expandTakesCall({ id: "t", name: OFFER_TAKES_TOOL_NAME, input }, STEM);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toMatch(/^takes 2 and 4 play the same notes/);
+  });
+
+  it("tells takes apart by their notes, ignoring a take that writes none", () => {
+    const takes = parseTakesCall(expanded());
+    if (!takes) throw new Error("the takes parse");
+    expect(takesWithSameNotes(takes.takes)).toBeNull();
+    expect(takeNoteContent(takes.takes[0].calls)).not.toBe(
+      takeNoteContent(takes.takes[1].calls),
+    );
+    const noNotes = { label: "x", calls: [takes.takes[0].calls[0]] };
+    expect(takeNoteContent(noNotes.calls)).toBeNull();
+    expect(takesWithSameNotes([noNotes, noNotes, takes.takes[0]])).toBeNull();
+    expect(takesWithSameNotes([takes.takes[0], takes.takes[1], takes.takes[0]])).toEqual([
+      1, 3,
+    ]);
   });
 
   it("refuses a take whose call does not fit its tool, by take and call", () => {

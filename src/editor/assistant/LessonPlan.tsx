@@ -102,11 +102,19 @@ export default function LessonPlan(props: {
   // keeps focus that was in the plan in it: on the action now there, or the
   // plan itself. The place is the one reactive read; the rest writes.
   let hadFocus = false;
+  // The control that lost focus to nowhere, while it may yet turn out to have
+  // left the page with it. Chrome blurs a focused button as it is removed,
+  // while it is still connected (GRV-190 QA: Enter on Show me), so its
+  // `focusout` alone cannot say whether the producer moved on or the step did.
+  let leaving: Element | null = null;
+  const keptFocus = () => hadFocus || (leaving !== null && !leaving.isConnected);
   createEffect(where, () => {
     setFolded(false);
     setTerm(null);
-    if (!hadFocus) return;
+    if (!hadFocus && leaving === null) return;
     queueMicrotask(() => {
+      if (!keptFocus()) return;
+      leaving = null;
       const active = document.activeElement;
       if (
         !root?.isConnected ||
@@ -118,8 +126,9 @@ export default function LessonPlan(props: {
     });
   });
   onCleanup(() => {
-    if (!hadFocus) return;
+    if (!hadFocus && leaving === null) return;
     queueMicrotask(() => {
+      if (!keptFocus()) return;
       const active = document.activeElement;
       if (!active || active === document.body) props.onFocusLost?.();
     });
@@ -141,11 +150,23 @@ export default function LessonPlan(props: {
       tabindex={-1}
       onFocusIn={() => {
         hadFocus = true;
+        leaving = null;
       }}
       onFocusOut={(event) => {
         hadFocus = root?.contains(event.relatedTarget as Node | null) ?? false;
+        const target = event.target instanceof Element ? event.target : null;
         // A button that leaves the page with focus took it with it.
-        if (event.target instanceof Element && !event.target.isConnected) hadFocus = true;
+        if (target && !target.isConnected) hadFocus = true;
+        leaving = !hadFocus && event.relatedTarget === null ? target : null;
+        // It leaves within this task or not at all: a control still on the
+        // page after it lost focus to nowhere (a click on the canvas) does not
+        // pull focus back later.
+        if (leaving) {
+          const left = leaving;
+          setTimeout(() => {
+            if (leaving === left && left.isConnected) leaving = null;
+          }, 0);
+        }
       }}
     >
       <div class="lesson-plan-head">
