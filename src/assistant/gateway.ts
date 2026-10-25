@@ -59,7 +59,8 @@
  * `offer_takes` call (GRV-207, `takes.ts`), four takes of a melodic or
  * harmonic part, has each take's notes written out here and is refused back
  * to the model whole when a take does not fit its tools; it ends the turn and
- * comes back among the proposal's calls.
+ * comes back among the proposal's calls. Every turn is offered it, and the
+ * browser shows the takes as a card of their own.
  *
  * Each change call the turn accepts, in call order, is also streamed to the
  * browser as a proposal part the moment the step that made it is answered
@@ -146,7 +147,7 @@ import {
 } from "./steps";
 import { NO_USAGE, type ProviderUsage, StreamReader } from "./streamEvents";
 import { resolveTactics, type TacticOverrides, type TacticValues } from "./tactics";
-import { expandTakesCall } from "./takes";
+import { expandTakesCall, offerTakesTool } from "./takes";
 import { type AssistantTurnLog, type ToolBundleFallback, toTurnLog } from "./telemetry";
 import { toolBundleFor } from "./toolBundleRule";
 import {
@@ -343,10 +344,11 @@ interface PreparedTurn {
 
 /**
  * The tools a turn offers with `bundle`'s command tools: those, then
- * `explain_change` and `ask_producer`, then `need_more_tools` in a bundle that
- * is not every tool (GRV-143), then the conditional tools. The command tools
- * and the two after them come first and never vary with the request, so the
- * prompt cache keeps one prefix per bundle.
+ * `explain_change`, `ask_producer` and `offer_takes` (GRV-207), then
+ * `need_more_tools` in a bundle that is not every tool (GRV-143), then the
+ * conditional tools. The command tools and the three after them come first
+ * and never vary with the request, so the prompt cache keeps one prefix per
+ * bundle.
  */
 function offeredTools(
   bundle: ToolBundleId,
@@ -369,6 +371,7 @@ function offeredTools(
       ),
       withToolText(EXPLAIN_TOOL, tactics.toolText),
       withToolText(askProducerTool(), tactics.toolText),
+      withToolText(offerTakesTool(), tactics.toolText),
       ...(bundle === EVERYTHING_BUNDLE ? [] : [NEED_MORE_TOOLS_TOOL]),
     ]),
     ...(turn.library

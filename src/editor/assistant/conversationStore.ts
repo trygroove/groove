@@ -13,8 +13,9 @@
  * producer has not decided yet (GRV-135), with the turn that asked for them,
  * so a proposal comes back to be refreshed and a held sound card comes back
  * to be tried. A decided card, an error, a memory card and a video are not
- * kept. A reply keeps what became of its proposal (GRV-150), which the next
- * turn resends. Whatever cannot be read back, a corrupt entry or one written by an
+ * kept, nor is an offer of takes (GRV-207). A reply keeps what became of its
+ * proposal (GRV-150) and of the takes it offered, which the next turn
+ * resends. Whatever cannot be read back, a corrupt entry or one written by an
  * older shape, is dropped, never repaired.
  */
 import { z } from "zod";
@@ -27,6 +28,7 @@ import {
   assistantLibraryContextSchema,
 } from "../../assistant/protocol";
 import { validateRecommendation } from "../../assistant/recommendation";
+import { TAKE_COUNT, TAKES_OUTCOMES } from "../../assistant/takes";
 import { REPLY_RATINGS, sessionIdSchema } from "../../assistant/transcripts";
 import type { Project } from "../../domain/entities";
 import { eventIdSchema, placementIdSchema } from "../../domain/ids";
@@ -70,6 +72,15 @@ const storedEntrySchema = z.discriminatedUnion("kind", [
     rating: z.enum(REPLY_RATINGS).optional(),
     proposal: z.enum(HISTORY_PROPOSALS).optional(),
     lesson: z.enum(LESSON_IDS).optional(),
+    /** The takes it offered and what became of them (GRV-207); the card is not kept. */
+    takes: z
+      .object({
+        part: z.string(),
+        labels: z.array(z.string()).max(TAKE_COUNT),
+        outcome: z.enum(TAKES_OUTCOMES),
+        picked: z.number().int().min(1).max(TAKE_COUNT).optional(),
+      })
+      .optional(),
   }),
 ]);
 
@@ -292,6 +303,7 @@ export function serializeConversation(
             ...(entry.rating ? { rating: entry.rating } : {}),
             ...(entry.proposal ? { proposal: entry.proposal } : {}),
             ...(entry.lesson ? { lesson: entry.lesson } : {}),
+            ...(entry.takes ? { takes: entry.takes } : {}),
           };
         case "proposal":
           return {

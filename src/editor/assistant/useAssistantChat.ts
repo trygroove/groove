@@ -60,6 +60,11 @@ import {
   useAssistantRecommendations,
 } from "./useAssistantRecommendations";
 import { type AssistantRetention, useAssistantRetention } from "./useAssistantRetention";
+import {
+  type AssistantTakes,
+  type TakesAudioPort,
+  useAssistantTakes,
+} from "./useAssistantTakes";
 import { type CueNudge, useCueNudge } from "./useCueNudge";
 import { useFollowUp } from "./useFollowUp";
 import { type Lesson, useLesson } from "./useLesson";
@@ -116,6 +121,11 @@ export interface UseAssistantChatOptions {
       readonly library: AssistantLibrary;
       readonly port: RecommendationEditorPort;
     };
+    /**
+     * The song's playback, which a take is heard through in context (GRV-207).
+     * Without it a take's preview opens but nothing starts playing.
+     */
+    readonly audio?: TakesAudioPort;
   };
   /**
    * The committed project, never a preview of it (GRV-42): what a question
@@ -181,6 +191,8 @@ export interface AssistantChat {
   readonly proposals: AssistantProposals | null;
   /** The recommended packs, when there is an editor and a library to try them in. */
   readonly recommendations: AssistantRecommendations | null;
+  /** The takes cards, when there is an editor to hear and apply them in (GRV-207). */
+  readonly takes: AssistantTakes | null;
   /**
    * Which of a turn's cards are held back until the one before is decided,
    * and how many wait behind the one shown (GRV-129).
@@ -313,6 +325,28 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
         })
       : null;
 
+  // Four takes of a part to pick from (GRV-207): a take is heard through the
+  // session's preview, and the one picked becomes a proposal the cards apply.
+  const takes =
+    editor && proposals
+      ? useAssistantTakes({
+          session: editor.session,
+          audio: editor.audio,
+          project: options.project,
+          analytics: options.analytics,
+          onPreviewOpen: () => proposals.endPreviews(),
+          // The conversation is made just below; a pick only comes later.
+          // Picking is applying: the take's proposal card comes up at once
+          // and applies that one take, as one undo step (`fromTake`).
+          onPick: (entryId, index) => {
+            conversation.pickTake(entryId, index);
+          },
+          onMore: (entryId) => conversation.moreTakes(entryId),
+          onOutcome: (entryId, outcome, picked) =>
+            conversation.recordTakesOutcome(entryId, outcome, picked),
+        })
+      : null;
+
   // A turn's proposal and sound cards come up one at a time (GRV-129). Each
   // turn is keyed by the origin its cards share; a sound card is skipped,
   // not shown, when the track or pad it names only the turn's declined
@@ -411,6 +445,15 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
           const catalog = await recommending.library.load();
           return catalog ? libraryContext(catalog, project) : null;
         }
+      : undefined,
+    onTakes: takes
+      ? (entryId, call, baseRevision, origin) =>
+          queue.add(origin, {
+            entryId,
+            show: () => takes.receive(entryId, call, baseRevision, origin),
+            decided: () => takes.decided(entryId),
+            hold: () => takes.stopHearing(entryId),
+          })
       : undefined,
     onRecommendation: recommendations
       ? (entryId, call, library, origin) =>
@@ -621,6 +664,7 @@ export function useAssistantChat(options: UseAssistantChatOptions): AssistantCha
     account: options.account,
     proposals,
     recommendations,
+    takes,
     cards: queue,
     ask,
     memory,

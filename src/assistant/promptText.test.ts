@@ -85,11 +85,11 @@ describe("the promptText and promptDrop tactics (GRV-147)", () => {
 
   // Pinned from origin/main before GRV-147 restructured the prompt into
   // passages: the 16 prompts the older prompt tactics make, at full with every
-  // group kept. Re-pin only when the full text itself is meant to change (GRV-168: the assistant's name; GRV-150: how to read a proposal's outcome; GRV-116: a clip's length beside its placement, and a proposal spoken of as yet to apply).
+  // group kept. Re-pin only when the full text itself is meant to change (GRV-168: the assistant's name; GRV-150: how to read a proposal's outcome; GRV-116: a clip's length beside its placement, and a proposal spoken of as yet to apply; GRV-207: four takes of a new melodic or harmonic part).
   it("leaves full with nothing dropped byte-identical to the prompt before GRV-147", () => {
     const texts = olderCombinations().map((tactics) => prompt(tactics));
     expect(createHash("sha256").update(texts.join("\u0000")).digest("hex")).toBe(
-      "92b08f4568ff4098407071795d9049a80cb9b0aebe10e7f4a68d29316bc215c7",
+      "b86a5e642ac6156f0e743cefb42de5fd76a115e764cfab521264f4da829f24ae",
     );
   });
 

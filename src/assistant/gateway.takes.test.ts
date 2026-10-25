@@ -59,6 +59,15 @@ async function turn(
 }
 
 describe("runAssistantTurn: four takes to pick from (GRV-207)", () => {
+  it("offers offer_takes on every turn", async () => {
+    const { provider } = await turn([
+      toolUseEvents("Four takes of a lead.", [offerTakesCall(project)]),
+    ]);
+    expect(provider.requests[0].tools.map((tool) => tool.name)).toContain(
+      OFFER_TAKES_TOOL_NAME,
+    );
+  });
+
   it("ends the turn on an offer, its takes' notes written out, as one model call", async () => {
     const { result, provider, chunks } = await turn([
       toolUseEvents("Four takes of a lead.", [offerTakesCall(project)]),

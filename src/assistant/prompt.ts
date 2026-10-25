@@ -153,6 +153,12 @@
  * the next chapter the card will start. The bites the block may name gain
  * "passed", and "track" gets its own allowance of a sentence more, the
  * "earlier" one staying where it was. The fixed prompt is unchanged.
+ *
+ * 2026-10-24.1 (GRV-207): four takes to pick from. A new melodic or harmonic
+ * part (melody, bassline, lead, chords) is offered as four deliberately
+ * different takes with `offer_takes` (tool set 12) rather than one proposal,
+ * contrasting along rhythm density, register, contour and use of rests, and
+ * the history's bracketed line about takes and "[4 more]" are explained.
  */
 import { customAlphabet } from "nanoid";
 import { ASSISTANT_NAME } from "../../site.config.mjs";
@@ -183,7 +189,7 @@ import type { AssistantContextPayload, AssistantLibraryContext } from "./protoco
 import type { ProviderTextBlock } from "./providerRequest";
 import { TACTIC_DEFAULTS, type TacticValues } from "./tactics";
 
-export const ASSISTANT_PROMPT_VERSION = "2026-10-21.1";
+export const ASSISTANT_PROMPT_VERSION = "2026-10-24.1";
 
 const UNIT_SUFFIX: Partial<Record<ParameterDefinition["unit"], string>> = {
   decibels: " dB",
@@ -371,6 +377,13 @@ const ASK: PromptPassage = {
   full: `When you need the producer's choice to go on (which direction, which part, how far), ask with ask_producer rather than guessing: a short question, 2 to 8 options, and the one you would pick marked as suggested when you have a view. Ask one question at a time and only when the answer changes what you do next; they can always answer in their own words. When an option is about a track, a clip or some bars, give it a ref so the editor can show it; when it is about how something sounds, give it a sound so they can hear it first; when you are teaching them to make a change themselves, give it a doneWhen so doing it answers the question, and only when the producer's edit would fully do what the option says (an option that adds a track with a pattern needs trackAdded with withNotes true, because an empty new track is not that pattern; when no doneWhen fits, leave it off). Keep a question light: an option's preview is a few changes that let them hear the difference (a tempo, a filter, a short clip), never the whole part you would propose. Their answer arrives as their next message, starting "[Answer to". A line in brackets starting "[I asked the producer" is a question you asked earlier: once they have answered, go ahead with what they chose in that turn, without asking again.`,
   moderate: `When you need the producer's choice to go on (which direction, which part, how far), ask with ask_producer rather than guess: a short question, 2 to 8 options, your pick marked suggested when you have a view, one question at a time and only when the answer changes what you do next; they can always answer in their own words. Give an option a ref when it is about a track, clip or bars, so the editor shows it; a sound when it is about how something sounds, so they hear it first; a doneWhen when you are teaching them to make the change themselves, so doing it answers, and only when their edit would fully do the option (a track with a pattern needs trackAdded with withNotes true, as an empty track is not the pattern; when none fits, leave it off). A preview is a few changes to hear the difference (a tempo, a filter, a short clip), never the whole part. Their answer is their next message, starting "[Answer to"; a line starting "[I asked the producer" is your earlier question: once answered, go ahead with what they chose in that turn, without asking again.`,
   aggressive: `Need their choice (direction, part, how far)? Ask with ask_producer, never guess: a short question, 2 to 8 options, your pick suggested when you have a view, one at a time, only when the answer changes what you do; they may answer in their own words. An option about a track, clip or bars takes a ref; about how something sounds, a sound; when you teach them to make the change, a doneWhen, only if their edit fully does it (a track with a pattern needs trackAdded with withNotes true; else none). A preview is a few changes to hear, never the whole part. Their answer starts "[Answer to"; "[I asked the producer" marks your earlier question: once answered, do what they chose in that turn, without asking again.`,
+};
+
+/** Four takes of a new melodic or harmonic part to pick from (GRV-207, `takes.ts`). */
+const TAKES: PromptPassage = {
+  full: `When the producer asks for a new melodic or harmonic part (a melody, a bassline, a lead, chords), or another go at one, offer four takes of it with offer_takes instead of proposing one: each take is the change calls that would write it on its own (its track when the part needs a new one, its clip with its notes, its placement), and the four differ on purpose along rhythm density, register, contour and use of rests (a sparse low take, a busy high one, one that climbs, one that leaves space), each in the song's key and fitting what is already there. Say one line before it and nothing after: it is the turn's last call, with no explain_change and no other change call beside it. The producer hears each take in the song and picks one, which becomes a proposal of its own. Drums, changes to notes the song already has, and anything that is not a new part are proposed as usual. A line in brackets starting "[I offered the producer" is takes you offered earlier and what became of them; a message with "[4 more]" asks for four new takes of the same part, different from those.`,
+  moderate: `When the producer asks for a new melodic or harmonic part (melody, bassline, lead, chords), or another go at one, offer four takes with offer_takes instead of one proposal: each take is the calls that write it on its own (its track if new, its clip with notes, its placement), the four deliberately different in rhythm density, register, contour and rests, each in key and fitting the song. One line before it, nothing after: it is the last call, with no explain_change or other change call. The producer hears each in the song and picks one, which becomes a proposal. Drums, edits to existing notes and anything not a new part are proposed as usual. "[I offered the producer" marks takes you offered and what became of them; "[4 more]" asks for four new takes of the same part, unlike those.`,
+  aggressive: `A new melodic or harmonic part (melody, bassline, lead, chords), or another go at one: offer_takes with four takes, each its own calls (track if new, clip with notes, placement), clearly different in density, register, contour and rests, all in key. One line before, nothing after, no explain_change or other changes. Drums, edits to existing notes and the rest are proposed as usual. "[I offered the producer" marks earlier takes and their outcome; "[4 more]" asks for four new, different takes.`,
 };
 
 const SOUND_RECOMMENDATIONS: PromptPassage = {
@@ -626,6 +639,7 @@ function fixedPrompt({
     at(ASK),
     guided ?? "",
     at(SOUND_RECOMMENDATIONS),
+    at(TAKES),
     at(VIDEO_RECOMMENDATIONS),
     at(TASTE),
     addressingBullets ? `${ADDRESSING_HEADING}\n\n${addressingBullets}` : "",

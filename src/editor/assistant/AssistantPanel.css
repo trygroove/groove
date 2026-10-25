@@ -415,6 +415,59 @@
   font-size: var(--font-size-tiny);
 }
 
+/* Four takes to pick from (GRV-207): a row per take, its Hear on the left,
+   its words in the middle and its Use this on the right, so the four line up
+   down the card. The take being heard wears a bright edge beside its
+   pressed Hear. */
+.assistant-takes-list {
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+}
+
+.assistant-take {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 38px;
+  padding: 3px 12px;
+}
+
+.assistant-take-heard {
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.assistant-button.assistant-take-hear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.assistant-card .assistant-take-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.assistant-card .assistant-take-label {
+  overflow: hidden;
+  color: var(--color-foreground-bright);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-button.assistant-take-use {
+  height: 28px;
+  padding: 0 10px;
+  font-size: var(--font-size-tiny);
+}
+
 /* While the turn still writes: the quiet last line of the log (GRV-194). */
 .assistant-still-writing {
   margin: 0;

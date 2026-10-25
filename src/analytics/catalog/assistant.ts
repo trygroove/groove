@@ -19,6 +19,7 @@ export const ASSISTANT_FEATURE_KEYS = [
   "assistant_proposal_part",
   "assistant_recommendation",
   "assistant_ask",
+  "assistant_takes",
   "assistant_retention",
   "assistant_disclosure",
   "assistant_video",
@@ -35,6 +36,12 @@ export const ASSISTANT_ASK_ANSWERS = ["pick", "text", "did_it", "dismissed"] as 
 
 /** The most options a question can offer (`ASK_LIMITS.maxOptions`). */
 const MAX_ASK_OPTIONS = 8;
+
+/** How many takes one offer holds (`TAKE_COUNT`, GRV-207). */
+const MAX_TAKES = 4;
+
+/** The most "4 more" presses one part's events count before they clamp. */
+const MAX_TAKES_REROLLS = 20;
 
 /** The assistant panel's shortcut actions, as `shortcut_used`'s `action_id` (see `SHORTCUT_ACTION_IDS`). */
 export const ASSISTANT_SHORTCUT_ACTION_IDS = [
@@ -215,6 +222,34 @@ export const ASSISTANT_EVENTS = {
       option_count: countParam(MAX_ASK_OPTIONS),
       suggested_taken: boolParam(),
     },
+  },
+
+  // Four takes of a part to pick from (GRV-207). Never a take's notes, its
+  // label or the part's name: only where the pick was, how many takes fitted
+  // the song, and how many times "4 more" was pressed for the part.
+  assistant_take_picked: {
+    phase: 3,
+    owners: ["GRV-207"],
+    params: {
+      position: countParam(MAX_TAKES),
+      take_count: countParam(MAX_TAKES),
+      reroll_count: countParam(MAX_TAKES_REROLLS),
+    },
+  },
+
+  assistant_takes_declined: {
+    phase: 3,
+    owners: ["GRV-207"],
+    params: {
+      take_count: countParam(MAX_TAKES),
+      reroll_count: countParam(MAX_TAKES_REROLLS),
+    },
+  },
+
+  assistant_takes_rerolled: {
+    phase: 3,
+    owners: ["GRV-207"],
+    params: { reroll_count: countParam(MAX_TAKES_REROLLS) },
   },
 
   assistant_proposal_shown: {

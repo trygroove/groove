@@ -204,6 +204,11 @@ export interface AssistantProposals {
   /** A control link: shows the control and focuses it. */
   reveal(address: ControlAddress): void;
   /**
+   * Ends every card's open preview, as another preview opens in their place
+   * (a take heard, GRV-207): one preview at a time.
+   */
+  endPreviews(): void;
+  /**
    * How many changes made elsewhere have been adopted this session. A turn
    * records it when sent, so its proposal can tell if one landed meanwhile.
    */
@@ -350,10 +355,17 @@ export function useAssistantProposals(
       previewView: previewTarget(before, rows)?.view ?? null,
     };
     show(entryId, arrived);
+    if (movedElsewhere) return;
+    // A take the producer picked (GRV-207) is applied as it arrives: picking
+    // was the decision. The card just shown is passed in; a signal write is
+    // not readable until it flushes.
+    if (origin.fromTake) {
+      applyCard(entryId, arrived);
+      return;
+    }
     // The preview is what makes a proposal understandable: it opens by itself
-    // (GRV-193). The card just shown is passed in; a signal write is not
-    // readable until it flushes.
-    if (!movedElsewhere) openPreview(entryId, true, arrived);
+    // (GRV-193).
+    openPreview(entryId, true, arrived);
   }
 
   /**
@@ -477,8 +489,13 @@ export function useAssistantProposals(
       streamed.applyAll(entryId);
       return;
     }
+    applyCard(entryId);
+  }
+
+  /** Applies a whole proposal's card; `arrived` is one just shown, not yet readable. */
+  function applyCard(entryId: string, arrived?: ProposalCard) {
     const entry = entries.get(entryId);
-    const card = cards().get(entryId);
+    const card = arrived ?? cards().get(entryId);
     const handle = entry?.handle;
     if (!entry || !handle || !card) return;
     if (card.status !== "pending" && card.status !== "previewing") return;
@@ -675,6 +692,10 @@ export function useAssistantProposals(
     refresh,
     reveal: (address) => {
       controls.revealControl(address);
+    },
+    endPreviews() {
+      endWholePreviews();
+      streamed.endPreviews();
     },
     remoteChanges: () => remoteChanges,
   };

@@ -44,6 +44,7 @@ import {
   type AssistantTurnResult,
 } from "./protocol";
 import { splitRecommendations, validateRecommendation } from "./recommendation";
+import { parseTakesCall, takeProposal } from "./takes";
 
 /** The emulator's provider, behind the real gateway, as the function runs it. */
 function gateway(): AssistantGatewayDeps {
@@ -525,6 +526,36 @@ describe("the emulator's assistant provider", () => {
       expect(validateProposal(createReferenceProject(), reply.proposal).ok).toBe(true);
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("answers [takes] with four takes of a lead, each applying on its own, and four others for [4 more] (GRV-207)", async () => {
+    const project = createReferenceProject();
+    const takesOf = async (text: string) => {
+      const reply = await turn(gateway(), text, undefined, project).result;
+      const [offer] = reply.proposal?.calls ?? [];
+      const takes = offer && parseTakesCall(offer);
+      if (!takes) throw new Error("no takes");
+      return takes;
+    };
+    const first = await takesOf("Write a lead [takes]");
+    expect(first.takes).toHaveLength(4);
+    for (const index of [0, 1, 2, 3]) {
+      expect(
+        validateProposal(project, takeProposal(first, index, project.metadata.revision))
+          .ok,
+      ).toBe(true);
+    }
+    const more = await takesOf("Write a lead [takes]\n\n[4 more] None of these.");
+    expect(more.takes.map((take) => take.label)).not.toEqual(
+      first.takes.map((take) => take.label),
+    );
+    for (const index of [0, 1, 2, 3]) {
+      const validation = validateProposal(
+        project,
+        takeProposal(more, index, project.metadata.revision),
+      );
+      expect(validation.ok ? null : validation.issues).toBeNull();
     }
   });
 
