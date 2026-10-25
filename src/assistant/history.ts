@@ -14,6 +14,7 @@ import { type AssistantAsk, askTranscript } from "./ask";
 import { ASSISTANT_REQUEST_LIMITS, ESTIMATED_CHARS_PER_TOKEN } from "./config";
 import { START_LESSON_TOOL_NAME } from "./lessonTool";
 import type { AssistantMessage } from "./protocol";
+import { type HistoryTakes, takesNote } from "./takes";
 import type { ProposalOutcome } from "./transcripts";
 
 /**
@@ -77,9 +78,11 @@ export type HistoryEntry =
       readonly proposal?: HistoryProposal;
       /** The lesson the reply started, when it started one (GRV-43). */
       readonly lesson?: LessonId;
+      /** The takes the reply offered and what became of them (GRV-207). */
+      readonly takes?: HistoryTakes;
     }
   | { readonly kind: "video"; readonly video: { readonly videoId: string } }
-  | { readonly kind: "proposal" | "recommendation" | "memory" | "error" };
+  | { readonly kind: "proposal" | "recommendation" | "memory" | "error" | "takes" };
 
 /** The most one message may say, as the gateway counts it. */
 export const MAX_MESSAGE_CHARS = ASSISTANT_REQUEST_LIMITS.maxMessageChars;
@@ -88,7 +91,8 @@ export const MAX_MESSAGE_CHARS = ASSISTANT_REQUEST_LIMITS.maxMessageChars;
  * The conversation so far, as the next turn resends it: every message that
  * got a reply, with that reply, and after a reply that proposed a change, a
  * line saying what the producer did with it (GRV-150); a lesson the reply
- * started is said beside it (GRV-43). A message whose turn failed is left out,
+ * started is said beside it (GRV-43), and so are the takes it offered and
+ * what became of them (GRV-207). A message whose turn failed is left out,
  * along with whatever its reply wrote before failing, so the roles always
  * alternate and a broken answer is never passed off as the assistant's; the
  * retry resends the message, and its reply is the one that counts.
@@ -119,6 +123,7 @@ export function historyOf(entries: readonly HistoryEntry[]): AssistantMessage[] 
       entry.text.trim(),
       entry.lesson ? lessonNote(entry.lesson) : "",
       entry.ask ? askTranscript(entry.ask) : "",
+      entry.takes ? takesNote(entry.takes) : "",
     ]
       .filter((part) => part.length > 0)
       .join("\n\n");

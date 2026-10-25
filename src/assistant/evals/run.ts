@@ -49,6 +49,7 @@ import { continuesTurn, type ProviderMessagesRequest } from "../providerRequest"
 import { splitRecommendations } from "../recommendation";
 import type { ProviderUsage } from "../streamEvents";
 import { resolveTactics, type TacticOverrides, type TacticValues } from "../tactics";
+import { withFirstTake } from "../takes";
 import type { AssistantTurnLog, ToolBundleFallback } from "../telemetry";
 import { ASSISTANT_TOOLSET_VERSION, type ToolBundleId } from "../tools";
 import { caseChecksFor, checkOutcome, runCaseCheck } from "./caseChecks";
@@ -729,7 +730,7 @@ function fromSession(judged: SessionJudgement): Judgement {
 function singleJudgement(project: Project, turn: EvalTurn): Judgement {
   // Sound recommendations come back among the proposal's calls; the panel
   // takes them out before it validates the changes, and so do the checks.
-  const split = turn.proposal ? splitRecommendations(turn.proposal) : null;
+  const split = turn.proposal ? splitRecommendations(withFirstTake(turn.proposal)) : null;
   const changes = turn.proposal ? (split?.proposal ?? null) : turn.proposal;
   const valid = checkValid(project, changes, whyNoProposal(turn));
   return {

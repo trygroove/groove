@@ -40,6 +40,7 @@ import type { AssistantLessonContext } from "../lesson";
 import type { AssistantProposal } from "../protocol";
 import { splitRecommendations } from "../recommendation";
 import type { ProviderUsage } from "../streamEvents";
+import { withFirstTake } from "../takes";
 import { caseChecksFor, isEveryCaseCheck, runCaseCheck } from "./caseChecks";
 import type { EvalCase } from "./cases";
 import {
@@ -113,7 +114,7 @@ interface Applied {
  * taken out, the changes validated and applied by the executor.
  */
 function applyProposal(project: Project, proposal: AssistantProposal): Applied {
-  const changes = splitRecommendations(proposal).proposal;
+  const changes = splitRecommendations(withFirstTake(proposal)).proposal;
   if (!changes) return { valid: null, after: project };
   const valid = checkValid(project, changes);
   return { valid: valid.result, after: valid.applied?.after ?? null };
@@ -270,7 +271,7 @@ export function sessionJudgement(
   let applied = 0;
   for (const turn of session.turns) {
     if (turn.error || !turn.proposal) continue;
-    const split = splitRecommendations(turn.proposal);
+    const split = splitRecommendations(withFirstTake(turn.proposal));
     recommendations.push(...split.recommendations);
     if (!split.proposal) continue;
     const valid = checkValid(project, split.proposal);

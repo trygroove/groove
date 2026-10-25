@@ -1053,9 +1053,9 @@ export function checkAsksThroughTool(
 // 28. No history note echoed
 // ---------------------------------------------------------------------------
 
-/** The openings of the bracketed notes the history writes (`history.ts`, `ask.ts`). */
+/** The openings of the bracketed notes the history writes (`history.ts`, `ask.ts`, `takes.ts`). */
 const HISTORY_NOTE =
-  /\[(?:I called |I asked the producer|I recommended |The producer (?:applied|cancelled|has not)|This proposal |Answer to ")[^\]\n]*\]?/i;
+  /\[(?:I called |I asked the producer|I offered the producer|I recommended |The producer (?:applied|cancelled|has not)|This proposal |Answer to ")[^\]\n]*\]?/i;
 
 /** A line that is one bracketed note and nothing else. */
 const BRACKETED_LINE = /^\s*\[[^\]\n]{8,}\]\s*$/m;
