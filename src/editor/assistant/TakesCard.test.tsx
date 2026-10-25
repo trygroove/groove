@@ -7,6 +7,9 @@ import { offerTakesInput, TAKE_LABELS } from "../../testing/takes";
 import TakesCard, { MORE_TAKES_LABEL, NO_TAKE_LABEL } from "./TakesCard";
 import {
   type TakesCard as Card,
+  hearingCommands,
+  type TakeRow,
+  takePatternLoop,
   takeStartTicks,
   takesStatusText,
 } from "./takesCardModel";
@@ -22,6 +25,7 @@ afterEach(cleanup);
 const CHOOSING: Card = {
   status: "choosing",
   part: "Lead melody",
+  partType: "melodic",
   trackName: "Lead",
   takes: TAKE_LABELS.map((label) => ({ label, fits: true })),
   hearing: null,
@@ -180,5 +184,88 @@ describe("where a take starts playing (GRV-207)", () => {
     } as typeof before;
     expect(takeStartTicks(before, later)).toBe(3_072);
     expect(takeStartTicks(before, before)).toBeNull();
+  });
+});
+
+describe("a drum pattern's takes (GRV-213)", () => {
+  const DRUMS: Card = { ...CHOOSING, part: "Drum pattern", partType: "drums" };
+
+  it("says a drum take is heard on a loop, and its Hear button says so", () => {
+    renderCard(DRUMS);
+    expect(
+      screen.getByRole("button", { name: "Hear take 1" }).getAttribute("title"),
+    ).toBe("Hear it on a loop in your song");
+    expect(takesStatusText({ ...DRUMS, hearing: 1 })).toBe(
+      "Hearing take 2 on a loop in your song. Nothing changes until you use one.",
+    );
+    expect(takesStatusText({ ...CHOOSING, hearing: 1 })).not.toContain("loop");
+  });
+
+  const placed = (
+    before: ReturnType<typeof createSliceFixtureProject>,
+    startTicks: number,
+    durationTicks: number,
+    lengthTicks: number,
+  ) => {
+    const clip = { ...(before.clips[0] as (typeof before.clips)[number]) };
+    const newClip = { ...clip, id: "clp_new", lengthTicks } as typeof clip;
+    return {
+      ...before,
+      clips: [...before.clips, newClip],
+      song: {
+        ...before.song,
+        placements: [
+          ...before.song.placements,
+          {
+            id: "plc_new",
+            clipId: "clp_new",
+            trackId: before.song.tracks[0]?.id ?? "",
+            startTicks,
+            durationTicks,
+            clipOffsetTicks: 0,
+            looped: true,
+          },
+        ],
+      },
+    } as typeof before;
+  };
+
+  it("loops on the pattern's own length from the bar it starts in, in whole bars", () => {
+    const before = createSliceFixtureProject();
+    // A one-bar pattern placed over four bars from bar 3 loops on bar 3.
+    expect(takePatternLoop(before, placed(before, 1_536, 3_072, 768))).toEqual({
+      startTicks: 1_536,
+      endTicks: 2_304,
+    });
+    // A two-bar pattern loops on both its bars.
+    expect(takePatternLoop(before, placed(before, 0, 3_072, 1_536))).toEqual({
+      startTicks: 0,
+      endTicks: 1_536,
+    });
+    // A part-bar pattern rounds out to the bar.
+    expect(takePatternLoop(before, placed(before, 0, 3_072, 384))).toEqual({
+      startTicks: 0,
+      endTicks: 768,
+    });
+    expect(takePatternLoop(before, before)).toBeNull();
+  });
+
+  it("previews a drum take with the song's loop on its pattern, and a melodic take as it is", () => {
+    const row: TakeRow = {
+      label: "Busy",
+      commands: [{ type: "clip.create", payload: {} }],
+      startTicks: 0,
+      endTicks: 3_072,
+      trackName: "Drums",
+      issue: null,
+      loop: { startTicks: 0, endTicks: 768 },
+    };
+    expect(hearingCommands(row)).toEqual([
+      { type: "clip.create", payload: {} },
+      { type: "loop.setRange", payload: { startTicks: 0, endTicks: 768 } },
+      { type: "loop.setEnabled", payload: { enabled: true } },
+    ]);
+    expect(hearingCommands({ ...row, loop: null })).toEqual(row.commands);
+    expect(hearingCommands({ ...row, commands: null })).toBeNull();
   });
 });

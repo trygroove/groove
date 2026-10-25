@@ -37,6 +37,10 @@
  * GRV-207 adds four `takes` cases: a melody, a bassline and chords on a beat,
  * each judged by check 29 (one offer of four takes, each playing notes no
  * other take plays), and drums, judged by check 30 (no takes offered).
+ * GRV-213 makes a new drum pattern four takes as well: `takes-drums` asks for
+ * one on a kit, judged by checks 29 and 31 (takes of a drum pattern), and
+ * `takes-drum-edit` keeps an edit to the hits a pattern has one proposal,
+ * judged by check 30.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -754,8 +758,9 @@ export const TYPESCRIPT_CASES: readonly EvalCase[] = [
     checks: ["noAbsentTrack", "noDeniedTrack"],
     facts: { present: SNARE_WORDS, absent: ["closed hat", "hi-hat", "hat"] },
   },
-  // GRV-207: a melodic or harmonic part gets four takes to pick from, drums
-  // do not. Checks 1 to 5 judge the first take, as the producer who picks it.
+  // GRV-207: a melodic or harmonic part gets four takes to pick from, and so
+  // does a new drum pattern (GRV-213); an edit to the hits a pattern has does
+  // not. Checks 1 to 5 judge the first take, as the producer who picks it.
   takesCase("takes-melody", "Write me a lead melody over this beat."),
   takesCase("takes-bass", "Give me a bassline for this beat."),
   takesCase("takes-chords", "Add some chords over this."),
@@ -763,11 +768,22 @@ export const TYPESCRIPT_CASES: readonly EvalCase[] = [
     id: "takes-drums",
     capability: "takes",
     axis: "conventional",
-    request: "Add a snare and some hats to go with the BD.",
+    request: "Write me a proper drum pattern for this kit.",
     expect: "proposal",
-    fixture: () => createBdOnlyProject(),
-    selection: null,
-    scope: { tracks: ["BD"], createTracks: true, ...NOTHING_ELSE },
+    fixture: createKitSketchProject,
+    selection: { tracks: ["Drums"] },
+    scope: { tracks: ["Drums"], createTracks: false, ...NOTHING_ELSE },
+    checks: ["offersTakes", "drumTakes"],
+  },
+  {
+    id: "takes-drum-edit",
+    capability: "takes",
+    axis: "conventional",
+    request: "Make the hi-hats busier.",
+    expect: "proposal",
+    fixture: createTechnoDrumsProject,
+    selection: { tracks: ["Drums"] },
+    scope: { tracks: ["Drums"], createTracks: false, ...NOTHING_ELSE },
     checks: ["noTakes"],
   },
   // GRV-119: the basic production actions, a set of their own.

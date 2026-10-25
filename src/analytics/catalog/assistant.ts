@@ -1,7 +1,7 @@
 // The assistant: messages, suggestions, the questions it asks, and the
 // proposals it makes.
 
-import { ASSISTANT_ERROR_CODES } from "../../assistant/protocol";
+import { ASSISTANT_ERROR_CODES, TAKE_PART_TYPES } from "../../assistant/protocol";
 import {
   type AnalyticsEventDefinition,
   boolParam,
@@ -20,6 +20,7 @@ export const ASSISTANT_FEATURE_KEYS = [
   "assistant_recommendation",
   "assistant_ask",
   "assistant_takes",
+  "assistant_drum_takes",
   "assistant_retention",
   "assistant_disclosure",
   "assistant_video",
@@ -226,30 +227,36 @@ export const ASSISTANT_EVENTS = {
 
   // Four takes of a part to pick from (GRV-207). Never a take's notes, its
   // label or the part's name: only where the pick was, how many takes fitted
-  // the song, and how many times "4 more" was pressed for the part.
+  // the song, how many times "4 more" was pressed for the part, and whether
+  // the part was melodic or a drum pattern (`part_type`, GRV-213).
   assistant_take_picked: {
     phase: 3,
-    owners: ["GRV-207"],
+    owners: ["GRV-207", "GRV-213"],
     params: {
       position: countParam(MAX_TAKES),
       take_count: countParam(MAX_TAKES),
       reroll_count: countParam(MAX_TAKES_REROLLS),
+      part_type: enumParam(TAKE_PART_TYPES),
     },
   },
 
   assistant_takes_declined: {
     phase: 3,
-    owners: ["GRV-207"],
+    owners: ["GRV-207", "GRV-213"],
     params: {
       take_count: countParam(MAX_TAKES),
       reroll_count: countParam(MAX_TAKES_REROLLS),
+      part_type: enumParam(TAKE_PART_TYPES),
     },
   },
 
   assistant_takes_rerolled: {
     phase: 3,
-    owners: ["GRV-207"],
-    params: { reroll_count: countParam(MAX_TAKES_REROLLS) },
+    owners: ["GRV-207", "GRV-213"],
+    params: {
+      reroll_count: countParam(MAX_TAKES_REROLLS),
+      part_type: enumParam(TAKE_PART_TYPES),
+    },
   },
 
   /**

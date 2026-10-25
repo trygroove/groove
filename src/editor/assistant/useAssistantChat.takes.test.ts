@@ -15,7 +15,7 @@ import { createManualClock } from "../../shared/clock";
 import { createManualScheduler } from "../../shared/scheduler";
 import { createFakeAssistantClient } from "../../testing/fakeAssistantClient";
 import { memoryStorage } from "../../testing/storage";
-import { offerTakesCall, TAKES_STEM } from "../../testing/takes";
+import { drumTakesCall, offerTakesCall, TAKES_STEM } from "../../testing/takes";
 import { assistantProposalTarget } from "../composition/assistantProposalTarget";
 import { EditorSession } from "../composition/EditorSession";
 import type { EditorLocation } from "../composition/editorControls";
@@ -120,15 +120,12 @@ async function setUp() {
   if (!chat) throw new Error("the chat did not start");
   const theChat = chat;
 
-  /**
-   * Answers the turn on its way with an offer of four takes (the model's
-   * call, `made`); returns its card's entry.
-   */
-  function offer(made = offerTakesCall(session.committedProject)): string {
+  /** Answers the turn on its way with an offer of four takes; returns its card's entry. */
+  function offer(call: typeof offerTakesCall = offerTakesCall): string {
     const written = expandTakesCall(
       {
         id: `toolu_takes_${theChat.conversation.entries().length}`,
-        ...made,
+        ...call(session.committedProject),
       },
       TAKES_STEM,
     );
@@ -157,6 +154,13 @@ async function setUp() {
     return offer();
   }
 
+  /** Asks for a drum pattern and answers with four takes of one (GRV-213). */
+  async function askForDrums(): Promise<string> {
+    expect(theChat.conversation.send("Write me a drum pattern")).toBe(true);
+    await settle();
+    return offer(drumTakesCall);
+  }
+
   const clips = () => session.committedProject.clips.map((clip) => clip.id);
   const shownClips = () => shown().clips.map((clip) => clip.id);
   /** The params of each `name` event, without the ones every event carries. */
@@ -179,9 +183,11 @@ async function setUp() {
     project,
     audio,
     ask,
+    askForDrums,
     offer,
     clips,
     shownClips,
+    shown,
     named,
     previewing,
     track,
@@ -269,7 +275,7 @@ describe("four takes to pick from (GRV-207)", () => {
     expect(clips()).not.toContain(clipOf(3));
 
     expect(named("assistant_take_picked")).toEqual([
-      { position: 3, take_count: 4, reroll_count: 0 },
+      { position: 3, take_count: 4, reroll_count: 0, part_type: "melodic" },
     ]);
     expect(named("feature_first_use")).toContainEqual({ feature: "assistant_takes" });
   });
@@ -363,7 +369,7 @@ describe("four takes to pick from (GRV-207)", () => {
     expect(previewing()).toBe(false);
     expect(chat.takes?.card(entryId)?.status).toBe("declined");
     expect(named("assistant_takes_declined")).toEqual([
-      { take_count: 4, reroll_count: 0 },
+      { take_count: 4, reroll_count: 0, part_type: "melodic" },
     ]);
     expect(named("assistant_take_picked")).toEqual([]);
   });
@@ -394,7 +400,9 @@ describe("four takes to pick from (GRV-207)", () => {
     expect(offered).not.toContain("They have not picked one");
     expect(chat.takes?.card(first)?.status).toBe("more");
     expect(clips()).toEqual(before);
-    expect(named("assistant_takes_rerolled")).toEqual([{ reroll_count: 1 }]);
+    expect(named("assistant_takes_rerolled")).toEqual([
+      { reroll_count: 1, part_type: "melodic" },
+    ]);
 
     // The fresh set is a card of its own, and its pick counts the re-roll.
     const second = offer();
@@ -404,8 +412,8 @@ describe("four takes to pick from (GRV-207)", () => {
     flush();
     await settle();
     expect(named("assistant_takes_rerolled")).toEqual([
-      { reroll_count: 1 },
-      { reroll_count: 2 },
+      { reroll_count: 1, part_type: "melodic" },
+      { reroll_count: 2, part_type: "melodic" },
     ]);
     // Each "4 more" is the first request with one note naming every take
     // set aside, never the last turn's words with their note on top.
@@ -418,7 +426,7 @@ describe("four takes to pick from (GRV-207)", () => {
     chat.takes?.pick(third, 0);
     flush();
     expect(named("assistant_take_picked")).toEqual([
-      { position: 1, take_count: 4, reroll_count: 2 },
+      { position: 1, take_count: 4, reroll_count: 2, part_type: "melodic" },
     ]);
   });
 
@@ -460,7 +468,7 @@ describe("four takes to pick from (GRV-207)", () => {
         else call.input = { ...call.input, trackId: track.id };
       }
     }
-    const entryId = offer(made);
+    const entryId = offer(() => made);
     expect(chat.takes?.card(entryId)?.status).toBe("invalid");
     expect(named("assistant_takes_unfit")).toEqual([
       { issue_code: "rejected", take_count: 4 },
@@ -606,5 +614,110 @@ describe("hearing a take whose preview cannot open (GRV-207)", () => {
     // Recorded before the turn goes, so its history says so; taken back when it cannot.
     expect(outcomes).toEqual(["more", "asked", "pending"]);
     expect(takes.card("entry-1")?.status).toBe("choosing");
+  });
+});
+
+describe("four takes of a drum pattern (GRV-213)", () => {
+  it("hears a drum take on a loop over its pattern's bar, a loop that is the preview's alone", async () => {
+    const { chat, askForDrums, audio, session, shown, previewing } = await setUp();
+    const entryId = await askForDrums();
+    const takes = chat.takes;
+    if (!takes) throw new Error("no takes");
+    const card = takes.card(entryId);
+    expect(card?.status).toBe("choosing");
+    expect(card?.partType).toBe("drums");
+    expect(card?.takes.every((take) => take.fits)).toBe(true);
+    const loopBefore = session.committedProject.song.loop;
+
+    takes.hear(entryId, 2);
+    flush();
+    // The one-bar pattern, placed over four bars, loops on its bar.
+    expect(shown().song.loop).toMatchObject({
+      enabled: true,
+      startTicks: 0,
+      endTicks: 768,
+    });
+    expect(shown().clips.map((clip) => clip.id)).toContain(clipOf(3));
+    expect(audio.seekTicks).toHaveBeenLastCalledWith(0);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+
+    // Switching keeps the loop and the song playing.
+    takes.hear(entryId, 0);
+    flush();
+    expect(shown().song.loop.enabled).toBe(true);
+    expect(shown().clips.map((clip) => clip.id)).toContain(clipOf(1));
+    expect(audio.play).toHaveBeenCalledTimes(1);
+
+    // Stopping puts the song's own loop back; nothing was committed.
+    takes.hear(entryId, 0);
+    flush();
+    expect(previewing()).toBe(false);
+    expect(shown().song.loop).toEqual(loopBefore);
+    expect(session.committedProject.song.loop).toEqual(loopBefore);
+  });
+
+  it("jumps a song playing outside the pattern's bar back into it", async () => {
+    const { chat, askForDrums, audio, setPlaying, setPosition } = await setUp();
+    const entryId = await askForDrums();
+    setPlaying(true);
+    // Inside the four-bar placement but past the bar the pattern loops on.
+    setPosition(1_536);
+    flush();
+    chat.takes?.hear(entryId, 1);
+    flush();
+    expect(audio.seekTicks).toHaveBeenLastCalledWith(0);
+    expect(audio.play).not.toHaveBeenCalled();
+  });
+
+  it("applies only the take picked, without the audition's loop", async () => {
+    const { chat, askForDrums, clips, session, named } = await setUp();
+    const loopBefore = session.committedProject.song.loop;
+    const revision = session.committedProject.metadata.revision;
+    const entryId = await askForDrums();
+    chat.takes?.hear(entryId, 3);
+    flush();
+    chat.takes?.pick(entryId, 1);
+    flush();
+    expect(clips()).toContain(clipOf(2));
+    for (const other of [1, 3, 4]) expect(clips()).not.toContain(clipOf(other));
+    expect(session.committedProject.metadata.revision).toBe(revision + 1);
+    expect(session.committedProject.song.loop).toEqual(loopBefore);
+    expect(named("assistant_take_picked")).toEqual([
+      { position: 2, take_count: 4, reroll_count: 0, part_type: "drums" },
+    ]);
+    const firstUses = named("feature_first_use");
+    expect(firstUses).toContainEqual({ feature: "assistant_takes" });
+    expect(
+      firstUses.filter((event) => event.feature === "assistant_drum_takes"),
+    ).toHaveLength(1);
+  });
+
+  it("applies nothing when declined or re-rolled, logging the part as drums", async () => {
+    const { chat, askForDrums, offer, clips, named, session } = await setUp();
+    const before = clips();
+    const first = await askForDrums();
+    chat.takes?.more(first);
+    flush();
+    await settle();
+    expect(clips()).toEqual(before);
+    expect(named("assistant_takes_rerolled")).toEqual([
+      { reroll_count: 1, part_type: "drums" },
+    ]);
+    const second = offer(drumTakesCall);
+    chat.takes?.decline(second);
+    flush();
+    expect(clips()).toEqual(before);
+    expect(session.activePreview).toBeNull();
+    expect(named("assistant_takes_declined")).toEqual([
+      { take_count: 4, reroll_count: 1, part_type: "drums" },
+    ]);
+    // Never a pattern's content, label or part name.
+    const logged = JSON.stringify([
+      ...named("assistant_takes_rerolled"),
+      ...named("assistant_takes_declined"),
+    ]);
+    expect(logged).not.toContain("Drum pattern");
+    expect(logged).not.toContain("pad_");
+    expect(logged).not.toContain("Sparse");
   });
 });

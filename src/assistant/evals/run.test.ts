@@ -17,7 +17,7 @@ import {
 } from "../prompt";
 import { continuesTurn } from "../providerRequest";
 import { describeTactics, resolveTactics, TACTIC_DEFAULTS } from "../tactics";
-import { expandTakesCall } from "../takes";
+import { expandTakesCall, OFFER_TAKES_TOOL_NAME } from "../takes";
 import { ASSISTANT_TOOLSET_VERSION, toolNameFor } from "../tools";
 import { EVAL_CASES, type EvalCase } from "./cases";
 import { createHouseLoopProject } from "./fixtures";
@@ -163,7 +163,7 @@ describe("runEvals", () => {
     const markdown = renderMarkdown(report);
     expect(markdown).toContain("**Errored turns: 1 of 2**");
     expect(markdown).toContain(
-      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | 0/0 | - | - | - | 0/0 | - | - | - | - | - | - | - | - | - | - | 1 |",
+      "| `process-glue` | 0/1 | 0/0 | 0/0 | 0/0 | 0/0 | - | 0/0 | 0/1 | - | - | - | - | - | - | - | 0/0 | - | - | - | 0/0 | - | - | - | - | - | - | - | - | - | - | - | 1 |",
     );
     expect(markdown).toContain(
       "**Run 2** (0 s): errored, not judged: provider_error: The assistant could not take that request. (provider: rejected, HTTP 400)",
@@ -932,12 +932,76 @@ describe("the takes cases (GRV-207)", () => {
     expect(record.checks.offersTakes?.status).toBe("pass");
   });
 
-  it("fails check 30 on a drums request that got takes", () => {
-    const evalCase = find("takes-drums");
+  it("fails check 30 on an edit to a drum pattern's hits that got takes", () => {
+    const evalCase = find("takes-drum-edit");
     const record = evaluateTurn(evalCase, 1, {
       ...base,
       proposal: offered(evalCase),
     } as never);
     expect(record.checks.noTakes?.status).toBe("fail");
+  });
+
+  // GRV-213: a new drum pattern is four takes of hits on the kit's own pads.
+  it("judges a drum pattern request's offer by checks 29 and 31", () => {
+    const evalCase = find("takes-drums");
+    const project = evalCase.fixture();
+    const drums = project.song.tracks.find((track) => track.name === "Drums");
+    const pads = drums?.instrument?.kind === "drumMachine" ? drums.instrument.pads : [];
+    const [kick, snare, hat] = pads;
+    if (!drums || !kick || !snare || !hat) throw new Error("the kit has its pads");
+    const take = (n: number, hats: readonly number[]) => ({
+      label: `Take ${n}`,
+      calls: [
+        {
+          name: "clip_create",
+          input: {
+            id: `clp_Stem0000000000000${String(n).padStart(4, "0")}`,
+            trackId: drums.id,
+            name: "Beat",
+            color: "#808080",
+            lengthTicks: 768,
+            content: {
+              kind: "notes",
+              events: [
+                [0, kick.id, 48, 0.9],
+                [384, snare.id, 48, 0.8],
+                ...hats.map((step) => [step * 48, hat.id, 48, 0.5]),
+              ],
+            },
+          },
+        },
+      ],
+    });
+    const written = expandTakesCall(
+      {
+        id: "toolu_drums",
+        name: OFFER_TAKES_TOOL_NAME,
+        input: {
+          part: "Drum pattern",
+          takes: [take(1, [0]), take(2, [0, 4]), take(3, [2, 6]), take(4, [0, 2, 4])],
+        },
+      },
+      "Stem0000000000000",
+    );
+    if (!written.ok) throw new Error(written.message);
+    const record = evaluateTurn(evalCase, 1, {
+      ...base,
+      proposal: {
+        baseRevision: project.metadata.revision,
+        toolsetVersion: ASSISTANT_TOOLSET_VERSION,
+        calls: [written.call],
+      },
+    } as never);
+    expect(record.checks.offersTakes?.status).toBe("pass");
+    expect(record.checks.drumTakes?.status).toBe("pass");
+  });
+
+  it("fails check 31 on a drum pattern request that got melodic takes", () => {
+    const evalCase = find("takes-drums");
+    const record = evaluateTurn(evalCase, 1, {
+      ...base,
+      proposal: offered(evalCase),
+    } as never);
+    expect(record.checks.drumTakes?.status).toBe("fail");
   });
 });

@@ -57,8 +57,9 @@
  * proposal, searched for here, and returned as the turn's `videos`, with
  * every search that finds nothing YouTube vouches for dropped. An
  * `offer_takes` call (GRV-207, `takes.ts`), four takes of a melodic or
- * harmonic part, has each take's notes written out here and is refused back
- * to the model whole when a take does not fit its tools; it ends the turn and
+ * harmonic part or of a drum pattern (GRV-213), has each take's notes written
+ * out here and is refused back to the model whole when a take does not fit
+ * its tools or the takes mix drum hits with pitched notes; it ends the turn and
  * comes back among the proposal's calls. Every turn is offered it, and the
  * browser shows the takes as a card of their own.
  *

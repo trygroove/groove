@@ -3,9 +3,12 @@
  * image generator lays out a grid of candidates.
  *
  * When the producer asks for a melodic or harmonic part (a melody, a
- * bassline, a lead, chords), the model writes four deliberately different
- * takes of it in one call instead of one proposal, each take the change calls
- * that would write it. Like `ask_producer` (`ask.ts`) it changes nothing by
+ * bassline, a lead, chords) or a drum pattern (GRV-213), the model writes
+ * four deliberately different takes of it in one call instead of one
+ * proposal, each take the change calls that would write it. What the takes
+ * are a part of ({@link takesPartType}) is read off the notes they write: hits
+ * on a drum machine's pads make a drum pattern, which the panel hears looped
+ * on its pattern's length, and an offer that mixes the two is refused. Like `ask_producer` (`ask.ts`) it changes nothing by
  * itself, so it is never a change call: the gateway writes out each take's
  * compact notes ({@link expandTakesCall}) and refuses the whole call back to
  * the model when a take does not fit its tools, and the call comes back among
@@ -34,6 +37,7 @@ import type {
   AssistantContextPayload,
   AssistantProposal,
   AssistantToolCall,
+  TakePartType,
 } from "./protocol";
 import { ASSISTANT_TOOLSET_VERSION, resolveToolCall } from "./tools";
 
@@ -72,21 +76,21 @@ const takeCallSchema = z.strictObject({
 
 const takeSchema = z.strictObject({
   label: text(TAKES_LIMITS.labelChars).describe(
-    'A few words on how this take differs from the others ("Sparse, low, lots of rests").',
+    'A few words on how this take differs from the others ("Sparse, low, lots of rests", "Half-time, kick on 1 only").',
   ),
   calls: z
     .array(takeCallSchema)
     .min(1)
     .max(TAKES_LIMITS.callsPerTake)
     .describe(
-      "Every change that writes this take, in order, as a proposal of its own: its track if the part needs a new one, its clip with its notes, and its placement.",
+      "Every change that writes this take, in order, as a proposal of its own: its track if the part needs a new one, its clip with its notes (a drum pattern's hits on its drum machine's pads), and its placement.",
     ),
 });
 
 /** What the model sends: the tool's input. */
 export const offerTakesInputSchema = z.strictObject({
   part: text(TAKES_LIMITS.partChars).describe(
-    'The part the takes are of, as the producer would name it ("Lead melody", "Bassline", "Chords").',
+    'The part the takes are of, as the producer would name it ("Lead melody", "Bassline", "Chords", "Drum pattern").',
   ),
   takes: z
     .array(takeSchema)
@@ -106,10 +110,12 @@ export interface AssistantTakes {
   /** The tool call's ID, unique within the conversation. */
   readonly id: string;
   readonly part: string;
+  /** A melodic or harmonic part, or a drum pattern (GRV-213), read off the notes. */
+  readonly partType: TakePartType;
   readonly takes: readonly AssistantTake[];
 }
 
-const TOOL_DESCRIPTION = `Offer the producer ${TAKE_COUNT} takes of one melodic or harmonic part (a melody, a bassline, a lead, chords) to pick from, instead of proposing one. Each take is the change calls that would write it, as a proposal of its own. Make the takes clearly different from one another along rhythm density, register, contour and use of rests, each in key and fitting the song. The producer hears each take in the song and picks one, which is then applied; nothing changes until they do. Never use it for drums. Make it your last call: say one line before it, nothing after, and call no other change tool or explain_change in the same turn.`;
+const TOOL_DESCRIPTION = `Offer the producer ${TAKE_COUNT} takes of one new part to pick from, instead of proposing one: a melodic or harmonic part (a melody, a bassline, a lead, chords) or a drum pattern. Each take is the change calls that would write it, as a proposal of its own, and all ${TAKE_COUNT} are of the same part: pitched notes, or a drum pattern's hits on a drum machine's pads, never some of each. Make the takes clearly different from one another: a melodic part along rhythm density, register, contour and use of rests, each in key and fitting the song; a drum pattern along density, groove feel (straight or swung, where the hits sit and how hard), kick placement, hat and percussion variation, and fills. The producer hears each take in the song (a drum pattern looped on its own length) and picks one, which is then applied; nothing changes until they do. Make it your last call: say one line before it, nothing after, and call no other change tool or explain_change in the same turn.`;
 
 /** The tool as the model is offered it. */
 export interface TakesToolDefinition {
@@ -211,6 +217,48 @@ export function takeNoteContent(
   return notes.length > 0 ? JSON.stringify(notes) : null;
 }
 
+/** What one written-out note is: a pitched note, a drum hit, or neither. */
+function noteKind(value: unknown): "pitch" | "pad" | null {
+  if (typeof value !== "object" || value === null) return null;
+  const trigger = (value as Record<string, unknown>).trigger as
+    | Record<string, unknown>
+    | undefined;
+  if (typeof trigger !== "object" || trigger === null) return null;
+  if (trigger.kind === "pad" || trigger.padId !== undefined) return "pad";
+  if (trigger.kind === "pitch" || trigger.pitch !== undefined) return "pitch";
+  return null;
+}
+
+/** The kinds of note an offer's takes write, once written out. */
+function noteKinds(
+  takes: readonly {
+    readonly calls: readonly { readonly name: string; readonly input: unknown }[];
+  }[],
+): ReadonlySet<"pitch" | "pad"> {
+  const kinds = new Set<"pitch" | "pad">();
+  for (const take of takes) {
+    for (const note of take.calls.flatMap(writtenNotes)) {
+      const kind = noteKind(note);
+      if (kind) kinds.add(kind);
+    }
+  }
+  return kinds;
+}
+
+/**
+ * What an offer's takes are a part of (GRV-213), read off the notes they
+ * write once written out: a drum pattern when every note is a hit on a pad,
+ * otherwise a melodic or harmonic part.
+ */
+export function takesPartType(
+  takes: readonly {
+    readonly calls: readonly { readonly name: string; readonly input: unknown }[];
+  }[],
+): TakePartType {
+  const kinds = noteKinds(takes);
+  return kinds.has("pad") && !kinds.has("pitch") ? "drums" : "melodic";
+}
+
 /**
  * The first two takes (by number, from 1) whose notes are the same, or null
  * when every take that writes notes writes different ones.
@@ -282,7 +330,8 @@ function remadeId(
  * counter of its own ({@link TAKE_NOTE_MARK}) from `stem`, or why it cannot
  * be shown: not an offer of four takes, two takes under one label, a take
  * with a call that does not fit its tool or that makes an entity under an ID
- * in `inSong` (named by take and call, counting from 1), or two takes that
+ * in `inSong` (named by take and call, counting from 1), takes that mix drum
+ * hits with pitched notes, or two takes that
  * play the same notes. Never throws.
  */
 export function expandTakesCall(
@@ -331,6 +380,14 @@ export function expandTakesCall(
     }
     takes.push({ label: take.label, calls: written });
   }
+  const kinds = noteKinds(takes);
+  if (kinds.has("pad") && kinds.has("pitch")) {
+    return {
+      ok: false,
+      message:
+        "the takes mix drum hits on pads with pitched notes; offer takes of one part, either a drum pattern or a melodic part, and the other part as a proposal of its own",
+    };
+  }
   const same = takesWithSameNotes(takes);
   if (same !== null) {
     return {
@@ -357,6 +414,7 @@ export function parseTakesCall(call: AssistantToolCall): AssistantTakes | null {
   return {
     id: call.id,
     part: parsed.data.part,
+    partType: takesPartType(parsed.data.takes),
     takes: parsed.data.takes.map((take, index) => ({
       label: take.label,
       calls: takeCalls(call.id, index, take.calls),

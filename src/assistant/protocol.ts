@@ -450,6 +450,16 @@ export const ASSISTANT_ERROR_CODES = [
 ] as const;
 export type AssistantErrorCode = (typeof ASSISTANT_ERROR_CODES)[number];
 
+/**
+ * What an offer of takes (`takes.ts`) is a part of: a melodic or harmonic
+ * part (GRV-207), or a drum pattern of hits on a drum machine's pads
+ * (GRV-213). Read off the notes the takes write, never declared by the model,
+ * and named here so the analytics catalog can log it without importing the
+ * tool.
+ */
+export const TAKE_PART_TYPES = ["melodic", "drums"] as const;
+export type TakePartType = (typeof TAKE_PART_TYPES)[number];
+
 /** Codes the browser may offer to retry. */
 const RETRYABLE_CODES: ReadonlySet<AssistantErrorCode> = new Set([
   "timeout",
