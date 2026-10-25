@@ -209,14 +209,18 @@ test.describe("CF-037", () => {
       await kit(page).getByRole("button", { name: "Audition BD", exact: true }).click();
       const starterKick = ((await padSound(page).textContent()) ?? "").trim();
       expect(starterKick).not.toBe("");
-      await lessonButton(page, "Show me").click();
+      // From the keyboard: focus stays in the lesson, on its Next, rather than
+      // dropping to the studio (GRV-190 QA).
+      await lessonButton(page, "Show me").focus();
+      await page.keyboard.press("Enter");
       await expect(bite(page, BITES[0])).toContainText("done");
+      await expect(lessonButton(page, `Next: ${BITES[1]}`)).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(lessonButton(page, `Next: ${BITES[1]}`)).toBeFocused();
       await dockTile(page, "Instrument").click();
       await expect(padSound(page)).not.toHaveText(starterKick);
       await expect(replySaying(page, `"${BITES[0]}" is finished`)).toHaveCount(1, {
-        timeout: 15_000,
-      });
-      await expect(lessonButton(page, `Next: ${BITES[1]}`)).toBeVisible({
         timeout: 15_000,
       });
       await step("Show me puts a kick from the library on BD");

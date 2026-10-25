@@ -1594,9 +1594,10 @@ use.
    Library on BD's pad, offers Show me and Skip, and Coproducer's reply
    follows in the conversation, saying the lesson has started and that you
    can leave it whenever you like.
-4. Press Show me. A kick from the library lands on BD's pad, and "Pick a
-   kick" is marked done. Coproducer's reply about it follows, and the lesson
-   offers the next bite, "The kick pattern".
+4. Tab to Show me and press Enter. A kick from the library lands on BD's
+   pad, and "Pick a kick" is marked done. Coproducer's reply about it
+   follows, and the lesson offers the next bite, "The kick pattern", with
+   focus on it: it never drops to the studio.
 5. Press it. The step asks for the boom bap kick: on beat 1 and on the "and"
    of beat 3. Press "boom bap" in it: what it means is shown under the step,
    and the step is still there.
