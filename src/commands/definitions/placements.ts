@@ -9,6 +9,7 @@ import {
 } from "../../domain/placementOverlap";
 import { toTicks } from "../../domain/time";
 import { arrangementControl, CONTROL_PARTS, controlAddress } from "../controlAddress";
+import { describeLength, describePosition } from "../musicalWording";
 import {
   clipLabel,
   findClip,
@@ -16,7 +17,6 @@ import {
   replacePlacement,
   withSong,
 } from "../projectEdits";
-import { describeLength, describePosition } from "../musicalWording";
 import {
   applied,
   type CommandInput,

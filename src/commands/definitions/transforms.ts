@@ -12,6 +12,7 @@ import { isChromatic, isPitchInKey, nearestPitchInKey } from "../../domain/music
 import { clampParameterValue, NOTE_VELOCITY } from "../../domain/parameters";
 import { isTicks, type Ticks, toTicks } from "../../domain/time";
 import { CONTROL_PARTS, controlAddress } from "../controlAddress";
+import { describeGrid } from "../musicalWording";
 import {
   clipLabel,
   findClip,
@@ -22,7 +23,6 @@ import {
   selectEvents,
   withNoteEvents,
 } from "../projectEdits";
-import { describeGrid } from "../musicalWording";
 import {
   applied,
   type CommandInput,
