@@ -9,6 +9,7 @@ export const TRACK_ORDER_SHORTCUT_IDS = [
   "device.move_later",
   "track.move_left",
   "track.move_right",
+  "track.colour_confirm",
 ] as const;
 
 export const TRACK_ORDER_SHORTCUTS: readonly ShortcutDefinition[] = [
@@ -65,6 +66,21 @@ export const TRACK_ORDER_SHORTCUTS: readonly ShortcutDefinition[] = [
       kind: "solid_groove",
       reason:
         "Live reorders tracks by dragging only; this is the keyboard way to do what the drag does.",
+    },
+  }),
+  define({
+    id: "track.colour_confirm",
+    label: "Keep track colour",
+    description:
+      "Keeps the colour in focus in a track's open colour palette and closes it, as one undo step.",
+    group: "mixer_devices",
+    contexts: ["colour_palette"],
+    keys: ["Enter", "Space"],
+    // The colours are radios, which keep a plain Space or Enter otherwise.
+    focusedControl: "allowed",
+    ableton: {
+      kind: "solid_groove",
+      reason: "Live has no per-track colour palette; this is Groove's own.",
     },
   }),
 ];

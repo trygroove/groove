@@ -43,6 +43,7 @@ export const SHORTCUT_CONTEXTS = [
   "composer",
   "assistant_ask",
   "device_header",
+  "colour_palette",
 ] as const;
 export type ShortcutContext = (typeof SHORTCUT_CONTEXTS)[number];
 
@@ -62,6 +63,8 @@ export type ShortcutContext = (typeof SHORTCUT_CONTEXTS)[number];
  * question (GRV-42), where `1`-`8` pick an answer in place of the view keys.
  * `device_header` is a focused device's header in a chain (GRV-186), where
  * Delete removes that device and Mod+D duplicates it, never the track.
+ * `colour_palette` is the open track colour palette (GRV-217), where Enter and
+ * Space keep the colour in focus and close it.
  */
 export const FOCUS_CONTEXTS: readonly ShortcutContext[] = [
   "loop_brace",
@@ -71,6 +74,7 @@ export const FOCUS_CONTEXTS: readonly ShortcutContext[] = [
   "composer",
   "assistant_ask",
   "device_header",
+  "colour_palette",
 ];
 
 /**

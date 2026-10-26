@@ -191,7 +191,6 @@ describe("TrackColorPicker (#447)", () => {
     expect(history.canUndo).toBe(false);
 
     await user.keyboard("{Enter}");
-    fireEvent.pointerDown(document.body);
     flush();
     expect(screen.queryByRole("group")).not.toBeInTheDocument();
     expect(track().color).toBe(TRACK_COLORS[at + 3]);
@@ -201,6 +200,42 @@ describe("TrackColorPicker (#447)", () => {
     expect(history.project.song.tracks.find((t) => t.id === track().id)?.color).toBe(
       before,
     );
+    expect(history.canUndo).toBe(false);
+  });
+
+  it.each(["{Enter}", " "])(
+    "%j on a colour confirms it and closes the palette as one entry (GRV-217)",
+    async (key) => {
+      const user = userEvent.setup();
+      const { history, track, swatch } = await openFocused(user);
+      const before = track().color;
+      await user.keyboard("{ArrowRight}{ArrowRight}");
+      flush();
+      const arrowed = track().color;
+      expect(arrowed).not.toBe(before);
+      expect(screen.getByRole("group")).toBeInTheDocument();
+
+      await user.keyboard(key);
+      flush();
+
+      expect(screen.queryByRole("group")).not.toBeInTheDocument();
+      expect(track().color).toBe(arrowed);
+      expect(swatch()).toHaveFocus();
+      expect(history.project.metadata.revision).toBe(1);
+      history.undo();
+      expect(history.project.song.tracks[0]?.color).toBe(before);
+      expect(history.canUndo).toBe(false);
+    },
+  );
+
+  it("Enter on the colour the track already has just closes the palette", async () => {
+    const user = userEvent.setup();
+    const { history, track } = await openFocused(user);
+    const before = track().color;
+    await user.keyboard("{Enter}");
+    flush();
+    expect(screen.queryByRole("group")).not.toBeInTheDocument();
+    expect(track().color).toBe(before);
     expect(history.canUndo).toBe(false);
   });
 
