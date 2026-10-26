@@ -291,6 +291,24 @@ export function createArrangementShell(
     setScroll(nextLeft, viewport.scrollTop);
   }
 
+  /**
+   * Scroll as little as it takes to show `[startTicks, endTicks)`, the way a
+   * focused control is kept on screen: a span already in view leaves the view
+   * alone, one past an edge is brought to it, and one wider than the view is
+   * aligned by its start. A span past the end of the song extends the timeline
+   * that far, so the scroll limit never hides it.
+   */
+  function revealSpan(startTicks: number, endTicks: number): void {
+    if (viewport.width <= 0) return;
+    const left = startTicks * viewport.pixelsPerTick;
+    const right = endTicks * viewport.pixelsPerTick;
+    framedExtentTicks = Math.max(framedExtentTicks, endTicks);
+    let next = viewport.scrollLeft;
+    if (left < next || right - left > viewport.width) next = left;
+    else if (right > next + viewport.width) next = right - viewport.width;
+    setScroll(next, viewport.scrollTop);
+  }
+
   function seekTo(ticks: number): void {
     const next = Math.max(0, ticks);
     if (next === playheadTicks) return;
@@ -393,6 +411,7 @@ export function createArrangementShell(
     contentHeight,
     setExtraHeight,
     scrollToPlayhead,
+    revealSpan,
     seekTo,
     setPlayheadFollow,
     setHover,
