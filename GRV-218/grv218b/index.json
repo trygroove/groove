@@ -1,0 +1,10 @@
+{
+  "id": "grv218b",
+  "title": "Loop panel stretch follows tempo",
+  "steps": [
+    {
+      "file": "01-tempo-at-64-bpm-the-loop-panel-s-stretch.png",
+      "caption": "Tempo at 64 BPM: the loop panel's Stretch is 0.5×"
+    }
+  ]
+}
