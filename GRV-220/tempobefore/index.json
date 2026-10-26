@@ -1,0 +1,14 @@
+{
+  "id": "tempobefore",
+  "title": "Tempo box before the fix",
+  "steps": [
+    {
+      "file": "01-cleared-and-committed-the-box-shows-the-.png",
+      "caption": "Cleared and committed: the box shows the song's tempo again"
+    },
+    {
+      "file": "02-escape-discards-the-typed-value.png",
+      "caption": "Escape discards the typed value"
+    }
+  ]
+}
