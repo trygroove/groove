@@ -823,3 +823,68 @@ describe("StepEditor [+ Pad] row (#947)", () => {
     expect(button).toHaveAttribute("title", "A drum machine holds at most 32 pads");
   });
 });
+
+describe("StepEditor click focus (GRV-228)", () => {
+  /** A drum machine clip, rendered as the editor reads it: through the live project. */
+  function renderDrumMachine() {
+    const project = createDrumMachineFixtureProject();
+    const clipId = project.clips[0].id;
+    const history = new CommandHistory(project);
+    const [live, setLive] = createSignal<Project>(project);
+    history.subscribe((snapshot) => setLive(snapshot.project));
+    const clip = () => {
+      const found = live().clips.find((candidate) => candidate.id === clipId);
+      if (!found) throw new Error("expected the clip");
+      return found;
+    };
+    const instrument = () =>
+      live().song.tracks.find((track) => track.id === clip().trackId)?.instrument ?? null;
+    render(() => (
+      <StepEditor
+        clip={clip()}
+        project={live()}
+        instrument={instrument()}
+        dispatch={(commands) => history.execute(commands as never)}
+        beginGesture={(options) => history.beginGesture(options)}
+      />
+    ));
+    return history;
+  }
+
+  it("moves keyboard focus to a step the pointer presses, when nothing had focus", () => {
+    renderDrumMachine();
+    const step = cell("BD, step 14, off");
+    expect(document.activeElement).not.toBe(step);
+
+    fireEvent.pointerDown(step, { button: 0 });
+    flush();
+    expect(step).toHaveFocus();
+    expect(document.activeElement).toBe(step);
+  });
+
+  it("moves focus off the step focused from the keyboard to the one pressed", () => {
+    renderDrumMachine();
+    const earlier = cell("BD, step 6, off");
+    const pressed = cell("BD, step 8, off");
+    earlier.focus();
+    expect(earlier).toHaveFocus();
+
+    fireEvent.pointerDown(pressed, { button: 0 });
+    flush();
+    expect(pressed).toHaveFocus();
+    expect(earlier).not.toHaveFocus();
+  });
+
+  it("keeps the pressed step focused through the pointer up that toggles it", () => {
+    const history = renderDrumMachine();
+    const step = cell("BD, step 14, off");
+
+    fireEvent.pointerDown(step, { button: 0 });
+    flush();
+    fireEvent.pointerUp(step);
+    flush();
+    expect(step).toHaveAccessibleName("BD, step 14, on");
+    expect(step).toHaveFocus();
+    expect(history.entries).toHaveLength(1);
+  });
+});
