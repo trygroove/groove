@@ -1,0 +1,10 @@
+{
+  "id": "brace",
+  "title": "The loop brace stays in view",
+  "steps": [
+    {
+      "file": "01-right-twelve-times-the-brace-is-at-bar-1.png",
+      "caption": "Right twelve times: the brace is at bar 13 and the view followed"
+    }
+  ]
+}
