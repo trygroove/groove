@@ -94,6 +94,7 @@ than also meaning `track.move_left`. It suppresses nothing else.
 | `device.move_later` | Move device later | `Option+Down` | `Alt+Down` | Mixer and Devices | editor | Groove addition — Live reorders devices by dragging only |
 | `track.move_left` | Move track left | `Left` | `Left` | Mixer and Devices | editor | Groove addition — Live reorders tracks by dragging only |
 | `track.move_right` | Move track right | `Right` | `Right` | Mixer and Devices | editor | Groove addition — Live reorders tracks by dragging only |
+| `track.colour_confirm` | Keep track colour | `Enter / Space` | `Enter / Space` | Mixer and Devices | colour_palette | Groove addition — Live has no per-track colour palette; this is Groove's own. |
 | `track.select_previous` | Select previous track | `Up` | `Up` | Navigation | editor | Groove addition — the arrow keys step the editor's selected track through the track list. |
 | `track.select_next` | Select next track | `Down` | `Down` | Navigation | editor | Groove addition — the arrow keys step the editor's selected track through the track list. |
 | `note.move_up` | Move notes up | `Up` | `Up` | Clips and Notes | piano_roll | Follows Live (`Up`) |
@@ -157,6 +158,11 @@ keyboard way to reorder a chain, which the pointer does by dragging. A focused
 device header is the `device_header` focus context too: there `edit.delete`
 removes that device and `edit.duplicate` duplicates it, and neither reaches the
 track the chain belongs to.
+
+`track.colour_confirm` is the open track colour palette's key (GRV-217), in the
+`colour_palette` context, live only while the palette is open: `Enter` or `Space`
+keeps the colour in focus and closes it as one undo step, where `Escape` still
+cancels the preview.
 
 In `piano_roll` the eight `note.*` moves act on the selected notes: Up and Down
 step through the rows the roll shows, so in a scale they move by scale degree;

@@ -11,7 +11,7 @@ import { updateTrack } from "../../commands";
 import type { Track } from "../../domain/entities";
 import { TRACK_PALETTE } from "../../domain/trackPalette";
 import { ariaBool } from "../../shared/aria";
-import { useCloseOnEscape } from "../../shortcuts";
+import { useShortcutScope } from "../../shortcuts";
 import "./TrackColorPicker.css";
 
 export interface TrackColorPickerProps {
@@ -124,7 +124,10 @@ export default function TrackColorPicker(props: TrackColorPickerProps): JSX.Elem
       <Show when={at()}>
         {(position) => (
           <Portal>
-            <CloseOnEscape onClose={() => close(true, true)} />
+            <PaletteKeys
+              onCancel={() => close(true, true)}
+              onConfirm={() => close(true)}
+            />
             <fieldset
               ref={menu}
               class="track-color-menu"
@@ -161,11 +164,19 @@ export default function TrackColorPicker(props: TrackColorPickerProps): JSX.Elem
 }
 
 /**
- * `view.close_surface` (Escape) for the open palette, mounted only while it
- * is open: a closed picker, one per track header, installs no shortcut
- * controller at all.
+ * The open palette's keys, mounted only while it is open: a closed picker, one
+ * per track header, installs no shortcut scope at all. `view.close_surface`
+ * (Escape) cancels the previewed colour; `track.colour_confirm` (Enter, Space)
+ * keeps it (GRV-217): arrowing already chose it, so confirming is closing, which
+ * commits the gesture. A radio does neither natively.
  */
-function CloseOnEscape(props: { onClose(): void }): JSX.Element {
-  useCloseOnEscape(() => props.onClose());
+function PaletteKeys(props: { onCancel(): void; onConfirm(): void }): JSX.Element {
+  useShortcutScope({
+    handlers: () => ({
+      "view.close_surface": { run: props.onCancel },
+      "track.colour_confirm": { run: props.onConfirm },
+    }),
+    contexts: () => ["colour_palette"],
+  });
   return null;
 }

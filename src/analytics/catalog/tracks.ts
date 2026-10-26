@@ -57,6 +57,7 @@ export const TRACK_SHORTCUT_ACTION_IDS = [
   "device.move_later",
   "track.move_left",
   "track.move_right",
+  "track.colour_confirm",
 ] as const;
 
 export const TRACK_EVENTS = {

@@ -342,6 +342,7 @@ describe("context resolution", () => {
         composer: { key: "enter", id: "assistant.send" },
         assistant_ask: { key: "1", id: "assistant.ask_option_1" },
         device_header: { key: "delete", id: "edit.delete" },
+        colour_palette: { key: "enter", id: "track.colour_confirm" },
       };
     for (const context of SHORTCUT_CONTEXTS) {
       const probe = expected[context];
