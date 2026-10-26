@@ -204,6 +204,14 @@
   pointer-events: auto;
 }
 
+/* The "Select <track>" buttons are visually hidden Tab stops (GRV-221), so
+   the header row of the track the focus is on wears the ring for them. An
+   inset outline: the header column clips anything drawn outside its rows. */
+.arrangement-header-row.track-select-focused {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
 /* The clip list (#76) is the canvas's keyboard twin and visually hidden, so
    while it has focus the arrangement it speaks for wears the focus ring. A
    frame laid over the body rather than an outline on it: the sticky canvases

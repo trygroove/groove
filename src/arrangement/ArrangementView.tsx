@@ -330,6 +330,9 @@ export default function ArrangementView(props: ArrangementViewProps) {
   // A tiny signal bumped whenever the shell mutates viewport/selection state,
   // so the reactive header column and accessible list re-read the shell.
   const [stateVersion, setStateVersion] = createSignal(0);
+  // The track whose off-screen "Select <name>" button has keyboard focus. The
+  // button is visually hidden, so its header row wears the focus for it.
+  const [focusedTrackSelect, setFocusedTrackSelect] = createSignal<string>();
 
   let scrollEl!: HTMLDivElement;
   let spacerEl: HTMLDivElement | undefined;
@@ -1261,6 +1264,9 @@ export default function ArrangementView(props: ArrangementViewProps) {
                   class={[
                     "arrangement-header-row",
                     { "track-dragging": trackDrag.dragging() === track().id },
+                    {
+                      "track-select-focused": focusedTrackSelect() === track().id,
+                    },
                   ]}
                   data-track-drag={track().id}
                   data-testid={
@@ -1408,6 +1414,11 @@ export default function ArrangementView(props: ArrangementViewProps) {
                   data-track-select={track.id}
                   aria-label={`Select ${track.name}`}
                   onClick={() => selectTrackFromList(track.rowIndex)}
+                  onFocus={(event) => {
+                    if (event.currentTarget.matches(":focus-visible"))
+                      setFocusedTrackSelect(track.id);
+                  }}
+                  onBlur={() => setFocusedTrackSelect(undefined)}
                 >
                   {track.name}
                 </button>
