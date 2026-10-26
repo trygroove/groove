@@ -1256,11 +1256,11 @@ export default function ArrangementView(props: ArrangementViewProps) {
                   class={[
                     "arrangement-header-row",
                     { "track-dragging": trackDrag.dragging() === track().id },
+                    {
+                      "track-select-focused": focusedTrackSelect() === track().id,
+                    },
                   ]}
                   data-track-drag={track().id}
-                  data-track-select-focused={
-                    focusedTrackSelect() === track().id ? "true" : undefined
-                  }
                   data-testid={
                     previewing(track().id) ? "track-drop-indicator" : undefined
                   }

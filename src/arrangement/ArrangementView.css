@@ -203,7 +203,7 @@
 /* The "Select <track>" buttons are visually hidden Tab stops (GRV-221), so
    the header row of the track the focus is on wears the ring for them. An
    inset outline: the header column clips anything drawn outside its rows. */
-.arrangement-header-row[data-track-select-focused="true"] {
+.arrangement-header-row.track-select-focused {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;
 }
