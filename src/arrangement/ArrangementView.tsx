@@ -1186,6 +1186,26 @@ export default function ArrangementView(props: ArrangementViewProps) {
   // A brace that goes away with focus in it must not leave its key context on.
   onCleanup(() => props.onLoopBraceFocusChange?.(false));
 
+  // The brace the keyboard moves is kept on screen, the way a focused control
+  // is (GRV-226). Only while it has focus: a drag or a loop set from elsewhere
+  // does not take the view out from under the producer.
+  const [braceFocused, setBraceFocused] = createSignal(false);
+  createEffect(
+    () => ({
+      focused: braceFocused(),
+      startTicks: props.project.song.loop.startTicks,
+      endTicks: props.project.song.loop.endTicks,
+    }),
+    ({ focused, startTicks, endTicks }) => {
+      if (!focused || !shell) return;
+      shell.revealSpan(startTicks, endTicks);
+      // The spacer first: the native scroller clamps to its own width.
+      syncSpacer();
+      syncScrollElToShell();
+      bumpState();
+    },
+  );
+
   /** What the `aria-live` mirror says about the one selection (#292). */
   const announcement = createMemo(() => {
     stateVersion();
@@ -1350,7 +1370,10 @@ export default function ArrangementView(props: ArrangementViewProps) {
               widthPx={braceBox().widthPx}
               insetPx={HEADER_WIDTH_PX}
               describedBy={loopMirrorId}
-              onFocusChange={onFocusChange()}
+              onFocusChange={(focused) => {
+                setBraceFocused(focused);
+                onFocusChange()(focused);
+              }}
             />
           )}
         </Show>

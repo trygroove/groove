@@ -5,6 +5,7 @@ import { Analytics } from "../analytics/analytics";
 import { ConsentStore } from "../analytics/consent";
 import { createRecordingTransport } from "../analytics/transport";
 import { CommandHistory } from "../commands";
+import { setLoopRange } from "../commands/definitions/loop";
 import type { Project } from "../domain/entities";
 import {
   createLargeArrangementProject,
@@ -12,7 +13,7 @@ import {
   createSliceFixtureProject,
 } from "../domain/fixtures";
 import type { PlacementId, TrackId } from "../domain/ids";
-import { TICKS_PER_BAR } from "../domain/time";
+import { TICKS_PER_BAR, toTicks } from "../domain/time";
 import { EditorSession } from "../editor/composition/EditorSession";
 import { orderedTrackIds } from "../editor/tracks/trackActions";
 import { createInMemoryProjectRepository } from "../persistence/inMemoryProjectRepository";
@@ -765,6 +766,55 @@ describe("ArrangementView loop brace (LOOP-018)", () => {
         (e) => e.name === "feature_first_use" && e.params.feature === "playhead_seek",
       ),
     ).toHaveLength(0);
+  });
+
+  it("scrolls to keep a focused brace in view as the keyboard moves it (GRV-226)", async () => {
+    const { session } = await setUpEditing();
+    const [project, setProject] = createSignal(session.project);
+    render(() => (
+      <ArrangementView
+        project={project()}
+        dispatch={session.dispatch.bind(session)}
+        onLoopBraceFocusChange={() => {}}
+      />
+    ));
+    const viewport = document.querySelector<HTMLElement>(".arrangement-viewport");
+    const brace = screen.getByTestId("arrangement-loop-brace");
+    fireEvent.focus(brace);
+    flush();
+    expect(viewport?.scrollLeft).toBe(0);
+
+    // Bar 13, far past jsdom's 960px view.
+    session.dispatch(
+      setLoopRange(toTicks(12 * TICKS_PER_BAR), toTicks(13 * TICKS_PER_BAR)),
+    );
+    setProject(session.project);
+    flush();
+
+    const left = parseFloat(brace.style.left);
+    const width = parseFloat(brace.style.width);
+    expect(viewport?.scrollLeft).toBeGreaterThan(0);
+    expect(left).toBeGreaterThanOrEqual(0);
+    expect(left + width).toBeLessThanOrEqual(960);
+  });
+
+  it("leaves the view alone when the brace moves without focus (GRV-226)", async () => {
+    const { session } = await setUpEditing();
+    const [project, setProject] = createSignal(session.project);
+    render(() => (
+      <ArrangementView
+        project={project()}
+        dispatch={session.dispatch.bind(session)}
+        onLoopBraceFocusChange={() => {}}
+      />
+    ));
+    const viewport = document.querySelector<HTMLElement>(".arrangement-viewport");
+    session.dispatch(
+      setLoopRange(toTicks(12 * TICKS_PER_BAR), toTicks(13 * TICKS_PER_BAR)),
+    );
+    setProject(session.project);
+    flush();
+    expect(viewport?.scrollLeft).toBe(0);
   });
 
   it("offers no keyboard controls where nothing commits a range", async () => {
