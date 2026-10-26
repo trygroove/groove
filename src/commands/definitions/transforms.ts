@@ -12,6 +12,7 @@ import { isChromatic, isPitchInKey, nearestPitchInKey } from "../../domain/music
 import { clampParameterValue, NOTE_VELOCITY } from "../../domain/parameters";
 import { isTicks, type Ticks, toTicks } from "../../domain/time";
 import { CONTROL_PARTS, controlAddress } from "../controlAddress";
+import { describeGrid } from "../musicalWording";
 import {
   clipLabel,
   findClip,
@@ -313,7 +314,7 @@ export const notesQuantizeCommand = defineCommand<NotesQuantizePayload>({
   schema: notesQuantizePayloadSchema,
   touches: (payload) => [controlAddress(payload.clipId, CONTROL_PARTS.notes)],
   summarize: (payload, project) =>
-    `Quantize ${clipLabel(project, payload.clipId)} to ${payload.gridTicks} ticks`,
+    `Quantize ${clipLabel(project, payload.clipId)} to ${describeGrid(payload.gridTicks)}`,
   apply(project, payload) {
     const selection = resolveSelection(project, payload.clipId, payload.eventIds);
     if (isError(selection)) {

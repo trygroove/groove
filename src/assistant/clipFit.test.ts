@@ -97,7 +97,7 @@ describe("a proposal that writes notes past its clip's end", () => {
       changes: { lengthTicks: 4 * TICKS_PER_BAR },
     });
     expect(validation.proposal.impact.lines.map((line) => line.summary)).toContain(
-      `Resize clip "Bassline" to ${4 * TICKS_PER_BAR} ticks`,
+      `Resize clip "Bassline" to 4 bars`,
     );
   });
 
