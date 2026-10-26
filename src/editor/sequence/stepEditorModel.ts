@@ -124,6 +124,31 @@ export function lanesFor(instrument: Instrument | null): readonly StepLane[] {
 }
 
 /**
+ * `next`, keeping each lane of `previous` that it repeats unchanged, and
+ * `previous` itself when nothing changed (GRV-214). The instrument is read
+ * again on every project revision, and the grid's rows are keyed by lane
+ * object: a fresh object for the same pad remounts its row, and the step that
+ * had keyboard focus leaves the page with it.
+ */
+export function reuseLanes(
+  previous: readonly StepLane[] | undefined,
+  next: readonly StepLane[],
+): readonly StepLane[] {
+  if (!previous) return next;
+  const byKey = new Map(previous.map((lane) => [lane.key, lane]));
+  const lanes = next.map((lane) => {
+    const kept = byKey.get(lane.key);
+    return kept && kept.name === lane.name && triggersMatch(kept.trigger, lane.trigger)
+      ? kept
+      : lane;
+  });
+  const same =
+    lanes.length === previous.length &&
+    lanes.every((lane, index) => lane === previous[index]);
+  return same ? previous : lanes;
+}
+
+/**
  * The selected row: the lane keyed `key` (a pad id on a drum machine), or the
  * first lane when there is no such lane any more, or null with no lanes.
  */

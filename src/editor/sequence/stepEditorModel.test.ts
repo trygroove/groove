@@ -17,6 +17,7 @@ import {
   MAX_BARS,
   noteAt,
   playbackStep,
+  reuseLanes,
   SAMPLER_LANE_PITCH,
   STEPS_PER_BAR,
   selectedLane,
@@ -32,6 +33,24 @@ describe("stepEditorModel", () => {
     expect(shaded.slice(4, 8)).toEqual([false, false, false, false]);
     expect(isShadedBeat(8)).toBe(true);
     expect(isShadedBeat(12)).toBe(false);
+  });
+
+  it("keeps unchanged lanes across a re-read of the same instrument (GRV-214)", () => {
+    const drum = createDrumMachineFixtureProject().song.tracks[0];
+    const first = lanesFor(drum.instrument);
+    expect(reuseLanes(first, lanesFor(drum.instrument))).toBe(first);
+
+    const renamed = lanesFor(drum.instrument).map((lane, index) =>
+      index === 0 ? { ...lane, name: "Kick" } : lane,
+    );
+    const next = reuseLanes(first, renamed);
+    expect(next).not.toBe(first);
+    expect(next[0]).toBe(renamed[0]);
+    expect(next.slice(1)).toEqual(first.slice(1));
+    for (const [index, lane] of next.entries()) {
+      if (index > 0) expect(lane).toBe(first[index]);
+    }
+    expect(reuseLanes(first, first.slice(1))).toEqual(first.slice(1));
   });
 
   it("selects the row a key names, else the first row (#643)", () => {

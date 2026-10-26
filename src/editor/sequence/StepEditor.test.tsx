@@ -313,6 +313,47 @@ describe("StepEditor", () => {
     expect(history.entries).toHaveLength(2);
   });
 
+  it("keeps a toggled step mounted, so it keeps keyboard focus (GRV-214)", () => {
+    // In the editor the instrument is read through the live project, so it is
+    // read again on every revision: the rows must survive that, or the focused
+    // step leaves the page and focus with it.
+    const project = createDrumMachineFixtureProject();
+    const clipId = project.clips[0].id;
+    const history = new CommandHistory(project);
+    const [live, setLive] = createSignal<Project>(project);
+    history.subscribe((snapshot) => setLive(snapshot.project));
+    const clip = () => {
+      const found = live().clips.find((candidate) => candidate.id === clipId);
+      if (!found) throw new Error("expected the clip");
+      return found;
+    };
+    const instrument = () =>
+      live().song.tracks.find((track) => track.id === clip().trackId)?.instrument ?? null;
+    render(() => (
+      <StepEditor
+        clip={clip()}
+        project={live()}
+        instrument={instrument()}
+        dispatch={(commands) => history.execute(commands as never)}
+        beginGesture={(options) => history.beginGesture(options)}
+      />
+    ));
+
+    const step = cell("BD, step 2, off");
+    step.focus();
+    fireEvent.click(step, { detail: 0 });
+    flush();
+    expect(step.isConnected).toBe(true);
+    expect(step).toHaveFocus();
+    expect(step).toHaveAccessibleName("BD, step 2, on");
+
+    fireEvent.click(step, { detail: 0 });
+    flush();
+    expect(step).toHaveFocus();
+    expect(step).toHaveAccessibleName("BD, step 2, off");
+    expect(history.entries).toHaveLength(2);
+  });
+
   it("does not toggle twice for a mouse click, whose click follows its press", () => {
     const { history } = renderEditor(createSliceFixtureProject());
     stroke("Notes, step 2, off");

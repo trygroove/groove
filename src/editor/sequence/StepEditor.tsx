@@ -30,6 +30,7 @@ import {
   lanesFor,
   noteAt,
   noteEventsOf,
+  reuseLanes,
   type StepLane,
   selectedLane,
   stepCount,
@@ -109,7 +110,9 @@ export interface StepEditorProps {
  */
 export default function StepEditor(props: StepEditorProps): JSX.Element {
   const analytics = () => props.analytics ?? defaultAnalytics;
-  const lanes = createMemo(() => lanesFor(props.instrument));
+  const lanes = createMemo((previous?: readonly StepLane[]) =>
+    reuseLanes(previous, lanesFor(props.instrument)),
+  );
   // The [+ Pad] row (#947): only a drum machine's lanes are pads to add to.
   const addPad = () =>
     props.instrument?.kind === "drumMachine" ? props.onAddPad : undefined;
