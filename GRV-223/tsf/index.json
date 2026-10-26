@@ -1,0 +1,10 @@
+{
+  "id": "tsf",
+  "title": "Focus on a hidden track select control",
+  "steps": [
+    {
+      "file": "01-select-control-focused-the-arrangement-w.png",
+      "caption": "Select control focused: the arrangement wears the focus frame"
+    }
+  ]
+}
