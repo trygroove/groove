@@ -203,9 +203,11 @@
 /* The clip list (#76) is the canvas's keyboard twin and visually hidden, so
    while it has focus the arrangement it speaks for wears the focus ring. A
    frame laid over the body rather than an outline on it: the sticky canvases
-   paint over their container's own outline. */
+   paint over their container's own outline. The per-track `Select <track>`
+   buttons are hidden the same way, so they wear the same frame (GRV-223). */
 .arrangement-view:focus-visible .arrangement-body::after,
-.arrangement-view:has(.arrangement-clip-list:focus-visible) .arrangement-body::after {
+.arrangement-view:has(.arrangement-clip-list:focus-visible) .arrangement-body::after,
+.arrangement-view:has([data-track-select]:focus-visible) .arrangement-body::after {
   content: "";
   position: absolute;
   inset: 0;
