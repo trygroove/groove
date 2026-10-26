@@ -131,13 +131,28 @@ export function useLibraryTarget(options: UseLibraryTargetOptions): LibraryTarge
    * the new track, which re-aims the Library before going back runs.
    */
   let insertedInto: LibraryTarget | null = null;
-  const returnFromInsert = (via: ViewChangeSource) =>
-    navigation.selectView(
-      AIMS_BACK.has((insertedInto ?? libraryTargetOf())?.kind)
-        ? navigation.libraryReturn()
-        : "instrument",
-      via,
-    );
+  /**
+   * The new-track or new-pad aim this Library visit began with. A Shift+Enter
+   * insert selects what it created, which re-aims the Library at that track's
+   * loop slot or that pad, so the next Enter would read a target that goes to
+   * the instrument. The visit still began from the arrangement (or the
+   * Sequence view), so it goes back there. Ended by a fresh aim, by going back,
+   * and by an insert into anything but the thing it created.
+   */
+  let visitAim: NewLibraryAim | null = null;
+  const returnFromInsert = (via: ViewChangeSource) => {
+    const target = insertedInto ?? libraryTargetOf();
+    const goesBack = AIMS_BACK.has(target?.kind) || continuesVisitAim(target);
+    const view = goesBack ? navigation.libraryReturn() : "instrument";
+    visitAim = null;
+    navigation.selectView(view, via);
+  };
+  /** Whether `target` is what the visit's own earlier insert created. */
+  function continuesVisitAim(target: LibraryTarget | null): boolean {
+    if (visitAim === "new-track") return target?.kind === "loop";
+    if (visitAim === "new-pad") return target?.kind === "pad";
+    return false;
+  }
   // Registered by the open library modal; the `library` shortcuts run them.
   const [libraryActions, setLibraryActions] = createSignal<LibraryActions | null>(null);
   // A pack the Library is asked to open on (GRV-23), until it has.
@@ -167,6 +182,7 @@ export function useLibraryTarget(options: UseLibraryTargetOptions): LibraryTarge
    * or at a new track or a new pad when one was asked for.
    */
   function aimLibrary(via: ViewChangeSource, aim?: NewLibraryAim): void {
+    visitAim = aim ?? null;
     setNewTrackAim(aim === "new-track");
     setNewPadAim(aim === "new-pad");
     navigation.selectView("library", via);
@@ -405,6 +421,7 @@ export function useLibraryTarget(options: UseLibraryTargetOptions): LibraryTarge
     openPack(slug, via) {
       setNewTrackAim(false);
       setNewPadAim(false);
+      visitAim = null;
       setRequestedPack(slug);
       navigation.selectView("library", via);
     },
@@ -413,6 +430,8 @@ export function useLibraryTarget(options: UseLibraryTargetOptions): LibraryTarge
     slotAudition,
     insert(target, asset, insertOptions) {
       insertedInto = target;
+      if (AIMS_BACK.has(target.kind)) visitAim = target.kind as NewLibraryAim;
+      else if (!continuesVisitAim(target)) visitAim = null;
       return insertFromLibrary(targetHost(insertedInto), asset, insertOptions);
     },
     drop: (sample) => dropFromLibrary(dropHost, sample),

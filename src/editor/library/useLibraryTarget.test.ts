@@ -157,6 +157,33 @@ describe("useLibraryTarget", () => {
     expect(navigation.selectView).toHaveBeenLastCalledWith("arrangement", "keyboard");
   });
 
+  it("still goes back to where it was asked for after an insert that stayed open (GRV-227)", () => {
+    const { library, navigation, selection, loop } = setup("library");
+    library.aim("arrangement", "new-track");
+    flush();
+    // Shift+Enter: the insert commits against the new-track aim, then selects
+    // the track it made, which re-aims the Library at that track's loop slot.
+    void library.insert({ kind: "new-track" }, {} as never, {} as never);
+    selection.selectTrack(loop.id);
+    flush();
+    expect(library.target()?.kind).toBe("loop");
+
+    // The next Enter replaces that loop and still goes back to the arrangement.
+    void library.insert(
+      { kind: "loop", trackId: loop.id } as never,
+      {} as never,
+      {} as never,
+    );
+    library.returnFromInsert("keyboard");
+    expect(navigation.selectView).toHaveBeenLastCalledWith("arrangement", "keyboard");
+
+    // A visit that began on the track's slot does not.
+    library.aim("slot");
+    flush();
+    library.returnFromInsert("keyboard");
+    expect(navigation.selectView).toHaveBeenLastCalledWith("instrument", "keyboard");
+  });
+
   it("auditions through the pad it is aimed at, and standalone for a new track", () => {
     const { library, audio, selection, drums } = setup();
     const pad = padIds(drums)[0];
