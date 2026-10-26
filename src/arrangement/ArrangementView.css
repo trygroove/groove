@@ -89,9 +89,13 @@
   box-sizing: border-box;
 }
 
+/* Two-tone: the canvas fills the brace with --color-accent while looping is on,
+   so the accent outline alone vanishes there. The inner on-accent ring shows on
+   that fill; the accent outline shows when looping is off (GRV-225). */
 .arrangement-loop-brace:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;
+  box-shadow: inset 0 0 0 4px var(--color-on-accent);
 }
 
 .arrangement-body {
