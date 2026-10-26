@@ -1,0 +1,14 @@
+{
+  "id": "focus",
+  "title": "Keyboard focus in the arrangement",
+  "steps": [
+    {
+      "file": "01-tab-onto-the-hidden-select-bd-button-the.png",
+      "caption": "Tab onto the hidden Select BD button: the BD header wears the ring"
+    },
+    {
+      "file": "02-tab-onto-the-clips-list-the-timeline-wea.png",
+      "caption": "Tab onto the Clips list: the timeline wears the ring"
+    }
+  ]
+}
