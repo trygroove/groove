@@ -298,6 +298,30 @@ describe("StepEditor", () => {
     expect(history.entries).toHaveLength(1);
   });
 
+  it("toggles a focused step from the keyboard, as one history entry (GRV-214)", () => {
+    const { history } = renderEditor(createSliceFixtureProject());
+    // Enter and Space on a focused button arrive as a click with no pointer
+    // press and a detail of 0.
+    fireEvent.click(cell("Notes, step 2, off"), { detail: 0 });
+    flush();
+    expect(cell("Notes, step 2, on")).toBeInTheDocument();
+    expect(history.entries).toHaveLength(1);
+
+    fireEvent.click(cell("Notes, step 2, on"), { detail: 0 });
+    flush();
+    expect(cell("Notes, step 2, off")).toBeInTheDocument();
+    expect(history.entries).toHaveLength(2);
+  });
+
+  it("does not toggle twice for a mouse click, whose click follows its press", () => {
+    const { history } = renderEditor(createSliceFixtureProject());
+    stroke("Notes, step 2, off");
+    fireEvent.click(cell("Notes, step 2, on"), { detail: 1 });
+    flush();
+    expect(cell("Notes, step 2, on")).toBeInTheDocument();
+    expect(history.entries).toHaveLength(1);
+  });
+
   it("emits clip_edited once for a click, bucketed by changed steps", () => {
     const { transport } = renderEditor(createSliceFixtureProject());
 

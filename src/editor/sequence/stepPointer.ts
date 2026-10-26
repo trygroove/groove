@@ -77,7 +77,7 @@ export function useStepPointer(host: StepPointerHost) {
     return { x: event.clientX - (box?.left ?? 0), y: event.clientY - (box?.top ?? 0) };
   }
 
-  function adds(event: PointerEvent): boolean {
+  function adds(event: MouseEvent): boolean {
     return (
       pointerModifierHeld("piano_roll.toggle_select", event, host.platform) ||
       pointerModifierHeld("piano_roll.shift_select", event, host.platform)
@@ -91,6 +91,11 @@ export function useStepPointer(host: StepPointerHost) {
     const { x, y } = point(event);
     const cell = lane && step !== undefined ? { lane, step } : null;
     press = { cell, x, y, add: adds(event), base: host.selected(), started: false };
+  }
+
+  /** Enter or Space on a focused step: the click a press would have made. */
+  function key(lane: StepLane, step: number, event: MouseEvent): void {
+    host.click(lane, step, adds(event));
   }
 
   function move(event: PointerEvent): void {
@@ -127,5 +132,5 @@ export function useStepPointer(host: StepPointerHost) {
     if (press && !press.started) cancel();
   }
 
-  return { down, move, up, cancel, leave, lasso };
+  return { down, key, move, up, cancel, leave, lasso };
 }

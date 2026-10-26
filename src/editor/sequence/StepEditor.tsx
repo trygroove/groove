@@ -361,6 +361,12 @@ export default function StepEditor(props: StepEditorProps): JSX.Element {
                           active() ? ", on" : ", off"
                         }`}
                         onPointerDown={(event) => pointer.down(event, lane, step)}
+                        onClick={(event) => {
+                          // Enter and Space on a focused step arrive as a click
+                          // with no pointer press (detail 0). A mouse or touch
+                          // click already toggled on its press, so it is skipped.
+                          if (event.detail === 0) pointer.key(lane, step, event);
+                        }}
                       />
                     );
                   }}
