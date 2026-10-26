@@ -1,0 +1,10 @@
+{
+  "id": "g222",
+  "title": "Undo tip after choosing 2 bars",
+  "steps": [
+    {
+      "file": "01-undo-button-tip-after-choosing-2-bars.png",
+      "caption": "Undo button tip after choosing 2 bars"
+    }
+  ]
+}
