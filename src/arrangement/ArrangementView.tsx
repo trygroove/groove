@@ -560,6 +560,14 @@ export default function ArrangementView(props: ArrangementViewProps) {
     if (props.dispatch) {
       props.onEditingActionsReady?.({
         ...editing,
+        // Escape's one gesture: a loop-brace drag counts as dragging, and
+        // cancelling it puts the brace back (GRV-224).
+        isDragging: () =>
+          (loopDrag?.isDragging() ?? false) || (editing?.isDragging() ?? false),
+        cancelDrag: () => {
+          if (loopDrag?.isDragging()) loopDrag.cancel();
+          else editing?.cancelDrag();
+        },
         stepClip: (by) => stepClipFromList(by, false),
         extendClip: (by) => stepClipFromList(by, true),
         zoomToSelection,

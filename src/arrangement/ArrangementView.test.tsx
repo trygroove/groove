@@ -657,6 +657,41 @@ describe("ArrangementView loop brace (LOOP-018)", () => {
     expect(transport.named("loop_range_set")).toHaveLength(1);
   });
 
+  it("puts the brace back when Escape cancels the drag, and the release commits nothing (GRV-224)", async () => {
+    const { session, transport } = await setUpEditing();
+    const holder: { current: PlacementEditingActions | null } = { current: null };
+    const { container } = render(() => (
+      <ArrangementView
+        project={session.project}
+        dispatch={session.dispatch.bind(session)}
+        beginGesture={session.beginGesture.bind(session)}
+        onEditingActionsReady={(actions) => {
+          holder.current = actions;
+        }}
+      />
+    ));
+    const canvas = interactionCanvasOf(container);
+
+    firePointer(canvas, "pointerdown", { clientX: barLine(2), clientY: rulerY });
+    firePointer(canvas, "pointermove", { clientX: barLine(5), clientY: rulerY });
+    expect(session.project.song.loop.endTicks).toBe(4 * TICKS_PER_BAR);
+    // The shortcut handler asks the arrangement, so the brace drag must answer.
+    expect(holder.current?.isDragging()).toBe(true);
+
+    holder.current?.cancelDrag();
+
+    expect(holder.current?.isDragging()).toBe(false);
+    expect(session.project.song.loop.endTicks).toBe(TICKS_PER_BAR);
+    firePointer(canvas, "pointermove", { clientX: barLine(6), clientY: rulerY });
+    firePointer(canvas, "pointerup", { clientX: barLine(6), clientY: rulerY });
+    expect(session.project.song.loop).toMatchObject({
+      startTicks: 0,
+      endTicks: TICKS_PER_BAR,
+    });
+    expect(session.history.entries.length).toBe(0);
+    expect(transport.named("loop_range_set")).toHaveLength(0);
+  });
+
   it("moves nothing for a press on the ruler away from the brace", async () => {
     const { session, transport, renderView } = await setUpEditing();
     const { container } = renderView();
