@@ -1,0 +1,14 @@
+{
+  "id": "lbf",
+  "title": "Loop brace keyboard focus",
+  "steps": [
+    {
+      "file": "01-brace-focused-with-looping-on-a-dark-rin.png",
+      "caption": "Brace focused with looping on: a dark ring inside the white outline"
+    },
+    {
+      "file": "02-brace-focused-with-looping-off-the-white.png",
+      "caption": "Brace focused with looping off: the white outline"
+    }
+  ]
+}
