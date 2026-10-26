@@ -3,7 +3,6 @@ import { HiSolidSquares2x2 } from "solid-icons/hi";
 import { type Accessor, createEffect, createSignal, Show, untrack } from "solid-js";
 import { ASSISTANT_NAME } from "../../../site.config.mjs";
 import { type Analytics, analytics as defaultAnalytics } from "../../analytics/analytics";
-import { MAX_TEMPO_BPM, MIN_TEMPO_BPM } from "../../audio/Transport";
 import {
   exportControl,
   parameterControl,
@@ -32,6 +31,7 @@ import PlayheadInput from "../transport/PlayheadInput";
 import SwingButton from "../transport/SwingButton";
 import ProjectNameInput from "./ProjectNameInput";
 import SaveStatus from "./SaveStatus";
+import TempoInput from "./TempoInput";
 import type { UseEditorSessionResult } from "./useEditorSession";
 import { useOnline } from "./useOnline";
 import type { ProjectAudioControls } from "./useProjectAudio";
@@ -244,17 +244,7 @@ export default function EditorHeader(props: EditorHeaderProps) {
             <label class="visually-hidden" for="tempo-input">
               Tempo (BPM)
             </label>
-            <input
-              id="tempo-input"
-              aria-label="Tempo (BPM)"
-              type="number"
-              class="tempo-input"
-              min={MIN_TEMPO_BPM}
-              max={MAX_TEMPO_BPM}
-              step={1}
-              value={props.tempo()}
-              onChange={(event) => props.onTempoChange(event.currentTarget.valueAsNumber)}
-            />
+            <TempoInput tempo={props.tempo} onTempoChange={props.onTempoChange} />
             <span class="tempo-unit" aria-hidden="true">
               BPM
             </span>
