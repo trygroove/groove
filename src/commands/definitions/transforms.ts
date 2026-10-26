@@ -22,6 +22,7 @@ import {
   selectEvents,
   withNoteEvents,
 } from "../projectEdits";
+import { describeGrid } from "../musicalWording";
 import {
   applied,
   type CommandInput,
@@ -313,7 +314,7 @@ export const notesQuantizeCommand = defineCommand<NotesQuantizePayload>({
   schema: notesQuantizePayloadSchema,
   touches: (payload) => [controlAddress(payload.clipId, CONTROL_PARTS.notes)],
   summarize: (payload, project) =>
-    `Quantize ${clipLabel(project, payload.clipId)} to ${payload.gridTicks} ticks`,
+    `Quantize ${clipLabel(project, payload.clipId)} to ${describeGrid(payload.gridTicks)}`,
   apply(project, payload) {
     const selection = resolveSelection(project, payload.clipId, payload.eventIds);
     if (isError(selection)) {

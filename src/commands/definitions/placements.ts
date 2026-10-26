@@ -16,6 +16,7 @@ import {
   replacePlacement,
   withSong,
 } from "../projectEdits";
+import { describeLength, describePosition } from "../musicalWording";
 import {
   applied,
   type CommandInput,
@@ -71,7 +72,7 @@ export const placementCreateCommand = defineCommand<PlacementCreatePayload>({
   schema: placementCreatePayloadSchema,
   touches: (payload) => [controlAddress(payload.placement.id, CONTROL_PARTS.placement)],
   summarize: (payload, project) =>
-    `Place ${clipLabel(project, payload.placement.clipId)} at tick ${payload.placement.startTicks}`,
+    `Place ${clipLabel(project, payload.placement.clipId)} at ${describePosition(payload.placement.startTicks)}`,
   apply(project, payload) {
     if (findPlacement(project, payload.placement.id)) {
       return rejected(`Placement ${payload.placement.id} already exists`);
@@ -131,10 +132,10 @@ export const placementUpdateCommand = defineCommand<PlacementUpdatePayload>({
     const placement = findPlacement(project, payload.placementId);
     const label = placement ? clipLabel(project, placement.clipId) : "a placement";
     if (payload.changes.startTicks !== undefined) {
-      return `Move ${label} to tick ${payload.changes.startTicks}`;
+      return `Move ${label} to ${describePosition(payload.changes.startTicks)}`;
     }
     if (payload.changes.durationTicks !== undefined) {
-      return `Resize ${label} to ${payload.changes.durationTicks} ticks`;
+      return `Resize ${label} to ${describeLength(payload.changes.durationTicks)}`;
     }
     if (payload.changes.looped !== undefined) {
       return `${payload.changes.looped ? "Loop" : "Unloop"} ${label}`;

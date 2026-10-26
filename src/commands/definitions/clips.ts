@@ -12,6 +12,7 @@ import {
   type ControlAddress,
   controlAddress,
 } from "../controlAddress";
+import { describeLength } from "../musicalWording";
 import { clipLabel, findClip, replaceClip, withClips, withSong } from "../projectEdits";
 import {
   applied,
@@ -155,7 +156,7 @@ export const clipUpdateCommand = defineCommand<ClipUpdatePayload>({
       return `Rename clip ${label} to "${payload.changes.name}"`;
     }
     if (payload.changes.lengthTicks !== undefined) {
-      return `Resize clip ${label} to ${payload.changes.lengthTicks} ticks`;
+      return `Resize clip ${label} to ${describeLength(payload.changes.lengthTicks)}`;
     }
     return `Recolor clip ${label}`;
   },
