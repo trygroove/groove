@@ -1,0 +1,14 @@
+{
+  "id": "grv228",
+  "title": "A clicked drum step takes keyboard focus",
+  "steps": [
+    {
+      "file": "01-click-step-14-it-toggles-on-and-takes-fo.png",
+      "caption": "Click step 14: it toggles on and takes focus"
+    },
+    {
+      "file": "02-focus-on-step-6-then-click-step-8-focus-.png",
+      "caption": "Focus on step 6, then click step 8: focus moves to step 8"
+    }
+  ]
+}
