@@ -11,7 +11,8 @@ export interface TempoInputProps {
 
 /**
  * The song's tempo, typed in place (the header's BPM box). Enter or focus
- * leaving commits a number through `onTempoChange`. An empty or non-numeric
+ * leaving commits a number through `onTempoChange`, and the box then shows
+ * the song's tempo, whatever the clamp made of it. An empty or non-numeric
  * entry commits nothing and puts the current tempo back, and Escape, while the
  * box has focus, is the registry's `view.close_surface`: it discards the typed
  * value and puts the current tempo back, as `ProjectNameInput` does.
@@ -46,13 +47,14 @@ export default function TempoInput(props: TempoInputProps): JSX.Element {
       step={1}
       value={props.tempo()}
       onChange={(event) => {
-        const bpm = event.currentTarget.valueAsNumber;
-        if (Number.isFinite(bpm)) {
-          props.onTempoChange(bpm);
-        } else {
-          // An empty or non-numeric entry is no tempo: the box shows the song's again.
-          event.currentTarget.value = String(props.tempo());
-        }
+        const field = event.currentTarget;
+        const bpm = field.valueAsNumber;
+        // An empty or non-numeric entry is no tempo, so it commits nothing.
+        if (Number.isFinite(bpm)) props.onTempoChange(bpm);
+        // The song clamps and rounds what it is given, so a commit can land on
+        // the tempo it already has, and then nothing re-renders the box. Put the
+        // song's tempo back by hand; a tempo that did change re-renders it anyway.
+        field.value = String(props.tempo());
       }}
     />
   );

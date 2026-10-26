@@ -422,7 +422,10 @@ describe("EditorHeader", () => {
   // GRV-220: an empty or non-numeric entry, and an Escape, put the song's
   // current tempo back in the box; none of them commits a tempo change.
   describe("the tempo box (GRV-220)", () => {
-    function renderTempo(onTempoChange: (bpm: number) => void) {
+    function renderTempo(
+      onTempoChange: (bpm: number) => void,
+      tempo: () => number = () => 120,
+    ) {
       return render(() => (
         <EditorHeader
           projectName="Untitled"
@@ -430,7 +433,7 @@ describe("EditorHeader", () => {
           session={fakeSession().session}
           audio={fakeAudio().audio}
           onToggleLoop={() => {}}
-          tempo={() => 120}
+          tempo={tempo}
           onTempoChange={onTempoChange}
           swing={() => 50}
           onSwingInput={() => {}}
@@ -497,6 +500,32 @@ describe("EditorHeader", () => {
       expect(onTempoChange).toHaveBeenCalledTimes(1);
       expect(onTempoChange).toHaveBeenCalledWith(77);
     });
+
+    // QA on GRV-220: the song clamps and rounds what is typed, so an entry can
+    // land on the tempo it already has. Nothing changes then, and the box has
+    // to be put back by hand or it keeps showing the typed value.
+    it.each([
+      ["0", 40, 40],
+      ["999", 240, 240],
+      ["-5", 40, 40],
+      ["120.4", 120, 120],
+      ["90", 120, 90],
+    ])(
+      "shows the song's tempo after %s is committed at %d BPM",
+      (typed, start, expected) => {
+        const [tempo, setTempo] = createSignal(start);
+        const onTempoChange = vi.fn((bpm: number) => {
+          setTempo(Math.min(240, Math.max(40, Math.round(bpm))));
+        });
+        renderTempo(onTempoChange, tempo);
+        type(typed);
+        expect(onTempoChange).toHaveBeenCalledTimes(1);
+        expect(tempoField()).toHaveValue(expected);
+        fireEvent.blur(tempoField());
+        flush();
+        expect(tempoField()).toHaveValue(expected);
+      },
+    );
   });
 
   it("seeks to a bar and beat typed into the playhead", () => {
