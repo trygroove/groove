@@ -59,9 +59,12 @@ export default function LoopInfo(props: LoopInfoProps): JSX.Element {
   return (
     <Show when={props.clip.content.kind === "audioLoop" ? props.clip.content : null}>
       {(content) => {
-        const sourceTempo = content().sourceTempo;
-        const ratio = loopStretchRatio(sourceTempo, props.songTempo);
-        const stretched = Math.abs(ratio - 1) >= 0.005;
+        // Derived values are accessors, not consts: this render callback runs once
+        // per loop clip, so a plain const would freeze the ratio at the tempo it
+        // was first shown at (GRV-218).
+        const sourceTempo = () => content().sourceTempo;
+        const ratio = () => loopStretchRatio(sourceTempo(), props.songTempo);
+        const stretched = () => Math.abs(ratio() - 1) >= 0.005;
         return (
           <section class="loop-info" aria-label="Audio loop">
             <div class="loop-info-header">
@@ -83,7 +86,7 @@ export default function LoopInfo(props: LoopInfoProps): JSX.Element {
             <dl class="loop-info-facts">
               <div class="loop-fact">
                 <dt>Source tempo</dt>
-                <dd>{sourceTempo} BPM</dd>
+                <dd>{sourceTempo()} BPM</dd>
               </div>
               <div class="loop-fact">
                 <dt>Length</dt>
@@ -95,7 +98,7 @@ export default function LoopInfo(props: LoopInfoProps): JSX.Element {
               </div>
               <div class="loop-fact">
                 <dt>Stretch</dt>
-                <dd>{formatStretchRatio(ratio)}</dd>
+                <dd>{formatStretchRatio(ratio())}</dd>
               </div>
             </dl>
             <p class="loop-stretch-note">
@@ -111,7 +114,7 @@ export default function LoopInfo(props: LoopInfoProps): JSX.Element {
               pitch: it plays over more or less time, but stays in the key it was recorded
               in.{" "}
               <Show
-                when={stretched}
+                when={stretched()}
                 fallback={
                   <span class="loop-stretch-live">
                     At {props.songTempo} BPM it plays at its source tempo, so it is played
@@ -120,7 +123,7 @@ export default function LoopInfo(props: LoopInfoProps): JSX.Element {
                 }
               >
                 <span class="loop-stretch-live">
-                  At {props.songTempo} BPM it is stretched {formatStretchRatio(ratio)}.
+                  At {props.songTempo} BPM it is stretched {formatStretchRatio(ratio())}.
                   Stretching is granular, so it softens transients and adds a faint
                   texture — the further from 1× it goes, the more you will hear that.
                 </span>

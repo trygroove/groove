@@ -1,4 +1,5 @@
 import { cleanup, render, screen } from "@solidjs/testing-library";
+import { createSignal, flush } from "solid-js";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Asset } from "../../domain/entities";
 import { createDrumMachineFixtureProject } from "../../domain/fixtures";
@@ -96,5 +97,35 @@ describe("LoopInfo", () => {
     ));
 
     expect(container.querySelector(".loop-info")).toBeNull();
+  });
+
+  it("follows a live tempo change: the Stretch figure and its note update with the song tempo", () => {
+    // GRV-218: a 128 BPM loop in a 120 BPM song, then the tempo moves to 64 and
+    // back to 128. The panel must re-derive the ratio, not keep the first one.
+    const { clip, asset } = loopFixture();
+    const loop128 = {
+      ...clip,
+      content: { ...clip.content, sourceTempo: 128 },
+    } as typeof clip;
+    const [tempo, setTempo] = createSignal(120);
+    render(() => <LoopInfo clip={loop128} asset={asset} songTempo={tempo()} />);
+    flush();
+
+    const stretchFigure = () => screen.getByText("Stretch").nextElementSibling;
+    expect(stretchFigure()).toHaveTextContent("0.94×");
+
+    setTempo(64);
+    flush();
+    expect(screen.getByText("Playing at").nextElementSibling).toHaveTextContent("64 BPM");
+    expect(stretchFigure()).toHaveTextContent("0.5×");
+    expect(screen.getByText(/At 64 BPM it is stretched 0.5×/)).toBeInTheDocument();
+
+    setTempo(128);
+    flush();
+    expect(stretchFigure()).toHaveTextContent("1×");
+    expect(screen.queryByText(/stretched/i)).toBeNull();
+    expect(
+      screen.getByText(/At 128 BPM it plays at its source tempo/),
+    ).toBeInTheDocument();
   });
 });
