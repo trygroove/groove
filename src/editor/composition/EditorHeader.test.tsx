@@ -419,6 +419,86 @@ describe("EditorHeader", () => {
     );
   });
 
+  // GRV-220: an empty or non-numeric entry, and an Escape, put the song's
+  // current tempo back in the box; none of them commits a tempo change.
+  describe("the tempo box (GRV-220)", () => {
+    function renderTempo(onTempoChange: (bpm: number) => void) {
+      return render(() => (
+        <EditorHeader
+          projectName="Untitled"
+          onRename={() => {}}
+          session={fakeSession().session}
+          audio={fakeAudio().audio}
+          onToggleLoop={() => {}}
+          tempo={() => 120}
+          onTempoChange={onTempoChange}
+          swing={() => 50}
+          onSwingInput={() => {}}
+          onSwingCommit={() => {}}
+          onOpenGuide={() => {}}
+          keyHint={() => "K"}
+          analytics={recordingAnalytics().analytics}
+        />
+      ));
+    }
+    const tempoField = () => screen.getByRole("spinbutton", { name: "Tempo (BPM)" });
+    const type = (value: string) => {
+      const field = tempoField();
+      fireEvent.focus(field);
+      flush();
+      fireEvent.input(field, { target: { value } });
+      fireEvent.change(field, { target: { value } });
+      flush();
+    };
+
+    it("restores the current tempo when the box is cleared and committed", () => {
+      const onTempoChange = vi.fn();
+      renderTempo(onTempoChange);
+      type("");
+      expect(tempoField()).toHaveValue(120);
+      fireEvent.blur(tempoField());
+      flush();
+      expect(tempoField()).toHaveValue(120);
+      expect(onTempoChange).not.toHaveBeenCalled();
+    });
+
+    it("restores the current tempo when non-numeric text is committed", () => {
+      const onTempoChange = vi.fn();
+      renderTempo(onTempoChange);
+      // A number input reports letters as an empty value.
+      type("fast");
+      expect(tempoField()).toHaveValue(120);
+      expect(onTempoChange).not.toHaveBeenCalled();
+    });
+
+    it("discards a typed value on Escape, and a later blur commits nothing", () => {
+      const onTempoChange = vi.fn();
+      renderTempo(onTempoChange);
+      const field = tempoField();
+      // Real focus, as a click gives it: Escape acts on the focused box.
+      field.focus();
+      flush();
+      fireEvent.input(field, { target: { value: "77" } });
+      flush();
+      fireEvent.keyDown(window, { key: "Escape" });
+      flush();
+      expect(tempoField()).toHaveValue(120);
+      expect(field).not.toHaveFocus();
+      fireEvent.blur(field);
+      flush();
+      expect(tempoField()).toHaveValue(120);
+      expect(onTempoChange).not.toHaveBeenCalled();
+    });
+
+    it("commits a typed tempo once, as a change", () => {
+      const onTempoChange = vi.fn();
+      renderTempo(onTempoChange);
+      type("77");
+      expect(onTempoChange).toHaveBeenCalledTimes(1);
+      expect(onTempoChange).toHaveBeenCalledWith(77);
+    });
+  });
+
   it("seeks to a bar and beat typed into the playhead", () => {
     const { audio } = fakeAudio();
     renderHeader(fakeSession().session, audio);
